@@ -1,0 +1,7 @@
+services:
+  eq2advanced:
+    image: ghcr.io/improvmasta/eq2advanced:main
+    container_name: eq2advanced
+    restart: unless-stopped
+    ports:
+      - "8450:8450"

@@ -1,0 +1,15 @@
+.env
+.env.local
+node_modules/
+.next/
+dist/
+build/
+__pycache__/
+.venv/
+*.pyc
+*.log
+*.db
+*.db-*
+data/
+cache/
+coverage/
