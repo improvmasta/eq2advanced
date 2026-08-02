@@ -1,0 +1,267 @@
+{
+ "id": 2654289790664,
+ "name": {
+  "prefix": "",
+  "first_lower": "bobby",
+  "last": "Flay",
+  "suffix": "",
+  "first": "Bobby"
+ },
+ "displayname": "Bobby (Wuoshi)",
+ "type": {
+  "classid": 30,
+  "aa_level": 100,
+  "ts_level": 70,
+  "raceid": 1,
+  "level": 70,
+  "gender": "male",
+  "ts_class": "alchemist",
+  "birthdate_utc": 1781031629,
+  "race": "Dark Elf",
+  "deity": "Solusek Ro",
+  "class": "Necromancer",
+  "alignment": 2
+ },
+ "guild": {
+  "status": 60563,
+  "name": "Skill Issue",
+  "level": 71,
+  "joined": 1784658639,
+  "rank": 3,
+  "guildid": 38,
+  "id": 2839196550
+ },
+ "locationdata": {
+  "world": "Wuoshi",
+  "worldid": 618
+ },
+ "playedtime": 1593274,
+ "stats": {
+  "sta": {
+   "base": 21,
+   "effective": 1026
+  },
+  "power": {
+   "max": 11951,
+   "regen": 541
+  },
+  "tradeskill": {
+   "critsuccessmod": 10.0,
+   "successmod": 10.0,
+   "excritsuccessmod": 0.0,
+   "refinequantitymod": 0.0,
+   "exdurabilityadd": 0.0,
+   "exprogressadd": 0.0,
+   "durabilityadd": 10.0,
+   "rareharvestchance": 1.0,
+   "excritfailuremod": 0.0,
+   "progressmod": 10.0,
+   "exdurabilitymod": 0.0,
+   "exprogressmod": 0.0,
+   "materialreturnperc": 0.0,
+   "critfailuremod": 0.0,
+   "progressadd": 10.0,
+   "durabilitymod": 10.0,
+   "experimentationattempts": 0.0,
+   "craftquantitymult": 0.0,
+   "exsuccessmod": 0.0
+  },
+  "weapon": {
+   "secondarymindamage": -1,
+   "primarydelay": 3.869181,
+   "primarymaxdamage": 351,
+   "rangeddelay": 3.869181,
+   "rangedmindamage": 231,
+   "rangedmaxdamage": 996,
+   "secondarymaxdamage": -1,
+   "secondarydelay": -1.0,
+   "primarymindamage": 119
+  },
+  "wis": {
+   "base": 23,
+   "effective": 956
+  },
+  "runspeed": 72.0,
+  "int": {
+   "base": 41,
+   "effective": 1087
+  },
+  "defense": {
+   "armor": 240,
+   "avoidance": 7402,
+   "block": 0,
+   "parry": 0
+  },
+  "health": {
+   "max": 12156,
+   "regen": 486
+  },
+  "str": {
+   "base": 13,
+   "effective": 946
+  },
+  "combat": {
+   "toughness": 0.0,
+   "mitigation_elemental": 69.110909,
+   "aeautoattackchance": 0.0,
+   "basemodifier": 68.100006,
+   "abilitymod": 1442.0,
+   "flurrymultiplier": 0.0,
+   "baseavoidancebonus": 0.0,
+   "blockchance": 0.9,
+   "attackspeed": 4.3,
+   "mitigation_noxious": 73.362839,
+   "mitigation_noxious_pvp": 75.0,
+   "meleedamagemultiplier": 0.0,
+   "mitigation_physical": 51.475216,
+   "mitigation_mana_pvp": 39.024395,
+   "outofcombatsavageryregen": 0.0,
+   "mitigation_physical_pvp": 62.508888,
+   "hategainmod": 0.0,
+   "dissonancegainmod": 0.0,
+   "pvptoughness": 0,
+   "critbonus": 0.0,
+   "fervor": 0.0,
+   "dissonanceregen": 0.0,
+   "mitigation_elemental_pvp": 73.715019,
+   "savageryregen": 0.0,
+   "accuracy": 0.0,
+   "pvpcriticalmitigation": 0.0,
+   "mitigation_mana": 0.0,
+   "savagerygainmod": 0.0,
+   "strikethrough": 0.0,
+   "lethality": 0.0,
+   "incombatsavageryregen": 0.0,
+   "flurry": 0.0,
+   "outofcombatdissonanceregen": 0.0,
+   "dps": 12.85,
+   "doubleattackchance": 0.0,
+   "mitigation_arcane_pvp": 74.417511,
+   "weapondamagebonus": 0.0,
+   "spelldoubleattackchance": 0.0,
+   "resolve": 0.0,
+   "incombatdissonanceregen": 0.0,
+   "maxsavagerylevel": 0.0,
+   "critchance": 53.480003,
+   "abilitydoubleattackchance": 0.0,
+   "mitigation_arcane": 70.110199,
+   "lethality_pvp": 0.0
+  },
+  "agi": {
+   "base": 32,
+   "effective": 965
+  },
+  "personal_status_points": 2081963,
+  "ability": {
+   "spelltimereusepct": 21.9,
+   "spelltimerecoverypct": 0.0,
+   "spelltimereusespellonly": 0.0,
+   "spelltimecastpct": 42.199997
+  }
+ },
+ "resists": {
+  "noxious": {
+   "base": 0,
+   "effective": 4237
+  },
+  "mana": {
+   "base": 0,
+   "effective": 0
+  },
+  "arcane": {
+   "base": 0,
+   "effective": 3566
+  },
+  "elemental": {
+   "base": 0,
+   "effective": 3391
+  },
+  "physical": {
+   "base": 1117,
+   "effective": 1464
+  }
+ },
+ "spell_list": [
+  680981520,
+  941281845,
+  1192433791,
+  1458298183,
+  1835735656,
+  4083141548
+ ],
+ "equipmentslot_list": [
+  {
+   "id": 0,
+   "name": "primary",
+   "displayname": "Primary",
+   "item": {
+    "id": 3887855151,
+    "adornment_list": [
+     {
+      "color": "white",
+      "id": 274745776
+     },
+     {
+      "color": "turquoise"
+     },
+     {
+      "color": "orange"
+     }
+    ]
+   }
+  },
+  {
+   "id": 1,
+   "name": "secondary",
+   "displayname": "Secondary",
+   "item": {
+    "id": 1233055365,
+    "adornment_list": [
+     {
+      "color": "white",
+      "id": 274745776
+     },
+     {
+      "color": "turquoise"
+     },
+     {
+      "color": "orange"
+     }
+    ]
+   }
+  },
+  {
+   "id": 2,
+   "name": "head",
+   "displayname": "Head",
+   "item": {
+    "id": 683663547,
+    "adornment_list": [
+     {
+      "color": "white",
+      "id": 320353466
+     },
+     {
+      "color": "turquoise",
+      "id": 2418495588
+     }
+    ]
+   }
+  }
+ ],
+ "alternateadvancements": {
+  "tsavailablepoints": 0,
+  "warderpoints": 0,
+  "spentpoints": 100,
+  "tsprestigeavailablepoints": 0,
+  "prestigeavailablepoints": 0,
+  "prestigespentpoints": 0,
+  "focusspentpoints": 7,
+  "tsprestigespentpoints": 0,
+  "focusavailablepoints": 0,
+  "tsspentpoints": 45,
+  "availablepoints": 0
+ },
+ "last_update": 1785685440.374577,
+ "crc": 3561717627
+}

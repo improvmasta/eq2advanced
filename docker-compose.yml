@@ -5,3 +5,9 @@ services:
     restart: unless-stopped
     ports:
       - "8450:8450"
+    environment:
+      DATA_DIR: /data
+      PORT: "8450"
+      HOST: 0.0.0.0
+    volumes:
+      - ${APPDATA_PATH}/eq2advanced/data:/data

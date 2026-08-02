@@ -1,0 +1,338 @@
+[
+ {
+  "id": 680981520,
+  "name": "Aqueous Soul",
+  "name_lower": "aqueous soul",
+  "crc": 48814980,
+  "classes": {
+   "necromancer": {
+    "displayname": "Necromancer",
+    "id": 30,
+    "level": 13
+   },
+   "conjuror": {
+    "displayname": "Conjuror",
+    "id": 29,
+    "level": 13
+   }
+  },
+  "level": 13,
+  "tier": 1,
+  "tier_name": "Apprentice",
+  "cast_secs_hundredths": 300,
+  "recast_secs": 2.0,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 9000,
+   "min_sec_tenths": 9000,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 27,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "other",
+  "effect_list": [
+   {
+    "description": "Allows target to breathe under water",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 1,
+  "type": "spells"
+ },
+ {
+  "id": 941281845,
+  "name": "Bloody Ritual III",
+  "name_lower": "bloody ritual iii",
+  "crc": 20702166,
+  "classes": {
+   "necromancer": {
+    "displayname": "Necromancer",
+    "id": 30,
+    "level": 41
+   }
+  },
+  "level": 41,
+  "tier": 1,
+  "tier_name": "Apprentice",
+  "cast_secs_hundredths": 200,
+  "recast_secs": 20.0,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 200,
+   "min_sec_tenths": 200,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 0,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "selfpet",
+  "effect_list": [
+   {
+    "description": "Inflicts 3.5% of max health in magic damage on target instantly and every 4 seconds.",
+    "indentation": 0
+   },
+   {
+    "description": "This effect cannot be critically applied.",
+    "indentation": 1
+   },
+   {
+    "description": "Increases power of caster by 20 instantly and every 4 seconds.",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 1,
+  "type": "spells"
+ },
+ {
+  "id": 1192433791,
+  "name": "Unholy Covenant V",
+  "name_lower": "unholy covenant v",
+  "crc": 47122556,
+  "classes": {
+   "necromancer": {
+    "displayname": "Necromancer",
+    "id": 30,
+    "level": 63
+   }
+  },
+  "level": 63,
+  "tier": 7,
+  "tier_name": "Expert",
+  "cast_secs_hundredths": 300,
+  "recast_secs": 2.0,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 432000,
+   "min_sec_tenths": 432000,
+   "does_not_expire": 1
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 0,
+   "health": 0,
+   "concentration": 1,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "group",
+  "effect_list": [
+   {
+    "description": "Increases Max Power of group members (AE) by 502.6.",
+    "indentation": 0
+   },
+   {
+    "description": "Increases Mitigation of group members (AE) vs noxious damage by 776.",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 1,
+  "type": "spells"
+ },
+ {
+  "id": 1458298183,
+  "name": "Investigating",
+  "name_lower": "investigating",
+  "crc": 48426276,
+  "level": 0,
+  "tier": 1,
+  "tier_name": "Apprentice",
+  "cast_secs_hundredths": 1500,
+  "recast_secs": 0.0,
+  "recovery_secs_tenths": 0,
+  "duration": {
+   "max_sec_tenths": 0,
+   "min_sec_tenths": 0,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 0,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "self",
+  "effect_list": [
+   {
+    "description": "Must not be targeted by an enemy",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 1,
+  "type": "abilities"
+ },
+ {
+  "id": 4083141548,
+  "name": "Contrapt",
+  "name_lower": "contrapt",
+  "crc": 40002768,
+  "classes": {
+   "artisan": {
+    "displayname": "Artisan",
+    "id": 1,
+    "level": 2
+   }
+  },
+  "level": 0,
+  "tier": 1,
+  "tier_name": "Apprentice",
+  "cast_secs_hundredths": 0,
+  "recast_secs": 3.5,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 41,
+   "min_sec_tenths": 41,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 0,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "self",
+  "effect_list": [
+   {
+    "description": "Decreases success chance by 7.0%.",
+    "indentation": 0
+   },
+   {
+    "description": "Increases the amount of durability gained by 20.0.",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 1,
+  "type": "tradeskills"
+ },
+ {
+  "id": 575873413,
+  "name": "Soulrot VI",
+  "name_lower": "soulrot vi",
+  "crc": 582228562,
+  "classes": {
+   "necromancer": {
+    "displayname": "Necromancer",
+    "id": 30,
+    "level": 43
+   }
+  },
+  "level": 43,
+  "tier": 9,
+  "tier_name": "Master",
+  "cast_secs_hundredths": 200,
+  "recast_secs": 3.0,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 40,
+   "min_sec_tenths": 40,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 60,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "other",
+  "effect_list": [
+   {
+    "description": "Inflicts 56 - 76 disease damage on target instantly and every second.",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 0,
+  "type": "spells"
+ },
+ {
+  "id": 1835735656,
+  "name": "Soulrot VI",
+  "name_lower": "soulrot vi",
+  "crc": 582228562,
+  "classes": {
+   "necromancer": {
+    "displayname": "Necromancer",
+    "id": 30,
+    "level": 43
+   }
+  },
+  "level": 43,
+  "tier": 2,
+  "tier_name": "Apprentice",
+  "cast_secs_hundredths": 200,
+  "recast_secs": 3.0,
+  "recovery_secs_tenths": 50,
+  "duration": {
+   "max_sec_tenths": 40,
+   "min_sec_tenths": 40,
+   "does_not_expire": 0
+  },
+  "cost": {
+   "dissonance": 0,
+   "savagery": 0,
+   "power": 60,
+   "health": 0,
+   "concentration": 0,
+   "per_tick": {
+    "health": 0,
+    "dissonance": 0,
+    "savagery": 0,
+    "power": 0
+   }
+  },
+  "target_type": "other",
+  "effect_list": [
+   {
+    "description": "Inflicts 33 - 45 disease damage on target instantly and every second.",
+    "indentation": 0
+   }
+  ],
+  "beneficial": 0,
+  "type": "spells"
+ }
+]

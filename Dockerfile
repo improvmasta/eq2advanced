@@ -1,5 +1,17 @@
+# Multi-stage: build the Vite SPA, then run the FastAPI app serving it.
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 WORKDIR /app
-COPY public/ ./public/
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/ ./backend/
+COPY --from=web /web/dist ./frontend/dist
+ENV DATA_DIR=/data HOST=0.0.0.0 PORT=8450
 EXPOSE 8450
-CMD ["python", "-m", "http.server", "8450", "--bind", "0.0.0.0", "--directory", "public"]
+CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8450"]

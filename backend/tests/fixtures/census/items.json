@@ -1,0 +1,26 @@
+[
+ {
+  "id": 1233055365,
+  "displayname": "Mark of the Faceless",
+  "tier": "TREASURED",
+  "type": "Shield"
+ },
+ {
+  "id": 683663547,
+  "displayname": "Najena's Voidcaller Hood",
+  "tier": "LEGENDARY",
+  "type": "Armor"
+ },
+ {
+  "id": 3887855151,
+  "displayname": "Wand of Crystallized Plasma",
+  "tier": "LEGENDARY",
+  "type": "Weapon"
+ },
+ {
+  "id": 999000111,
+  "displayname": "Test Wand of Diffing",
+  "tier": "FABLED",
+  "type": "Weapon"
+ }
+]

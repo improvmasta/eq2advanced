@@ -32,11 +32,55 @@ CLI tools, session helpers, provisioning commands, and deploy notes live in
 
 ## Migration
 
-If converting to Next.js, follow `/home/lindsay/wikq2` for Docker, restart, ship, and build checks.
-Next.js HMR preserves React state — changes to module-level constants that seed `useState`
-only take effect after a full `bash restart.sh`. Rapid sequential edits can also wedge HMR; restart fixes it.
-If converting to FastAPI/Vite, follow `/home/lindsay/folio` for Docker and runtime data layout.
+The app is FastAPI + SQLite (`backend/`) with a Vite+React SPA (`frontend/` -> `dist/`
+served by the API). Dev binds 0.0.0.0:8450 -> http://10.1.1.15:8450; the LIVE site is a
+Docker container on 10.1.1.5 (Zoraxy routes there) that Lindsay deploys himself — never
+auto-ship, never deploy. Read `ARCHITECTURE.md` before touching parser/segmentation
+(subject model: bare logger-name = their PET; possessive hazards are test-covered).
+Tests: `.venv/bin/python -m pytest backend/tests/ -q` (70; golden fixture = /home/lindsay/bobby.txt).
 Keep the public image name as `ghcr.io/improvmasta/eq2advanced:main` unless the repository is renamed.
+
+Phase 2 (accounts) is BUILT: open sign-up (first account = admin), cookie sessions,
+characters CRUD + claim-of-unowned, per-character device tokens (QR pairing),
+per-user isolation everywhere. SIGN-UP MODEL NOT SETTLED — Lindsay wants to discuss
+before it goes further; don't extend registration/login (see plan md → "OPEN: sign-up
+model"). ACT parity: Zylphax fight matches ACT exactly
+(25/25 players) after three attribution fixes 2026-08-02 — see `ARCHITECTURE.md`
+→ "ACT parity" for the remaining opens (mob rows, Unknown damage, trash-merge cuts).
+
+Phase 3 (live ingest + SSE) is BUILT: `/api/ingest/hello|batch|backfill/done` on device
+tokens (the frozen ACT-DLL contract), incremental encounter finalization + close-time
+rebuild from raw, SSE `/api/sessions/{id}/stream`, Live page, and
+`backend/tools/simulate_live.py` (reference client). See `ARCHITECTURE.md` → "Live
+ingest". `test_golden_equivalence` proves streamed == uploaded on bobby.txt.
+
+Phase 4 (Census) is BUILT: `backend/census/` (retrying client, effect_list grammar
+parser, sync + snapshot history + spell/item caches), `routers/census_api.py`
+(summary/refresh/snapshots/diff/spell detail), hourly auto-refresh of >24h-stale owned
+characters (`CENSUS_AUTO_REFRESH=0` disables; tests set it), and the Character page
+(stats/gear/scribed tiers, Refresh, history diffs). See `ARCHITECTURE.md` → "Census
+sync". CI uses recorded fixtures in `tests/fixtures/census/` — never live Census.
+
+Phase 5 (Coach v1 + Raid Report) is BUILT: `backend/coach/` (descriptive currencies,
+Census-as-prior fit with per-ability coefficients, monotone stat replay, advisor
+persisted to `coach_reports`, raid report with engagement timing + death cost),
+`routers/coach_api.py`, calibration sessions (auto-pin, override the fit), and the
+Coach / RaidReport / Calibration pages. Tier upgrades cap at Master (no
+Ancient/Celestial on TLE). GOTCHA: Census `crc=` queries do NOT accept comma OR-lists
+(id= does) — `spells_by_crcs` is one request per crc. See `ARCHITECTURE.md` → "Coach
+engine" / "Raid Report". 79 tests.
+Phase 6 (coach correctness + hardening) is BUILT 2026-08-02: `parser/flavor/`
+(prepare-line → ability, real cast counts fix idle%; instants never print prepare —
+spellbook membership discriminates procs), `census/catalog.py` (ability_catalog from
+census + curated pet kits; pet-name join gate + k sanity gate 0.2–12), two-point
+calibration (per-session stat capture, true base/abmod-cap solve), k-spread kept as
+`debuff_uplift` (dummy never overwrites a healthy raid fit), healer/utility currencies
+(HP-deficit overheal/saves/bleedthrough + debuff uptime vs burn windows), engagement
+classifier v2, events pruning (`PRUNE_DAYS`, frozen `raid_reports`), multi-file
+backfill upload, live fight-card hints. See `ARCHITECTURE.md` → "Coach correctness
+(phase 6)" / "Hardening". Abmod marginal becomes real once TWO dummy parses at
+different Ability Mod are flagged.
 
 ## Ship log
 
+- 2026-08-02 (claude): Phase 6: coach correctness (flavor cast ground truth, two-point calibration, debuff uplift, ability catalog + join gates, healer/utility estimates, engagement v2) + hardening (events pruning, frozen raid reports, multi-file backfill, live hints)
