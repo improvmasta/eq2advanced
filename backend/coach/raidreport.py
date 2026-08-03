@@ -154,23 +154,53 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
     }
 
 
-def build(conn, session_id: int) -> dict:
-    """Full raid report: every encounter plus the per-night rollup."""
-    encounters = conn.execute(
-        "SELECT id, session_id, zone, name, is_named, started_ts, ended_ts, "
-        "duration_s, success FROM encounters WHERE session_id=? ORDER BY started_ts",
-        (session_id,)).fetchall()
-    ents = _entities(conn, session_id)
+def _frozen_encounter_report(conn, cache: dict, session_id: int, enc) -> dict | None:
+    """A pruned session's per-encounter rows come from its frozen report —
+    events are gone, but encounter ids are stable (pruned sessions never
+    reparse). None when no frozen report exists or the id is missing."""
+    import json
+
+    if session_id not in cache:
+        row = conn.execute("SELECT json FROM raid_reports WHERE session_id=?",
+                           (session_id,)).fetchone()
+        reports = json.loads(row["json"])["encounters"] if row else []
+        cache[session_id] = {r["encounter"]["id"]: r for r in reports}
+    return cache[session_id].get(enc["id"])
+
+
+def build_for_encounters(conn, encounters) -> dict:
+    """Report over an arbitrary encounter set — possibly spanning sessions
+    (zone runs). Rollup rows are keyed by player NAME, the only cross-session
+    identity; entities are resolved per encounter's own session."""
     proc_names = {r[0] for r in conn.execute(
         "SELECT ability_name FROM ability_catalog WHERE proc=1")}
-    enc_reports = [_encounter_report(conn, e, ents, proc_names) for e in encounters]
+    session_ids = sorted({e["session_id"] for e in encounters})
+    pruned = {sid: bool(row[0]) for sid in session_ids
+              for row in conn.execute(
+                  "SELECT pruned FROM sessions WHERE id=?", (sid,))}
+    ents_cache: dict[int, dict] = {}
+    frozen_cache: dict[int, dict] = {}
+    partial = False
 
-    night: dict[int, dict] = {}
+    enc_reports = []
+    for e in encounters:
+        sid = e["session_id"]
+        if pruned.get(sid):
+            rep = _frozen_encounter_report(conn, frozen_cache, sid, e)
+            if rep is None:
+                partial = True
+                continue
+            enc_reports.append(rep)
+        else:
+            ents = ents_cache.setdefault(sid, _entities(conn, sid))
+            enc_reports.append(_encounter_report(conn, e, ents, proc_names))
+
+    night: dict[str, dict] = {}
     combat_s = sum(max(e["duration_s"], 1) for e in encounters) or 1
     for rep in enc_reports:
         named = rep["encounter"]["is_named"]
         for p in rep["players"]:
-            n = night.setdefault(p["entity_id"], {
+            n = night.setdefault(p["name"], {
                 "entity_id": p["entity_id"], "name": p["name"],
                 "damage": 0, "heals": 0, "overheal_est": 0, "saves": 0,
                 "wards_absorbed": 0, "ward_bleedthrough": 0, "power_fed": 0,
@@ -206,8 +236,7 @@ def build(conn, session_id: int) -> dict:
         rows.append(n)
     rows.sort(key=lambda n: -n["damage"])
 
-    return {
-        "session_id": session_id,
+    report = {
         "combat_s": combat_s,
         "raid_damage": raid_damage,
         "night": rows,
@@ -226,3 +255,18 @@ def build(conn, session_id: int) -> dict:
             "absorbs never touch HP. Treat them as estimates.",
         ],
     }
+    if partial:
+        report["partial"] = True
+        report["caveats"].append(
+            "Some encounters were pruned without a frozen report and are "
+            "missing from these numbers.")
+    return report
+
+
+def build(conn, session_id: int) -> dict:
+    """Full raid report for one session: every encounter + the night rollup."""
+    encounters = conn.execute(
+        "SELECT id, session_id, zone, name, is_named, started_ts, ended_ts, "
+        "duration_s, success FROM encounters WHERE session_id=? ORDER BY started_ts",
+        (session_id,)).fetchall()
+    return {"session_id": session_id, **build_for_encounters(conn, encounters)}

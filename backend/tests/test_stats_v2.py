@@ -218,14 +218,16 @@ def test_agg_sums_and_validates(client):
     detail = client.get(f"/api/encounters/{encs[0]['id']}").json()
     assert single["actors"] == detail["actors"]
 
-    # ids across two different sessions -> 400
+    # ids across two sessions merge by name (zone runs are cross-file)
     sid2 = upload(client, "s3.txt", [
         line(T0 + 900, "You have entered The Estate of Unrest."),
         line(T0 + 901, "YOU hit a training dummy for 10 crushing damage."),
         line(T0 + 903, "You have killed a training dummy."),
     ])
     other = client.get(f"/api/sessions/{sid2}").json()["encounters"][0]["id"]
-    r = client.get(f"/api/encounters/agg?ids={encs[0]['id']},{other}")
-    assert r.status_code == 400
+    x = client.get(f"/api/encounters/agg?ids={encs[0]['id']},{other}").json()
+    assert x["session_ids"] == sorted([sid, sid2])
+    xbobby = next(a for a in x["actors"] if a["name"] == "Bobby")
+    assert xbobby["damage"] == 410 and len(xbobby["entity_ids"]) == 2
     assert client.get("/api/encounters/agg?ids=abc").status_code == 422
     assert client.get("/api/encounters/agg?ids=999999").status_code == 404

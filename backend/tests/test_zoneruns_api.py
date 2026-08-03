@@ -1,0 +1,168 @@
+"""Zone-run API: listing/visibility, dup exclusion, cross-session agg merge,
+and the run-scoped raid report."""
+
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import pytest
+from fastapi.testclient import TestClient
+
+import db as dbmod
+
+BASE_TS = 1754000000
+CTIME = "Fri Aug 01 20:00:00 2026"
+
+
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("eq2adv-zoneruns")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(dbmod, "DATA_DIR", tmp)
+    mp.setattr(dbmod, "DB_PATH", tmp / "test.db")
+    mp.setattr(dbmod, "UPLOADS_DIR", tmp / "uploads")
+    mp.setattr(dbmod, "RAW_DIR", tmp / "raw")
+    if getattr(dbmod._local, "conn", None) is not None:
+        dbmod._local.conn = None
+    from main import app
+    with TestClient(app) as c:
+        c.post("/api/auth/register",
+               json={"email": "runs@x.test", "password": "hunter2hunter2"})
+        c.post("/api/characters", json={"name": "Bobby"})
+        yield c
+    mp.undo()
+
+
+def line(t: int, body: str) -> str:
+    return f"({BASE_TS + t})[{CTIME}] {body}\r\n"
+
+
+def fight(t: int, mob="a training cube", named=None) -> list[str]:
+    out = [
+        line(t, f"YOUR Soulrot hits {mob} for 250 disease damage."),
+        line(t + 5, f"Aros hits {mob} for 100 crushing damage."),
+        line(t + 10, f"YOUR Soulrot hits {mob} for 260 disease damage."),
+    ]
+    out.append(line(t + 12, f"You have killed {named or mob}."))
+    return out
+
+
+def log_a() -> str:
+    """Zone 1 with two fights, then zone 2 with one."""
+    lines = [line(0, "You have entered Castle Mistmoore.")]
+    lines += fight(10, named="Traininglord the Unstoppable")
+    lines += fight(100)
+    lines += [line(200, "You have entered The Estate of Unrest.")]
+    lines += fight(210, named="Hagfiend the Vile")
+    return "".join(lines)
+
+
+def log_b() -> str:
+    """One more Mistmoore fight BETWEEN log_a's Mistmoore fights and its Unrest
+    trip — lands inside the same run, proving cross-file merging."""
+    lines = [line(140, "You have entered Castle Mistmoore.")]
+    lines += fight(150, named="Interloper the Third")
+    return "".join(lines)
+
+
+def log_a_overlap() -> str:
+    """log_a's exact fight lines plus a trailing zone line: different file
+    bytes (defeats the whole-file sha256), identical fights (exercises
+    content-level dedupe)."""
+    return log_a() + line(400, "You have entered Loping Plains.")
+
+
+def upload(client, content: str, name: str) -> int:
+    r = client.post("/api/uploads", files={"file": (name, content.encode())},
+                    data={"character_name": "Bobby"})
+    assert r.status_code == 200, r.text
+    sid = r.json()["session_id"]
+    for _ in range(300):
+        s = client.get(f"/api/sessions/{sid}").json()["session"]
+        if s["status"] == "ready":
+            return sid
+        if s["status"] == "error":
+            raise AssertionError(s["error"])
+        time.sleep(0.05)
+    raise AssertionError("parse timed out")
+
+
+@pytest.fixture(scope="module")
+def uploaded(client):
+    sid_a = upload(client, log_a(), "a.txt")
+    sid_b = upload(client, log_b(), "b.txt")
+    sid_dup = upload(client, log_a_overlap(), "a-overlap.txt")
+    assert len({sid_a, sid_b, sid_dup}) == 3
+    return {"a": sid_a, "b": sid_b, "dup": sid_dup}
+
+
+def test_run_list_grouping(client, uploaded):
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    by_zone = {}
+    for r in runs:
+        by_zone.setdefault(r["zone"], []).append(r)
+    # log_b's fight interleaves log_a's Mistmoore visit — one run across files
+    assert len(by_zone["Castle Mistmoore"]) == 1
+    assert by_zone["Castle Mistmoore"][0]["encounter_count"] == 3
+    assert by_zone["Castle Mistmoore"][0]["named_count"] == 2
+    assert len(by_zone["The Estate of Unrest"]) == 1
+    assert runs[0]["character_name"] == "Bobby"
+
+
+def test_dup_encounters_excluded(client, uploaded):
+    """a-again.txt duplicates log_a byte-for-byte: every encounter dup-marked,
+    nothing double-counted in runs or run detail."""
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
+    detail = client.get(f"/api/zone-runs/{mist['id']}").json()
+    assert len(detail["encounters"]) == 3
+    names = [e["name"] for e in detail["encounters"]]
+    assert names.count("Traininglord the Unstoppable") == 1
+    # logger headline present per encounter
+    assert all(e["logger_damage"] for e in detail["encounters"])
+
+
+def test_cross_session_agg_merges_by_name(client, uploaded):
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
+    enc = client.get(f"/api/zone-runs/{mist['id']}").json()["encounters"]
+    ids = ",".join(str(e["id"]) for e in enc)
+    agg = client.get(f"/api/encounters/agg?ids={ids}").json()
+    assert len(agg["session_ids"]) == 2
+    bobby = next(a for a in agg["actors"] if a["name"] == "Bobby")
+    # 2 fights in log_a (510*2) + 1 in log_b (510) = 1530, across 2 entity rows
+    assert bobby["damage"] == 1530
+    assert len(bobby["entity_ids"]) == 2
+    assert bobby["key"] == "Bobby|player"
+    soulrot = next(r for r in agg["abilities"]
+                   if r["ability"] == "Soulrot" and r["source_name"] == "Bobby")
+    assert soulrot["total"] == 1530 and soulrot["hits"] == 6
+    assert soulrot["median"] == 255
+    assert soulrot["rollup_key"] == "Bobby|player"
+
+
+def test_run_report_rollup_by_name(client, uploaded):
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
+    rep = client.get(f"/api/zone-runs/{mist['id']}/report").json()
+    assert rep["zone_run_id"] == mist["id"]
+    night = {n["name"]: n for n in rep["night"]}
+    assert night["Bobby"]["damage"] == 1530
+    assert night["Aros"]["damage"] == 300
+    assert len(rep["encounters"]) == 3
+
+
+def test_visibility_other_user(client, uploaded):
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    c2 = TestClient(client.app)
+    c2.post("/api/auth/register",
+            json={"email": "other@x.test", "password": "hunter2hunter2"})
+    assert c2.get("/api/zone-runs").json()["zone_runs"] == []
+    assert c2.get(f"/api/zone-runs/{runs[0]['id']}").status_code == 404
+    assert c2.get(f"/api/zone-runs/{runs[0]['id']}/report").status_code == 404
+    # cross-session agg checks every session
+    enc = client.get(f"/api/zone-runs/{runs[0]['id']}").json()["encounters"]
+    ids = ",".join(str(e["id"]) for e in enc)
+    assert c2.get(f"/api/encounters/agg?ids={ids}").status_code == 404
