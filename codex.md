@@ -105,8 +105,22 @@ a registered `CENSUS_SERVICE_ID` in `.env`, or a ~1-class-per-8-min drip).
 NEXT (discuss with Lindsay first): AA modeling — curated per-class `aa_effects`
 table for throughput AAs, not full-tree ingest.
 
+Phase 8 (zone runs — the navigation model) is BUILT 2026-08-03: files are
+ingest-only; the UI navigates **zone runs** (contiguous zone visits derived from
+encounters by `pipeline/zoneruns.py` — content dedupe via `encounters.dup_of`,
+gap/zone-change segmentation, id-preserving upsert, schema v6, startup relink =
+the migration). `/` = date-grouped Raids home, `/zones/:id` = run page (fight
+rail, tabs Overview/Damage/Healing/Defense/Insights, right-hand ActorPanel
+drilldown, checkbox multi-select → ComparePanel), `/uploads` = file management,
+`/sessions/:id` = per-file debug view. `/api/encounters/agg` is cross-session
+(actors keyed `name|kind`); the run raid report handles pruned sessions via
+frozen reports. See `ARCHITECTURE.md` → "Zone runs". GOTCHA: dedupe requires
+equal `parse_version` — after bumping PARSE_VERSION the startup sweep must
+finish before duplicate marking converges.
+
 ## Ship log
 
+- 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)
 - 2026-08-03 (claude): Zone runs phase 5: checkbox multi-select + ComparePanel (per-metric grouped bars from agg + report data)
 - 2026-08-03 (claude): Zone runs phase 4: zone-page tabs (Overview/Damage/Healing/Defense/Insights), right-side ActorPanel, shared stats.js, coach resurfaced
 - 2026-08-03 (claude): Zone runs phase 3: Raids home (date-grouped runs), /zones/:id page v1, Uploads management page, shared UploadDrop

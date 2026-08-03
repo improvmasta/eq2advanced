@@ -289,6 +289,47 @@ zone lines, labeled from `has killed <Named>` where the killer is a player
 merge into one segment — labels list every named ("A + B"). 15s was tried and
 splits real fights (a 21s lull mid-Garanel in the fixture).
 
+## Zone runs (the navigation model — 2026-08-03)
+
+Files ("sessions") are the INGEST unit only; the UI navigates **zone runs** —
+one contiguous visit to one zone by one character, derived entirely from
+encounter rows by `pipeline/zoneruns.py`:
+
+- **Dedupe**: overlapping uploads produce byte-identical encounters
+  (segmentation is deterministic per parse_version). `rebuild_zone_runs`
+  groups a character's encounters by `(started_ts, ended_ts, zone, name)`;
+  the copy from the widest-coverage session is canonical, the rest get
+  `encounters.dup_of` and never join a run. Marking, not deleting — every
+  parse stays complete and the marks re-derive after any reparse. Sessions
+  only dedupe against equal `parse_version` (mid-sweep safety).
+- **Segmentation**: canonical encounters in time order split on a zone change
+  or an idle gap > `ZONE_RUN_GAP_S` (3600s). NULL-zone encounters (log began
+  mid-zone) form their own "Unknown zone" runs.
+- **Id stability**: the upsert matches recomputed runs to existing rows by
+  zone + overlapping time window, so `/zones/:id` URLs survive reparses and
+  backfills; rollup columns recompute every rebuild.
+- **Hooks**: end of `parse_session`, live `_flush` (when fights land), and a
+  startup relink sweep in `main.py` before AND after `_reparse_stale` — the
+  sweep is also the migration for pre-zone_runs databases (schema v6:
+  `zone_runs` table + `encounters.zone_run_id/dup_of`).
+
+API: `GET /api/zone-runs` (list, powers the date-grouped Home page),
+`GET /api/zone-runs/{id}` (run + canonical encounters with logger headline),
+`GET /api/zone-runs/{id}/report` (raid report scoped to the run —
+`raidreport.build_for_encounters` handles cross-session sets, pulls pruned
+encounters from frozen reports, flags `partial`). `GET /api/encounters/agg`
+accepts cross-session id sets: every session is visibility-checked, actors
+merge by `name|kind` (`key` + `entity_ids[]` in the payload), abilities by
+source key, with `rollup_key` resolving pet credit (players self-credit —
+their DB `rollup_to` is NULL).
+
+Frontend: `/` = `Home.jsx` (runs grouped by local day), `/zones/:id` =
+`ZoneRun.jsx` (fight rail + tabs Overview/Damage/Healing/Defense/Insights;
+`?sel`/`?actor`/`?tab`/`?cmp` all URL state), right-hand `ActorPanel`
+(per-actor drilldown) or `ComparePanel` (checkbox multi-select, per-metric
+grouped bars from `lib/stats.js`). `/uploads` = file management;
+`/sessions/:id` (Workspace) survives as the per-file debug view.
+
 ## ACT parity (diffed 2026-08-02 vs Lindsay's ACT screenshot, Zylphax the Shredder)
 
 The Zylphax encounter now matches ACT **exactly — all 25 players to the point
