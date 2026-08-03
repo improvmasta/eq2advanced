@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Home from './pages/Home.jsx'
 import Uploads from './pages/Uploads.jsx'
 import ZoneRun from './pages/ZoneRun.jsx'
@@ -17,6 +18,7 @@ import { currentTheme, toggleTheme } from './theme.js'
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
+  const location = useLocation()
 
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
@@ -50,6 +52,7 @@ export default function App() {
         {user === undefined && <p className="muted">Loading…</p>}
         {user === null && <Login onAuthed={setUser} />}
         {user && (
+          <ErrorBoundary resetKey={location.key}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/zones/:id" element={<ZoneRun />} />
@@ -62,6 +65,7 @@ export default function App() {
             <Route path="/characters/:id" element={<Character />} />
             <Route path="/account" element={<Account user={user} onSignedOut={() => setUser(null)} />} />
           </Routes>
+          </ErrorBoundary>
         )}
       </main>
     </>

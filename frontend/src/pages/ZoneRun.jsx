@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import ActorPanel from '../components/ActorPanel.jsx'
 import ComparePanel from '../components/ComparePanel.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
+import ErrorBoundary from '../components/ErrorBoundary.jsx'
 import ShareBar from '../components/ShareBar.jsx'
 import SortableTable from '../components/SortableTable.jsx'
 import Tabs from '../components/Tabs.jsx'
@@ -76,7 +77,7 @@ function Insights({ report, coach, coachErr, busy, onGenerate }) {
         <>
           <div className="card">
             <div className="drillhead">
-              <h2>Coach — {coach.character}</h2>
+              <h2>Coach — {coach.character?.name ?? coach.character}</h2>
               <span className="muted">{coach.archetype}</span>
               <button className="chip" style={{ marginLeft: 'auto' }} disabled={busy} onClick={onGenerate}>
                 {busy ? 'Generating…' : 'Regenerate'}
@@ -454,32 +455,38 @@ export default function ZoneRun() {
         )}
 
         {tab === 'insights' && (
-          <Insights report={report} coach={coach} coachErr={coachErr}
-                    busy={coachBusy} onGenerate={generateCoach} />
+          <ErrorBoundary resetKey={`${id}:${coach?.generated_ts}`}>
+            <Insights report={report} coach={coach} coachErr={coachErr}
+                      busy={coachBusy} onGenerate={generateCoach} />
+          </ErrorBoundary>
         )}
 
         {detail && tab === 'overview' && <DpsBars actors={actors} duration={duration} />}
       </div>
 
       {comparing && detail && (
-        <ComparePanel
-          actors={actors}
-          keys={cmpList}
-          derived={derived}
-          repRows={repRows}
-          duration={duration}
-          onRemove={toggleCmp}
-          onClear={() => setCmpQ(null)}
-        />
+        <ErrorBoundary resetKey={`cmp:${cmpQ}:${sel}`}>
+          <ComparePanel
+            actors={actors}
+            keys={cmpList}
+            derived={derived}
+            repRows={repRows}
+            duration={duration}
+            onRemove={toggleCmp}
+            onClear={() => setCmpQ(null)}
+          />
+        </ErrorBoundary>
       )}
       {!comparing && selectedActor && detail && (
-        <ActorPanel
-          name={selName}
-          abilities={detail.abilities}
-          actorKey={selectedActor}
-          duration={duration}
-          onClose={() => setActorQ(null)}
-        />
+        <ErrorBoundary resetKey={`actor:${selectedActor}:${sel}`}>
+          <ActorPanel
+            name={selName}
+            abilities={detail.abilities}
+            actorKey={selectedActor}
+            duration={duration}
+            onClose={() => setActorQ(null)}
+          />
+        </ErrorBoundary>
       )}
     </div>
   )
