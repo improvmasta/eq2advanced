@@ -44,10 +44,20 @@ def _reparse_stale():
     """Reparse ready, un-pruned sessions whose parse_version is stale — parser
     or rollup semantics changed since they were parsed. Oldest first, so
     knowledge learned from early sessions feeds later ones. Runs in a worker
-    thread at startup; pruned sessions are skipped (frozen by design)."""
+    thread at startup; pruned sessions are skipped (frozen by design).
+
+    Zone runs relink before AND after: the pre-pass gives the UI runs
+    immediately (the linker only reads existing encounter rows — this IS the
+    migration for pre-zone_runs databases), and each reparse relinks its own
+    character anyway, so the post-pass just converges any mixed-version dedupe."""
     from pipeline.ingest_writer import PARSE_VERSION, parse_session, session_raw_paths
+    from pipeline.zoneruns import relink_all
     log = logging.getLogger("reparse")
     conn = get_db()
+    try:
+        relink_all(conn)
+    except Exception:
+        log.exception("zone-run relink failed")
     # 'parsing' at startup is always an orphan — parse threads die with the
     # process (incl. dev hot reloads), leaving the flag behind
     rows = conn.execute(
@@ -64,6 +74,10 @@ def _reparse_stale():
                 parse_session(r["id"], paths)
         except Exception:
             log.exception("reparse of session %d failed", r["id"])
+    try:
+        relink_all(conn)
+    except Exception:
+        log.exception("zone-run relink failed")
     log.info("reparse sweep done")
 
 

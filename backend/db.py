@@ -15,7 +15,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -113,9 +113,26 @@ CREATE TABLE IF NOT EXISTS encounters (
   started_ts INTEGER NOT NULL,
   ended_ts INTEGER NOT NULL,
   duration_s INTEGER NOT NULL,
-  success INTEGER
+  success INTEGER,
+  zone_run_id INTEGER,                    -- run membership (canonical rows only)
+  dup_of INTEGER                          -- canonical encounter id when duplicated
 );
 CREATE INDEX IF NOT EXISTS idx_encounters ON encounters(session_id, started_ts);
+CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id);
+CREATE TABLE IF NOT EXISTS zone_runs (
+  id INTEGER PRIMARY KEY,
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  zone TEXT,                              -- NULL = encounters before any zone line
+  started_ts INTEGER NOT NULL,            -- first canonical encounter start
+  ended_ts INTEGER NOT NULL,              -- last canonical encounter end
+  encounter_count INTEGER NOT NULL DEFAULT 0,  -- canonical (non-dup) only
+  named_count INTEGER NOT NULL DEFAULT 0,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  combat_s INTEGER NOT NULL DEFAULT 0,
+  raider_count INTEGER,                   -- max distinct players in one fight
+  updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_zone_runs_char ON zone_runs(character_id, started_ts);
 CREATE TABLE IF NOT EXISTS abilities (
   id INTEGER PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
@@ -302,6 +319,13 @@ def init_db() -> None:
         if "pruned" not in cols:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN pruned INTEGER NOT NULL DEFAULT 0")
+        enc_cols = {r[1] for r in conn.execute("PRAGMA table_info(encounters)")}
+        if "zone_run_id" not in enc_cols:
+            conn.execute("ALTER TABLE encounters ADD COLUMN zone_run_id INTEGER")
+        if "dup_of" not in enc_cols:
+            conn.execute("ALTER TABLE encounters ADD COLUMN dup_of INTEGER")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id)")
         actor_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(encounter_actor_stats)")}
         if "save_count" not in actor_cols:

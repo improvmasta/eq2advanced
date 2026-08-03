@@ -228,13 +228,14 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
     worker thread; owns its own connection."""
     conn = get_db()
     row = conn.execute(
-        "SELECT s.id, c.name AS char_name FROM sessions s "
+        "SELECT s.id, s.character_id, c.name AS char_name FROM sessions s "
         "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
         (session_id,),
     ).fetchone()
     if row is None:
         return
     logger = row["char_name"]
+    character_id = row["character_id"]
 
     try:
         conn.execute("UPDATE sessions SET status='parsing' WHERE id=?", (session_id,))
@@ -316,6 +317,9 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                 "line_count=?, parse_version=? WHERE id=?",
                 (started, ended, line_count, PARSE_VERSION, session_id),
             )
+
+            from pipeline.zoneruns import rebuild_zone_runs
+            rebuild_zone_runs(conn, character_id)
     except Exception:
         conn.execute(
             "UPDATE sessions SET status='error', error=? WHERE id=?",

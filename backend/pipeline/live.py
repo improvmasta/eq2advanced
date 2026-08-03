@@ -163,7 +163,9 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict
                 state.last_line_ts = max(state.last_line_ts or 0, last[0])
             state.pending.extend(parse_lines(iter(accepted), logger, state.pet_names))
 
-        _flush(conn, state)
+        if _flush(conn, state):
+            from pipeline.zoneruns import rebuild_zone_runs
+            rebuild_zone_runs(conn, token_row["id"])
 
         conn.execute(
             "UPDATE sessions SET line_count = COALESCE(line_count,0) + ?, last_ingest_ts=? "
@@ -176,13 +178,13 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict
     return {"accepted": len(accepted), "duplicates": duplicates, "session_id": session_id}
 
 
-def _flush(conn, state: LiveState, force: bool = False) -> None:
+def _flush(conn, state: LiveState, force: bool = False) -> bool:
     """Write out every event that can no longer change segment: all events in
     closed segments, plus segment-less events older than CLOSE_S. The still-hot
-    tail stays in memory for the next batch."""
+    tail stays in memory for the next batch. -> True when encounters landed."""
     events = state.pending
     if not events:
-        return
+        return False
     latest = max(state.last_line_ts or 0, events[-1].ts)
     segs = segment_events(events, state.logger, initial_zone=state.zone)
 
@@ -213,7 +215,7 @@ def _flush(conn, state: LiveState, force: bool = False) -> None:
             and (force or ev.ts <= flush_ts))
     ]
     if not flush_idx and not closed:
-        return
+        return False
 
     res = EntityResolver(conn, state.session_id, state.logger, state.pet_names)
     flushed = [events[i] for i in flush_idx]
@@ -249,3 +251,4 @@ def _flush(conn, state: LiveState, force: bool = False) -> None:
 
     keep = set(flush_idx)
     state.pending = [ev for i, ev in enumerate(events) if i not in keep]
+    return bool(closed)
