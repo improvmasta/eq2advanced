@@ -254,11 +254,30 @@ deaths, time dead (death → next own action), **death DPS cost** (alive-DPS ×
 time dead), cures delivered, rez delay, heals/wards/power.
 
 **Engagement timing with the proc caveat** (verified on the Zylphax pull —
-pre-pull wards/procs flood the log ~1s after the real opener): ward absorbs
-and heals are never engagement anchors; anchors are damage/hostile-threat
-lines; an *ability* first-action inside the opening 2s is flagged
-low-confidence (possible buff proc), autoattack and pet swings are always
-deliberate. Night rollup averages named-fight delays only.
+pre-pull wards/procs flood the log ~1s after the real opener). Engage is the
+gap between the pull and a raider's FIRST ACTION, and `engage_anchor` names
+which kind of action stopped the clock:
+
+| anchor | line that fired it |
+| --- | --- |
+| `cast` | the logger's own prepare line — exact, always high confidence |
+| `autoattack` / `ability` / `pet` | damage on a non-ally, or positive threat |
+| `autoattack` / `ability` | an *attempted* swing the mob avoided (v3) |
+| `heal` / `cure` / `rez` | a heal, a `relieves`/`dispels` cure, or a rez (v3) |
+
+Never anchors: ward absorbs (the line prints when the MOB swings), catalog
+procs (any type), and an ability inside the opening 2s that fired ≤1s after
+the player was hit (reactive damage-shield correlation). Anything else inside
+the opening 2s is flagged low confidence — a pre-pull HoT ticks the instant
+the pull lands and the line cannot say which it was. Night rollup averages
+named-fight delays only and carries `engage_anchors` (kind → count).
+
+**v3 (2026-08-03) fixed two ways of reading a raider as absent**: only hostile
+actions counted, so a templar healing from the first second of Sawtooth the
+Ancient scored 13s (their first *damage*) instead of 2s, and a wizard whose
+opener missed was dated to the next spell that landed. `test_engagement.py`
+pins both. The remaining honest limitation: only the uploader's cast STARTS
+are logged, so for everyone else a 4s cast is dated when it lands.
 
 ## The subject model (the crux — verified against a real raid log)
 
@@ -283,11 +302,46 @@ any parser or segmentation change.**
 
 ## Encounter segmentation
 
-EQ2 logs have no encounter markers. Segments = damage-gap ≥ 25s, hard-cut on
-zone lines, labeled from `has killed <Named>` where the killer is a player
-(mobs killing things = casualties, not wins). Chain-pulled group content can
-merge into one segment — labels list every named ("A + B"). 15s was tried and
-splits real fights (a 21s lull mid-Garanel in the fixture).
+EQ2 logs have no encounter markers. Segments = combat-silence gap ≥ 7s (ACT's
+~6s idle timeout, measured against Lindsay's Emerald Halls zone view: ACT cut
+that night into 61 encounters totalling 1:13:12; our old 25s gap merged chain
+pulls into 34 and inflated every EncDPS denominator ~8%). Damage AND avoided
+swings hold a fight open; hard-cut on zone lines. Corollary: real mid-fight
+lulls > 6s split the fight — Garanel's 21s lull yields two segments (the first
+labeled by its named add, Garanel's Shade), which is exactly what ACT shows
+for the same night.
+
+### Naming: the enemy fought, not the enemy that died (2026-08-03)
+
+`pipeline.encounters.encounter_label` titles a segment after the **mob that
+took the most damage in it**, and sets `success` to whether that mob died.
+
+This replaced labeling from `has killed <Named>`, which had a hole big enough
+to hide a raid night in. A wipe produces no kill line, so it could never be
+named: it became an anonymous "trash" row, and `seg.success = 1` sat on the
+same branch as the name, meaning **no code path could ever record a 0**. The
+whole database held 181 encounters at `success=1` and 371 at NULL, zero
+losses. Emerald Halls read "9/9 named", which is really nine kills out of nine
+kills — while two Galiel Spirithoof wipes, a Farstride Unicorn wipe and a
+Treah Greenroot wipe sat in the trash list holding most of the night's
+time-dead. It now reads 10 nameds engaged, 7 killed.
+
+Most-damaged reproduces ACT's titles on that night row for row, including the
+cases where the raid's damage went into an add rather than the boss — ACT
+titles the Treah Greenroot wipe "a knotted guardian", and so do we. Naming
+needs resolved entities (which target is a mob), so it runs in the write path
+(`ingest_writer.parse_session` and `live._flush`) rather than inside the pure
+segmenter. `zone_runs.success_count` counts named kills specifically, since
+trash now carries a real success flag too.
+
+Known residual: ACT cut that night into 61 encounters and we make 60. ACT
+split Galiel's two pulls at a **5s** gap — the only gap ≥3s in our merged 499s
+segment — but no single threshold reproduces its set: at 5s we make 63 (two
+extra splits ACT also makes, so ACT must additionally drop the two segments
+where no enemy was ever damaged), at 6s we make 61 but split the wrong fight.
+The plugin itself does not decide this — `ACT_English_Parser.cs` only calls
+`SetEncounter(time, attacker, victim)` and its kill-ends-encounter branch is
+commented out, so the boundaries are ACT core's inactivity timer.
 
 ## Zone runs (the navigation model — 2026-08-03)
 
@@ -323,12 +377,206 @@ merge by `name|kind` (`key` + `entity_ids[]` in the payload), abilities by
 source key, with `rollup_key` resolving pet credit (players self-credit —
 their DB `rollup_to` is NULL).
 
-Frontend: `/` = `Home.jsx` (runs grouped by local day), `/zones/:id` =
+Frontend: `/` = `Home.jsx` (one sortable table of runs), `/zones/:id` =
 `ZoneRun.jsx` (fight rail + tabs Overview/Damage/Healing/Defense/Insights;
 `?sel`/`?actor`/`?tab`/`?cmp` all URL state), right-hand `ActorPanel`
 (per-actor drilldown) or `ComparePanel` (checkbox multi-select, per-metric
-grouped bars from `lib/stats.js`). `/uploads` = file management;
+grouped bars from `lib/stats.js`). `/import` = the import hub (live link,
+log files, ACT export) and file management, with `/uploads` redirecting to it;
 `/sessions/:id` (Workspace) survives as the per-file debug view.
+
+### The fight rail (2026-08-03)
+
+`components/EncounterTree.jsx` is the zone page's navigation AND its scope
+control, so the two gestures are kept distinct: **clicking** a fight (or All, a
+zone block, a `Trash ×N` group) makes it the only selection; **ticking** its
+checkbox adds or removes it from the current one, which is how several pulls
+merge into one set of combined stats. The boxes always show what is currently
+counted, so "All" visibly means all sixty fights. Selection stays in `?sel=`
+(an id list, or absent for all), so a merged set is a shareable URL; selecting
+everything collapses back to `all` rather than a 60-id query string.
+
+Rows are three fixed columns — checkbox, `9:35p` start, name — with the length
+right-aligned as `m:ss` in tabular figures. `Trash ×N` groups keep their
+twisty, and a group checkbox ticks the whole group (indeterminate when
+partial).
+
+**Wipes are counted by default** (2026-08-03, was excluded): ACT counts them,
+and a night with two Galiel wipes IS a night with two Galiel wipes. The rail's
+switch (`?wipes=0`) takes them out of every total while leaving them listed and
+dimmed, and the page head then says how many were left out. Selecting a wipe on
+purpose always shows it — the filter can never empty the page.
+
+**Pet rows** are off by default on Overview. A pet's damage is credited to its
+owner (`statsroll.actor_key`, ACT does the same), so a pet actor row can only
+ever carry what the pet TOOK — `Tragedy's unswerving hammer` is a real paladin
+hammer pet with a real DmgTaken figure and nothing else, which reads as a
+parse fragment sitting among the raiders. The `Pets` switch brings the rows
+back; `NPCs` still governs mob/environment rows.
+
+### Read caches (2026-08-03)
+
+Clicking a zone re-earned the same expensive answer every time: the run report
+replays every stored event (~1.5s on the 60-fight Emerald Halls night) and
+`/encounters/agg` recomputes medians from events.
+
+- **Server** — `backend/memo.py`, a 12-entry in-process map keyed by
+  `(epoch, key)` and used by `/zone-runs/{id}/report` and `/encounters/agg`.
+  Authorization happens BEFORE the memo on every request; only the computed
+  payload is shared, and callers copy it before adding fields. Every write
+  bumps the epoch and clears the map: `rebuild_zone_runs` is the funnel
+  (uploads, live closes, reparses, deletes, hand edits) plus `prune_once`,
+  which deletes events without touching run membership. A build that races a
+  write is discarded instead of stored. `test_memo.py` pins the invalidation.
+- **Client** — `lib/api.js` keeps a read-through map of GET payloads for the
+  session and every mutation clears it (`clearCache`). `peek(url)` returns a
+  cached payload synchronously, which is what lets `ZoneRun` repaint on a
+  click instead of blanking; an uncached selection keeps the previous numbers
+  on screen dimmed (`.wsmain.stale`) rather than replacing the page with
+  "Loading…".
+
+### Hand edits to the raid list (schema v8 — 2026-08-03)
+
+Segmentation is a guess, so the list is editable: delete a raid or a fight,
+merge runs the game logged as two visits, unmerge them again. The hard part is
+that a reparse DROPS AND RECREATES every encounter row — an edit keyed by
+encounter id would silently evaporate on the next backfill. So `run_edits`
+keys by **fingerprint** — `<started_ts>|<zone>|<name>`, the dedupe key minus
+`ended_ts`, which every duplicate copy of a fight shares — with three kinds:
+
+| kind | meaning | written by |
+|------|---------|------------|
+| `delete` | hide this fight everywhere | `POST /api/encounters/delete`, `DELETE /api/zone-runs/{id}` |
+| `join` | never start a run here (merge) | `POST /api/zone-runs/merge` |
+| `break` | always start a run here (unmerge/split) | `POST /api/zone-runs/{id}/split` |
+
+`rebuild_zone_runs` is the only writer of run membership, so every edit is
+applied by re-running it: deletes re-stamp `encounters.deleted_ts` (a derived
+mark — `run_edits` is the truth) and drop out before dedupe, and `_segment`
+consults breaks/joins at each boundary. `POST /api/encounters/restore` removes
+delete rows (the Undo on Home), `POST /api/zone-runs/{id}/unmerge` removes the
+joins inside one run, and the run list carries `merged` so the UI only offers
+Unmerge where there is something to undo.
+
+`DELETE /api/sessions/{id}` is the only thing that destroys data: derived rows,
+ingest bookkeeping, frozen reports, and the raw bytes (content-addressed, so
+the file goes only with the last session pointing at it). It also drops the
+`run_edits` whose fingerprints no longer match any surviving encounter —
+otherwise re-uploading the same log would come back with every deleted fight
+still hidden and nothing on screen to explain why. Home surfaces this as: all
+fights deleted -> "this log has nothing left in it, delete it too?"
+
+## Reading the raid, not just counting it (2026-08-03)
+
+The tables were complete but flat: every number was a per-fight total, nobody
+had a class, and "damage" was one bucket regardless of where it came from.
+Four backend additions and the UI built on them.
+
+### Class inference (`pipeline/classguess.py`)
+
+The log never states anyone's class, but it states what they cast, and
+`ability_catalog.class` knows who can cast what. Per player entity: take the
+distinct ability names it used, drop the autoattack buckets (class-blind),
+pet-kit names, and **procs** (gear fires those — they say nothing about the
+caster), then let each remaining name vote for its class. A name that several
+classes can scribe identifies nobody and is discarded (`_single_class`). The
+winner needs ≥ 3 distinct abilities and ≥ 40% of the votes; otherwise the
+class stays NULL, because a blank is more honest than a guess. A `characters`
+row with a Census class overrides the vote outright (`source: "census"`,
+confidence 1.0).
+
+Stored as JSON in the long-dormant `entities.class_guess` column —
+`{"class","confidence","matches","source"}`, read back by
+`parse_class_guess`. No schema change. Written at parse time and lazily
+backfilled by the encounters API (`backfill_session`, guarded by one indexed
+lookup plus an attempted-set), so sessions parsed before any of this existed
+light up without a reparse.
+
+`/api/encounters/agg` and `/encounters/{id}` carry `class`,
+`class_confidence`, `class_source`, and `archetype` on every actor —
+`archetype` is NULL when the class is, since `archetype_for` defaults to
+"dps" and that would read as a claim we never made. Cross-session merges keep
+the highest-confidence guess.
+
+### Proc exposure
+
+`ability_catalog.proc` existed (set from the Census "may cast X on…" grammar)
+but never left the backend. Ability rows now carry `proc` and
+`ability_class`, which is what lets the UI split a parse into cast / auto /
+proc — the difference between a player's rotation and their gear.
+
+**The name alone over-claims** (fixed 2026-08-03). Census flags a name if ANY
+item or buff can cast it, so a class's own combat art gets marked as gear the
+moment some proc references it. `_proc_flag` (encounters_api) makes the flag
+per ROW, requiring the catalog's claim to survive this actor's evidence:
+
+- `casts` counts prepare lines, which procs never print — a cast is proof.
+- the ability is in this actor's own class spellbook.
+
+That second test needs a column: `ability_catalog.class` means two different
+things depending on which statement wrote it. From a spell record it is the
+classes that SCRIBE the ability; from a "may cast X" effect it is the classes
+whose buff FIRES it, which says nothing about who can press it. Hence
+`ability_catalog.scribed` (schema v8) — only a scribed row can clear a proc
+flag, and curated procs carry no class list at all, so they stay flagged for
+everyone. `catalog.backfill_scribed` (startup) repairs pre-v8 rows from
+`census_spells`; without it every pre-existing catalog row reads as unscribed
+and only the cast evidence bites.
+
+Still NOT solved: **buff attribution**. Damage from another player's buff
+proccing on you is entirely yours, and sourceless `is hit by <Effect>` lines
+still pool under "Unknown". Real contributed-DPS for utility classes needs
+buff application/expiry tracked into uptime windows — parser work, not an API
+change.
+
+### `GET /api/encounters/timeline?ids=…&bucket=auto`
+
+Per-actor damage / heals / damage-taken bucketed over time. The clock is the
+**concatenated** combat clock — the between-fight gaps are removed — so a
+multi-fight selection reads continuously and `duration_s` still equals the
+summed `duration_s` the tables divide by. `segments[]` carries the fight
+boundaries, `markers[]` the deaths. `auto` picks the finest bucket from
+`[1,2,5,10,15,30,60]` that stays under 240 columns. Credit follows the same
+pet rollup as `statsroll`, and series key by `name|kind` to match `/agg`.
+Pruned sessions contribute nothing and are counted in `pruned_encounters`
+(`pruned: true` when all of them are) — the tables still work there, the plot
+does not.
+
+### `GET /api/encounters/deaths?ids=…&window=12`
+
+One entry per player death with the incoming hits and the healing received in
+the `window` seconds before it (`t` relative and negative, far edge
+inclusive, clamped 3–60s, capped at 40 entries per list with a `_truncated`
+flag). Deaths use the same death/kill rules as `statsroll`, including the
+logger's bare-name pet.
+
+### Frontend
+
+- `lib/classes.js` owns identity. **Color is assigned by EQ2 archetype
+  (fighter/priest/mage/scout), not by class** — the palette validator says
+  four hues separate cleanly and twenty-six cannot, so the family color
+  carries identity in stripes and legends while the per-class tint is
+  decoration on a chip that always spells the class out. Role
+  (tank/healer/dps/utility, mirroring `coach.descriptive.ARCHETYPES`) drives
+  the filter chips instead. Chart series use their own 8-color validated
+  palette in fixed selection order, since two raiders of one class would
+  otherwise draw the same line.
+- **Selection sums** (`SelectionBar`): checking rows adds them up in a sticky
+  footer instead of immediately hijacking the panel — comparing is now a
+  deliberate second click. The same bar serves the ability breakdown, so
+  "what fraction of my parse is my priority spells" is a few checkboxes.
+- **Rank coloring** (`stats.rankClass`): a number is colored against the
+  same-role raiders currently on screen, and says nothing at all below four
+  peers, which is not a distribution.
+- **Decomposition** (`stats.decompose`): DPS split into activity × hit size ×
+  crit × alive%, each against the best peer, naming the biggest gap — the
+  difference between "you're 20% behind" and "you cast 30% less".
+- New tabs/panels: `TimelineChart` (crosshair, fight bands, death markers,
+  table view), `DeathRecap`, `CompositionBar`, plus tier upgrades / debuff
+  uplift / per-ability fit, which the coach API had always returned and
+  nothing rendered.
+- `GET /api/zone-runs` gained `spark[]` (raid DPS per fight) for the home
+  page sparklines — one grouped query for the whole list.
 
 ## ACT parity (diffed 2026-08-02 vs Lindsay's ACT screenshot, Zylphax the Shredder)
 
@@ -345,19 +593,52 @@ of damage** (`test_act_parity_zylphax` guards it). Three bugs found and fixed:
    self-inflicted damage from Damage, we only excluded `focus` dtype. Self-hits
    now shelve under ability kind `self` like focus does.
 
-Still open / by design (revisit when they matter):
-- ~~Mobs absent from the actor table~~ FIXED phase 7b: mobs, mob-owned pets,
-  and the pooled `Unknown` all get actor rows (with `damage_taken`).
-- ~~Sourceless passive damage credited to no one~~ FIXED phase 7b: pooled
-  under an `Unknown` entity, incl. the previously mis-parsed
-  `X is/are hit by <Effect> for N` grammar (1,007 lines in bobby.txt).
-- **Encounter cuts**: Zylphax's window matched ACT to the second, so the
-  cutter isn't broken per se — but our ≥25s gap merges chain-pulled trash into
-  one segment where ACT splits per pull ([16] encounters in ACT's zone list vs
-  our ~10). Need a specific mis-cut fight from Lindsay before tuning.
-- **Exact Unknown parity unverified**: our Zylphax Unknown pool is 451,633
-  (all Stench of Death); ACT reportedly showed ~1.17M — recheck against ACT
-  once the same fight is compared column-for-column.
+### ACT parity round 2 (2026-08-03, Emerald Halls zone view, 25 players)
+
+Diffed the full zone-wide combatant table against Lindsay's ACT screenshot.
+The ACT model, now implemented (each verified numerically):
+
+1. **Ward absorbs fold into the hit they mitigated** (`parser/classify.py
+   _pair_wards`). The log prints the absorb line BEFORE its hit line; the hit
+   line shows only bleed-through ("fails to inflict any damage" when fully
+   absorbed). ACT reconstructs the pre-ward hit: absorbed damage counts for
+   the attacker AND the target's damage taken; the warder separately keeps
+   the full absorb as healing (asymmetric on purpose). Pairing key is the raw
+   target string — WRINKLE: absorbs say "to YOU", the logger's mitigated
+   self-hit says "hits YOURSELF"; normalize both to YOU. An absorb that never
+   pairs (fully-absorbed DoT tick — no line at all) still counts as the
+   target's damage taken. This also closed the old "Unknown parity" gap:
+   Zylphax's warded Stench of Death pool is 1.18M ≈ ACT's ~1.17M.
+2. **Self-inflicted damage is excluded from DamageTaken** too (Vampiric
+   Requiem et al.) — previously only excluded from Damage. Bards' wards
+   eating their own Requiem ticks was 60-80% of most players' inflation.
+3. **Cures = `relieves` + `dispels` lines, any target, credited to the
+   caster.** The real cure grammar is "X's Ability relieves Effect from Y" —
+   we only parsed `dispels` (buff strips). 25/25 players exact.
+4. **Deaths: the logger's bare-name pet death ("… has killed Bobby") counts
+   as the player** — ACT can't tell same-name pets apart. 25/25 exact.
+5. **PowerReplenish includes self-gains** (Lich, Savant's Intelligence). The
+   drain grammar is a verb family (`confounds|zaps|smites|diseases|…
+   draining N points of power`) — we only knew `confounds`; Ipax alone had
+   2.5M unparsed drain. Both now match ACT (drain 20+/25 exact).
+6. **Damage-taken does NOT roll possessive pets into owners** ("Tragedy's
+   unswerving hammer" is its own combatant on the taken side; outgoing still
+   rolls up). `statsroll.taken_key`.
+7. **EncDPS/EncHPS denominator** = Σ encounter durations, same for everyone;
+   EncHPS numerator = heals + wards (ACT's Healed column includes wards —
+   verified via Lotus: 11.13M ≈ ACT 11.08M).
+
+Result on the Emerald Halls night: damage 21/25 exact (rest within 0.003%),
+cures 25/25, deaths 25/25, power drain ≈exact, EncDPS/EncHPS within 0.7%.
+Still open, in residual-size order:
+- **Combat clock 4421s vs ACT 4392s** (60 vs 61 encounters): boundary-second
+  differences (~0.5s/encounter) in ACT's internal open/close rules we can't
+  fully reverse-engineer from screenshots — uniform, doesn't reorder anyone.
+- **Damage-taken residuals -1..-3%** (Artonk -6%): suspected intercepts
+  ("Bobby intercepted some of the damage…" carries no amount) + boundary
+  trimming. Trailing-event trimming was tried and REGRESSED cures/EncHPS —
+  ACT keeps idle-window heals/power in the encounter; don't re-add it.
+- Emericant's ±6,307: ACT files manastone/potion self-power as PowerDrain.
 
 ## Phase 7b — attribution overhaul + stats engine v2 + workspace UX (2026-08-02)
 
@@ -400,6 +681,13 @@ API derives `swings` and `to_hit_pct`. `GET /api/encounters/agg?ids=…` sums
 any set of one session's encounters into the same payload shape (single-id
 fast-path; medians recomputed from events, null when pruned) — it powers
 every tree node below.
+
+Per-ACTOR AvgDelay (schema v7, parse v11): `encounter_actor_stats` stores
+`atk_swings` (offensive damage events + avoids, self-hits excluded) and
+`atk_span_s` (first→last swing); the API derives `avg_delay_s =
+span/(swings-1)`, which aggregates exactly across encounters (sum of spans /
+sum of gaps). Surfaced in the zone-page Damage tab, Workspace combatant
+table, and ComparePanel.
 
 **Workspace UX**: `/sessions/:id` is now one ACT-style page
 (`frontend/src/pages/Workspace.jsx` + the first shared components:

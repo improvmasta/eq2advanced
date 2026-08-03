@@ -15,14 +15,15 @@ from parser import parse_lines
 from parser import petnames
 from parser.events import ParsedEvent, Subject
 from parser.subjects import classify_entity_kind, decompose
-from pipeline.encounters import segment_events
+from pipeline.classguess import guess_session_classes
+from pipeline.encounters import encounter_label, segment_events
 from pipeline.refine import refine_known_mobs
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
                                 ability_rows, actor_rows, roll_encounter)
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 7
+PARSE_VERSION = 12    # 12: encounters named by the enemy fought, real success
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -43,6 +44,7 @@ class EntityResolver:
         self._entities: dict[tuple[str, str], int] = {}
         self._rollups: dict[int, int | None] = {}
         self._kinds: dict[int, str] = {}
+        self._names: dict[int, str] = {}
         self._abilities: dict[str, int] = {}
 
     def _entity(self, name: str, kind: str, owner_id: int | None = None,
@@ -67,6 +69,7 @@ class EntityResolver:
             self._entities[key] = eid
             self._rollups[eid] = rollup
             self._kinds[eid] = kind
+            self._names[eid] = name
         return eid
 
     def player(self, name: str) -> int:
@@ -77,6 +80,9 @@ class EntityResolver:
 
     def kind_of(self, eid: int) -> str | None:
         return self._kinds.get(eid)
+
+    def name_of(self, eid: int) -> str | None:
+        return self._names.get(eid)
 
     def unknown(self) -> int:
         """The session's pooled Unknown source (sourceless passive damage)."""
@@ -268,17 +274,21 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
             # encounter ids per event index
             enc_of: dict[int, int] = {}
             for seg in segments:
+                seg_events = [resolved[i] for i in seg.event_indices]
+                # naming needs resolved entities (which target is a mob), so it
+                # happens here rather than inside the pure segmenter
+                name, is_named, success = encounter_label(
+                    seg_events, res.name_of, logger, known_mobs)
                 cur = conn.execute(
                     "INSERT INTO encounters (session_id, zone, name, is_named, started_ts, "
                     "ended_ts, duration_s, success) VALUES (?,?,?,?,?,?,?,?)",
-                    (session_id, seg.zone, seg.name, int(seg.is_named), seg.start_ts,
-                     seg.end_ts, max(seg.end_ts - seg.start_ts, 1), seg.success),
+                    (session_id, seg.zone, name, int(is_named), seg.start_ts,
+                     seg.end_ts, max(seg.end_ts - seg.start_ts, 1), success),
                 )
                 enc_id = cur.lastrowid
                 for i in seg.event_indices:
                     enc_of[i] = enc_id
 
-                seg_events = [resolved[i] for i in seg.event_indices]
                 actor_stats, ability_stats = roll_encounter(
                     seg_events, max(seg.end_ts - seg.start_ts, 1)
                 )
@@ -302,6 +312,10 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                     for i, r in enumerate(resolved)
                 ],
             )
+
+            # class inference needs the finished ability rollups (it votes on
+            # the abilities each player actually used), so it runs last
+            guess_session_classes(conn, session_id)
 
             # learn-back: newly observed pet names + abilities pets actually
             # cast feed every future parse (and reparses of older sessions)

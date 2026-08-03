@@ -84,9 +84,10 @@ def _reparse_stale():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    from census.catalog import seed_curated
+    from census.catalog import backfill_scribed, seed_curated
     from parser import petnames
     seed_curated(get_db())
+    backfill_scribed(get_db())
     petnames.seed_curated(get_db())
     import threading
     threading.Thread(target=_reparse_stale, daemon=True).start()

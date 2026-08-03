@@ -3,27 +3,122 @@
 
 export const MELEE_BUCKETS = new Set(['(melee)', '(multi attack)', '(aoe attack)', '(flurry)'])
 
-/* Per player-credit key: damage-kind rollup of crits/hits/casts and the
-   autoattack share. Pet rows credit their owner via rollup_key. */
+const AVOID_COLS = ['misses', 'parries', 'ripostes', 'dodges', 'blocks']
+
+/* Per player-credit key: damage-kind rollup of crits/hits/casts, the
+   autoattack share, and the split of where the damage came from. Pet rows
+   credit their owner via rollup_key.
+
+   The three composition buckets are mutually exclusive and cover the total:
+   `auto` is the melee swing buckets, `proc` is anything the ability catalog
+   flags as firing on its own (gear and buff procs), `cast` is the remainder —
+   what the player actually pressed. */
 export function damageDerived(abilities) {
   const by = {}
   for (const r of abilities || []) {
     if (r.kind !== 'damage') continue
     const k = r.rollup_key || r.source_key
     if (!k) continue
-    const d = by[k] ??= { total: 0, hits: 0, crits: 0, casts: 0, auto: 0 }
-    d.total += r.total || 0
+    const d = by[k] ??= {
+      total: 0, hits: 0, crits: 0, casts: 0, auto: 0, proc: 0, cast: 0,
+      pet: 0, swings: 0, avoided: 0, resists: 0,
+    }
+    const amt = r.total || 0
+    d.total += amt
     d.hits += r.hits || 0
     d.crits += r.crits || 0
     d.casts += r.casts || 0
-    if (MELEE_BUCKETS.has(r.ability)) d.auto += r.total || 0
+    d.swings += r.swings || 0
+    d.resists += r.resists || 0
+    for (const c of AVOID_COLS) d.avoided += r[c] || 0
+    if (r.rollup_key === k && r.source_key !== k) d.pet += amt
+    if (MELEE_BUCKETS.has(r.ability)) d.auto += amt
+    else if (r.proc) d.proc += amt
+    else d.cast += amt
   }
   return by
 }
 
 export const critPct = (d) => (d && d.hits ? (100 * d.crits) / d.hits : null)
 export const autoPct = (d) => (d && d.total ? (100 * d.auto) / d.total : null)
+export const procPct = (d) => (d && d.total ? (100 * d.proc) / d.total : null)
 export const castsPerMin = (d, duration) => (d && d.casts && duration ? d.casts / (duration / 60) : null)
+
+/* Where a value sits among its peers: the top/bottom third of everyone the
+   comparison is fair against. Returns a class name for the cell, or ''.
+
+   Two ways to say nothing, both deliberate. Under six peers the terciles
+   overlap and every cell gets colored, which distinguishes nobody; and when
+   the spread is flat there is no top or bottom to point at. Coloring
+   everything is the same as coloring nothing, only more confident. */
+export function rankClass(value, peers, { worse = false } = {}) {
+  if (value == null) return ''
+  const xs = peers.filter((v) => v != null).sort((a, b) => a - b)
+  if (xs.length < 6) return ''
+  const lo = xs[Math.floor(xs.length / 3)]
+  const hi = xs[Math.floor((2 * xs.length) / 3)]
+  if (lo === hi) return ''
+  if (value >= hi) return worse ? 'rank-low' : 'rank-top'
+  if (value <= lo) return worse ? 'rank-top' : 'rank-low'
+  return ''
+}
+
+/* "Why is my DPS low?" — DPS is uptime x activity x hit size x crit rate, so
+   compare each factor against the best peer instead of the bottom line, and
+   name the one with the biggest gap. Peers are same-role raiders.
+   `deadSecondsOf` must come from the raid report: `encounter_actor_stats`
+   has a `time_dead_s` column but the roller never writes it, so reading it
+   off the aggregate payload would report everyone as permanently alive. */
+export function decompose(actor, peers, derived, duration, deadSecondsOf = () => 0) {
+  const d = derived[actor.key]
+  if (!d || !d.total) return null
+  const of = (a) => derived[a.key]
+  const factors = [
+    {
+      key: 'dps', label: 'DPS', why: 'the bottom line the others feed',
+      get: (a) => (a.damage || 0) / duration, fmt: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      key: 'cpm', label: 'Casts/min', why: 'activity — how often you press something',
+      get: (a) => (of(a)?.casts ? of(a).casts / (duration / 60) : null), fmt: (v) => v.toFixed(1),
+    },
+    {
+      key: 'avg', label: 'Average hit', why: 'gear, buffs and spell tiers',
+      get: (a) => (of(a)?.hits ? of(a).total / of(a).hits : null), fmt: (v) => Math.round(v).toLocaleString(),
+    },
+    {
+      key: 'crit', label: 'Crit %', why: 'crit chance from stats and adornments',
+      get: (a) => (of(a)?.hits ? (100 * of(a).crits) / of(a).hits : null), fmt: (v) => `${Math.round(v)}%`,
+    },
+    {
+      key: 'uptime', label: 'Alive %', why: 'time spent dead is damage never dealt',
+      get: (a) => 100 * (1 - Math.min(1, (deadSecondsOf(a) || 0) / duration)),
+      fmt: (v) => `${Math.round(v)}%`,
+    },
+  ]
+  const out = []
+  for (const f of factors) {
+    const mine = f.get(actor)
+    const others = peers.filter((p) => p.key !== actor.key).map(f.get).filter((v) => v != null)
+    if (mine == null || !others.length) continue
+    const best = Math.max(...others)
+    out.push({ ...f, mine, best, gapPct: best > 0 ? (100 * (best - mine)) / best : 0 })
+  }
+  const ranked = out.filter((f) => f.key !== 'dps').sort((a, b) => b.gapPct - a.gapPct)
+  return { factors: out, worst: ranked[0] || null }
+}
+
+/* Consistency across fights: a player who swings between 4% and 12% of raid
+   damage has an execution problem, which is different coaching from someone
+   who is evenly low. */
+export function consistency(shares) {
+  const xs = shares.filter((v) => v != null)
+  if (xs.length < 3) return null
+  const min = Math.min(...xs), max = Math.max(...xs)
+  const mean = xs.reduce((s, x) => s + x, 0) / xs.length
+  const sd = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length)
+  return { min, max, mean, sd, cv: mean ? sd / mean : null, n: xs.length }
+}
 
 /* Report columns for an arbitrary encounter selection: sum the run report's
    per-encounter player rows across the selected fights, keyed by name. */
@@ -35,12 +130,15 @@ export function reportRollup(report, selIds) {
     if (!want.has(enc.encounter.id)) continue
     for (const p of enc.players) {
       const n = by[p.name] ??= {
-        engage: [], engage_low: 0, death_dps_lost: 0, overheal_est: 0, saves: 0,
-        time_dead_s: 0, deaths: 0, cures: 0, rez: [],
+        engage: [], engage_low: 0, engage_anchors: {}, death_dps_lost: 0,
+        overheal_est: 0, saves: 0, time_dead_s: 0, deaths: 0, cures: 0, rez: [],
       }
       if (p.engage_delay_s != null && enc.encounter.is_named) {
         n.engage.push(p.engage_delay_s)
         if (p.engage_confidence === 'low') n.engage_low += 1
+        // what kind of action started their fight — a 6s of heals reads
+        // differently from a 6s of swings
+        n.engage_anchors[p.engage_anchor] = (n.engage_anchors[p.engage_anchor] || 0) + 1
       }
       if (p.rez_delay_s != null) n.rez.push(p.rez_delay_s)
       n.death_dps_lost += p.death_dps_lost || 0

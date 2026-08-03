@@ -40,13 +40,15 @@ def line(t: int, body: str) -> str:
 
 
 def fight(t: int, mob="a training cube", named=None) -> list[str]:
-    out = [
-        line(t, f"YOUR Soulrot hits {mob} for 250 disease damage."),
-        line(t + 5, f"Aros hits {mob} for 100 crushing damage."),
-        line(t + 10, f"YOUR Soulrot hits {mob} for 260 disease damage."),
+    # the raid damages the thing it kills — encounters are named after the
+    # enemy fought, so a log that hits X and kills Y is not a real log
+    target = named or mob
+    return [
+        line(t, f"YOUR Soulrot hits {target} for 250 disease damage."),
+        line(t + 5, f"Aros hits {target} for 100 crushing damage."),
+        line(t + 10, f"YOUR Soulrot hits {target} for 260 disease damage."),
+        line(t + 12, f"You have killed {target}."),
     ]
-    out.append(line(t + 12, f"You have killed {named or mob}."))
-    return out
 
 
 def log_a() -> str:

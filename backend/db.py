@@ -15,7 +15,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS encounters (
   duration_s INTEGER NOT NULL,
   success INTEGER,
   zone_run_id INTEGER,                    -- run membership (canonical rows only)
-  dup_of INTEGER                          -- canonical encounter id when duplicated
+  dup_of INTEGER,                         -- canonical encounter id when duplicated
+  deleted_ts INTEGER                      -- hidden by hand (run_edits kind='delete')
 );
 CREATE INDEX IF NOT EXISTS idx_encounters ON encounters(session_id, started_ts);
 CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id);
@@ -133,6 +134,13 @@ CREATE TABLE IF NOT EXISTS zone_runs (
   updated_ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_zone_runs_char ON zone_runs(character_id, started_ts);
+CREATE TABLE IF NOT EXISTS run_edits (
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  fp TEXT NOT NULL,          -- '<started_ts>|<zone>|<name>' of the encounter
+  kind TEXT NOT NULL,        -- delete | break (start a run here) | join (don't)
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY (character_id, fp, kind)
+);
 CREATE TABLE IF NOT EXISTS abilities (
   id INTEGER PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
@@ -144,6 +152,8 @@ CREATE TABLE IF NOT EXISTS ability_catalog (
   class TEXT,
   unit TEXT NOT NULL,                     -- player|pet
   proc INTEGER NOT NULL DEFAULT 0,        -- fires on its own (buff/item proc)
+  scribed INTEGER NOT NULL DEFAULT 0,     -- `class` lists who SCRIBES it (not
+                                          -- who procs it) — see catalog.py
   source TEXT                             -- census|curated|observed
 );
 CREATE TABLE IF NOT EXISTS pet_names (
@@ -188,6 +198,8 @@ CREATE TABLE IF NOT EXISTS encounter_actor_stats (
   cure_count INTEGER NOT NULL DEFAULT 0,
   cure_latency_ms_avg INTEGER,
   active_s INTEGER NOT NULL DEFAULT 0,
+  atk_swings INTEGER NOT NULL DEFAULT 0,  -- offensive swings incl. avoided
+  atk_span_s INTEGER NOT NULL DEFAULT 0,  -- first->last swing; avg delay = span/(swings-1)
   PRIMARY KEY (encounter_id, entity_id)
 );
 CREATE TABLE IF NOT EXISTS encounter_ability_stats (
@@ -324,6 +336,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE encounters ADD COLUMN zone_run_id INTEGER")
         if "dup_of" not in enc_cols:
             conn.execute("ALTER TABLE encounters ADD COLUMN dup_of INTEGER")
+        if "deleted_ts" not in enc_cols:
+            conn.execute("ALTER TABLE encounters ADD COLUMN deleted_ts INTEGER")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id)")
         actor_cols = {r[1] for r in conn.execute(
@@ -334,7 +348,7 @@ def init_db() -> None:
         if "ward_bleedthrough" not in actor_cols:
             conn.execute("ALTER TABLE encounter_actor_stats ADD COLUMN "
                          "ward_bleedthrough INTEGER NOT NULL DEFAULT 0")
-        for col in ("power_drain", "damage_taken"):
+        for col in ("power_drain", "damage_taken", "atk_swings", "atk_span_s"):
             if col not in actor_cols:
                 conn.execute(f"ALTER TABLE encounter_actor_stats ADD COLUMN "
                              f"{col} INTEGER NOT NULL DEFAULT 0")
@@ -366,6 +380,9 @@ def init_db() -> None:
                 "ALTER TABLE ability_catalog ADD COLUMN proc INTEGER NOT NULL DEFAULT 0")
         if "source" not in cat_cols:
             conn.execute("ALTER TABLE ability_catalog ADD COLUMN source TEXT")
+        if "scribed" not in cat_cols:
+            conn.execute("ALTER TABLE ability_catalog ADD COLUMN "
+                         "scribed INTEGER NOT NULL DEFAULT 0")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

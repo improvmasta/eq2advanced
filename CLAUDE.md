@@ -102,11 +102,16 @@ multi-file backfill upload, live fight-card hints. See `ARCHITECTURE.md` →
 "Coach correctness (phase 6)" / "Hardening". The abmod marginal is only real
 once Lindsay runs TWO dummy parses at different Ability Mod and flags them.
 
-ACT parity: the Zylphax fight now matches ACT **exactly (25/25 players)** —
-three attribution bugs fixed 2026-08-02, guarded by `test_act_parity_zylphax`.
-See `ARCHITECTURE.md` → "ACT parity" for what's still open (mob actor rows,
-"Unknown" pooled damage, and trash chain-pull merging vs ACT's per-pull cuts —
-need a specific mis-cut fight from Lindsay before tuning the 25s gap).
+ACT parity: Zylphax matches exactly (guarded by `test_act_parity_zylphax`);
+round 2 (2026-08-03, Emerald Halls zone view) rebuilt the model — ward-absorb
+pairing (absorb line folds into the next hit on that target; "YOU" vs
+"YOURSELF" gotcha), self-damage excluded from DamageTaken, `relieves` cure
+grammar, drain verb family, self power gains, bare-name pet deaths merge,
+possessive pets keep their own damage-taken rows, encounter cut = 7s combat
+silence (ACT's idle timeout; damage+avoids hold fights open). Emerald Halls:
+cures/deaths 25/25 exact, damage 21/25 exact, EncDPS within 0.7%. See
+`ARCHITECTURE.md` → "ACT parity round 2" for the residuals — and DO NOT
+re-add trailing-event trimming; it regresses cures/EncHPS.
 
 Phase 7b (UX overhaul + parsing correctness) is BUILT 2026-08-02: one
 ACT-style Workspace page at `/sessions/:id` (encounter tree with zone blocks +
@@ -153,8 +158,43 @@ the run raid report handles pruned sessions via frozen reports. See
 `parse_version` — after bumping PARSE_VERSION the startup sweep must finish
 before duplicate marking converges.
 
+Phase 9 (editable raid list + UI pass) is BUILT 2026-08-03: the raid list is a
+sortable table you can EDIT — `run_edits` (schema v8) stores delete/join/break
+by encounter FINGERPRINT (`started_ts|zone|name`), not id, so an edit survives
+the reparse a backfill triggers; `rebuild_zone_runs` applies all three, and
+`DELETE /api/sessions/{id}` is the only destructive path (it also forgets that
+log's edits, or a re-upload comes back invisibly deleted). New: `/import` hub
+(live link / log files / ACT export — the XML export is the target and is NOT
+built; Lindsay will send one), EQ2 archetype colors as theme-aware `--fam-*`
+tokens (fighter blue, priest green, mage red, scout yellow), rate-first columns
+(EncDPS/EncHPS leftmost), Time dead + Rezzes on Overview, wipes as red fight
+names with a dot instead of a badge, and the drilldown panel widened (the raid
+table condenses to name + the sorted stat while it is open) with real tabs, a
+Combine-pets checkbox defaulting OFF, and no coaching prose. Proc flags are now
+per-row evidence, not a global name list — see `ARCHITECTURE.md` -> "Proc
+exposure" (needs `ability_catalog.scribed`; `backfill_scribed` repairs old DBs
+at startup).
+
+Phase 10 (raid page pass) is BUILT 2026-08-03: **engagement v3** — engage is
+the gap between the pull and a raider's first ACTION, and heals, cures, rezzes
+and *attempted* swings now anchor it alongside damage/threat (`engage_anchor`
+says which; ward absorbs and catalog procs still never anchor, anything inside
+the opening 2s is still low-confidence). Scoring only hostile actions had
+Tragedy engaging Sawtooth at 13s when the log shows a heal at 2s;
+`test_engagement.py` pins the kinds. **Fight rail** rebuilt
+(`EncounterTree.jsx`): click = focus one fight, checkbox = add it to the
+combined stats, three-column rows (time / name / m:ss), and **wipes now count
+by default** (ACT parity) behind a real switch (`?wipes=0`). Pet rows are off
+by default on Overview — a pet's damage is already credited to its owner, so
+its row can only carry DmgTaken and reads as a parse fragment. **Read caches**:
+`backend/memo.py` (12 entries, epoch bumped by `rebuild_zone_runs` +
+`prune_once`, pinned by `test_memo.py`) and a client-side GET cache with
+`peek()` so a fight you have opened repaints without a "Loading…" flash. See
+`ARCHITECTURE.md` -> "The fight rail" / "Read caches" / "Raid Report".
+
 ## Ship log
 
+- 2026-08-03 (claude): Phase 9+10: editable raid list, import hub, fight rail rebuild, engagement v3, read caches
 - 2026-08-03 (claude): Fix Insights crash (coach.character is an object, render its name) + error boundaries at route and panel level
 - 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)
 - 2026-08-03 (claude): Zone runs phase 5: checkbox multi-select + ComparePanel (per-metric grouped bars from agg + report data)

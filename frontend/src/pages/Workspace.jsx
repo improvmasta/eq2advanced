@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import EncounterTree from '../components/EncounterTree.jsx'
-import ShareBar from '../components/ShareBar.jsx'
 import SortableTable from '../components/SortableTable.jsx'
 import { api, fmt } from '../lib/api.js'
 import { useQueryState } from '../lib/useQueryState.js'
@@ -35,24 +34,6 @@ function kindBadge(kind) {
   if (kind === 'other') return <span className="badge">env</span>
   if (PET_KINDS.has(kind)) return <span className="badge pet">pet</span>
   return null
-}
-
-function DpsBars({ actors, duration }) {
-  const players = actors.filter((a) => a.kind === 'player' && a.damage > 0)
-    .sort((a, b) => b.damage - a.damage).slice(0, 16)
-  if (players.length < 2) return null
-  const max = Math.max(...players.map((a) => a.damage), 1)
-  return (
-    <div className="dpsbars" aria-label="DPS by raider">
-      {players.map((a) => (
-        <div className="col" key={a.entity_id} title={`${a.name}: ${fmt.num(a.damage / Math.max(duration, 1))} DPS`}>
-          <span className="v">{fmt.num(a.damage / Math.max(duration, 1))}</span>
-          <i style={{ height: `${Math.max((a.damage / max) * 100, 2)}%` }} />
-          <span className="n">{a.name}</span>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 export default function Workspace() {
@@ -106,7 +87,6 @@ export default function Workspace() {
   const duration = Math.max(detail?.encounter?.duration_s || 0, 1)
   const players = useMemo(() => actors.filter((a) => a.kind === 'player'), [actors])
   const raidDamage = players.reduce((s, a) => s + (a.damage || 0), 0)
-  const topDamage = Math.max(...players.map((a) => a.damage || 0), 1)
 
   const visibleActors = useMemo(() => actors.filter((a) =>
     (a.damage || 0) > 0 || (a.heals || 0) > 0 || (a.damage_taken || 0) > 0
@@ -128,7 +108,6 @@ export default function Workspace() {
       && !(r.total === 0 && r.hits > 0 && r.max === null && r.kind === 'damage'
            && r.swings === r.hits))
   }, [detail, selectedActor, kindFilter])
-  const abilityMax = Math.max(...abilityRows.map((r) => r.total || 0), 1)
 
   if (error) return <p className="err">{error}</p>
   if (!session || !encounters) return <p className="muted">Loading…</p>
@@ -147,18 +126,21 @@ export default function Workspace() {
     },
     { key: 'damage', label: 'Damage', format: fmt.num },
     {
-      key: 'share', label: 'Dmg %', align: 'l',
-      render: (a) => (a.kind === 'player' && a.damage > 0
-        ? <span className="sharecell"><ShareBar value={a.damage} max={topDamage} />
-            <span className="pctnum">{raidDamage ? `${((a.damage / raidDamage) * 100).toFixed(1)}%` : ''}</span></span>
-        : null),
+      key: 'share', label: 'Dmg %',
+      render: (a) => (a.kind === 'player' && a.damage > 0 && raidDamage
+        ? `${((a.damage / raidDamage) * 100).toFixed(1)}%` : ''),
       sortValue: (a) => (a.kind === 'player' ? a.damage : -1),
     },
-    { key: 'dps', label: 'EncDPS', format: fmt.num },
+    { key: 'dps', label: 'DPS', format: fmt.num },
+    {
+      key: 'avg_delay', label: 'AvgDelay',
+      render: (a) => (a.avg_delay_s != null ? a.avg_delay_s.toFixed(2) : ''),
+      sortValue: (a) => a.avg_delay_s ?? null,
+    },
     { key: 'damage_taken', label: 'DmgTaken', format: fmt.num },
     { key: 'heals', label: 'Heals', format: fmt.num },
     {
-      key: 'hps', label: 'EncHPS',
+      key: 'hps', label: 'HPS',
       render: (a) => fmt.num((a.heals || 0) / duration),
       sortValue: (a) => (a.heals || 0) / duration,
     },
@@ -188,11 +170,6 @@ export default function Workspace() {
         render: (a) => (night[a.name]?.overheal_est ? fmt.num(night[a.name].overheal_est) : ''),
         sortValue: (a) => night[a.name]?.overheal_est ?? null,
       },
-      {
-        key: 'saves', label: 'Saves',
-        render: (a) => night[a.name]?.saves || '',
-        sortValue: (a) => night[a.name]?.saves ?? null,
-      },
     )
   }
 
@@ -211,13 +188,16 @@ export default function Workspace() {
     { key: 'kind', label: 'Kind', render: (r) => <span className="muted">{r.kind}</span>, sortValue: (r) => r.kind },
     { key: 'total', label: 'Total', format: fmt.num },
     {
-      key: 'encdps', label: 'EncDPS',
+      key: 'encdps', label: 'DPS',
       render: (r) => (r.total ? fmt.num(r.total / duration) : '—'),
       sortValue: (r) => (r.total || 0) / duration,
     },
     {
-      key: 'share', label: 'Share', align: 'l',
-      render: (r) => <ShareBar value={r.total || 0} max={abilityMax} kind={r.kind === 'heal' ? 'heal' : 'dps'} />,
+      key: 'share', label: 'Share',
+      render: (r) => {
+        const sum = abilityRows.reduce((s, x) => s + (x.total || 0), 0)
+        return r.total && sum ? `${((r.total / sum) * 100).toFixed(1)}%` : ''
+      },
       sortValue: (r) => r.total || 0,
     },
     { key: 'casts', label: 'Casts', render: (r) => r.casts || '' },
@@ -260,7 +240,7 @@ export default function Workspace() {
         encounters={encounters}
         sel={selIds && selIds.length === encounters.length ? 'all' : sel}
         onSelect={(key) => { setSel(key === 'all' ? null : key); setActorQ(null) }}
-        sessionLabel={`All — ${fmt.date(session.started_ts)}`}
+        sessionLabel={fmt.date(session.started_ts)}
       />
       <div className="wsmain">
         <div className="pagehead" style={{ marginTop: 0 }}>
@@ -318,8 +298,6 @@ export default function Workspace() {
                 />
               </div>
             )}
-
-            <DpsBars actors={actors} duration={duration} />
           </>
         )}
       </div>

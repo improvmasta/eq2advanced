@@ -5,7 +5,8 @@ no schema changes, so it works on any already-parsed session.
 Engagement timing (the proc caveat, verified on the Zylphax pull): pre-pull
 buffs fire log lines the player didn't act for — ward absorbs and buff procs
 flood in ~1s after the real opener. Classifier rules, in order:
-- ward absorbs and heals are NEVER engagement (the cast predates the pull);
+- ward absorbs are NEVER engagement (the cast predates the pull, and the
+  absorb line is the mob acting, not the warder);
 - the logger's `You prepare` lines are ground truth — a cast start is always
   a deliberate, high-confidence anchor;
 - an ability the catalog flags as a proc never anchors, at any time;
@@ -14,8 +15,21 @@ flood in ~1s after the real opener. Classifier rules, in order:
   damaged" buffs correlate with incoming swings) and does not anchor;
 - any other ability first-action inside the opening window is flagged
   low-confidence; autoattack and pet swings are always deliberate.
+
+What counts as acting (the anchor kinds):
+- offensive — landed damage, an ATTEMPTED swing the mob avoided (a miss is
+  still an action: it is the swing that counts, not the roll), positive threat;
+- support — a heal, a cure, or a rez. A healer never rolls a hostile action in
+  the opening seconds, and scoring them as "never engaged" was reading a
+  templar's whole pull as absence. Heals inside the opening window carry the
+  same low-confidence flag as abilities do: a HoT cast before the pull ticks
+  the moment it starts, and nothing in the line says which it was.
+`engage_anchor` names which kind fired, so an 8s is readable as "first swing"
+or "first heal" rather than a bare number.
+
 Cross-player numbers from one log are coarser than self-coaching — no
-cast-start lines exist for other players. The UI carries that caveat.
+cast-start lines exist for other players, so a 4s cast reads as engagement at
+the moment it LANDS. The UI carries that caveat.
 """
 
 from collections import defaultdict
@@ -81,17 +95,29 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
                     "delay_s": r["ts"] - enc["started_ts"], "anchor": "cast",
                     "confidence": "high",
                 }
+            hostile_tgt = (tgt is None
+                           or tgt["kind"] not in ("player", "own_pet", "swarm_pet"))
             offensive = (
                 (r["type"] == "damage" and not (r["flags"] & F_SELF_FOCUS)
-                 and (tgt is None or tgt["kind"] not in ("player", "own_pet", "swarm_pet")))
+                 and hostile_tgt)
+                # a swing the mob dodged is still a swing
+                or (r["type"] == "avoid" and hostile_tgt)
                 or (r["type"] == "threat" and (r["amount"] or 0) > 0))
-            if offensive and src_roll not in first:
+            # a healer's opener is a heal; treating only hostile actions as
+            # engagement scored every priest as absent for the first 10s
+            support = r["type"] in ("heal", "dispel", "rez")
+            if (offensive or support) and src_roll not in first:
                 src_kind = ents[r["src_entity"]]["kind"]
                 anchor = ("pet" if src_kind in ("own_pet", "swarm_pet")
+                          else "heal" if r["type"] == "heal"
+                          else "cure" if r["type"] == "dispel"
+                          else "rez" if r["type"] == "rez"
                           else "autoattack" if r["flags"] & F_AUTOATTACK
                           else "ability")
+                # a proc can fire an ability or a heal; both are gear acting
+                suspect = anchor in ("ability", "heal", "cure")
                 delay = r["ts"] - enc["started_ts"]
-                if anchor == "ability" and r["ability"] in proc_names:
+                if suspect and r["ability"] in proc_names:
                     pass    # a known buff/item proc is never an action
                 elif (anchor == "ability" and delay <= PROC_SUSPECT_WINDOW_S
                         and r["ts"] - last_incoming.get(src_roll, -REZ_WINDOW_S)
@@ -100,10 +126,11 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
                 else:
                     first[src_roll] = {
                         "delay_s": delay, "anchor": anchor,
-                        "confidence": ("low" if anchor == "ability"
+                        "confidence": ("low" if suspect
                                        and delay <= PROC_SUSPECT_WINDOW_S else "high"),
                     }
-            if r["type"] == "dispel" and tgt is not None and tgt["kind"] == "player":
+            if r["type"] == "dispel":
+                # relieves + dispels both count, any target (ACT Cures parity)
                 cures[src_roll] += 1
             if r["type"] == "rez":
                 recent = [d for d in all_death_ts if 0 <= r["ts"] - d <= REZ_WINDOW_S]
@@ -206,7 +233,7 @@ def build_for_encounters(conn, encounters) -> dict:
                 "wards_absorbed": 0, "ward_bleedthrough": 0, "power_fed": 0,
                 "deaths": 0, "time_dead_s": 0, "death_dps_lost": 0,
                 "cures": 0, "rez_casts": 0, "encounters": 0,
-                "_engage": [], "_engage_low": 0, "_rez": []})
+                "_engage": [], "_engage_low": 0, "_rez": [], "_anchors": {}})
             for k in ("damage", "heals", "overheal_est", "saves", "wards_absorbed",
                       "ward_bleedthrough", "power_fed", "deaths", "time_dead_s",
                       "death_dps_lost", "cures", "rez_casts"):
@@ -216,6 +243,8 @@ def build_for_encounters(conn, encounters) -> dict:
                 n["_engage"].append(p["engage_delay_s"])
                 if p["engage_confidence"] == "low":
                     n["_engage_low"] += 1
+                a = p["engage_anchor"]
+                n["_anchors"][a] = n["_anchors"].get(a, 0) + 1
             if p["rez_delay_s"] is not None:
                 n["_rez"].append(p["rez_delay_s"])
 
@@ -232,6 +261,7 @@ def build_for_encounters(conn, encounters) -> dict:
         n["avg_engage_delay_s"] = round(sum(eng) / len(eng), 1) if eng else None
         n["engage_samples"] = len(eng)
         n["engage_low_confidence"] = low
+        n["engage_anchors"] = n.pop("_anchors")
         n["avg_rez_delay_s"] = round(sum(rez) / len(rez), 1) if rez else None
         rows.append(n)
     rows.sort(key=lambda n: -n["damage"])
@@ -245,11 +275,13 @@ def build_for_encounters(conn, encounters) -> dict:
             "Cross-player numbers from one log are coarser than self-coaching: "
             "other players' pets conflate into them and their cast starts are "
             "not logged.",
-            "Engagement delays are measured from the encounter's first hostile "
-            "action. Known buff/item procs and hits that correlate with being "
-            "struck never count; a remaining ability first-action inside the "
-            "opening 2s may still be a pre-pull buff proc and is flagged low "
-            "confidence. The uploader's own cast starts are exact.",
+            "Engage is the gap between the pull and a raider's first action — "
+            "a hit, an attempted swing, threat, a heal, a cure or a rez. Known "
+            "buff/item procs, ward absorbs, and hits that correlate with being "
+            "struck never count; anything inside the opening 2s may still be a "
+            "pre-pull proc or HoT tick and is flagged low confidence. Only the "
+            "uploader's cast STARTS are logged, so for everyone else a slow "
+            "cast is dated when it lands.",
             "Overheal and saves come from HP-deficit reconstruction (the log "
             "has no max-HP line): full health is assumed at each pull, ward "
             "absorbs never touch HP. Treat them as estimates.",

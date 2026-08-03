@@ -48,15 +48,20 @@ CURATED_PROCS = (
     "Arcane Storm",
 )
 
+# `class` carries two different meanings depending on which statement wrote it,
+# and confusing them marks a class's own spell as gear. A spell record names
+# the classes that SCRIBE the ability (scribed=1); a "may cast X" effect names
+# the classes whose buff FIRES X, which says nothing about who can press it
+# (scribed stays 0). Only the first kind can clear a proc flag.
 _CENSUS_UPSERT = (
-    "INSERT INTO ability_catalog (ability_name, class, unit, proc, source) "
-    "VALUES (?,?,?,?, 'census') ON CONFLICT(ability_name) DO UPDATE SET "
-    "class=excluded.class, unit=excluded.unit, proc=excluded.proc, "
+    "INSERT INTO ability_catalog (ability_name, class, unit, proc, scribed, source) "
+    "VALUES (?,?,?,?, 1, 'census') ON CONFLICT(ability_name) DO UPDATE SET "
+    "class=excluded.class, unit=excluded.unit, proc=excluded.proc, scribed=1, "
     "source='census' WHERE ability_catalog.source IS NOT 'curated'")
 
 _PROC_UPSERT = (
-    "INSERT INTO ability_catalog (ability_name, class, unit, proc, source) "
-    "VALUES (?,?, 'player', 1, 'census') ON CONFLICT(ability_name) DO UPDATE "
+    "INSERT INTO ability_catalog (ability_name, class, unit, proc, scribed, source) "
+    "VALUES (?,?, 'player', 1, 0, 'census') ON CONFLICT(ability_name) DO UPDATE "
     "SET proc=1 WHERE ability_catalog.source IS NOT 'curated'")
 
 
@@ -68,6 +73,25 @@ def seed_curated(conn) -> None:
             "(ability_name, class, unit, proc, source) VALUES (?,NULL,?,?,'curated')",
             [(n, "pet", 0) for n in CURATED_PET_ABILITIES]
             + [(n, "player", 1) for n in CURATED_PROCS])
+
+
+def backfill_scribed(conn) -> int:
+    """One-time repair for catalogs written before `scribed` existed: a name
+    that matches a cached Census spell record IS scribed, and that record's
+    class list is the one that means "who can press this". Idempotent, cheap,
+    and it only ever adds knowledge — rows with no matching spell stay as they
+    are. -> rows repaired."""
+    with conn:
+        cur = conn.execute(
+            "UPDATE ability_catalog SET scribed=1, class=COALESCE(("
+            "  SELECT cs.class FROM census_spells cs "
+            "  WHERE cs.name = ability_catalog.ability_name "
+            "     OR cs.base_name = ability_catalog.ability_name LIMIT 1), class) "
+            "WHERE scribed=0 AND source='census' AND EXISTS ("
+            "  SELECT 1 FROM census_spells cs "
+            "  WHERE cs.name = ability_catalog.ability_name "
+            "     OR cs.base_name = ability_catalog.ability_name)")
+    return cur.rowcount
 
 
 def upsert_from_spells(conn, recs: list[dict]) -> None:
@@ -113,3 +137,11 @@ def pet_ability_names(conn) -> set[str]:
 def proc_ability_names(conn) -> set[str]:
     return {r[0] for r in conn.execute(
         "SELECT ability_name FROM ability_catalog WHERE proc=1")}
+
+
+def scribed_classes(conn) -> dict[str, str]:
+    """ability name -> the classes that scribe it, for rows where `class`
+    actually means that. Everything else is a proc's owning class."""
+    return {r[0]: r[1] for r in conn.execute(
+        "SELECT ability_name, class FROM ability_catalog "
+        "WHERE scribed=1 AND class IS NOT NULL AND class != ''")}

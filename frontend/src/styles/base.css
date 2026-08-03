@@ -164,6 +164,7 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
   vertical-align: 1px; margin-left: 6px;
 }
 .badge.pet { color: var(--rarity-treasured); }
+.badge.proc { color: var(--rarity-mythical); }
 .badge.named { color: var(--gold-bright); border-color: var(--gold-dim); }
 .badge.conf-high, .badge.conf-calibrated { color: var(--success); }
 .badge.conf-medium { color: var(--warning); }
@@ -355,47 +356,113 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .status-ready { color: var(--success); }
 .status-error { color: var(--danger); }
 
-/* ---------- session workspace (ACT-style tree + tables) ---------- */
+/* ---------- session workspace (fight rail + ACT-style tables) ---------- */
 
 .workspace {
-  display: grid; grid-template-columns: 250px 1fr; gap: 14px;
+  display: grid; grid-template-columns: 268px 1fr; gap: 14px;
   align-items: start; margin-top: 14px;
 }
 .wsmain { min-width: 0; }
 
-.tree {
-  position: sticky; top: 12px;
+/* The fight rail. Three fixed columns — checkbox, clock, name — with the
+   length right-aligned in tabular figures, so a night reads as a column of
+   times instead of a ragged list of "4m 12s" strings. */
+.rail {
+  position: sticky; top: 12px; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-md); padding: 6px;
-  max-height: calc(100vh - 24px); overflow-y: auto;
+  border-radius: var(--radius-md); overflow: hidden;
+  max-height: calc(100vh - 24px);
   font-family: var(--font-data); font-size: var(--fs-data);
 }
-.treezone { margin-top: 6px; }
-.treenode {
-  display: flex; width: 100%; align-items: baseline; gap: 8px;
-  background: none; border: none; border-radius: var(--radius-sm);
-  padding: 3px 8px; cursor: pointer; text-align: left;
-  color: var(--text); font-family: var(--font-data); font-size: var(--fs-data);
+.railhead {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
 }
-.treenode:hover { background: var(--row-hover); }
-.treenode.active { background: var(--row-selected); color: var(--gold-bright); }
-.treenode .tl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.treenode .tm { color: var(--text-muted); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
-.treenode.root .tl { font-weight: 700; color: var(--gold-bright); }
-.treenode.zone .tl {
+.railtitle {
+  font-weight: 700; color: var(--gold-bright); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.railmeta {
+  margin-left: auto; flex-shrink: 0;
+  color: var(--text-muted); font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+}
+.railtools {
+  display: flex; gap: 4px; flex-wrap: wrap; align-items: center;
+  padding: 7px 8px; border-bottom: 1px solid var(--row-line);
+}
+.railhint {
+  margin: 0; padding: 6px 10px 0;
+  color: var(--text-muted); font-family: var(--font-data); font-size: var(--fs-xs);
+}
+.raillist { flex: 1; overflow-y: auto; padding: 5px 5px 7px; }
+.railzone { margin-top: 4px; }
+
+.railrow {
+  display: flex; align-items: center; gap: 1px;
+  border-radius: var(--radius-sm); border-left: 2px solid transparent;
+}
+.railrow:hover { background: var(--row-hover); }
+.railrow.active { background: var(--row-selected); border-left-color: var(--gold); }
+.railcheck {
+  accent-color: var(--gold); cursor: pointer; flex-shrink: 0;
+  width: 13px; height: 13px; margin: 0 3px 0 1px;
+}
+.railbtn {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px;
+  background: none; border: none; padding: 4px 8px 4px 1px;
+  cursor: pointer; text-align: left; color: var(--text);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.railbtn:hover { background: none; }
+.railbtn .rt {
+  width: 38px; flex-shrink: 0; color: var(--text-muted);
+  font-size: var(--fs-label); font-variant-numeric: tabular-nums;
+}
+.railbtn .rl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.railbtn .rd {
+  flex-shrink: 0; color: var(--text-muted);
+  font-size: var(--fs-label); font-variant-numeric: tabular-nums;
+}
+.railrow.active .railbtn .rl { color: var(--gold-bright); }
+.railrow.all .rl, .railrow.group .rl { font-weight: 700; }
+.railrow.zone .rl {
   text-transform: uppercase; letter-spacing: 0.08em;
   font-size: var(--fs-label); color: var(--gold); font-weight: 600;
 }
-.treenode.named .tl { color: var(--gold-bright); font-weight: 600; }
-.treenode.trash .tl { color: var(--text-muted); }
-.treenode.sub { padding-left: 26px; }
-.trashrow { display: flex; align-items: center; }
-.trashrow .treenode { flex: 1; }
+.railrow.named .rl { color: var(--gold-bright); font-weight: 600; }
+.railrow.trash .rl { color: var(--text-muted); }
+/* a lost pull, said in the fight's own name rather than shouted beside it */
+.railrow.wiped .rl { color: var(--danger); }
+/* excluded by the wipes switch: still listed, visibly not counted */
+.railrow.dropped { opacity: 0.45; }
+.railrow.dropped .rd { text-decoration: line-through; }
+.railfoot {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: var(--fs-label);
+}
+.railfoot .chip { margin-left: auto; cursor: pointer; }
+
+.wipedot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--danger); margin-right: 6px; vertical-align: middle;
+  flex-shrink: 0;
+}
+.twist, .twistpad { width: 14px; flex-shrink: 0; }
 .twist {
   background: none; border: none; color: var(--text-muted);
-  width: 18px; padding: 0; cursor: pointer; font-size: var(--fs-label);
+  padding: 0; cursor: pointer; font-size: var(--fs-label);
 }
 .twist:hover { color: var(--gold-bright); background: none; }
+
+/* A selection change repaints in place: the numbers you were reading fade
+   rather than vanish, so the page never jumps under the cursor. */
+.wsmain.stale .card, .wsmain.stale .metrics { opacity: 0.55; transition: opacity 120ms linear; }
+.stalebar {
+  color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-label); margin: 6px 0 0;
+}
 
 /* sortable headers */
 table.data th.sortable { cursor: pointer; user-select: none; }
@@ -430,12 +497,32 @@ table.data th.sortable:hover { color: var(--text); }
 
 /* ---------- zone page: tabs + right-hand actor panel ---------- */
 
-.workspace.withpanel { grid-template-columns: 250px minmax(0, 1fr) minmax(380px, 34%); }
+/* The drilldown is the wider half: it carries fifteen columns of ability rows,
+   while the raid table beside it condenses to a name and one number. */
+.workspace.withpanel { grid-template-columns: 268px minmax(200px, 0.7fr) minmax(520px, 52%); }
 .actorpanel {
   position: sticky; top: 12px; margin-top: 0;
   max-height: calc(100vh - 24px); overflow-y: auto; min-width: 0;
 }
 .actorpanel .drillhead .closex { margin-left: auto; }
+.actorpanel .tabs { margin-top: 4px; }
+
+/* In a column this narrow the summing bar's one-line layout collapses into an
+   unreadable strip, so its stats wrap into a grid instead. */
+.actorpanel .selbar { flex-direction: column; align-items: stretch; gap: 7px; }
+.actorpanel .selbar .ss {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 4px 12px;
+}
+.actorpanel .selbar .sa { margin-left: 0; }
+.actorpanel .filterbar { margin: 6px 0 8px; }
+
+/* What the swings did that the totals don't show — counted, not interpreted. */
+.wastestrip {
+  display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 8px;
+  font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
+}
+.wastestrip b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
 
 .tabs { display: flex; gap: 4px; margin: 10px 0 4px; flex-wrap: wrap; }
 .tab {
@@ -450,55 +537,327 @@ table.data th.sortable:hover { color: var(--text); }
 }
 
 @media (max-width: 1200px) {
-  .workspace.withpanel { grid-template-columns: 250px 1fr; }
-  .workspace.withpanel .actorpanel { grid-column: 1 / -1; position: static; max-height: none; }
+  .workspace.withpanel { grid-template-columns: 268px 1fr; }
+  .workspace.withpanel .actorpanel,
+  .workspace.withpanel .cmpcol {
+    grid-column: 1 / -1; position: static; max-height: none;
+  }
 }
 
-/* compare panel: grouped horizontal bars, one section per metric */
+/* compare panel: metrics as rows, one column per raider, numbers only.
+   The whole column (totals card + table) is sticky as one unit and only as
+   wide as the raiders in it — see .cmpcol's inline max-width. */
 table.data .checkcol { width: 24px; padding-right: 0; }
 .checkcol input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
-.cmpmetric { margin-bottom: 12px; }
-.cmplabel {
+.cmpcol {
+  position: sticky; top: 12px; align-self: start;
+  max-height: calc(100vh - 24px); overflow-y: auto; min-width: 0;
+}
+.cmpcol .actorpanel { position: static; max-height: none; overflow: visible; }
+.cmpcol .selhead { margin-top: 0; }
+
+/* Fixed layout so every raider gets the same width and the numbers line up
+   down the column instead of drifting with the length of the value. */
+table.cmptable { table-layout: fixed; }
+table.cmptable col.cmplabelcol { width: 40%; }
+table.cmptable th { vertical-align: bottom; padding-bottom: 6px; }
+table.cmptable th .cls { font-weight: 400; margin-top: 2px; }
+table.cmptable td { padding-top: 5px; padding-bottom: 5px; }
+table.cmptable td.lbl { color: var(--text-muted); font-family: var(--font-body); }
+/* The leader is marked, not painted: every value keeps the same colour and the
+   eye follows the gutter — ▲ on the leader, the gap on everyone else. */
+table.cmptable td.best .v { font-weight: 700; }
+.cmpval .d.lead { color: var(--gold); font-size: 0.6rem; }
+tr.cmpsection td {
   text-transform: uppercase; letter-spacing: 0.08em;
   font-size: var(--fs-label); color: var(--gold); font-weight: 600;
-  margin-bottom: 3px;
+  padding-top: 12px; border-bottom: 1px solid var(--border);
 }
-.cmprow {
-  display: grid; grid-template-columns: 90px 1fr 70px;
-  align-items: center; gap: 8px; padding: 1px 0;
-  font-family: var(--font-data); font-size: var(--fs-data);
+.cmphead {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 600;
+  white-space: nowrap; text-transform: none; letter-spacing: 0;
 }
-.cmpname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmpbar { display: block; height: 10px; background: var(--surface-raised); border-radius: 2px; }
-.cmpbar i { display: block; height: 100%; background: var(--bar); border-radius: 2px; }
-.cmpbar.worse i { background: var(--danger); opacity: 0.55; }
-.cmpval { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.cmphead:hover { color: var(--danger); }
 
-/* ---------- home: date-grouped zone runs ---------- */
+/* expandable column groups (Healed -> Heals/Wards/Overheal) */
+.expandcol {
+  background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-muted); cursor: pointer; font-size: 0.7rem;
+  line-height: 1.1; padding: 0 3px; vertical-align: 1px;
+}
+.expandcol:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
+
+/* expanded sub-rows (pet-group members, off-kind ability components) */
+.subrow td { color: var(--text-muted); }
+.subrow td:first-child { padding-left: 18px; }
+
+/* checkbox chip (consolidate pets) */
+.chip.toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.chip.toggle input { accent-color: var(--gold); margin: 0; cursor: pointer; }
+
+/* A switch, for the handful of controls that change what every number on the
+   page means (wipes in or out). A checkbox says "pick this"; a switch says
+   "this is on", which is the question being asked here. */
+.switch {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); user-select: none;
+}
+.switch.on { color: var(--text); }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track {
+  position: relative; flex-shrink: 0; width: 26px; height: 14px;
+  border-radius: 8px; background: var(--surface-raised);
+  border: 1px solid var(--border); transition: background 120ms linear;
+}
+.switch .knob {
+  position: absolute; top: 2px; left: 2px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--text-muted);
+  transition: transform 120ms ease, background 120ms linear;
+}
+.switch input:checked + .track { background: rgba(var(--gold-rgb), 0.28); border-color: var(--gold-dim); }
+.switch input:checked + .track .knob { transform: translateX(12px); background: var(--gold-bright); }
+.switch input:focus-visible + .track { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .switch .knob { transition: background 120ms linear; }
+}
+
+/* ---------- home: the raid list ---------- */
 
 .dropzone.compact { padding: 10px 16px; }
 .dropzone.compact input[type="text"] { width: 170px; }
 
-.dayblock { margin-top: 22px; }
-.dayhead {
-  font-size: var(--fs-md); color: var(--text);
-  border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 10px;
+/* Same table as the raid page's — one visual language for "rows of fights"
+   and "rows of nights", so sorting works the way it already looks like it
+   should. The night cell stacks its two readings; everything else is one line. */
+.raidlist .runday { display: flex; flex-direction: column; line-height: 1.35; }
+.raidlist .runday .d { color: var(--text); font-weight: 600; }
+.raidlist .runday .muted { font-size: var(--fs-label); }
+.raidlist .runzone {
+  font-family: var(--font-body); font-weight: 600; color: var(--gold-bright);
 }
-.runlist { display: flex; flex-direction: column; gap: 8px; }
-.runrow {
-  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-  margin-top: 0; padding: 10px 14px; text-decoration: none; color: var(--text);
-  transition: border-color 0.15s, background 0.15s;
+.raidlist td { padding-top: 7px; padding-bottom: 7px; }
+.raidlist .spark { vertical-align: middle; }
+
+/* Destructive actions never share a look with ordinary ones. */
+.chip.danger { color: var(--danger); border-color: var(--danger); cursor: pointer; }
+.chip.danger:hover { background: rgba(248, 113, 113, 0.12); }
+
+.confirmcard { border-color: var(--gold-dim); }
+.confirmcard p { margin: 0 0 10px; }
+.confirmcard .row { display: flex; gap: 8px; align-items: center; }
+
+/* A result notice, not a state: it says what just happened and offers the way
+   back, then gets out of the way. */
+.note.flash {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border-left: 2px solid var(--gold-dim); padding-left: 10px;
 }
-.runrow:hover { border-color: var(--gold-dim); background: var(--row-hover); text-decoration: none; }
-.runmain { display: flex; align-items: baseline; gap: 12px; min-width: 260px; flex: 1; }
-.runzone { font-weight: 600; color: var(--gold-bright); font-size: var(--fs-md); }
-.runtime { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
-.runmeta {
-  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+.note.flash .chip { cursor: pointer; }
+
+a.btnlink {
+  display: inline-block; padding: 5px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--gold-dim); color: var(--gold-bright);
+  font-family: var(--font-data); font-size: var(--fs-sm); text-decoration: none;
+}
+a.btnlink:hover { background: rgba(var(--gold-rgb), 0.12); text-decoration: none; }
+
+/* ---------- import hub: the three ways in ---------- */
+
+/* Side by side, because they are alternatives — stacked, the third one reads
+   as an afterthought and nobody scrolls to find out there was a third. */
+.methods {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 12px; align-items: start;
+}
+.methods .method { margin-top: 0; height: 100%; }
+.method.soon { opacity: 0.82; }
+.methodhead { display: flex; align-items: baseline; gap: 8px; }
+.methodhead h2 { margin: 0; }
+.methodhead .badge { margin-left: auto; }
+.method .dropzone { margin-top: 4px; }
+.fineprint {
+  margin: 0 0 8px; padding-left: 18px;
+  font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
+}
+.fineprint li { margin-bottom: 3px; }
+.fineprint b { color: var(--text); font-weight: 600; }
+.rowactions { white-space: nowrap; }
+.rowactions .chip { cursor: pointer; margin-left: 4px; }
+
+/* ---------- class identity ---------- */
+
+/* The stripe is the family color, the chip spells the class out. Color is
+   never the only thing saying who someone is — see lib/classes.js. */
+.actorname { display: inline-flex; align-items: baseline; gap: 6px; }
+.actorname .famstripe {
+  width: 3px; align-self: stretch; min-height: 12px; border-radius: 2px;
+  background: var(--border); flex-shrink: 0;
+}
+.actorname .n { font-family: var(--font-body); font-size: var(--fs-sm); }
+
+.classchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); white-space: nowrap;
+}
+.classchip > i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.classchip .q { color: var(--warning); }
+
+/* ---------- filter row above a table ---------- */
+
+.filterbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.filterbar input[type="text"] { width: 150px; margin-right: 0; }
+.filterbar .spacer { margin-left: auto; }
+.chip.role { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.chip.role > i { width: 7px; height: 7px; border-radius: 2px; }
+
+/* ---------- selection (summing) bar ---------- */
+
+.selbar {
+  position: sticky; bottom: 0; z-index: 3;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 8px; padding: 7px 12px;
+  background: var(--surface-raised); border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-md); backdrop-filter: blur(var(--blur));
   font-family: var(--font-data); font-size: var(--fs-data);
 }
-.runmeta .named { color: var(--gold-bright); }
+.selbar .sl { color: var(--gold-bright); font-weight: 600; white-space: nowrap; }
+.selbar .ss { display: flex; gap: 16px; flex-wrap: wrap; }
+.selbar .sstat { display: inline-flex; align-items: baseline; gap: 5px; }
+.selbar .sstat b { font-variant-numeric: tabular-nums; color: var(--text); }
+.selbar .sstat .k {
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.selbar .sa { margin-left: auto; display: flex; gap: 6px; }
+.selbar .sa .chip { cursor: pointer; }
+
+/* Header box: who is selected on top, their combined totals in a grid under
+   them. Same numbers as the footer bar, laid out to be read rather than
+   glanced at — the compare table opens beside it on the second check. */
+.selhead { border-color: var(--gold-dim); margin-bottom: 10px; }
+.selhead-top {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.selhead-top h2 { margin: 0; white-space: nowrap; }
+.selhead .sa { margin-left: auto; display: flex; gap: 6px; }
+.selhead .sa .chip { cursor: pointer; }
+.selnames { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip.selname { cursor: pointer; font-weight: 600; color: var(--text); }
+.chip.selname .x { color: var(--text-muted); font-size: 0.7rem; }
+.chip.selname:hover .x { color: var(--danger); }
+.selhead .ss {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 16px;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.selhead .sstat { display: flex; flex-direction: column; gap: 2px; }
+.selhead .sstat b {
+  font-variant-numeric: tabular-nums; color: var(--text); font-size: var(--fs-figure);
+}
+.selhead .sstat .k {
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+
+/* ---------- rank coloring (value vs its peers) ---------- */
+
+table.data td.rank-top { color: var(--success); }
+table.data td.rank-low { color: var(--danger); }
+
+/* sticky header — 24-raider tables scroll past their labels fast */
+.tablewrap.sticky { max-height: calc(100vh - 220px); overflow-y: auto; }
+.tablewrap.sticky table.data th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-raised);
+}
+
+/* ---------- composition bar ---------- */
+
+.compbar { margin: 8px 0 4px; }
+.compbar .track {
+  display: flex; gap: 2px; height: 10px;
+  background: var(--bar-track); border-radius: 3px; overflow: hidden;
+}
+.compbar .track > i { display: block; height: 100%; }
+.complegend {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 5px;
+  font-family: var(--font-data); font-size: var(--fs-label); color: var(--text-muted);
+}
+.complegend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.complegend .lg > i { width: 8px; height: 8px; border-radius: 2px; }
+.complegend .lg b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- timeline chart ---------- */
+
+.chartwrap { position: relative; margin-top: 8px; }
+.chartbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-family: var(--font-data); font-size: var(--fs-label);
+}
+.chartbar .chips { display: flex; gap: 4px; }
+.chartbar .chip { cursor: pointer; }
+.chartlegend {
+  display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0 2px;
+  font-family: var(--font-data); font-size: var(--fs-xs);
+}
+.chartlegend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.chartwrap svg .grid { stroke: var(--row-line); stroke-width: 1; }
+.chartwrap svg .axis {
+  fill: var(--text-muted); font-family: var(--font-data); font-size: 10px;
+}
+.chartwrap svg .segline { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; }
+.chartwrap svg .seglabel {
+  fill: var(--gold); font-family: var(--font-data); font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.chartwrap svg .crosshair { stroke: var(--gold-dim); stroke-width: 1; }
+.chartwrap svg .markerring { fill: var(--bg); }
+.charttip {
+  position: absolute; top: 26px; transform: translateX(-50%);
+  pointer-events: none; z-index: 4; min-width: 130px;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 8px;
+  font-family: var(--font-data); font-size: var(--fs-label);
+  box-shadow: 0 4px 14px #0006;
+}
+.charttip .tt { color: var(--gold-bright); font-weight: 600; margin-bottom: 3px; }
+.charttip .tr { display: flex; align-items: center; gap: 5px; }
+.charttip .tr > i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.charttip .tr b { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.spark { vertical-align: middle; }
+.spark path { stroke: var(--gold-dim); }
+
+/* ---------- death recap ---------- */
+
+table.recap tr.inrow td { color: var(--text); }
+table.recap tr.healrow td { color: var(--text-muted); }
+.recapbar {
+  display: block; position: relative; width: 90px; height: 7px;
+  background: var(--bar-track); border-radius: 2px; overflow: hidden;
+}
+.recapbar > i { position: absolute; inset: 0 auto 0 0; display: block; border-radius: 2px; }
+tr.inrow .recapbar > i { background: var(--danger); }
+tr.healrow .recapbar > i { background: var(--success); }
+
+/* ---------- compare panel values + deltas ---------- */
+
+/* Numbers only. The value gets the cell; the gap to the leader sits in a
+   fixed-width gutter to its right, so the values stay on one right edge down
+   the column instead of shuffling left whenever a delta appears. */
+.cmpval { display: grid; grid-template-columns: 1fr 42px; align-items: baseline; }
+.cmpval .v { font-variant-numeric: tabular-nums; text-align: right; }
+.cmpval .d {
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-align: right; padding-left: 6px;
+}
 
 /* ---------- narrow screens ---------- */
 
@@ -506,5 +865,5 @@ table.data .checkcol { width: 24px; padding-right: 0; }
   .railgrid { grid-template-columns: 1fr; }
   .topnav { flex-wrap: wrap; gap: 10px; }
   .workspace { grid-template-columns: 1fr; }
-  .tree { position: static; max-height: 240px; }
+  .rail { position: static; max-height: 320px; }
 }

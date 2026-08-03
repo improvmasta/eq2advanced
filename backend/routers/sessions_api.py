@@ -39,7 +39,8 @@ def list_sessions(user=Depends(require_user)):
         "SELECT s.id, s.source, s.status, s.error, s.started_ts, s.ended_ts, s.line_count, "
         "s.upload_name, s.created_ts, s.calibration, s.pinned, s.pruned, "
         "c.name AS character_name, "
-        "(SELECT COUNT(*) FROM encounters e WHERE e.session_id = s.id) AS encounter_count "
+        "(SELECT COUNT(*) FROM encounters e WHERE e.session_id = s.id "
+        " AND e.deleted_ts IS NULL) AS encounter_count "
         "FROM sessions s JOIN characters c ON c.id = s.character_id "
         f"{where} ORDER BY s.created_ts DESC",
         params).fetchall()
@@ -63,7 +64,7 @@ def session_detail(session_id: int, user=Depends(require_user)):
         "(SELECT COUNT(*) FROM encounter_actor_stats a WHERE a.encounter_id = e.id) AS actor_count "
         "FROM encounters e "
         "LEFT JOIN encounter_actor_stats s ON s.encounter_id = e.id AND s.entity_id = ? "
-        "WHERE e.session_id=? ORDER BY e.started_ts",
+        "WHERE e.session_id=? AND e.deleted_ts IS NULL ORDER BY e.started_ts",
         (logger_id, session_id),
     ).fetchall()
 
@@ -89,6 +90,55 @@ def reparse_session(session_id: int, user=Depends(require_user)):
         raise HTTPException(409, "no stored raw log for this session")
     threading.Thread(target=parse_session, args=(session_id, paths), daemon=True).start()
     return {"session_id": session_id, "status": "parsing"}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: int, user=Depends(require_user)):
+    """Delete an uploaded log for good: derived rows, ingest bookkeeping, the
+    frozen reports, and the raw bytes. The stored upload is content-addressed,
+    so the file only goes when the last session pointing at it does."""
+    from pathlib import Path
+
+    from db import UPLOADS_DIR
+    from pipeline.ingest_writer import clear_derived
+    from pipeline.zoneruns import encounter_fp, rebuild_zone_runs
+
+    conn = get_db()
+    sess = visible_session(conn, user, session_id)
+    if sess["status"] in ("parsing", "receiving"):
+        raise HTTPException(409, f"session is {sess['status']}")
+
+    chunk_paths = [r["path"] for r in conn.execute(
+        "SELECT path FROM raw_chunks WHERE session_id=?", (session_id,))]
+    # deleting the log forgets its hand edits too — otherwise re-uploading the
+    # same file would come back with every fight you had deleted still hidden,
+    # and nothing on screen to explain why
+    own_fps = {encounter_fp(r) for r in conn.execute(
+        "SELECT started_ts, zone, name FROM encounters WHERE session_id=?",
+        (session_id,))}
+    with conn:
+        clear_derived(conn, session_id)
+        for table in ("ingest_lines", "ingest_batches", "raw_chunks",
+                      "raid_reports", "coach_reports"):
+            conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+        survivors = {encounter_fp(r) for r in conn.execute(
+            "SELECT e.started_ts, e.zone, e.name FROM encounters e "
+            "JOIN sessions s ON s.id = e.session_id WHERE s.character_id=?",
+            (sess["character_id"],))}
+        for fp in own_fps - survivors:
+            conn.execute("DELETE FROM run_edits WHERE character_id=? AND fp=?",
+                         (sess["character_id"], fp))
+        rebuild_zone_runs(conn, sess["character_id"])
+
+    for path in chunk_paths:
+        Path(path).unlink(missing_ok=True)
+    if sess["source"] == "upload" and sess["upload_sha256"]:
+        shared = conn.execute("SELECT 1 FROM sessions WHERE upload_sha256=? LIMIT 1",
+                              (sess["upload_sha256"],)).fetchone()
+        if shared is None:
+            (UPLOADS_DIR / f"{sess['upload_sha256']}.txt.gz").unlink(missing_ok=True)
+    return {"deleted": session_id}
 
 
 def _card_hints(e: dict) -> list[str]:

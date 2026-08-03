@@ -66,30 +66,36 @@ def line(t: int, body: str) -> str:
     return f"({BASE_TS + t})[{CTIME}] {body}\r\n"
 
 
-def soulrot(t: int, amount: int, crit: bool = False) -> str:
+NAMED = "Traininglord the Unstoppable"
+
+
+def soulrot(t: int, amount: int, crit: bool = False, tgt: str = "a training cube") -> str:
     c = "a critical of " if crit else ""
-    return line(t, f"YOUR Soulrot hits a training cube for {c}{amount} disease damage.")
+    return line(t, f"YOUR Soulrot hits {tgt} for {c}{amount} disease damage.")
 
 
 def synthetic_log() -> str:
-    """Encounter 1 (named, 180s): 12 non-crit Soulrots (250/260 alternating),
-    6 crits (357), casts 10s apart; Aros engages at +6s with autoattacks and
-    dies at +26s. Encounter 2 after a 60s gap (trash): 4 more non-crits."""
+    """Encounter 1 (named, 90s): 12 non-crit Soulrots (250/260 alternating),
+    6 crits (357), casts 5s apart (the ACT-parity cutter closes on >=7s of
+    combat silence); Aros engages at +6s with autoattacks and dies at +26s.
+    Encounter 2 after a long gap (trash): 4 more non-crits."""
     lines = []
     amts = [250, 260] * 6
+    # encounter 1 fights the named it kills — an encounter is titled after the
+    # enemy engaged, so damaging one mob and killing another is not a real log
     for i in range(12):
-        lines.append(soulrot(i * 10, amts[i]))
+        lines.append(soulrot(i * 5, amts[i], tgt=NAMED))
     for i in range(6):
-        lines.append(soulrot(120 + i * 10, 357, crit=True))
-    lines.append(line(6, "Aros hits a training cube for 500 crushing damage."))
-    lines.append(line(16, "Aros hits a training cube for 500 crushing damage."))
-    lines.append(line(26, "a training cube has killed Aros."))
+        lines.append(soulrot(60 + i * 5, 357, crit=True, tgt=NAMED))
+    lines.append(line(6, f"Aros hits {NAMED} for 500 crushing damage."))
+    lines.append(line(16, f"Aros hits {NAMED} for 500 crushing damage."))
+    lines.append(line(26, f"{NAMED} has killed Aros."))
     # multi-word named: a single capitalized token would read as a PLAYER victim
     # (community convention — the player-named-mob limitation)
-    lines.append(line(180, "You have killed Traininglord the Unstoppable."))
+    lines.append(line(90, f"You have killed {NAMED}."))
     for i, a in enumerate((250, 260, 250, 260)):
-        lines.append(soulrot(240 + i * 10, a))
-    lines.append(line(280, "You have killed a training cube."))
+        lines.append(soulrot(240 + i * 5, a))
+    lines.append(line(260, "You have killed a training cube."))
     # keep epoch order — the parser trusts the prefix
     lines.sort(key=lambda l: int(l[1:11]))
     return "".join(lines)
@@ -236,8 +242,8 @@ def test_calibration_keeps_both_coefficients(client, session_id):
     the raid-debuff measurement (debuff_uplift). Dummy k substitutes only when
     the session's own sample is too thin."""
     # a second session whose hits imply a DIFFERENT coefficient (~300/85 = 3.53)
-    lines = [soulrot(i * 10, 300) for i in range(6)]
-    lines.append(line(70, "You have killed a training cube."))
+    lines = [soulrot(i * 5, 300) for i in range(6)]
+    lines.append(line(30, "You have killed a training cube."))
     sid2 = upload(client, "".join(lines), name="dummy.txt")
 
     # no calibration yet: session 2 fits its own hits
@@ -350,11 +356,12 @@ def test_healer_estimates_in_raid_report(client):
         line(2, "Aros heals YOU for 600 hit points."),
         # deficit 400 -> 100 of this heal is overheal, and not a save
         line(4, "Aros heals YOU for 500 hit points."),
+        soulrot(5, 250),
         line(6, "Aros's Divine Ward absorbs 300 points of damage from being "
                 "done to YOU with 200 points of damage bleeding through. "
                 "(0 points remaining)"),
-        soulrot(8, 250),
-        line(20, "You have killed a training cube."),
+        soulrot(10, 250),
+        line(12, "You have killed a training cube."),
     ]
     sid = upload(client, "".join(lines), name="healer.txt")
     rep = client.get(f"/api/sessions/{sid}/raid-report").json()

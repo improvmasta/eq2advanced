@@ -30,6 +30,13 @@
   --rarity-fabled: #ff939d;
   --rarity-mythical: #ffb6ff;
 
+  /* EQ2 archetype colors — fighter blue, priest green, mage red, scout yellow.
+     Per theme because one yellow cannot clear 3:1 on both surfaces. */
+  --fam-fighter: #3d8fd6;
+  --fam-priest: #4aa05f;
+  --fam-mage: #e05c54;
+  --fam-scout: #c9a227;
+
   --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.07), transparent 55%),
           radial-gradient(150% 120% at 50% 45%, transparent 50%, #060810b8);
 
@@ -86,6 +93,10 @@
   --rarity-legendary: #a4632a;
   --rarity-fabled: #b23a46;
   --rarity-mythical: #8d3f9a;
+  --fam-fighter: #1f6fa8;
+  --fam-priest: #1f7a42;
+  --fam-mage: #b02a26;
+  --fam-scout: #8a6a10;
 
   --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.10), transparent 55%),
           radial-gradient(150% 120% at 50% 45%, transparent 60%, #e4dcc890);
@@ -118,6 +129,10 @@
     --rarity-legendary: #a4632a;
     --rarity-fabled: #b23a46;
     --rarity-mythical: #8d3f9a;
+    --fam-fighter: #1f6fa8;
+    --fam-priest: #1f7a42;
+    --fam-mage: #b02a26;
+    --fam-scout: #8a6a10;
     --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.10), transparent 55%),
             radial-gradient(150% 120% at 50% 45%, transparent 60%, #e4dcc890);
     color-scheme: light;

@@ -10,6 +10,7 @@ fresh report.
 import logging
 import time
 
+import memo
 from coach.raidreport import build as build_raid_report
 from db import json_dumps
 
@@ -38,5 +39,8 @@ def prune_once(conn, days: int) -> int:
         except Exception:
             log.exception("pruning session %s failed", sid)
     if n:
+        # pruning rewrites where a report comes from (frozen json, not events)
+        # without going through rebuild_zone_runs, so it drops the memo itself
+        memo.invalidate()
         log.info("pruned events for %d sessions (>%dd old)", n, days)
     return n

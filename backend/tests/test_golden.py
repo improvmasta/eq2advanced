@@ -57,7 +57,12 @@ def test_zones(parsed):
 
 def test_segments_and_named_fights(parsed):
     _, segs = parsed
-    assert len(segs) == 10
+    # ACT-parity cutter (>=7s combat silence closes; avoids hold fights open)
+    # splits chain-pulled trash per pull: 28 segments where the old 25s gap
+    # merged them into 10. Garanel's 21s mid-fight lull splits it in two —
+    # the first half is labeled by its real named add, Garanel's Shade —
+    # which matches how ACT cuts the same night.
+    assert len(segs) == 28
     names = " | ".join(s.name for s in segs if s.is_named)
     for boss in ("Zylphax the Shredder", "Othysis Muravian", "Treyloth D'Kulvith",
                  "Malkonis D'Morte", "The Festering Hag", "The Hemogoblin",
@@ -177,13 +182,19 @@ def test_stats_v2_drilldown_golden(parsed):
 
     # sourceless effect damage pools under Unknown, with the effect name kept
     unk = next(e for e, (n, k) in names.items() if n == "Unknown")
-    assert actors[unk]["damage"] == 451_633
-    assert abil[(unk, "Stench of Death", "damage")]["total"] == 451_633
+    # ward absorbs fold into the hit they mitigated (ACT reconstructs the
+    # pre-ward amount): Stench of Death was heavily warded, so the pool is
+    # 1.18M where bleed-through alone was 452k — ACT showed ~1.17M for the
+    # same fight, the long-open "Unknown parity" gap
+    assert actors[unk]["damage"] == 1_182_300
+    assert abil[(unk, "Stench of Death", "damage")]["total"] == 1_182_300
 
     # the boss has an actor row: its outgoing damage and the raid's damage into it
     zyl = next(e for e, (n, k) in names.items() if n == "Zylphax the Shredder")
     assert names[zyl][1] == "mob"
-    assert actors[zyl]["damage"] == 191_647
+    # 473,786 = his hits WITH the ward-absorbed portion folded back in
+    # (bleed-through alone was 191,647); the raid's wards did their job
+    assert actors[zyl]["damage"] == 473_786
     assert actors[zyl]["damage_taken"] == 36_864_424
 
     # the `is/are hit by` grammar never fabricates entities

@@ -1,18 +1,21 @@
 """Encounter segmentation. The log has NO encounter markers — segments are
-defined by damage-line gaps (>= GAP_S seconds), hard-cut on zone changes, and
-labeled from `has killed <Named>` events inside the segment.
+defined by damage-line gaps (>= GAP_S seconds) and hard-cut on zone changes.
 
-Pure functions over parsed events; no DB. Used by both the bulk path and
-(later) the incremental live path.
+`segment_events` is pure over parsed events and has no DB. `encounter_label`
+needs resolved entities (it has to know which target is a mob), so callers in
+the write path hand it already-resolved rows.
 """
 
 from dataclasses import dataclass, field
 
-GAP_S = 25          # damage silence that closes an encounter. 15s splits real
-                    # fights: bobby.txt has 16-26s lulls INSIDE Estate of Unrest
-                    # bosses (e.g. a 21s gap mid-Garanel); post-fight gaps in the
-                    # fixture are all >=30s, so 25 merges lulls without merging fights
-TRAIL_GRACE_S = 10  # kills/deaths landing just after the last damage still belong
+GAP_S = 7           # combat silence that closes an encounter. ACT parity: its
+                    # idle timeout is ~6s (gap >= 7 closes) — measured against
+                    # Lindsay's Emerald Halls zone view, which ACT cut into 61
+                    # encounters totalling 1:13:12; 25s merged chain pulls into
+                    # 34 segments and inflated EncDPS denominators by ~8%.
+                    # Anchors are damage AND avoided swings (a parried pull
+                    # still holds the fight open, as in ACT).
+TRAIL_GRACE_S = 10  # kills/deaths landing just after the last combat action still belong
 
 
 @dataclass
@@ -66,6 +69,42 @@ def _is_named_mob(victim: str, logger: str,
     return True
 
 
+_ALLY_KINDS = frozenset(("player", "own_pet", "swarm_pet", "named_pet"))
+
+
+def encounter_label(seg_events: list[dict], name_of, logger: str,
+                    known_mobs: frozenset[str] = frozenset()
+                    ) -> tuple[str, bool, int | None]:
+    """ACT-style label for one segment: -> (name, is_named, success).
+
+    An encounter is named after the enemy the raid FOUGHT, not the enemy that
+    died. Naming from `has killed` (what we did until 2026-08-03) means a wipe
+    produces no kill line, so it can never be named — every wipe collapsed into
+    an anonymous "trash" row and `success` had no code path that could ever be
+    0. Emerald Halls reported 9/9 named as a result, which is really "9 kills
+    out of 9 kills": the Galiel Spirithoof and Farstride Unicorn wipes were
+    sitting in the trash list.
+
+    The enemy is the mob that took the most damage in the segment, which
+    reproduces ACT's titles on Lindsay's Emerald Halls night (including the
+    cases where the raid's damage went mostly into an add: ACT calls the Treah
+    Greenroot wipe "a knotted guardian", and so do we). `success` is then real:
+    1 if that enemy died, 0 if the raid engaged it and it did not."""
+    dmg: dict[int, int] = {}
+    for r in seg_events:
+        if r["type"] != "damage" or r["tgt_kind"] != "mob" or r["tgt_entity"] is None:
+            continue
+        dmg[r["tgt_entity"]] = dmg.get(r["tgt_entity"], 0) + abs(r["amount"] or 0)
+    if not dmg:
+        # no enemy was ever hit — a stray segment (self-damage, a lone DoT tick)
+        return "trash", False, None
+    top = max(dmg, key=lambda eid: (dmg[eid], -eid))
+    name = name_of(top) or "trash"
+    killed = any(r["type"] == "kill" and r["tgt_entity"] == top
+                 and r["src_kind"] in _ALLY_KINDS for r in seg_events)
+    return name, _is_named_mob(name, logger, known_mobs), (1 if killed else 0)
+
+
 def segment_events(events: list, logger: str, initial_zone: str | None = None,
                    known_mobs: frozenset[str] = frozenset()) -> list[Segment]:
     """Assign each event to a segment (or none). Events must be time-ordered.
@@ -80,6 +119,10 @@ def segment_events(events: list, logger: str, initial_zone: str | None = None,
     def finalize(seg: Segment | None):
         if seg is None or not seg.event_indices:
             return
+        # heals/wards/power inside the idle window stay in the encounter —
+        # ACT keeps them too (its encounter is open until the timeout fires);
+        # trimming them was tried 2026-08-03 and moved cures/EncHPS AWAY from
+        # ACT's Emerald Halls numbers
         # label from named kills inside the segment; chain pulls can put more
         # than one named in a segment — list them all
         named: list[str] = []
@@ -114,7 +157,7 @@ def segment_events(events: list, logger: str, initial_zone: str | None = None,
             zone = ev.extra.get("zone")
             continue
 
-        if ev.type == "damage":
+        if ev.type in ("damage", "avoid"):
             if current is not None and last_damage_ts is not None and ev.ts - last_damage_ts >= GAP_S:
                 finalize(current)
                 current = None

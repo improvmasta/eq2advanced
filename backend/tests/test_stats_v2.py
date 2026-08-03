@@ -113,7 +113,10 @@ def test_power_drain_and_cures():
     ]
     actors, _ = roll_encounter(events, 10)
     assert actors[1]["power_drain"] == 300
-    assert actors[1]["cure_count"] == 1     # curing a player counts; stripping a mob doesn't
+    # ACT counts every relieve/dispel line as a cure, any target kind —
+    # verified against the Emerald Halls Cures column (Stymie 4 = 2 relieves
+    # + 2 mob-buff strips)
+    assert actors[1]["cure_count"] == 2
 
 
 # ---- API level: Unknown pooling + agg endpoint ----

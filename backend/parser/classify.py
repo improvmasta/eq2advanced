@@ -64,12 +64,22 @@ RE_WARD_REGEN = re.compile(r"^(?P<subj>.+?) regenerates (?P<amt>[\d,]+) points o
 RE_POWER = re.compile(
     r"^(?P<subj>.+?) refreshes (?P<tgt>.+?) for (?P<crit>a critical of )?(?P<amt>[\d,.]+K?) mana points\.$"
 )
-RE_DRAIN = re.compile(r"^(?P<subj>.+?) confounds (?P<tgt>.+?) draining (?P<amt>[\d,]+) points of power\.$")
+RE_DRAIN = re.compile(
+    r"^(?P<subj>.+?) (?:confounds|zaps|smites|diseases|freezes|slashes|poisons|"
+    r"burns|crushes|pierces|stabs|rends|shocks) (?P<tgt>.+?) "
+    r"draining (?P<amt>[\d,]+) points? of power\.$")
+# the drain verb tracks the spell's damage school (smites/zaps/diseases/…);
+# unknown verbs still land here — the trailing clause is unambiguous, only the
+# ability name keeps the verb+target garbage (power_drain never makes ability rows)
+RE_DRAIN_ANY = re.compile(r"^(?P<subj>.+?) draining (?P<amt>[\d,]+) points? of power\.$")
+RE_DRAINED_BY = re.compile(
+    r"^(?P<tgt>.+?) (?:is|are) drained by (?P<eff>.+?) of (?P<amt>[\d,]+) points? of power\.$")
 RE_THREAT = re.compile(
     r"^(?P<subj>.+?) (?P<dir>reduces|increases) (?:YOUR|THEIR) hate with (?P<mob>.+?) "
     r"for (?P<crit>a critical of )?(?P<amt>[\d,.]+K?) threat\.$"
 )
 RE_DISPEL = re.compile(r"^(?P<subj>.+?) dispels (?P<effect>.+?) from (?P<tgt>.+?)\.$")
+RE_RELIEVE = re.compile(r"^(?P<subj>.+?) relieves (?P<effect>.+?) from (?P<tgt>.+?)\.$")
 RE_AFFLICT = re.compile(r"^(?P<subj>.+) afflicts you\.$")
 RE_EXPIRE_EFFECTS = re.compile(r"^(?P<effect>.+?) no longer effects (?P<tgt>.+)\.$")  # sic
 RE_EXPIRE_FADES = re.compile(r"^(?P<effect>.+?) fades away\.$")
@@ -265,6 +275,19 @@ def classify_body(ts: int, body: str, logger: str,
             ts, "power_drain", src=subj, tgt=m.group("tgt"),
             ability=ability, amount=to_int(m.group("amt")),
         )
+    if m := RE_DRAIN_ANY.match(body):
+        subj, ability = dec(m.group("subj"))
+        return ParsedEvent(
+            ts, "power_drain", src=subj,
+            ability=ability, amount=to_int(m.group("amt")),
+        )
+    if m := RE_DRAINED_BY.match(body):
+        # sourceless mob-effect drain ("X is drained by Revived Sickness of
+        # 1,000 points of power.") — no drainer to credit
+        return ParsedEvent(
+            ts, "power_drain", tgt=m.group("tgt"),
+            amount=to_int(m.group("amt")), extra={"effect": m.group("eff")},
+        )
 
     if m := RE_THREAT.match(body):
         subj, ability = dec(m.group("subj"))
@@ -280,6 +303,15 @@ def classify_body(ts: int, body: str, logger: str,
         return ParsedEvent(
             ts, "dispel", src=subj, tgt=m.group("tgt"),
             ability=ability, extra={"effect": m.group("effect")},
+        )
+    if m := RE_RELIEVE.match(body):
+        # "<Curer>'s <Ability> relieves <Effect> from <Target>." — the cure
+        # grammar (dispels = stripping buffs; relieves = curing detriments).
+        # ACT counts both in its Cures column, credited to the subject.
+        subj, ability = dec(m.group("subj"))
+        return ParsedEvent(
+            ts, "dispel", src=subj, tgt=m.group("tgt"),
+            ability=ability, extra={"effect": m.group("effect"), "cure": True},
         )
 
     if m := RE_AFFLICT.match(body):
@@ -313,25 +345,78 @@ def classify_body(ts: int, body: str, logger: str,
     return None
 
 
+WARD_PAIR_WINDOW_S = 2   # an absorb line precedes its hit line, same/next second
+
+
+def _pair_wards(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
+    """Fold ward absorbs into the hit they mitigated, the way ACT does.
+
+    The log prints `<Ward> absorbs N points of damage from being done to <T>`
+    immediately BEFORE the corresponding hit line, and the hit line shows only
+    the bleed-through (or "fails to inflict any damage" when fully absorbed).
+    ACT reconstructs the pre-ward hit: the absorbed amount counts as the
+    attacker's damage and the target's damage taken; the warder separately
+    keeps the full absorb as healing. Pairing key = the raw target string
+    (wards and hits both say YOU for the logger)."""
+    pending: dict[str, list[ParsedEvent]] = {}
+
+    def key(tgt: str) -> str:
+        # absorbs say "being done to YOU", the mitigated self-hit says
+        # "hits YOURSELF" — same combatant, one pairing key
+        return "YOU" if tgt == "YOURSELF" else tgt
+
+    for ev in events:
+        if ev.type == "ward" and ev.tgt is not None:
+            pending.setdefault(key(ev.tgt), []).append(ev)
+            # a target nobody hits again would grow forever on a long night
+            if len(pending) > 512:
+                for k in [k for k, ws in pending.items()
+                          if ws[-1].ts < ev.ts - WARD_PAIR_WINDOW_S]:
+                    del pending[k]
+        elif ev.type == "damage" and ev.tgt is not None and key(ev.tgt) in pending:
+            wards = [w for w in pending.pop(key(ev.tgt))
+                     if ev.ts - w.ts <= WARD_PAIR_WINDOW_S]
+            absorbed = sum(w.amount or 0 for w in wards)
+            if absorbed:
+                ev.extra = dict(ev.extra or {})
+                ev.extra["warded"] = absorbed
+                ev.amount = (ev.amount or 0) + absorbed
+                if ev.flags & F_ZERO:
+                    ev.flags &= ~F_ZERO   # fully-absorbed hit is a real hit in ACT
+                for w in wards:
+                    # mutated after the ward was yielded — safe because every
+                    # consumer (bulk parse, live batches) materializes the full
+                    # event list before rolling stats. An UNpaired absorb means
+                    # the mitigated hit printed no line at all (fully-absorbed
+                    # DoT tick); its amount still counts as the target's damage
+                    # taken, which is what ACT does.
+                    w.extra = dict(w.extra or {})
+                    w.extra["paired"] = True
+        yield ev
+
+
 def parse_lines(lines: Iterable[str], logger: str,
                 pet_names: frozenset[str] = frozenset()) -> Iterator[ParsedEvent]:
     """Parse raw log lines (with prefixes) into events. Shared by bulk uploads
     and live ingest batches."""
-    # the client sometimes logs a prepare line twice in the same second (exact
-    # duplicate, per-spell — 234 of 918 in bobby.txt); a real same-second
-    # re-prepare of the same spell can't happen, so collapse to one cast
-    last_flavor: tuple[int, str] | None = None
-    for line in lines:
-        parts = split_prefix(line)
-        if parts is None:
-            continue
-        ts, body = parts
-        ev = classify_body(ts, body, logger, pet_names)
-        if ev is None:
-            continue
-        if ev.type == "cast_flavor":
-            key = (ts, ev.extra["flavor"])
-            if key == last_flavor:
+    def raw() -> Iterator[ParsedEvent]:
+        # the client sometimes logs a prepare line twice in the same second
+        # (exact duplicate, per-spell — 234 of 918 in bobby.txt); a real
+        # same-second re-prepare of the same spell can't happen, so collapse
+        last_flavor: tuple[int, str] | None = None
+        for line in lines:
+            parts = split_prefix(line)
+            if parts is None:
                 continue
-            last_flavor = key
-        yield ev
+            ts, body = parts
+            ev = classify_body(ts, body, logger, pet_names)
+            if ev is None:
+                continue
+            if ev.type == "cast_flavor":
+                key = (ts, ev.extra["flavor"])
+                if key == last_flavor:
+                    continue
+                last_flavor = key
+            yield ev
+
+    yield from _pair_wards(raw())

@@ -21,7 +21,8 @@ from pathlib import Path
 from db import RAW_DIR, get_db, json_dumps
 from parser import parse_lines, petnames
 from parser.prefix import split_prefix
-from pipeline.encounters import GAP_S, TRAIL_GRACE_S, segment_events
+from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
+                                 segment_events)
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
                                 actor_rows, roll_encounter)
@@ -195,17 +196,9 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     open_first = open_seg.event_indices[0] if open_seg else None
 
     enc_of_idx: dict[int, int] = {}          # event index -> encounter id
-    seg_rows = []
     for seg in closed:
-        cur = conn.execute(
-            "INSERT INTO encounters (session_id, zone, name, is_named, started_ts, "
-            "ended_ts, duration_s, success) VALUES (?,?,?,?,?,?,?,?)",
-            (state.session_id, seg.zone, seg.name, int(seg.is_named), seg.start_ts,
-             seg.end_ts, max(seg.end_ts - seg.start_ts, 1), seg.success))
-        enc_id = cur.lastrowid
-        seg_rows.append((seg, enc_id))
         for i in seg.event_indices:
-            enc_of_idx[i] = enc_id
+            enc_of_idx[i] = -1               # placeholder: ids assigned below
 
     flush_ts = latest - CLOSE_S
     flush_idx = [
@@ -221,6 +214,23 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     flushed = [events[i] for i in flush_idx]
     resolved = _resolve_events(flushed, res)
     pos = {orig: k for k, orig in enumerate(flush_idx)}
+
+    # encounters are inserted AFTER resolution: naming them after the enemy
+    # fought needs to know which target is a mob (pipeline.encounters)
+    seg_rows = []
+    for seg in closed:
+        seg_events = [resolved[pos[i]] for i in seg.event_indices]
+        name, is_named, success = encounter_label(
+            seg_events, res.name_of, state.logger)
+        cur = conn.execute(
+            "INSERT INTO encounters (session_id, zone, name, is_named, started_ts, "
+            "ended_ts, duration_s, success) VALUES (?,?,?,?,?,?,?,?)",
+            (state.session_id, seg.zone, name, int(is_named), seg.start_ts,
+             seg.end_ts, max(seg.end_ts - seg.start_ts, 1), success))
+        enc_id = cur.lastrowid
+        seg_rows.append((seg, enc_id))
+        for i in seg.event_indices:
+            enc_of_idx[i] = enc_id
 
     for seg, enc_id in seg_rows:
         seg_events = [resolved[pos[i]] for i in seg.event_indices]

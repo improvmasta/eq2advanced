@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db import SCHEMA
-from pipeline.zoneruns import ZONE_RUN_GAP_S, rebuild_zone_runs
+from pipeline.zoneruns import ZONE_RUN_GAP_S, encounter_fp, rebuild_zone_runs
 
 T0 = 1_754_000_000
 
@@ -163,3 +163,84 @@ def test_raider_count(conn):
             (e1, i))
     rebuild_zone_runs(conn, 1)
     assert runs(conn)[0]["raider_count"] == 2
+
+
+# ---------- hand edits (delete / merge / unmerge) ----------
+
+
+def add_edit(conn, fp, kind):
+    conn.execute(
+        "INSERT INTO run_edits (character_id, fp, kind, created_ts) VALUES (1,?,?,0)",
+        (fp, kind))
+
+
+def test_delete_hides_fight_and_survives_reparse(conn):
+    add_session(conn, 1, T0, T0 + 5000)
+    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100, is_named=1, success=1)
+    keep = add_enc(conn, 1, "Zone A", "Boss 2", T0 + 200, T0 + 300, is_named=1, success=1)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[0]["encounter_count"] == 2
+
+    add_edit(conn, encounter_fp({"started_ts": T0, "zone": "Zone A", "name": "Boss 1"}), "delete")
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert rs[0]["encounter_count"] == 1 and rs[0]["named_count"] == 1
+    assert rs[0]["started_ts"] == T0 + 200
+    assert enc(conn, keep)["deleted_ts"] is None
+
+    # a reparse drops and recreates every row: the edit is keyed by fingerprint,
+    # so the deleted fight must come back deleted under its new id
+    conn.execute("DELETE FROM encounters")
+    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100, is_named=1, success=1)
+    again = add_enc(conn, 1, "Zone A", "Boss 2", T0 + 200, T0 + 300, is_named=1, success=1)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[0]["encounter_count"] == 1
+    assert enc(conn, again)["deleted_ts"] is None
+
+
+def test_delete_covers_every_duplicate_copy(conn):
+    add_session(conn, 1, T0, T0 + 5000)
+    add_session(conn, 2, T0, T0 + 9000)
+    add_enc(conn, 1, "Zone A", "Boss", T0, T0 + 100)
+    add_enc(conn, 2, "Zone A", "Boss", T0, T0 + 100)
+    add_edit(conn, encounter_fp({"started_ts": T0, "zone": "Zone A", "name": "Boss"}), "delete")
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn) == []
+    assert all(e["deleted_ts"] is not None
+               for e in conn.execute("SELECT deleted_ts FROM encounters"))
+
+
+def test_join_merges_two_runs(conn):
+    add_session(conn, 1, T0, T0 + 5000)
+    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    add_enc(conn, 1, "Zone B", "Boss 2", T0 + 200, T0 + 300)
+    rebuild_zone_runs(conn, 1)
+    assert len(runs(conn)) == 2
+
+    add_edit(conn, encounter_fp({"started_ts": T0 + 200, "zone": "Zone B", "name": "Boss 2"}), "join")
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert len(rs) == 1
+    assert rs[0]["zone"] == "Zone A" and rs[0]["encounter_count"] == 2
+
+
+def test_break_splits_one_run(conn):
+    add_session(conn, 1, T0, T0 + 5000)
+    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    add_enc(conn, 1, "Zone A", "Boss 2", T0 + 200, T0 + 300)
+    add_enc(conn, 1, "Zone A", "Boss 3", T0 + 400, T0 + 500)
+    rebuild_zone_runs(conn, 1)
+    assert len(runs(conn)) == 1
+
+    add_edit(conn, encounter_fp({"started_ts": T0 + 200, "zone": "Zone A", "name": "Boss 2"}), "break")
+    rebuild_zone_runs(conn, 1)
+    assert [r["encounter_count"] for r in runs(conn)] == [1, 2]
+
+
+def test_join_on_first_fight_is_ignored(conn):
+    """Nothing to merge backwards into — the run must still exist."""
+    add_session(conn, 1, T0, T0 + 5000)
+    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    add_edit(conn, encounter_fp({"started_ts": T0, "zone": "Zone A", "name": "Boss 1"}), "join")
+    rebuild_zone_runs(conn, 1)
+    assert len(runs(conn)) == 1

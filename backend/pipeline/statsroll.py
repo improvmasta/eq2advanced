@@ -44,7 +44,7 @@ ACTOR_INSERT = (
     "INSERT INTO encounter_actor_stats (encounter_id, entity_id, damage, dps, "
     "heals, overheal_est, save_count, wards_absorbed, ward_bleedthrough, "
     "power_fed, power_drain, damage_taken, deaths, rez_casts, cure_count, "
-    "active_s) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    "active_s, atk_swings, atk_span_s) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 
 ABILITY_INSERT = (
     "INSERT INTO encounter_ability_stats (encounter_id, entity_id, ability_id, "
@@ -58,7 +58,8 @@ def actor_rows(enc_id: int, actor_stats: dict) -> list[tuple]:
     return [(enc_id, eid, a["damage"], a["dps"], a["heals"], a["overheal_est"],
              a["save_count"], a["wards_absorbed"], a["ward_bleedthrough"],
              a["power_fed"], a["power_drain"], a["damage_taken"], a["deaths"],
-             a["rez_casts"], a["cure_count"], a["active_s"])
+             a["rez_casts"], a["cure_count"], a["active_s"], a["atk_swings"],
+             a["atk_span_s"])
             for eid, a in actor_stats.items()]
 
 
@@ -95,6 +96,7 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
         "wards_absorbed": 0, "ward_bleedthrough": 0, "power_fed": 0,
         "power_drain": 0, "damage_taken": 0, "deaths": 0, "rez_casts": 0,
         "cure_count": 0, "first_ts": None, "last_ts": None,
+        "atk_swings": 0, "atk_first": None, "atk_last": None,
     })
     deficit: dict[int, int] = defaultdict(int)      # player -> reconstructed HP lost
     max_deficit: dict[int, int] = defaultdict(int)
@@ -112,6 +114,14 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
             actor["first_ts"] = ts
         actor["last_ts"] = ts
 
+    def swing(actor: dict, ts: int):
+        # ACT's per-combatant Avg Delay: offensive swings (landed, absorbed,
+        # or avoided) spaced over first->last swing time
+        actor["atk_swings"] += 1
+        if actor["atk_first"] is None:
+            actor["atk_first"] = ts
+        actor["atk_last"] = ts
+
     def actor_key(ev: dict, side: str) -> int | None:
         """Credit key: the rollup for players/owned pets, the entity itself for
         mobs/other (and the Unknown pool)."""
@@ -122,6 +132,14 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
         if kind in ("mob", "other", "swarm_pet", "named_pet"):
             return ev.get(f"{side}_entity")
         return None
+
+    def taken_key(ev: dict) -> int | None:
+        """Damage-taken credit: ACT keeps possessive pets ("Tragedy's
+        unswerving hammer") as their own combatants on the taken side; only
+        the logger's bare-name pet merges into the player."""
+        if ev.get("tgt_kind") in ("swarm_pet", "named_pet"):
+            return ev.get("tgt_entity")
+        return actor_key(ev, "tgt")
 
     for ev in events:
         etype = ev["type"]
@@ -141,9 +159,12 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                 touch(a, ev["ts"])
                 if not self_hit:
                     a["damage"] += amt
-            tgt_key = actor_key(ev, "tgt")
+                    swing(a, ev["ts"])
+            tgt_key = taken_key(ev)
             tgt_roll = ev.get("tgt_rollup")
-            if tgt_key is not None:
+            if tgt_key is not None and not self_hit:
+                # ACT excludes self-inflicted damage from DamageTaken exactly
+                # like it does from Damage (Vampiric Requiem et al.)
                 actors[tgt_key]["damage_taken"] += amt
             if ev.get("tgt_kind") == "player" and tgt_roll is not None:
                 deficit[tgt_roll] += amt
@@ -172,6 +193,8 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                     st["_dtypes"][ev["dtype"]] += amt
 
         elif etype == "avoid":
+            if src_roll is not None:
+                swing(actors[src_roll], ev["ts"])
             if src_id is not None and ability:
                 st = abilities[(src_id, ability, "damage")]
                 st[_AVOID_COL.get(ev.get("extra", {}).get("how"), "misses")] += 1
@@ -207,6 +230,13 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                 touch(a, ev["ts"])
                 a["wards_absorbed"] += amt
                 a["ward_bleedthrough"] += (ev.get("extra") or {}).get("bleed", 0)
+            if not (ev.get("extra") or {}).get("paired"):
+                # absorb whose mitigated hit printed no line (fully-absorbed
+                # DoT tick): the absorbed amount is still damage taken by the
+                # warded target — ACT counts it the same way
+                tgt_key = taken_key(ev)
+                if tgt_key is not None:
+                    actors[tgt_key]["damage_taken"] += amt
             if src_id is not None and ability:
                 st = abilities[(src_id, ability, "ward")]
                 st["hits"] += 1
@@ -217,8 +247,10 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                     st["crits"] += 1
 
         elif etype == "power":
+            # self power gains (Lich, Savant's Intelligence, mana regen) count:
+            # ACT's PowerReplenish is every refresh line credited to the caster
             amt = ev["amount"] or 0
-            if src_roll is not None and ev.get("src_entity") != ev.get("tgt_entity"):
+            if src_roll is not None:
                 actors[src_roll]["power_fed"] += amt
             if src_id is not None and ability:
                 st = abilities[(src_id, ability, "power")]
@@ -254,10 +286,17 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                     st["crits"] += 1
 
         elif etype == "dispel":
-            # curing: removing an effect FROM a player (dispelling a mob's
-            # buff has a mob-kind target)
-            if src_roll is not None and ev.get("tgt_kind") == "player":
+            # cures: `relieves <Effect> from <T>` (curing detriments) and
+            # `dispels <Effect> from <T>` (stripping buffs). ACT counts both
+            # per line, credited to the caster, regardless of target kind —
+            # verified against the Emerald Halls Cures column (Tragedy 186,
+            # Treah Greenroot 417).
+            if src_roll is not None:
                 actors[src_roll]["cure_count"] += 1
+            if src_id is not None and ability:
+                st = abilities[(src_id, ability, "cure")]
+                st["hits"] += 1
+                st["_ts"].append(ev["ts"])
 
         elif etype == "death":
             tgt_roll = ev.get("tgt_rollup")
@@ -265,10 +304,13 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
                 actors[tgt_roll]["deaths"] += 1
 
         elif etype == "kill":
-            # a player victim (mind control) is a death for that player
+            # a player victim (mind control) is a death for that player; the
+            # logger's bare-name pet ("… has killed Bobby") counts as the
+            # player too — ACT can't tell them apart, so its Deaths column
+            # includes the same-name pet, and parity means we merge it as well
             tgt_roll = ev.get("tgt_rollup")
             tgt_kind = ev.get("tgt_kind")
-            if tgt_roll is not None and tgt_kind == "player":
+            if tgt_roll is not None and tgt_kind in ("player", "own_pet"):
                 actors[tgt_roll]["deaths"] += 1
 
         elif etype == "rez":
@@ -310,6 +352,9 @@ def roll_encounter(events: list[dict], duration_s: int) -> tuple[dict, dict]:
             "rez_casts": a["rez_casts"],
             "cure_count": a["cure_count"],
             "active_s": active,
+            "atk_swings": a["atk_swings"],
+            "atk_span_s": (a["atk_last"] - a["atk_first"]
+                           if a["atk_swings"] >= 2 else 0),
         }
 
     ability_stats = {}
