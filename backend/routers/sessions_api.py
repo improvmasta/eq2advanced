@@ -70,6 +70,27 @@ def session_detail(session_id: int, user=Depends(require_user)):
     return {"session": row_to_dict(sess), "encounters": rows_to_dicts(encounters)}
 
 
+@router.post("/sessions/{session_id}/reparse")
+def reparse_session(session_id: int, user=Depends(require_user)):
+    """Re-run the parse from stored raw — picks up parser fixes and newly
+    learned pet knowledge. Refused for pruned sessions (frozen by design)."""
+    import threading
+
+    from pipeline.ingest_writer import parse_session, session_raw_paths
+
+    conn = get_db()
+    sess = visible_session(conn, user, session_id)
+    if sess["pruned"]:
+        raise HTTPException(409, "session is pruned; its report is frozen")
+    if sess["status"] not in ("ready", "error"):
+        raise HTTPException(409, f"session is {sess['status']}")
+    paths = session_raw_paths(conn, session_id)
+    if not paths:
+        raise HTTPException(409, "no stored raw log for this session")
+    threading.Thread(target=parse_session, args=(session_id, paths), daemon=True).start()
+    return {"session_id": session_id, "status": "parsing"}
+
+
 def _card_hints(e: dict) -> list[str]:
     """Basic live coach hints per finalized fight card — cheap flags from the
     logger's own rollup row, not the full coach engine."""

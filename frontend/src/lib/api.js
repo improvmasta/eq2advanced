@@ -35,9 +35,9 @@ export const api = {
   spell: (id) => req(`/api/spells/${id}`),
   sessions: () => req('/api/sessions'),
   session: (id) => req(`/api/sessions/${id}`),
+  reparse: (id) => req(`/api/sessions/${id}/reparse`, { method: 'POST' }),
   encounter: (id) => req(`/api/encounters/${id}`),
-  coach: (id) => req(`/api/sessions/${id}/coach`),
-  generateCoach: (id) => req(`/api/sessions/${id}/coach`, { method: 'POST' }),
+  encountersAgg: (ids) => req(`/api/encounters/agg?ids=${ids.join(',')}`),
   raidReport: (id) => req(`/api/sessions/${id}/raid-report`),
   setCalibration: (id, calibration) => req(`/api/sessions/${id}/calibration`, json({ calibration })),
   upload: (file, characterName) => {

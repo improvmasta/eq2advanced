@@ -125,6 +125,37 @@ spell detail). Query shapes verified live 2026-08-02 — see client.py docstring
   `tests/fixtures/census/` (trimmed real responses for Bobby) via a fake
   injected as `census.client._shared` — no live Census calls in CI.
 
+### Bulk spell ingest (phase 7 groundwork)
+
+Census spell records are BASE, pre-stat values per tier (App1–Celestial share a
+`crc`) — no wiki scrape or manual entry needed; in-game tooltips are these
+numbers with the player's stats applied, which is exactly `fit.py`'s damage
+model. `tools/ingest_spells.py --all --max-level 70` proactively caches the
+full class books via `sync.ingest_class_spells()` →
+`client.spells_by_class()` (query `classes.<cls>.level=[<max>`, lowercase
+class keys, `[` = Census's <= operator, `c:start` paging — verified live
+2026-08-02, wizard <=70 = 1152 records; `sync.ALL_CLASSES` holds the 24
+EoF-era names). Marks `spell_line:{crc}` so upgrade advice never refetches.
+`census_spells` carries typed columns (`cast_s/recast_s/recovery_s/duration_s/
+power_cost/dmg_min/dmg_max/dmg_dtype/dmg_period_s`, schema v4) populated on
+insert by `sync.typed_fields()` — the ONE owner of the unit conversions
+(including the recovery-hundredths gotcha; `fit.spellbook()` uses it too).
+`dmg_*` is the primary damage effect = largest midpoint (DoT initial hit over
+its tick). `sync.backfill_typed_columns()` repairs pre-migration rows;
+`spell_overrides` remains the manual escape hatch where Census text is wrong.
+GOTCHA: the default `s:example` service id gets burst-throttled hard on bulk
+pulls ("Missing Service ID" error after ~10 full-record requests — LESS than
+one class book; it also silently CLAMPS `c:limit` to 100, so paging advances
+by `len(rows)` and stops only on an empty page — a short page proves nothing).
+`ingest_class_spells` therefore persists every page as it lands and stores the
+offset in settings (`ingest_progress:{cls}:{max_level}`): an interrupted class
+RESUMES mid-book instead of restarting from zero (a from-zero fetch could
+never outrun the burst budget). Only the empty end-page clears the offset and
+writes the `spell_line:{crc}` completeness markers. The tool paces 30s/page on
+`s:example`; a registered service id (census.daybreakgames.com signup) in
+`.env` as `CENSUS_SERVICE_ID` removes the limit — start.sh and the ingest
+tool both load `.env`.
+
 ## Coach engine (phase 5)
 
 `coach/` — `descriptive.py` (session currencies: DPS/crit/autoattack share,
@@ -274,14 +305,73 @@ of damage** (`test_act_parity_zylphax` guards it). Three bugs found and fixed:
    now shelve under ability kind `self` like focus does.
 
 Still open / by design (revisit when they matter):
-- **Mobs are absent from our actor table** (ACT shows Zylphax at 471k) —
-  `encounter_actor_stats` only keeps rollup (player) entities.
-- **Sourceless passive damage** ("X is hit for N") has no actor — ACT pools it
-  as "Unknown" (1.17M on Zylphax); we store the events but credit no one.
+- ~~Mobs absent from the actor table~~ FIXED phase 7b: mobs, mob-owned pets,
+  and the pooled `Unknown` all get actor rows (with `damage_taken`).
+- ~~Sourceless passive damage credited to no one~~ FIXED phase 7b: pooled
+  under an `Unknown` entity, incl. the previously mis-parsed
+  `X is/are hit by <Effect> for N` grammar (1,007 lines in bobby.txt).
 - **Encounter cuts**: Zylphax's window matched ACT to the second, so the
   cutter isn't broken per se — but our ≥25s gap merges chain-pulled trash into
   one segment where ACT splits per pull ([16] encounters in ACT's zone list vs
   our ~10). Need a specific mis-cut fight from Lindsay before tuning.
+- **Exact Unknown parity unverified**: our Zylphax Unknown pool is 451,633
+  (all Stench of Death); ACT reportedly showed ~1.17M — recheck against ACT
+  once the same fight is compared column-for-column.
+
+## Phase 7b — attribution overhaul + stats engine v2 + workspace UX (2026-08-02)
+
+**Pet knowledge base** (`parser/petnames.py`, global `pet_names` table): named
+pets (`Ellea's Lunar Attendant`) are grammatically identical to abilities with
+internal possessives (`Banjeaux's Daro's Dull Blade`), so ONLY names in the
+knowledge base decompose as pets (`Subject.unit == "named_pet"`). Sources:
+curated seed, plus **learning** — every parse prescans its raw lines for
+`Alas, <Owner>'s <Capitalized> has died…` evidence (kill-victim guard rejects
+mob adds like `Garanel's Shade`), unions it with the global table, and after
+the parse persists new names + every ability actually cast by a pet entity
+(`ability_catalog`, `source='observed'`; curated > observed > census).
+Knowledge applies **backwards** two ways: the prescan covers the current file
+from line 1, and `sessions.parse_version` + the startup reparse sweep
+(`main._reparse_stale`; also `POST /api/sessions/{id}/reparse`) re-attribute
+old sessions whenever `PARSE_VERSION` bumps. A session stuck at `parsing` on
+startup is an orphan (dead worker) and is swept too. Conflated pets (another
+player's pet under the owner's own name) can't be split — ability rows whose
+name is a known pet ability get `via_pet` at API read time instead (damage
+stays with the owner, matching ACT).
+
+**Behavioral mob refinement** (`pipeline/refine.py`): single-token capitalized
+names default to "player", but a kill-victim of a player-credited kill line, or
+a name that trades damage with confirmed players (≥2 hit / ≥3 hitting) without
+ever touching a heal, reclassifies to `mob` — so one-word bosses ("Venekor")
+stop appearing as raiders and their kills label the encounter. Target-side
+resolution now decomposes possessives exactly like source-side, so damage
+taken by `Ellea's blighted horde` lands on the same entity row.
+
+**Stats engine v2** (schema v5, `pipeline/statsroll.py`): per-ability avoid
+breakdown (`misses/parries/ripostes/dodges/blocks/reflects/resists` — the
+`parries`→"parrie" bug is dead), `zero_hits` (absorbed hits stay inside `hits`
+for ACT parity; min/max/median are non-zero), `median`, `avg_delay_s`,
+`dtypes` (JSON per-school split incl. dual-type components), autoattack split
+into `(melee)/(multi attack)/(aoe attack)/(flurry)` (flags `F_AOE`/`F_FLURRY`),
+crits on ward/power/threat, threat split into `threat`/`detaunt` kinds, casts
+attached to the ability's busiest row (no phantom damage rows), actor
+`damage_taken`/`power_drain`/`cure_count`, and actor rows for mobs + Unknown.
+API derives `swings` and `to_hit_pct`. `GET /api/encounters/agg?ids=…` sums
+any set of one session's encounters into the same payload shape (single-id
+fast-path; medians recomputed from events, null when pruned) — it powers
+every tree node below.
+
+**Workspace UX**: `/sessions/:id` is now one ACT-style page
+(`frontend/src/pages/Workspace.jsx` + the first shared components:
+`SortableTable`, `EncounterTree`, `ShareBar`, `useQueryState`): left tree
+(session **All** root → zone blocks → fights; consecutive trash collapses to
+`Trash ×N`), right pane = sortable combatant table → per-actor ability
+drilldown (ACT columns: Swings, ToHit, Median, AvgDelay, damage types, kind
+filter chips) + a DPS bar strip. Selection lives in the URL (`?sel=` id-list
+or `all`, `&actor=`). SessionDetail/Encounter/RaidReport/Coach **pages** are
+deleted (`/encounters/:id` redirects); the raid-report API remains and its
+engagement/death-cost/overheal numbers merge into the All node as columns.
+The coach engine, calibration, and `coach_api` are intact — no UI surface.
+Chain-pull labels cap at 4 nameds (`A + B + C +N more`).
 
 ## Hardening (phase 6)
 

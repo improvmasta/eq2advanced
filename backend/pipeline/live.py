@@ -19,11 +19,12 @@ import time
 from pathlib import Path
 
 from db import RAW_DIR, get_db, json_dumps
-from parser import parse_lines
+from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import GAP_S, TRAIL_GRACE_S, segment_events
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
-from pipeline.statsroll import ACTOR_INSERT, actor_rows, roll_encounter
+from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
+                                actor_rows, roll_encounter)
 
 LIVE_IDLE_S = 30 * 60        # receiving session quiet this long -> close it, next batch starts fresh
 CLOSE_S = GAP_S + TRAIL_GRACE_S  # nothing can join a segment once this much log time has passed
@@ -42,6 +43,9 @@ class LiveState:
         self.seq_base = 0
         self.chunk_seq = 0
         self.last_line_ts: int | None = None
+        # named-pet knowledge at session start; no prescan/refine live (the
+        # close-time rebuild through parse_session applies both to everything)
+        self.pet_names: frozenset[str] = frozenset()
 
 
 _states: dict[int, LiveState] = {}
@@ -53,6 +57,7 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
         state = _states.get(session_id)
         if state is None:
             state = LiveState(session_id, logger)
+            state.pet_names = petnames.load(conn)
             row = conn.execute(
                 "SELECT COALESCE(MAX(seq)+1, 0) AS seq, "
                 "(SELECT COALESCE(MAX(seq)+1, 0) FROM raw_chunks WHERE session_id=?) AS chunk "
@@ -156,7 +161,7 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict
             state.chunk_seq += 1
             if last:
                 state.last_line_ts = max(state.last_line_ts or 0, last[0])
-            state.pending.extend(parse_lines(iter(accepted), logger))
+            state.pending.extend(parse_lines(iter(accepted), logger, state.pet_names))
 
         _flush(conn, state)
 
@@ -210,7 +215,7 @@ def _flush(conn, state: LiveState, force: bool = False) -> None:
     if not flush_idx and not closed:
         return
 
-    res = EntityResolver(conn, state.session_id, state.logger)
+    res = EntityResolver(conn, state.session_id, state.logger, state.pet_names)
     flushed = [events[i] for i in flush_idx]
     resolved = _resolve_events(flushed, res)
     pos = {orig: k for k, orig in enumerate(flush_idx)}
@@ -221,12 +226,7 @@ def _flush(conn, state: LiveState, force: bool = False) -> None:
             seg_events, max(seg.end_ts - seg.start_ts, 1))
         conn.executemany(ACTOR_INSERT, actor_rows(enc_id, actor_stats))
         conn.executemany(
-            "INSERT INTO encounter_ability_stats (encounter_id, entity_id, ability_id, "
-            "kind, casts, hits, crits, misses, resists, total, min, max) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            [(enc_id, src, res.ability_id(name), kind, st["casts"], st["hits"],
-              st["crits"], st["misses"], st["resists"], st["total"], st["min"], st["max"])
-             for (src, name, kind), st in ability_stats.items()])
+            ABILITY_INSERT, ability_rows(enc_id, ability_stats, res.ability_id))
 
     conn.executemany(
         "INSERT INTO events (session_id, encounter_id, ts, seq, type, src_entity, "

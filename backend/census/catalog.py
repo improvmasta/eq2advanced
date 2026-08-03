@@ -90,6 +90,21 @@ def upsert_from_spells(conn, recs: list[dict]) -> None:
     conn.executemany(_PROC_UPSERT, proc_rows)
 
 
+def observe_pet_abilities(conn, names: set[str]) -> None:
+    """Learn-back from a parse: abilities actually cast by pet entities are
+    pet abilities. Runs inside the caller's transaction. Precedence stays
+    curated > observed > census — observed evidence overrides a census guess
+    but never a curated row."""
+    if names:
+        conn.executemany(
+            "INSERT INTO ability_catalog (ability_name, class, unit, proc, source) "
+            "VALUES (?, NULL, 'pet', 0, 'observed') ON CONFLICT(ability_name) "
+            "DO UPDATE SET unit='pet', source='observed' "
+            "WHERE ability_catalog.source IS NOT 'curated' "
+            "AND ability_catalog.source IS NOT 'observed'",
+            [(n,) for n in names])
+
+
 def pet_ability_names(conn) -> set[str]:
     return {r[0] for r in conn.execute(
         "SELECT ability_name FROM ability_catalog WHERE unit='pet'")}

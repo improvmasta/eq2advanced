@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import db as dbmod
-from census.effects import parse_effect
-from census.sync import base_name
+from census.effects import parse_effect, parse_effects
+from census.sync import base_name, typed_fields
 
 FIXTURES = Path(__file__).parent / "fixtures" / "census"
 
@@ -37,6 +37,12 @@ class FakeCensus:
 
     def spells_by_ids(self, ids):
         return [copy.deepcopy(self.spells[i]) for i in ids if i in self.spells]
+
+    def spell_page(self, cls, max_level, start):
+        rows = [copy.deepcopy(s) for s in self.spells.values()
+                if cls in (s.get("classes") or {})
+                and (s.get("level") or 0) <= max_level]
+        return rows[start:start + 2]  # small pages exercise the resume loop
 
     def items_by_ids(self, ids):
         return [copy.deepcopy(self.items[i]) for i in ids if i in self.items]
@@ -105,6 +111,21 @@ def test_effects_grammar():
     e = parse_effect("This effect cannot be critically applied.")
     assert e["kind"] == "note" and e["no_crit"]
     assert parse_effect("Shapechanges caster into a lich.")["kind"] == "other"
+
+
+def test_typed_fields():
+    spells = {s["id"]: s for s in json.load(open(FIXTURES / "spells.json"))}
+    soulrot = spells[1835735656]  # Soulrot VI Apprentice
+    t = typed_fields(soulrot, parse_effects(soulrot["effect_list"]))
+    assert t["cast_s"] == 2.0 and t["recast_s"] == 3
+    assert t["recovery_s"] == 0.5  # _tenths field stores hundredths
+    assert t["duration_s"] == 4.0 and t["power_cost"] == 60
+    assert (t["dmg_min"], t["dmg_max"], t["dmg_dtype"], t["dmg_period_s"]) == \
+        (33, 45, "disease", 1.0)
+    aqueous = spells[680981520]  # buff, no damage effect
+    t = typed_fields(aqueous, parse_effects(aqueous["effect_list"]))
+    assert t["cast_s"] == 3.0 and t["duration_s"] == 900.0
+    assert t["dmg_min"] is None and t["dmg_dtype"] is None
 
 
 def test_base_name():
@@ -210,3 +231,38 @@ def test_census_isolation(client, fake):
     client.cookies.clear()
     client.post("/api/auth/login",
                 json={"email": "a@x.test", "password": "hunter2hunter2"})
+
+
+# ---- bulk spell ingest (phase 7 groundwork) ----
+
+def test_bulk_ingest_and_backfill(client, fake):
+    """ingest_class_spells caches the whole class book with typed columns and
+    line markers; backfill_typed_columns repairs pre-migration rows."""
+    from census.sync import backfill_typed_columns, ingest_class_spells
+    conn = dbmod.get_db()
+    res = ingest_class_spells(conn, fake, "necromancer", 70, page_sleep_s=0)
+    # fixture necro records: Aqueous Soul, Bloody Ritual III, Unholy Covenant V,
+    # Soulrot VI Apprentice + Master
+    assert res["spells"] == 5
+    assert res["lines"] == conn.execute(
+        "SELECT COUNT(DISTINCT crc) FROM census_spells WHERE class LIKE "
+        "'%necromancer%' AND crc IS NOT NULL").fetchone()[0]
+    row = conn.execute(
+        "SELECT * FROM census_spells WHERE spell_id=575873413").fetchone()
+    assert row["cast_s"] == 2.0 and row["recovery_s"] == 0.5
+    assert (row["dmg_min"], row["dmg_max"], row["dmg_dtype"]) == (56, 76, "disease")
+    assert conn.execute("SELECT 1 FROM settings WHERE key=?",
+                        (f"spell_line:{row['crc']}",)).fetchone() is not None
+    # completion clears the resume offset (pages persist as they land, so an
+    # interrupted class picks up mid-book instead of restarting from zero)
+    assert conn.execute("SELECT 1 FROM settings WHERE key LIKE "
+                        "'ingest_progress:%'").fetchone() is None
+
+    # a pre-migration row (typed columns NULL) gets repaired from its json blob
+    with conn:
+        conn.execute("UPDATE census_spells SET cast_s=NULL, dmg_min=NULL "
+                     "WHERE spell_id=575873413")
+    assert backfill_typed_columns(conn) == 1
+    row = conn.execute(
+        "SELECT cast_s, dmg_min FROM census_spells WHERE spell_id=575873413").fetchone()
+    assert row["cast_s"] == 2.0 and row["dmg_min"] == 56

@@ -15,7 +15,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -127,7 +127,13 @@ CREATE TABLE IF NOT EXISTS ability_catalog (
   class TEXT,
   unit TEXT NOT NULL,                     -- player|pet
   proc INTEGER NOT NULL DEFAULT 0,        -- fires on its own (buff/item proc)
-  source TEXT                             -- census|curated
+  source TEXT                             -- census|curated|observed
+);
+CREATE TABLE IF NOT EXISTS pet_names (
+  name TEXT PRIMARY KEY,                  -- capitalized named-pet name ("Lunar Attendant")
+  source TEXT NOT NULL,                   -- curated|observed
+  owner_hint TEXT,                        -- an owner it was seen under
+  first_seen_session INTEGER
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY,
@@ -157,6 +163,8 @@ CREATE TABLE IF NOT EXISTS encounter_actor_stats (
   wards_absorbed INTEGER NOT NULL DEFAULT 0,
   ward_bleedthrough INTEGER NOT NULL DEFAULT 0,
   power_fed INTEGER NOT NULL DEFAULT 0,
+  power_drain INTEGER NOT NULL DEFAULT 0,
+  damage_taken INTEGER NOT NULL DEFAULT 0,
   deaths INTEGER NOT NULL DEFAULT 0,
   time_dead_s INTEGER NOT NULL DEFAULT 0,
   rez_casts INTEGER NOT NULL DEFAULT 0,
@@ -169,15 +177,24 @@ CREATE TABLE IF NOT EXISTS encounter_ability_stats (
   encounter_id INTEGER NOT NULL,
   entity_id INTEGER NOT NULL,             -- source entity (NOT rolled up; pet rows kept)
   ability_id INTEGER NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'damage',    -- damage|heal|ward|power|threat
+  kind TEXT NOT NULL DEFAULT 'damage',    -- damage|self|heal|ward|power|threat|detaunt
   casts INTEGER NOT NULL DEFAULT 0,
   hits INTEGER NOT NULL DEFAULT 0,
   crits INTEGER NOT NULL DEFAULT 0,
   misses INTEGER NOT NULL DEFAULT 0,
   resists INTEGER NOT NULL DEFAULT 0,
+  parries INTEGER NOT NULL DEFAULT 0,
+  ripostes INTEGER NOT NULL DEFAULT 0,
+  dodges INTEGER NOT NULL DEFAULT 0,
+  blocks INTEGER NOT NULL DEFAULT 0,
+  reflects INTEGER NOT NULL DEFAULT 0,
+  zero_hits INTEGER NOT NULL DEFAULT 0,   -- fully-absorbed hits (inside hits, ACT parity)
   total INTEGER NOT NULL DEFAULT 0,
   min INTEGER,
   max INTEGER,
+  median REAL,
+  avg_delay_s REAL,
+  dtypes TEXT,                            -- JSON {dtype: amount}, dual-type split
   uptime_s INTEGER,
   PRIMARY KEY (encounter_id, entity_id, ability_id, kind)
 );
@@ -198,9 +215,19 @@ CREATE TABLE IF NOT EXISTS census_spells (
   tier_name TEXT,
   json BLOB,
   parsed_effects TEXT,
+  cast_s REAL,
+  recast_s REAL,
+  recovery_s REAL,
+  duration_s REAL,
+  power_cost REAL,
+  dmg_min REAL,                           -- primary damage effect (largest midpoint)
+  dmg_max REAL,
+  dmg_dtype TEXT,
+  dmg_period_s REAL,
   fetched_ts INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_census_spells_base ON census_spells(base_name);
+CREATE INDEX IF NOT EXISTS idx_census_spells_crc ON census_spells(crc);
 CREATE TABLE IF NOT EXISTS census_items (
   item_id INTEGER PRIMARY KEY,
   displayname TEXT,
@@ -265,6 +292,8 @@ def init_db() -> None:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
         if "last_ingest_ts" not in cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN last_ingest_ts INTEGER")
+        if "parse_version" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN parse_version INTEGER")
         if "calibration" not in cols:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN calibration INTEGER NOT NULL DEFAULT 0")
@@ -281,6 +310,32 @@ def init_db() -> None:
         if "ward_bleedthrough" not in actor_cols:
             conn.execute("ALTER TABLE encounter_actor_stats ADD COLUMN "
                          "ward_bleedthrough INTEGER NOT NULL DEFAULT 0")
+        for col in ("power_drain", "damage_taken"):
+            if col not in actor_cols:
+                conn.execute(f"ALTER TABLE encounter_actor_stats ADD COLUMN "
+                             f"{col} INTEGER NOT NULL DEFAULT 0")
+        abil_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(encounter_ability_stats)")}
+        for col, typ in (("parries", "INTEGER NOT NULL DEFAULT 0"),
+                         ("ripostes", "INTEGER NOT NULL DEFAULT 0"),
+                         ("dodges", "INTEGER NOT NULL DEFAULT 0"),
+                         ("blocks", "INTEGER NOT NULL DEFAULT 0"),
+                         ("reflects", "INTEGER NOT NULL DEFAULT 0"),
+                         ("zero_hits", "INTEGER NOT NULL DEFAULT 0"),
+                         ("median", "REAL"), ("avg_delay_s", "REAL"),
+                         ("dtypes", "TEXT")):
+            if col not in abil_cols:
+                conn.execute(f"ALTER TABLE encounter_ability_stats ADD COLUMN {col} {typ}")
+        spell_cols = {r[1] for r in conn.execute("PRAGMA table_info(census_spells)")}
+        for col, typ in (("cast_s", "REAL"), ("recast_s", "REAL"),
+                         ("recovery_s", "REAL"), ("duration_s", "REAL"),
+                         ("power_cost", "REAL"), ("dmg_min", "REAL"),
+                         ("dmg_max", "REAL"), ("dmg_dtype", "TEXT"),
+                         ("dmg_period_s", "REAL")):
+            if col not in spell_cols:
+                conn.execute(f"ALTER TABLE census_spells ADD COLUMN {col} {typ}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_census_spells_crc ON census_spells(crc)")
         cat_cols = {r[1] for r in conn.execute("PRAGMA table_info(ability_catalog)")}
         if "proc" not in cat_cols:
             conn.execute(

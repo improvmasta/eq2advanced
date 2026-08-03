@@ -32,6 +32,7 @@ def test_amounts():
     assert to_int("1,485") == 1485
     assert to_int("296.1K") == 296100
     assert to_int("42") == 42
+    assert to_int("1.5") == 1      # malformed decimal must not abort a parse
 
 
 # ---- subject model ----
@@ -110,13 +111,15 @@ def test_multi_attack():
 
 
 def test_aoe_attack():
+    from parser.events import F_AOE
     e = ev("Beaux aoe attacks a bloodgorger for a critical of 660 disease damage.")
-    assert e.flags & F_MULTI and e.amount == 660
+    assert e.flags & F_AOE and not e.flags & F_MULTI and e.amount == 660
 
 
 def test_flurry():
+    from parser.events import F_FLURRY
     e = ev("Moklok flurries Zylphax the Shredder for a critical of 11,198 slashing damage.")
-    assert e.flags & F_MULTI and e.amount == 11198
+    assert e.flags & F_FLURRY and not e.flags & F_MULTI and e.amount == 11198
 
 
 def test_dual_type_hit_sums_components():
@@ -161,8 +164,52 @@ def test_heal_to_bare_logger_name_targets_pet():
 
 
 def test_three_level_heal_source():
+    # without pet knowledge the owner still gets credit (composite ability)
     e = ev("Ellea's Lunar Attendant's Oracle's Blessing heals YOU for 550 hit points.")
     assert e.src.name == "Ellea"
+
+
+# ---- named-pet knowledge base ----
+
+PETS = frozenset({"Lunar Attendant"})
+
+
+def pev(body):
+    return classify_body(0, body, LOGGER, PETS)
+
+
+def test_named_pet_chain_decomposes():
+    e = pev("Ellea's Lunar Attendant's Oracle's Blessing heals YOU for 550 hit points.")
+    assert e.src.name == "Ellea" and e.src.unit == "named_pet"
+    assert e.src.pet == "Lunar Attendant" and e.ability == "Oracle's Blessing"
+
+
+def test_named_pet_bare_is_autoattack():
+    e = pev("Ellea's Lunar Attendant hits Zylphax the Shredder for 500 disease damage.")
+    assert e.src.unit == "named_pet" and e.src.pet == "Lunar Attendant"
+    assert e.ability is None and e.flags & F_AUTOATTACK
+
+
+def test_named_pet_avoid_keeps_pet_subject():
+    e = pev("Ellea's Lunar Attendant tries to slash Zylphax the Shredder, but Zylphax the Shredder parries.")
+    assert e.type == "avoid" and e.src.unit == "named_pet" and e.extra["how"] == "parry"
+
+
+def test_unknown_capitalized_remainder_still_ability():
+    e = pev("Banjeaux's Daro's Dull Blade hits Zylphax the Shredder for 100 mental damage.")
+    assert e.src.name == "Banjeaux" and e.src.unit == "unknown"
+    assert e.ability == "Daro's Dull Blade"
+
+
+def test_s_ending_owner_possessive_still_ability():
+    e = pev("Aros' Soulrot hits Zylphax the Shredder for 871 disease damage.")
+    assert e.src.name == "Aros" and e.ability == "Soulrot"
+
+
+def test_logger_named_pet():
+    e = classify_body(0, "Bobby's Kibibi hits Zylphax the Shredder for 90 piercing damage.",
+                      LOGGER, frozenset({"Kibibi"}))
+    assert e.src.name == "Bobby" and e.src.unit == "named_pet" and e.src.pet == "Kibibi"
 
 
 def test_ward_with_bleedthrough():
@@ -220,6 +267,24 @@ def test_item_markup_unescaped_in_chat_free_line():
 def test_zone_double_space():
     e = ev("You have entered  The Estate of Unrest.")
     assert e.type == "zone" and e.extra["zone"] == "The Estate of Unrest"
+
+
+def test_zone_lowercase_is_not_a_zone():
+    # these must not hard-cut an in-progress encounter
+    assert ev("You have entered a house.") is None
+    assert ev("You have entered an area where you may not summon a mount.") is None
+
+
+def test_avoid_parry_kind():
+    e = ev("Treyloth D'Kulvith tries to crush Sorengail, but Sorengail parries.")
+    assert e.extra["how"] == "parry"    # regression: rstrip bug produced "parrie"
+
+
+def test_avoid_riposte_and_reflect_kinds():
+    e = ev("Treyloth D'Kulvith tries to crush Sorengail, but Sorengail ripostes.")
+    assert e.extra["how"] == "riposte"
+    e = ev("Treyloth D'Kulvith tries to crush Sorengail, but Sorengail reflects.")
+    assert e.extra["how"] == "reflect"
 
 
 def test_prepare_is_flavor():

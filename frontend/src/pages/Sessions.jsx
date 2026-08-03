@@ -59,18 +59,33 @@ export default function Sessions() {
     send(e.dataTransfer.files)
   }
 
+  const ready = sessions?.filter((s) => s.status === 'ready') ?? []
+  const encounterTotal = ready.reduce((n, s) => n + (s.encounter_count || 0), 0)
+
   return (
     <>
-      <h1>Sessions</h1>
+      <div className="pagehead">
+        <h1>Sessions</h1>
+        <span className="sub">Drop raid logs — each becomes a parsed night</span>
+      </div>
+
+      {sessions?.length > 0 && (
+        <div className="metrics">
+          <div className="metric"><div className="v">{sessions.length}</div><div className="k">Sessions</div></div>
+          <div className="metric"><div className="v">{ready.length}</div><div className="k">Parsed</div></div>
+          <div className="metric"><div className="v">{fmt.num(encounterTotal)}</div><div className="k">Encounters</div></div>
+          <div className="metric"><div className="v">{chars.length}</div><div className="k">Characters</div></div>
+        </div>
+      )}
+
       <div
         className={`card dropzone ${drag ? 'drag' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
         onDragLeave={() => setDrag(false)}
         onDrop={onDrop}
       >
-        <p style={{ marginBottom: 12 }}>
-          Drop <b>eq2log_*.txt</b> files here (several at once is fine — backfill
-          away, overlap is deduped) and each becomes a parsed raid night.
+        <p className="note" style={{ margin: '0 auto 8px' }}>
+          Drop <b>eq2log_*.txt</b> files here — several at once is fine, overlap is deduped.
         </p>
         <input
           type="text"
@@ -89,7 +104,7 @@ export default function Sessions() {
           ref={fileRef} type="file" accept=".txt,.log" multiple style={{ display: 'none' }}
           onChange={(e) => { send(e.target.files); e.target.value = '' }}
         />
-        {error && <p className="err" style={{ marginTop: 10 }}>{error}</p>}
+        {error && <p className="err" style={{ marginTop: 8 }}>{error}</p>}
       </div>
 
       <div className="card">
@@ -97,34 +112,36 @@ export default function Sessions() {
         {sessions === null && <p className="muted">Loading…</p>}
         {sessions?.length === 0 && <p className="muted">Nothing yet — drop a log above.</p>}
         {sessions?.length > 0 && (
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Session</th><th>Character</th><th>Date</th><th>Lines</th>
-                <th>Encounters</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((s) => (
-                <tr key={s.id}>
-                  <td>
-                    {s.status === 'ready'
-                      ? <Link to={`/sessions/${s.id}`}>{s.upload_name || `session ${s.id}`}</Link>
-                      : (s.upload_name || `session ${s.id}`)}
-                  </td>
-                  <td>{s.character_name}</td>
-                  <td>{fmt.date(s.started_ts ?? s.created_ts)}</td>
-                  <td>{fmt.num(s.line_count)}</td>
-                  <td>{s.encounter_count}</td>
-                  <td className={`status-${s.status}`}>
-                    {s.status}{s.status === 'error' && s.error ? ` — ${s.error.slice(0, 80)}` : ''}
-                    {s.pruned ? <span className="badge" title="old events pruned; reports frozen"> pruned</span> : null}
-                    {s.calibration ? <span className="badge named" title="calibration ground truth"> ★</span> : null}
-                  </td>
+          <div className="tablewrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Session</th><th className="l">Character</th><th>Date</th><th>Lines</th>
+                  <th>Encounters</th><th className="l">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id}>
+                    <td className="name">
+                      {s.status === 'ready'
+                        ? <Link to={`/sessions/${s.id}`}>{s.upload_name || `session ${s.id}`}</Link>
+                        : (s.upload_name || `session ${s.id}`)}
+                    </td>
+                    <td className="l">{s.character_name}</td>
+                    <td>{fmt.date(s.started_ts ?? s.created_ts)}</td>
+                    <td>{fmt.num(s.line_count)}</td>
+                    <td>{s.encounter_count}</td>
+                    <td className={`l status-${s.status}`}>
+                      {s.status}{s.status === 'error' && s.error ? ` — ${s.error.slice(0, 80)}` : ''}
+                      {s.pruned ? <span className="badge" title="old events pruned; reports frozen">pruned</span> : null}
+                      {s.calibration ? <span className="badge named" title="calibration ground truth">★</span> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

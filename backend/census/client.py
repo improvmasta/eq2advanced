@@ -84,6 +84,21 @@ class CensusClient:
             out += self._get(f"spell/?crc={crc}&c:limit=20", "spell_list")
         return out
 
+    PAGE = 1000
+
+    def spell_page(self, cls: str, max_level: int, start: int) -> list[dict]:
+        """One page of the spell records (all tiers) a class can scribe at or
+        below max_level. classes{} keys are lowercase ('wizard',
+        'shadowknight', 'troubador'); '[' is Census's <= operator; c:start
+        paging verified live 2026-08-02 (wizard <=70 = 1152 records). Census
+        silently CLAMPS c:limit (s:example throttles to 100), so callers must
+        advance by len(result) and treat only an EMPTY page as the end —
+        sync.ingest_class_spells owns that loop and resumes it across the
+        s:example burst throttle."""
+        return self._get(
+            f"spell/?classes.{cls}.level=%5B{max_level}"
+            f"&c:limit={self.PAGE}&c:start={start}", "spell_list")
+
     def items_by_ids(self, ids: list[int]) -> list[dict]:
         return self._by_ids("item", "item_list", ids)
 

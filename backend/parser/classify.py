@@ -8,9 +8,11 @@ import re
 from collections.abc import Iterable, Iterator
 
 from .events import (
+    F_AOE,
     F_AUTOATTACK,
     F_BLEED,
     F_CRIT,
+    F_FLURRY,
     F_MULTI,
     F_SELF_FOCUS,
     F_ZERO,
@@ -37,8 +39,13 @@ RE_DAMAGE = re.compile(
 RE_HIT_PASSIVE = re.compile(
     rf"^(?P<tgt>.+?) is hit for (?P<crit>a critical of )?(?P<amt>[\d,.]+K?) (?P<dtype>{DTYPES}) damage\.$"
 )
+RE_HIT_BY = re.compile(
+    rf"^(?P<tgt>.+?) (?:is|are) hit by (?P<effect>.+?) "
+    rf"for (?P<crit>a critical of )?(?P<amt>[\d,.]+K?) (?P<dtype>{DTYPES})"
+    rf"(?: and (?P<amt2>[\d,.]+K?) (?P<dtype2>{DTYPES}))? damage\.$"
+)
 RE_ZERO_DMG = re.compile(
-    r"^(?P<subj>.+?) (?:hits|hit|multi attacks|multi attack|aoe attacks|aoe attack|flurries|flurry) "
+    r"^(?P<subj>.+?) (?P<verb>hits|hit|multi attacks|multi attack|aoe attacks|aoe attack|flurries|flurry) "
     r"(?P<tgt>.+?) but fails to inflict any damage\.$"
 )
 RE_AVOID = re.compile(
@@ -93,15 +100,25 @@ def _split_possessive_head(text: str) -> tuple[str, str] | None:
     return None
 
 
-def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
+def classify_body(ts: int, body: str, logger: str,
+                  pet_names: frozenset[str] = frozenset()) -> ParsedEvent | None:
     """Classify one prefix-stripped body. Returns None for chat/unknown lines."""
     if body.startswith(_CHAT_PREFIXES) or _CHAT_RE.match(body):
         return None
     if "\\aITEM" in body:
         body = unescape_items(body)
 
+    def dec(subj: str) -> tuple[Subject, str | None]:
+        return decompose(subj, logger, pet_names)
+
     if m := RE_ZONE.match(body):
-        return ParsedEvent(ts, "zone", extra={"zone": m.group(1).strip()})
+        zone = m.group(1).strip()
+        # real zone names are capitalized; "You have entered a house." /
+        # "...an area where you may not summon a mount." are not zone changes
+        # and must not hard-cut an encounter
+        if not zone[:1].isupper():
+            return None
+        return ParsedEvent(ts, "zone", extra={"zone": zone})
 
     if m := RE_KILL_YOU.match(body):
         return ParsedEvent(ts, "kill", src=Subject(logger, "player"), tgt=m.group(1))
@@ -123,15 +140,37 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
     if RE_REVIVE.match(body):
         return ParsedEvent(ts, "revive", tgt="YOU")
 
+    if m := RE_HIT_BY.match(body):
+        # named sourceless effect ("Moklok is hit by Stench of Death for …") —
+        # must precede RE_DAMAGE, which would mis-split it into garbage
+        # entities. Attribution unknown; ACT pools these under "Unknown".
+        flags = F_CRIT if m.group("crit") else 0
+        amount = to_int(m.group("amt"))
+        extra = {}
+        if m.group("amt2"):
+            amt2 = to_int(m.group("amt2"))
+            extra["components"] = [[amount, m.group("dtype")], [amt2, m.group("dtype2")]]
+            amount += amt2
+        return ParsedEvent(
+            ts, "damage", src=None, tgt=m.group("tgt"),
+            ability=m.group("effect"), amount=amount, dtype=m.group("dtype"),
+            flags=flags, extra=extra,
+        )
+
     if m := RE_DAMAGE.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = 0
         if m.group("crit"):
             flags |= F_CRIT
         if ability is None:
             flags |= F_AUTOATTACK
-        if m.group("verb").startswith(("multi", "aoe", "flurr")):
+        verb = m.group("verb")
+        if verb.startswith("multi"):
             flags |= F_MULTI
+        elif verb.startswith("aoe"):
+            flags |= F_AOE
+        elif verb.startswith("flurr"):
+            flags |= F_FLURRY
         dtype = m.group("dtype")
         if dtype == "focus":
             flags |= F_SELF_FOCUS
@@ -156,33 +195,42 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
             amount=to_int(m.group("amt")), dtype=m.group("dtype"), flags=flags,
         )
     if m := RE_ZERO_DMG.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = F_ZERO | (F_AUTOATTACK if ability is None else 0)
+        verb = m.group("verb")
+        if verb.startswith("multi"):
+            flags |= F_MULTI
+        elif verb.startswith("aoe"):
+            flags |= F_AOE
+        elif verb.startswith("flurr"):
+            flags |= F_FLURRY
         return ParsedEvent(
             ts, "damage", src=subj, tgt=m.group("tgt"),
             ability=ability, amount=0, flags=flags,
         )
 
     if m := RE_AVOID.match(body):
-        subj, _ = decompose(m.group("subj"), logger)
+        subj, _ = dec(m.group("subj"))
         ability = m.group("ability")
         how = m.group("how")
         kind = (
             "miss" if how.startswith("miss")
             else "dodge" if how.startswith("dodges")
             else "resist" if how.startswith("resist")
-            else how.rstrip("s") if how in ("parries",)
-            else {"parries": "parry", "blocks": "block", "ripostes": "riposte", "reflects": "reflect"}.get(how, how)
+            else {"parries": "parry", "blocks": "block", "ripostes": "riposte",
+                  "reflects": "reflect"}.get(how, how)
         )
+        flags = 0 if ability else F_AUTOATTACK
+        if how.endswith("multi attack"):
+            flags |= F_MULTI
         return ParsedEvent(
             ts, "avoid", src=subj, tgt=m.group("tgt"),
-            ability=ability,
-            flags=0 if ability else F_AUTOATTACK,
+            ability=ability, flags=flags,
             extra={"how": kind, "avoider": m.group("avoider") or None},
         )
 
     if m := RE_HEAL.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = F_CRIT if m.group("crit") else 0
         return ParsedEvent(
             ts, "heal", src=subj, tgt=m.group("tgt"),
@@ -190,7 +238,7 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
         )
 
     if m := RE_WARD.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = F_BLEED if m.group("bleed") else 0
         return ParsedEvent(
             ts, "ward", src=subj, tgt=m.group("tgt"),
@@ -201,25 +249,25 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
             },
         )
     if m := RE_WARD_REGEN.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         return ParsedEvent(ts, "ward_regen", src=subj, ability=ability, amount=to_int(m.group("amt")))
 
     if m := RE_POWER.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = F_CRIT if m.group("crit") else 0
         return ParsedEvent(
             ts, "power", src=subj, tgt=m.group("tgt"),
             ability=ability, amount=to_int(m.group("amt")), flags=flags,
         )
     if m := RE_DRAIN.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         return ParsedEvent(
             ts, "power_drain", src=subj, tgt=m.group("tgt"),
             ability=ability, amount=to_int(m.group("amt")),
         )
 
     if m := RE_THREAT.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         flags = F_CRIT if m.group("crit") else 0
         return ParsedEvent(
             ts, "threat", src=subj, tgt=m.group("mob"), ability=ability,
@@ -228,7 +276,7 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
         )
 
     if m := RE_DISPEL.match(body):
-        subj, ability = decompose(m.group("subj"), logger)
+        subj, ability = dec(m.group("subj"))
         return ParsedEvent(
             ts, "dispel", src=subj, tgt=m.group("tgt"),
             ability=ability, extra={"effect": m.group("effect")},
@@ -265,7 +313,8 @@ def classify_body(ts: int, body: str, logger: str) -> ParsedEvent | None:
     return None
 
 
-def parse_lines(lines: Iterable[str], logger: str) -> Iterator[ParsedEvent]:
+def parse_lines(lines: Iterable[str], logger: str,
+                pet_names: frozenset[str] = frozenset()) -> Iterator[ParsedEvent]:
     """Parse raw log lines (with prefixes) into events. Shared by bulk uploads
     and live ingest batches."""
     # the client sometimes logs a prepare line twice in the same second (exact
@@ -277,7 +326,7 @@ def parse_lines(lines: Iterable[str], logger: str) -> Iterator[ParsedEvent]:
         if parts is None:
             continue
         ts, body = parts
-        ev = classify_body(ts, body, logger)
+        ev = classify_body(ts, body, logger, pet_names)
         if ev is None:
             continue
         if ev.type == "cast_flavor":

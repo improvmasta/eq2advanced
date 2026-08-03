@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 # flags bitmask
 F_CRIT = 1
 F_AUTOATTACK = 2
-F_MULTI = 4
+F_MULTI = 4           # "multi attacks" verb
 F_SELF_FOCUS = 8      # `focus` dtype: self-inflicted (e.g. Vampiric Requiem) — excluded from DPS
 F_BLEED = 16          # ward absorb with bleedthrough
 F_ZERO = 32           # "hits X but fails to inflict any damage"
+F_AOE = 64            # "aoe attacks" verb
+F_FLURRY = 128        # "flurries" verb
 
 
 @dataclass(slots=True)
@@ -17,7 +19,7 @@ class Subject:
     """A resolved actor reference.
 
     name:  credited actor ("Bobby", "a marrow ripper", "Aros")
-    unit:  'player' | 'own_pet' | 'swarm_pet' | 'unknown'
+    unit:  'player' | 'own_pet' | 'swarm_pet' | 'named_pet' | 'unknown'
     pet:   swarm/named pet label when unit is a pet with its own name
     """
     name: str

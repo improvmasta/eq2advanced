@@ -19,6 +19,7 @@ ability (crit mean / non-crit mean) and defaults to 1.3 when the sample is thin.
 import json
 import statistics
 
+from census.sync import typed_fields
 from parser.events import F_CRIT, F_SELF_FOCUS, F_ZERO
 
 DEFAULT_CRIT_MULT = 1.3
@@ -102,15 +103,13 @@ def spellbook(conn, char, doc: dict) -> dict:
                           (b["spell_id"],)).fetchone()
         b["effects"] = json.loads(ov[0] if ov else (b["parsed_effects"] or "[]"))
         b["overridden"] = ov is not None
+        # timing from the shared extractor (owns the recovery-hundredths
+        # gotcha) so the fit and the typed columns can never disagree; effects
+        # here include any override, so damage still comes from b["effects"]
         rec = json.loads(b["json"]) if b["json"] else {}
-        b["cast_s"] = (rec.get("cast_secs_hundredths") or 0) / 100
-        b["recast_s"] = rec.get("recast_secs") or 0
-        # the census field is NAMED _tenths but stores hundredths: every spell
-        # carries 50, and EQ2's universal recovery is 0.5s, not 5s (a 5s
-        # recovery would make any rotation impossible — this inflated busy
-        # time 10x and clamped idle% to 0 on the real raid night)
-        b["recovery_s"] = (rec.get("recovery_secs_tenths") or 0) / 100
-        b["duration_s"] = ((rec.get("duration") or {}).get("max_sec_tenths") or 0) / 10
+        t = typed_fields(rec, b["effects"])
+        b["cast_s"], b["recast_s"] = t["cast_s"], t["recast_s"]
+        b["recovery_s"], b["duration_s"] = t["recovery_s"], t["duration_s"]
         book[b["base_name"]] = b
         book.setdefault(b["name"], b)
     return book

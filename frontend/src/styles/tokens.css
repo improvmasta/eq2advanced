@@ -35,12 +35,26 @@
 
   --font-heading: "Cinzel", serif;
   --font-body: "Spectral", Georgia, serif;
+  /* data font — tables, stat rails, every number. Sans reads far cleaner than
+     Spectral at 13px, and tabular figures keep columns from dancing. */
+  --font-data: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* type scale — one place to retune density */
+  --fs-base: 13px;
+  --fs-data: 12.5px;
+  --fs-sm: 0.85rem;
+  --fs-xs: 0.78rem;
+  --fs-label: 0.66rem;    /* uppercase section heads + stat keys */
+  --fs-h1: 1.25rem;
+  --fs-h2: 0.72rem;
+  --fs-figure: 1.05rem;   /* metric strip values */
 
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --blur: 12px;
+  --shell: 1440px;
   color-scheme: dark;
 }
 

@@ -41,12 +41,15 @@ def _killer_is_player(killer: str | None, logger: str) -> bool:
     return " " not in killer and killer[:1].isupper()
 
 
-def _is_named_mob(victim: str, logger: str) -> bool:
+def _is_named_mob(victim: str, logger: str,
+                  known_mobs: frozenset[str] = frozenset()) -> bool:
     v = victim.lower()
     if v.startswith(("a ", "an ")):
         return False
     if victim == logger:            # bare logger name = the pet
         return False
+    if victim in known_mobs:        # behavioral refinement: one-word boss ("Venekor")
+        return True
     if " " not in victim and victim[:1].isupper():
         return False                # single-token capitalized = player (mind control etc.)
     # pets as victims are not boss kills: any possessive whose remainder is
@@ -63,10 +66,12 @@ def _is_named_mob(victim: str, logger: str) -> bool:
     return True
 
 
-def segment_events(events: list, logger: str, initial_zone: str | None = None) -> list[Segment]:
+def segment_events(events: list, logger: str, initial_zone: str | None = None,
+                   known_mobs: frozenset[str] = frozenset()) -> list[Segment]:
     """Assign each event to a segment (or none). Events must be time-ordered.
     `initial_zone` seeds the zone for the live path, where earlier zone events
-    have already been flushed to the DB."""
+    have already been flushed to the DB. `known_mobs` comes from the behavioral
+    refinement pass (pipeline.refine) so one-word bosses label their kills."""
     segments: list[Segment] = []
     current: Segment | None = None
     zone: str | None = initial_zone
@@ -83,12 +88,18 @@ def segment_events(events: list, logger: str, initial_zone: str | None = None) -
             if (
                 ev.type == "kill" and ev.tgt
                 and _killer_is_player(ev.src.name if ev.src else None, logger)
-                and _is_named_mob(ev.tgt, logger)
+                and _is_named_mob(ev.tgt, logger, known_mobs)
             ):
                 if ev.tgt not in named:
                     named.append(ev.tgt)
         if named:
-            seg.name = " + ".join(named)
+            # chain pulls of named-heavy trash (New Tunaria) can put a dozen
+            # nameds in one segment — cap the label, keep the count. Real
+            # multi-boss pulls (Unrest's 4-named wing) stay fully spelled out.
+            if len(named) > 4:
+                seg.name = " + ".join(named[:3]) + f" +{len(named) - 3} more"
+            else:
+                seg.name = " + ".join(named)
             seg.is_named = True
             seg.success = 1
         else:

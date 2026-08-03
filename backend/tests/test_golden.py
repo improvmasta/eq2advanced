@@ -19,8 +19,10 @@ pytestmark = pytest.mark.skipif(not GOLDEN.exists(), reason="golden fixture not 
 
 @pytest.fixture(scope="module")
 def parsed():
+    from parser import petnames
     with GOLDEN.open(encoding="utf-8", errors="replace") as fh:
-        events = list(parse_lines(fh, "Bobby"))
+        events = list(parse_lines(fh, "Bobby",
+                                  frozenset(petnames.CURATED_PET_NAMES)))
     return events, segment_events(events, "Bobby")
 
 
@@ -139,3 +141,70 @@ def test_act_parity_zylphax(parsed):
     assert damage("Aros") == 3_395_213
     assert damage("Silkey") == 2_708_054
     assert damage("Thinkbigsti") == 18_559
+
+
+def test_stats_v2_drilldown_golden(parsed):
+    """Stats-engine v2 invariants on the Zylphax fight: the Unknown pool
+    (sourceless `hit by <Effect>` lines), mob actor rows with damage taken,
+    named-pet entities from the curated knowledge base, per-ability median /
+    avg-delay / damage-type rollups, and no garbage entities from the
+    `is/are hit by` grammar."""
+    import sqlite3 as _sqlite3
+
+    from db import SCHEMA
+    from parser import petnames
+    from pipeline.ingest_writer import EntityResolver, _resolve_events
+    from pipeline.refine import refine_known_mobs
+    from pipeline.statsroll import roll_encounter
+
+    events, segments = parsed
+    known = refine_known_mobs(events, "Bobby")
+    conn = _sqlite3.connect(":memory:")
+    conn.row_factory = _sqlite3.Row
+    conn.executescript(SCHEMA)
+    conn.execute("INSERT INTO characters (id, name, world_id) VALUES (1, 'Bobby', 618)")
+    conn.execute(
+        "INSERT INTO sessions (id, character_id, source, status, created_ts) "
+        "VALUES (1, 1, 'upload', 'ready', 0)")
+    res = EntityResolver(conn, 1, "Bobby",
+                         frozenset(petnames.CURATED_PET_NAMES), known)
+    resolved = _resolve_events(events, res)
+    seg = next(s for s in segments if s.name == "Zylphax the Shredder")
+    actors, abil = roll_encounter(
+        [resolved[i] for i in seg.event_indices], max(seg.end_ts - seg.start_ts, 1))
+    names = {r["id"]: (r["name"], r["kind"])
+             for r in conn.execute("SELECT id, name, kind FROM entities")}
+
+    # sourceless effect damage pools under Unknown, with the effect name kept
+    unk = next(e for e, (n, k) in names.items() if n == "Unknown")
+    assert actors[unk]["damage"] == 451_633
+    assert abil[(unk, "Stench of Death", "damage")]["total"] == 451_633
+
+    # the boss has an actor row: its outgoing damage and the raid's damage into it
+    zyl = next(e for e, (n, k) in names.items() if n == "Zylphax the Shredder")
+    assert names[zyl][1] == "mob"
+    assert actors[zyl]["damage"] == 191_647
+    assert actors[zyl]["damage_taken"] == 36_864_424
+
+    # the `is/are hit by` grammar never fabricates entities
+    assert not [n for n, _ in names.values()
+                if n.endswith(" is") or n.endswith(" are") or n.startswith("by ")]
+
+    # curated named pets resolve as entities across the whole night
+    assert any(n == "Ellea's Lunar Attendant" and k == "named_pet"
+               for n, k in names.values())
+
+    # drilldown stats: Bobby's blighted horde, Grave Decay (cold nuke)
+    horde = next(e for e, (n, k) in names.items()
+                 if n == "Bobby's blighted horde" and k == "swarm_pet")
+    gd = abil[(horde, "Grave Decay", "damage")]
+    assert gd["hits"] == 215 and gd["total"] == 294_015 and gd["crits"] == 142
+    assert gd["median"] == 1_433 and gd["avg_delay_s"] == 1.22
+    assert gd["dtypes"] == '{"cold":294015}'
+
+    # swings decompose: every avoid kind is tracked per row (spot: Bobby melee)
+    bobby = next(e for e, (n, k) in names.items() if n == "Bobby" and k == "player")
+    melee = abil[(bobby, "(melee)", "damage")]
+    swings = melee["hits"] + melee["misses"] + melee["parries"] + melee["ripostes"] \
+        + melee["dodges"] + melee["blocks"] + melee["resists"]
+    assert melee["hits"] == 74 and swings >= melee["hits"]

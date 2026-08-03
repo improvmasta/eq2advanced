@@ -44,8 +44,11 @@ def _has_article(name: str) -> bool:
     return name.lower().startswith(_ARTICLES)
 
 
-def decompose(subj: str, logger: str) -> tuple[Subject, str | None]:
-    """Split a source expression into (Subject, ability-or-None)."""
+def decompose(subj: str, logger: str,
+              pet_names: frozenset[str] = frozenset()) -> tuple[Subject, str | None]:
+    """Split a source expression into (Subject, ability-or-None). `pet_names`
+    is the named-pet knowledge base (parser.petnames) — capitalized possessive
+    remainders are abilities UNLESS known to be pets."""
     if subj == "YOU":
         return Subject(logger, "player"), None
     if subj.startswith("YOUR "):
@@ -81,8 +84,22 @@ def decompose(subj: str, logger: str) -> tuple[Subject, str | None]:
         ability = " ".join(rtokens[rpi + 1 :]) or None
         return Subject(owner, "swarm_pet", pet=pet), ability
 
-    # capitalized remainder = ability; keep internal possessives intact
-    # ("Autumn's Kiss", "Lunar Attendant's Oracle's Blessing")
+    # capitalized remainder: a known named pet (whole, or its own chain head)
+    # beats the ability reading — "Ellea's Lunar Attendant['s Oracle's
+    # Blessing]" is the pet acting, not an Ellea ability
+    if pet_names:
+        if remainder in pet_names:
+            return Subject(owner, "named_pet", pet=remainder), None
+        rtokens = remainder.split(" ")
+        rpi = _first_possessive(rtokens)
+        if rpi is not None and rpi < len(rtokens) - 1:
+            pet = " ".join(rtokens[: rpi + 1])
+            pet = pet[: len(pet) - (len(rtokens[rpi]) - len(_strip_possessive(rtokens[rpi])))]
+            if pet in pet_names:
+                return Subject(owner, "named_pet", pet=pet), " ".join(rtokens[rpi + 1:])
+
+    # otherwise it's an ability; keep internal possessives intact
+    # ("Autumn's Kiss", "Daro's Dull Blade")
     unit = "own_pet" if owner == logger else "unknown"
     return Subject(owner, unit), remainder
 
@@ -93,15 +110,18 @@ def resolve_target(tgt: str, logger: str) -> str:
     return tgt
 
 
-def classify_entity_kind(name: str, unit: str, logger: str) -> str:
-    """Best-effort kind for an entity row. Behavioral refinement can override."""
+def classify_entity_kind(name: str, unit: str, logger: str,
+                         known_mobs: frozenset[str] = frozenset()) -> str:
+    """Best-effort kind for an entity row. `known_mobs` carries the behavioral
+    refinement pass (pipeline.refine) — single-token capitalized names that
+    provably fought the raid ("Venekor") override the player default."""
     if unit == "player":
         return "player"
-    if unit == "own_pet":
-        return "own_pet"
-    if unit == "swarm_pet":
-        return "swarm_pet"
+    if unit in ("own_pet", "swarm_pet", "named_pet"):
+        return unit
     if _has_article(name):
+        return "mob"
+    if name in known_mobs:
         return "mob"
     if name == logger:
         return "own_pet"

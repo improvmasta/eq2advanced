@@ -6,6 +6,35 @@ const rarityClass = (tier) => (tier ? `rarity-${tier.toLowerCase()}` : '')
 // tiers a coach would flag as upgrade candidates
 const LOW_TIERS = ['Apprentice', 'Journeyman']
 
+// The census payload ships key_stats as one flat list; a coach reads them in
+// groups. Split by label here rather than in the API — the backend contract is
+// covered by tests and nothing else needs the grouping.
+const COMBAT_STATS = ['Ability Mod', 'Base Modifier', 'Crit Chance', 'DPS Mod', 'Haste']
+const CASTING_STATS = ['Cast Speed', 'Reuse Speed', 'Recovery']
+
+const ATTR_LABELS = {
+  str: 'Strength', sta: 'Stamina', agi: 'Agility', wis: 'Wisdom', int: 'Intelligence',
+}
+const RESIST_LABELS = {
+  physical: 'Physical', elemental: 'Elemental',
+  arcane: 'Arcane', noxious: 'Noxious', mana: 'Mana',
+}
+
+function StatGroup({ title, rows }) {
+  if (!rows.length) return null
+  return (
+    <div className="statgroup">
+      <h2>{title}</h2>
+      {rows.map((r) => (
+        <div className="statrow" key={r.k}>
+          <span className="k">{r.k}</span>
+          <span className="v">{r.v}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Snapshot({ charId, snap, isLatest }) {
   const [diff, setDiff] = useState(null)
   const [open, setOpen] = useState(false)
@@ -59,6 +88,7 @@ export default function Character() {
   const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState(null)
   const [error, setError] = useState(null)
+  const [tab, setTab] = useState('gear')
 
   const load = useCallback(() => {
     api.census(id).then(setData).catch((e) => setError(e.message))
@@ -83,33 +113,64 @@ export default function Character() {
   if (!data) return <p className="muted">Loading…</p>
 
   const c = data.character
+  const stat = (label) => data.key_stats?.find((s) => s.label === label)
+  const show = (s) => (s.pct ? `${s.value}%` : fmt.num(s.value))
+  const pick = (labels) => labels.map(stat).filter(Boolean).map((s) => ({ k: s.label, v: show(s) }))
+
   const lowTiers = data.synced
     ? data.spells.scribed.filter((s) => LOW_TIERS.includes(s.tier_name)).length : 0
 
+  const attrRows = data.synced
+    ? Object.entries(ATTR_LABELS)
+      .filter(([k]) => data.attributes?.[k] != null)
+      .map(([k, label]) => ({ k: label, v: fmt.num(data.attributes[k]) }))
+    : []
+  const resistRows = data.synced
+    ? Object.entries(RESIST_LABELS)
+      .filter(([k]) => data.resists?.[k] != null)
+      .map(([k, label]) => ({ k: label, v: fmt.num(data.resists[k]) }))
+    : []
+
   return (
     <>
-      <div className="charhead">
-        <h1>{c.name}</h1>
-        <span className="muted">
-          {c.class ? `${c.class} ${c.level}` : 'not yet synced'} · Wuoshi
-          {data.guild ? ` · <${data.guild}>` : ''}
+      <div className="idcard">
+        <div className="who">
+          <div className="n">{c.name}</div>
+          <div className="m">
+            {c.class ? `${c.class} ${c.level}` : 'not yet synced'} · Wuoshi
+            {data.guild ? ` · <${data.guild}>` : ''}
+          </div>
+        </div>
+        {data.synced && (
+          <div className="facts">
+            <div className="fact"><div className="k">Level</div><div className="v">{c.level ?? '—'}</div></div>
+            <div className="fact"><div className="k">AAs</div><div className="v">{data.aa_spent ?? '—'}</div></div>
+            <div className="fact"><div className="k">Health</div><div className="v">{fmt.num(data.vitals.health)}</div></div>
+            <div className="fact"><div className="k">Power</div><div className="v">{fmt.num(data.vitals.power)}</div></div>
+            <div className="fact">
+              <div className="k">Synced</div>
+              <div className="v">{c.last_census_ts ? fmt.date(c.last_census_ts) : 'never'}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="pagehead">
+        <span className="sub">
+          {c.last_census_ts ? `Synced ${fmt.time(c.last_census_ts)}` : 'Never synced'} · auto-refreshes daily
         </span>
-        <div className="charactions">
+        <div className="actions">
           <button onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh from Census'}
           </button>
         </div>
       </div>
-      <p className="muted">
-        Last synced: {c.last_census_ts ? `${fmt.date(c.last_census_ts)} ${fmt.time(c.last_census_ts)}` : 'never'}
-        {' '}· auto-refreshes daily
-      </p>
-      {notice && <p className="muted">{notice}</p>}
+      {notice && <p className="muted" style={{ fontSize: 'var(--fs-xs)' }}>{notice}</p>}
       {error && <p className="err">{error}</p>}
 
       {!data.synced && (
         <div className="card">
-          <p className="muted">
+          <p className="note">
             No Census data yet. Hit <b>Refresh from Census</b> — the character must be
             set visible in-game for Census to serve it.
           </p>
@@ -118,85 +179,97 @@ export default function Character() {
 
       {data.synced && (
         <>
-          <div className="card">
-            <h2>Combat stats</h2>
-            <div className="tiles">
-              {data.key_stats.map((s) => (
-                <div className="tile" key={s.label}>
-                  <div className="v">{s.pct ? `${s.value}%` : fmt.num(s.value)}</div>
-                  <div className="k">{s.label}</div>
+          <div className="tabs">
+            <button className={tab === 'gear' ? 'active' : ''} onClick={() => setTab('gear')}>
+              Equipment &amp; Stats
+            </button>
+            <button className={tab === 'spells' ? 'active' : ''} onClick={() => setTab('spells')}>
+              Spells
+            </button>
+            <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+              History{snapshots.length ? ` (${snapshots.length})` : ''}
+            </button>
+          </div>
+
+          {tab === 'gear' && (
+            <div className="railgrid" style={{ marginTop: 12 }}>
+              <div className="rail">
+                <StatGroup title="Attributes" rows={attrRows} />
+                <StatGroup title="Combat" rows={pick(COMBAT_STATS)} />
+                <StatGroup title="Casting" rows={pick(CASTING_STATS)} />
+                <StatGroup title="Resists" rows={resistRows} />
+              </div>
+              <div className="card" style={{ marginTop: 0 }}>
+                <h2>Equipment</h2>
+                <div className="gearlist">
+                  {data.gear.map((g) => (
+                    <div className="gearrow" key={g.slot}>
+                      <span className="slot">{g.slot}</span>
+                      <span className="item">
+                        <span className={rarityClass(g.tier)}>{g.name ?? '—'}</span>
+                        {g.adorns > 0 && (
+                          <span className="adorns">
+                            {Array.from({ length: g.adorns }, (_, i) => (
+                              <span className="chip on" key={i}>◆</span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
-            <div className="tiles">
-              <div className="tile"><div className="v">{fmt.num(data.vitals.health)}</div><div className="k">Health</div></div>
-              <div className="tile"><div className="v">{fmt.num(data.vitals.power)}</div><div className="k">Power</div></div>
-              {Object.entries(data.attributes).map(([k, v]) => (
-                <div className="tile" key={k}><div className="v">{fmt.num(v)}</div><div className="k">{k}</div></div>
-              ))}
-              {data.aa_spent != null && (
-                <div className="tile"><div className="v">{data.aa_spent}</div><div className="k">AA spent</div></div>
+          )}
+
+          {tab === 'spells' && (
+            <div className="card">
+              <h2>Scribed spells</h2>
+              {lowTiers > 0 && (
+                <p className="note">
+                  {lowTiers} spell{lowTiers === 1 ? ' is' : 's are'} still at Apprentice or
+                  Journeyman — the cheapest upgrades on the list.
+                </p>
+              )}
+              <div className="tablewrap">
+                <table className="data">
+                  <thead><tr><th>Spell</th><th>Tier</th><th>Level</th></tr></thead>
+                  <tbody>
+                    {data.spells.scribed.map((s) => (
+                      <tr key={s.id}>
+                        <td className="name">{s.name}</td>
+                        <td>
+                          <span className={`tierbadge ${LOW_TIERS.includes(s.tier_name) ? 'low' : ''}`}>
+                            {s.tier_name ?? '—'}
+                          </span>
+                        </td>
+                        <td className="muted">{s.level || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.spells.other_count > 0 && (
+                <p className="note" style={{ marginTop: 8, marginBottom: 0 }}>
+                  +{data.spells.other_count} non-{c.class} entries (tradeskill arts, languages…)
+                </p>
               )}
             </div>
-          </div>
+          )}
 
-          <div className="card">
-            <h2>Equipment</h2>
-            <table className="data">
-              <thead><tr><th>Slot</th><th>Item</th><th>Adorns</th></tr></thead>
-              <tbody>
-                {data.gear.map((g) => (
-                  <tr key={g.slot}>
-                    <td className="muted">{g.slot}</td>
-                    <td className={rarityClass(g.tier)}>{g.name ?? '—'}</td>
-                    <td>{g.adorns || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="card">
-            <h2>Scribed spells</h2>
-            {lowTiers > 0 && (
-              <p className="muted">
-                {lowTiers} spell{lowTiers === 1 ? ' is' : 's are'} still at Apprentice or
-                Journeyman — the cheapest upgrades on the list.
+          {tab === 'history' && (
+            <div className="card">
+              <h2>Snapshot history</h2>
+              <p className="note">
+                One entry per time Census saw the character change. Expand to see what moved.
               </p>
-            )}
-            <table className="data">
-              <thead><tr><th>Spell</th><th>Tier</th><th>Level</th></tr></thead>
-              <tbody>
-                {data.spells.scribed.map((s) => (
-                  <tr key={s.id}>
-                    <td>{s.name}</td>
-                    <td>
-                      <span className={`tierbadge ${LOW_TIERS.includes(s.tier_name) ? 'low' : ''}`}>
-                        {s.tier_name ?? '—'}
-                      </span>
-                    </td>
-                    <td className="muted">{s.level || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {data.spells.other_count > 0 && (
-              <p className="muted">
-                +{data.spells.other_count} non-{c.class} entries (tradeskill arts, languages…)
-              </p>
-            )}
-          </div>
+              {snapshots.length === 0 && <p className="muted">No snapshots yet.</p>}
+              {snapshots.map((s, i) => (
+                <Snapshot key={s.id} charId={id} snap={s} isLatest={i === 0} />
+              ))}
+            </div>
+          )}
         </>
-      )}
-
-      {snapshots.length > 0 && (
-        <div className="card">
-          <h2>Snapshot history</h2>
-          <p className="muted">One entry per time Census saw the character change. Expand to see what moved.</p>
-          {snapshots.map((s, i) => (
-            <Snapshot key={s.id} charId={id} snap={s} isLatest={i === 0} />
-          ))}
-        </div>
       )}
     </>
   )

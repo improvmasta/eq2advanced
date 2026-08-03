@@ -81,6 +81,31 @@ backfill upload, live fight-card hints. See `ARCHITECTURE.md` → "Coach correct
 (phase 6)" / "Hardening". Abmod marginal becomes real once TWO dummy parses at
 different Ability Mod are flagged.
 
+Phase 7b (UX overhaul + parsing correctness) is BUILT 2026-08-02: one
+ACT-style Workspace page at `/sessions/:id` (encounter tree with zone blocks +
+collapsed `Trash ×N` nodes, sortable combatant table, per-actor drilldown with
+Swings/ToHit/Median/AvgDelay/damage-types, DPS bar strip; selection in `?sel=`
+URL params; SessionDetail/Encounter/RaidReport/Coach PAGES deleted — the coach
+ENGINE + calibration + APIs stay, no UI surface). Backend: named-pet knowledge
+base (`parser/petnames.py`), behavioral mob refinement (`pipeline/refine.py`),
+stats engine v2 (schema v5), the `is/are hit by` grammar, `GET
+/api/encounters/agg`, and `sessions.parse_version` + startup reparse sweep
+(bump `PARSE_VERSION` in `pipeline/ingest_writer.py` after ANY parser/rollup
+semantics change). See `ARCHITECTURE.md` -> "Phase 7b".
+
+Phase 7 groundwork (base spell data) is BUILT 2026-08-02: Census spell records ARE
+the base pre-stat values per tier (no wiki/manual entry) — tooltips = base + stats,
+which is fit.py's damage model. `tools/ingest_spells.py --all --max-level 70`
+bulk-caches full class books (`sync.ingest_class_spells` / `client.spells_by_class`,
+`classes.<cls>.level=[<max>` + `c:start` paging); `census_spells` gained typed columns
+(cast/recast/recovery/duration/power/dmg_*, schema v4) via `sync.typed_fields()` — the
+one owner of unit conversions, shared with `fit.spellbook()`. See `ARCHITECTURE.md`
+→ "Bulk spell ingest" (incl. the s:example burst-throttle gotcha — bulk pulls need
+a registered `CENSUS_SERVICE_ID` in `.env`, or a ~1-class-per-8-min drip).
+NEXT (discuss with Lindsay first): AA modeling — curated per-class `aa_effects`
+table for throughput AAs, not full-tree ingest.
+
 ## Ship log
 
+- 2026-08-03 (claude): Phase 7b: Workspace UX (ACT-style tree + drilldown), stats v2 surfacing, pet knowledge refine pass
 - 2026-08-02 (claude): Phase 6: coach correctness (flavor cast ground truth, two-point calibration, debuff uplift, ability catalog + join gates, healer/utility estimates, engagement v2) + hardening (events pruning, frozen raid reports, multi-file backfill, live hints)

@@ -24,8 +24,12 @@ def unescape_items(body: str) -> str:
 
 def to_int(num: str) -> int:
     """Comma-grouped ints, plus the log's abbreviation for 6-figure hits
-    ("296.1K" -> 296100)."""
+    ("296.1K" -> 296100). Tolerates a stray decimal ("1.5") — one malformed
+    line must never abort a whole session parse."""
     num = num.replace(",", "")
     if num.endswith("K"):
         return int(float(num[:-1]) * 1000)
-    return int(num)
+    try:
+        return int(num)
+    except ValueError:
+        return int(float(num))

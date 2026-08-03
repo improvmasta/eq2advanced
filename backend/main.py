@@ -40,11 +40,42 @@ async def _prune_loop(days: int):
             logging.getLogger("prune").exception("prune loop iteration failed")
 
 
+def _reparse_stale():
+    """Reparse ready, un-pruned sessions whose parse_version is stale — parser
+    or rollup semantics changed since they were parsed. Oldest first, so
+    knowledge learned from early sessions feeds later ones. Runs in a worker
+    thread at startup; pruned sessions are skipped (frozen by design)."""
+    from pipeline.ingest_writer import PARSE_VERSION, parse_session, session_raw_paths
+    log = logging.getLogger("reparse")
+    conn = get_db()
+    # 'parsing' at startup is always an orphan — parse threads die with the
+    # process (incl. dev hot reloads), leaving the flag behind
+    rows = conn.execute(
+        "SELECT id FROM sessions WHERE status IN ('ready','parsing') AND pruned=0 "
+        "AND (parse_version IS NULL OR parse_version < ?) ORDER BY id",
+        (PARSE_VERSION,)).fetchall()
+    if not rows:
+        return
+    log.info("reparsing %d stale sessions (parse_version < %d)", len(rows), PARSE_VERSION)
+    for r in rows:
+        try:
+            paths = session_raw_paths(conn, r["id"])
+            if paths:
+                parse_session(r["id"], paths)
+        except Exception:
+            log.exception("reparse of session %d failed", r["id"])
+    log.info("reparse sweep done")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     from census.catalog import seed_curated
+    from parser import petnames
     seed_curated(get_db())
+    petnames.seed_curated(get_db())
+    import threading
+    threading.Thread(target=_reparse_stale, daemon=True).start()
     tasks = []
     if os.environ.get("CENSUS_AUTO_REFRESH", "1") != "0":
         tasks.append(asyncio.create_task(_census_refresh_loop()))

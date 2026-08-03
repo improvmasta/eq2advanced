@@ -19,7 +19,7 @@ function TokenPanel({ char }) {
     setError(null)
     try {
       const d = await api.mintToken(char.id, label.trim() || null)
-      const qr = await QRCode.toDataURL(d.pair_payload, { margin: 1, width: 220, errorCorrectionLevel: 'M' })
+      const qr = await QRCode.toDataURL(d.pair_payload, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       setMinted({ ...d, qr })
       setLabel('')
       refresh()
@@ -39,8 +39,8 @@ function TokenPanel({ char }) {
 
   return (
     <div className="tokenpanel">
-      <h3>Device tokens</h3>
-      <p className="muted">
+      <h2>Device tokens</h2>
+      <p className="note">
         A token pairs one uploader (the ACT plugin, when it lands) to {char.name}. Mint one
         per device — it is shown once, and you can revoke it any time.
       </p>
@@ -57,25 +57,29 @@ function TokenPanel({ char }) {
           <code className="tokenvalue">{minted.token}</code>
           <button onClick={() => navigator.clipboard?.writeText(minted.token)}>Copy token</button>
           <div className="qr">
-            <img src={minted.qr} alt="Pairing QR code" width="220" height="220" />
-            <p className="muted">Scan from the uploader's pairing screen, or paste the token.</p>
+            <img src={minted.qr} alt="Pairing QR code" width="200" height="200" />
+            <p className="note" style={{ marginBottom: 0 }}>
+              Scan from the uploader's pairing screen, or paste the token.
+            </p>
           </div>
         </div>
       )}
       {active.length > 0 && (
-        <table className="data">
-          <thead><tr><th>Label</th><th>Created</th><th>Last seen</th><th /></tr></thead>
-          <tbody>
-            {active.map((t) => (
-              <tr key={t.id}>
-                <td>{t.label || '—'}</td>
-                <td>{fmt.date(t.created_ts)}</td>
-                <td>{t.last_seen_ts ? `${fmt.date(t.last_seen_ts)} ${fmt.time(t.last_seen_ts)}` : 'never'}</td>
-                <td><button className="danger" onClick={() => revoke(t.id)}>Revoke</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="tablewrap">
+          <table className="data">
+            <thead><tr><th>Label</th><th>Created</th><th>Last seen</th><th /></tr></thead>
+            <tbody>
+              {active.map((t) => (
+                <tr key={t.id}>
+                  <td className="name">{t.label || '—'}</td>
+                  <td>{fmt.date(t.created_ts)}</td>
+                  <td>{t.last_seen_ts ? `${fmt.date(t.last_seen_ts)} ${fmt.time(t.last_seen_ts)}` : 'never'}</td>
+                  <td><button className="danger" onClick={() => revoke(t.id)}>Revoke</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {tokens !== null && active.length === 0 && !minted && (
         <p className="muted">No active tokens.</p>
@@ -115,28 +119,31 @@ export default function Characters() {
 
   return (
     <>
-      <h1>Characters</h1>
-      <div className="card">
-        <p className="muted">
-          Pair the characters you log with. Uploads and (soon) live ACT ingest attach to a
-          character, and everything you see on this site hangs off your own.
-        </p>
-        <form onSubmit={add} className="mintrow">
-          <input
-            type="text" placeholder="Character first name (e.g. Bobby)" value={name}
-            onChange={(e) => setName(e.target.value)} required
-          />
-          <button type="submit">Add character</button>
-        </form>
-        {error && <p className="err">{error}</p>}
+      <div className="pagehead">
+        <h1>Characters</h1>
+        <span className="sub">Uploads and live ingest attach to a character</span>
+        <div className="actions">
+          <form onSubmit={add} style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text" placeholder="Character first name (e.g. Bobby)" value={name}
+              onChange={(e) => setName(e.target.value)} required
+            />
+            <button type="submit">Add character</button>
+          </form>
+        </div>
       </div>
+      {error && <p className="err">{error}</p>}
 
       {chars === null && <p className="muted">Loading…</p>}
+      {chars?.length === 0 && (
+        <p className="muted">No characters yet — add the name you log with above.</p>
+      )}
+
       {chars?.map((c) => (
         <div className="card" key={c.id}>
           <div className="charhead">
-            <h2><Link to={`/characters/${c.id}`}>{c.name}</Link></h2>
-            <span className="muted">
+            <span className="cardtitle"><Link to={`/characters/${c.id}`}>{c.name}</Link></span>
+            <span className="sub">
               {c.class ? `${c.class} ${c.level ?? ''} · ` : ''}
               {c.session_count} session{c.session_count === 1 ? '' : 's'} ·{' '}
               {c.token_count} active token{c.token_count === 1 ? '' : 's'}
@@ -153,9 +160,6 @@ export default function Characters() {
           {open === c.id && <TokenPanel char={c} />}
         </div>
       ))}
-      {chars?.length === 0 && (
-        <p className="muted">No characters yet — add the name you log with above.</p>
-      )}
     </>
   )
 }

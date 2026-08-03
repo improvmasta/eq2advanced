@@ -48,22 +48,51 @@ def _equipped_item_ids(doc: dict) -> list[int]:
     return ids
 
 
+def typed_fields(rec: dict, effects: list[dict]) -> dict:
+    """Queryable numbers from a spell record: timing/cost from the typed Census
+    fields, damage from the parsed effect grammar (the typed fields carry no
+    amounts). The primary damage effect is the one with the largest midpoint —
+    a DoT's initial hit over its tick."""
+    dmg = max((e for e in effects
+               if e.get("kind") == "damage" and e.get("min") is not None),
+              key=lambda e: e["min"] + e["max"], default=None)
+    return {
+        "cast_s": (rec.get("cast_secs_hundredths") or 0) / 100,
+        "recast_s": rec.get("recast_secs") or 0,
+        # the census field is NAMED _tenths but stores hundredths: every spell
+        # carries 50, and EQ2's universal recovery is 0.5s, not 5s
+        "recovery_s": (rec.get("recovery_secs_tenths") or 0) / 100,
+        "duration_s": ((rec.get("duration") or {}).get("max_sec_tenths") or 0) / 10,
+        "power_cost": (rec.get("cost") or {}).get("power") or 0,
+        "dmg_min": dmg["min"] if dmg else None,
+        "dmg_max": dmg["max"] if dmg else None,
+        "dmg_dtype": dmg.get("dtype") if dmg else None,
+        "dmg_period_s": dmg.get("period_s") if dmg else None,
+    }
+
+
 def _spell_rows(recs, now: int) -> list[tuple]:
     rows = []
     for rec in recs:
         name = rec.get("name") or ""
         classes = ",".join(sorted((rec.get("classes") or {}).keys()))
+        effects = parse_effects(rec.get("effect_list"))
+        t = typed_fields(rec, effects)
         rows.append((rec["id"], name, base_name(name), rec.get("crc"), classes,
                      rec.get("level"), rec.get("tier"), rec.get("tier_name"),
-                     json_dumps(rec), json_dumps(parse_effects(rec.get("effect_list"))),
-                     now))
+                     json_dumps(rec), json_dumps(effects),
+                     t["cast_s"], t["recast_s"], t["recovery_s"], t["duration_s"],
+                     t["power_cost"], t["dmg_min"], t["dmg_max"], t["dmg_dtype"],
+                     t["dmg_period_s"], now))
     return rows
 
 
 _SPELL_INSERT = (
     "INSERT OR REPLACE INTO census_spells "
     "(spell_id, name, base_name, crc, class, level, tier, tier_name, "
-    " json, parsed_effects, fetched_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    " json, parsed_effects, cast_s, recast_s, recovery_s, duration_s, "
+    " power_cost, dmg_min, dmg_max, dmg_dtype, dmg_period_s, fetched_ts) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 
 
 def ensure_spells(conn, client, spell_ids: list[int]) -> int:
@@ -110,6 +139,83 @@ def ensure_spell_lines(conn, client, crcs: list[int]) -> int:
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
             [(f"spell_line:{c}", str(now)) for c in todo if c in got])
     return len(rows)
+
+
+# the 24 adventure classes of the EoF era (no beastlord/channeler on TLE);
+# lowercase = Census's classes{} keys, all verified to return spell rows
+ALL_CLASSES = (
+    "assassin", "berserker", "brigand", "bruiser", "coercer", "conjuror",
+    "defiler", "dirge", "fury", "guardian", "illusionist", "inquisitor",
+    "monk", "mystic", "necromancer", "paladin", "ranger", "shadowknight",
+    "swashbuckler", "templar", "troubador", "warden", "warlock", "wizard",
+)
+
+
+INGEST_PAGE_SLEEP_S = 2  # 30 on s:example — its burst limit trips mid-class
+
+
+def ingest_class_spells(conn, client, cls: str, max_level: int,
+                        page_sleep_s: float = INGEST_PAGE_SLEEP_S) -> dict:
+    """Bulk-cache every spell record (all tiers) scribable by a class at or
+    below max_level. Unlike ensure_spells/ensure_spell_lines this is proactive:
+    the coach and spell browser get the full class book without waiting for a
+    character to scribe things.
+
+    Every page is persisted as it lands and the offset is stored in settings,
+    because the s:example burst throttle cuts off mid-class: a restarted-from-
+    zero fetch could never finish a book bigger than the burst budget. Only
+    the empty page that proves the end clears the offset and writes the
+    spell_line:{crc} completeness markers (for every line of the class book,
+    including pages from earlier partial runs)."""
+    key = f"ingest_progress:{cls}:{max_level}"
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    start = int(row[0]) if row else 0
+    fetched = 0
+    while True:
+        recs = client.spell_page(cls, max_level, start)
+        now = int(time.time())
+        if not recs:
+            break
+        with conn:
+            conn.executemany(_SPELL_INSERT, _spell_rows(recs, now))
+            catalog.upsert_from_spells(conn, recs)
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) "
+                         "VALUES (?,?)", (key, str(start + len(recs))))
+        start += len(recs)
+        fetched += len(recs)
+        time.sleep(page_sleep_s)
+    crcs = [r[0] for r in conn.execute(
+        "SELECT DISTINCT crc FROM census_spells WHERE crc IS NOT NULL "
+        "AND (','||class||',') LIKE ?", (f"%,{cls},%",))]
+    with conn:
+        conn.execute("DELETE FROM settings WHERE key=?", (key,))
+        conn.executemany(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
+            [(f"spell_line:{c}", str(int(time.time()))) for c in sorted(crcs)])
+    return {"class": cls, "spells": start, "fetched": fetched,
+            "lines": len(crcs)}
+
+
+def backfill_typed_columns(conn) -> int:
+    """Populate the typed columns on census_spells rows cached before the
+    columns existed (cast_s is never NULL on a post-migration insert)."""
+    rows = conn.execute(
+        "SELECT spell_id, json, parsed_effects FROM census_spells "
+        "WHERE cast_s IS NULL AND json IS NOT NULL").fetchall()
+    updates = []
+    for r in rows:
+        t = typed_fields(json.loads(r["json"]),
+                         json.loads(r["parsed_effects"] or "[]"))
+        updates.append((t["cast_s"], t["recast_s"], t["recovery_s"],
+                        t["duration_s"], t["power_cost"], t["dmg_min"],
+                        t["dmg_max"], t["dmg_dtype"], t["dmg_period_s"],
+                        r["spell_id"]))
+    with conn:
+        conn.executemany(
+            "UPDATE census_spells SET cast_s=?, recast_s=?, recovery_s=?, "
+            "duration_s=?, power_cost=?, dmg_min=?, dmg_max=?, dmg_dtype=?, "
+            "dmg_period_s=? WHERE spell_id=?", updates)
+    return len(updates)
 
 
 def ensure_items(conn, client, item_ids: list[int]) -> int:

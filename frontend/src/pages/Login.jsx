@@ -26,7 +26,7 @@ export default function Login({ onAuthed }) {
   return (
     <div className="card authcard">
       <h1>{mode === 'login' ? 'Sign in' : 'Create account'}</h1>
-      <p className="muted">
+      <p className="note" style={{ marginTop: 4 }}>
         {mode === 'login'
           ? 'Your sessions and coaching are private to your account.'
           : 'Free and open — pair your characters and start uploading logs.'}
@@ -45,7 +45,7 @@ export default function Login({ onAuthed }) {
           {busy ? '…' : mode === 'login' ? 'Sign in' : 'Create account'}
         </button>
       </form>
-      {error && <p className="err">{error}</p>}
+      {error && <p className="err" style={{ marginTop: 8 }}>{error}</p>}
       <p className="muted switchmode">
         {mode === 'login' ? 'New here? ' : 'Already have an account? '}
         <a onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null) }}>

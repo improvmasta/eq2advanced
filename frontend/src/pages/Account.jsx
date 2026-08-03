@@ -24,29 +24,32 @@ export default function Account({ user, onSignedOut }) {
 
   return (
     <>
-      <h1>Account</h1>
-      <div className="card">
-        <p>
-          Signed in as <b>{user.email}</b>
-          {user.role === 'admin' && <span className="badge named" style={{ marginLeft: 8 }}>admin</span>}
-        </p>
-        <button onClick={signOut}>Sign out</button>
+      <div className="pagehead">
+        <h1>Account</h1>
+        <span className="sub">
+          Signed in as {user.email}
+          {user.role === 'admin' && <span className="badge named">admin</span>}
+        </span>
+        <div className="actions">
+          <button onClick={signOut}>Sign out</button>
+        </div>
       </div>
-      <div className="card">
+
+      <div className="card" style={{ maxWidth: 380 }}>
         <h2>Change password</h2>
-        <form onSubmit={changePw} className="authcard">
+        <form onSubmit={changePw} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
           <input
-            type="password" placeholder="Current password" value={current}
+            type="password" placeholder="Current password" value={current} style={{ width: '100%' }}
             autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} required
           />
           <input
-            type="password" placeholder="New password (8+ characters)" value={next}
+            type="password" placeholder="New password (8+ characters)" value={next} style={{ width: '100%' }}
             autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required
           />
           <button type="submit">Change password</button>
         </form>
-        {msg && <p className="status-ready">{msg}</p>}
-        {error && <p className="err">{error}</p>}
+        {msg && <p className="status-ready" style={{ marginTop: 8 }}>{msg}</p>}
+        {error && <p className="err" style={{ marginTop: 8 }}>{error}</p>}
       </div>
     </>
   )

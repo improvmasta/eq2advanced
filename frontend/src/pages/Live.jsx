@@ -62,10 +62,10 @@ export default function Live() {
   if (!sessionId) {
     return (
       <>
-        <h1>Live</h1>
+        <div className="pagehead"><h1>Live</h1></div>
         <div className="card">
           <p>No live session is receiving right now.</p>
-          <p className="muted">
+          <p className="note" style={{ marginTop: 6, marginBottom: 0 }}>
             Pair an uploader on the <Link to="/characters">Characters</Link> page (mint a
             device token), then start the ACT uploader — or replay a log with{' '}
             <code>backend/tools/simulate_live.py</code>. Fights will appear here seconds
@@ -83,56 +83,75 @@ export default function Live() {
 
   return (
     <>
-      <h1>Live{session ? ` — ${session.character_name}` : ''}</h1>
-      <p className="muted">
-        {finished ? (
-          <>session finished — <Link to={`/sessions/${sessionId}`}>open the full report</Link></>
-        ) : (
-          <>
-            <span className={`badge ${online ? 'named' : ''}`}>
-              {online ? 'uploader online' : 'uploader quiet'}
-            </span>
-            {' '}· last data {st.last_ingest_ts ? fmt.time(st.last_ingest_ts) : '—'}
-          </>
+      <div className="pagehead">
+        <h1>Live{session ? ` — ${session.character_name}` : ''}</h1>
+        <span className="sub">
+          {finished ? (
+            <>session finished — <Link to={`/sessions/${sessionId}`}>open the full report</Link></>
+          ) : (
+            <>
+              <span className={`badge ${online ? 'named' : ''}`} style={{ marginLeft: 0 }}>
+                {online ? 'uploader online' : 'uploader quiet'}
+              </span>
+              {' '}· last data {st.last_ingest_ts ? fmt.time(st.last_ingest_ts) : '—'}
+            </>
+          )}
+        </span>
+        {candidates.length > 1 && (
+          <div className="actions">
+            {candidates.filter((c) => c.id !== sessionId).map((c) => (
+              <button key={c.id} onClick={() => { setStatus(null); setSessionId(c.id) }}>
+                switch to {c.character_name} #{c.id}
+              </button>
+            ))}
+          </div>
         )}
-      </p>
-      <div className="tiles">
-        <div className="tile"><div className="v">{encounters.length}</div><div className="k">Fights</div></div>
-        <div className="tile"><div className="v">{named.length}</div><div className="k">Named kills</div></div>
-        <div className="tile"><div className="v">{fmt.num(st.line_count ?? session?.line_count)}</div><div className="k">Log lines</div></div>
-        <div className="tile"><div className="v">{st.started_ts ? fmt.time(st.started_ts) : '—'}</div><div className="k">First pull</div></div>
       </div>
 
-      {candidates.length > 1 && (
-        <p className="muted">
-          Watching session {sessionId}.{' '}
-          {candidates.filter((c) => c.id !== sessionId).map((c) => (
-            <button key={c.id} onClick={() => { setStatus(null); setSessionId(c.id) }}>
-              switch to {c.character_name} #{c.id}
-            </button>
-          ))}
-        </p>
-      )}
+      <div className="metrics">
+        <div className="metric"><div className="v">{encounters.length}</div><div className="k">Fights</div></div>
+        <div className="metric"><div className="v">{named.length}</div><div className="k">Named kills</div></div>
+        <div className="metric"><div className="v">{fmt.num(st.line_count ?? session?.line_count)}</div><div className="k">Log lines</div></div>
+        <div className="metric"><div className="v">{st.started_ts ? fmt.time(st.started_ts) : '—'}</div><div className="k">First pull</div></div>
+      </div>
 
       {encounters.length === 0 && (
         <div className="card"><p className="muted">Waiting for the first finished fight…</p></div>
       )}
-      {[...encounters].reverse().map((e) => (
-        <div className="card" key={e.id}>
-          <h2>
-            <Link to={`/encounters/${e.id}`}>{e.name}</Link>
-            {e.is_named ? <span className="badge named">named</span> : null}
-          </h2>
-          <p className="muted">
-            {e.zone || 'Unknown zone'} · {fmt.time(e.started_ts)} · {fmt.dur(e.duration_s)} · {e.actor_count} raiders
-          </p>
-          <p>
-            Your damage {fmt.num(e.logger_damage)} ({fmt.num(e.logger_dps)} DPS)
-            {e.logger_heals ? <> · heals {fmt.num(e.logger_heals)}</> : null}
-            {(e.hints || []).map((h) => <span key={h} className="badge conf-low" style={{ marginLeft: 6 }}>{h}</span>)}
-          </p>
+
+      {encounters.length > 0 && (
+        <div className="card">
+          <h2>Fights</h2>
+          <div className="tablewrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Fight</th><th className="l">Zone</th><th>Start</th><th>Length</th>
+                  <th>Your damage</th><th>Your DPS</th><th>Heals</th><th>Raiders</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...encounters].reverse().map((e) => (
+                  <tr key={e.id}>
+                    <td className="name">
+                      <Link to={`/encounters/${e.id}`}>{e.name}</Link>
+                      {e.is_named ? <span className="badge named">named</span> : null}
+                      {(e.hints || []).map((h) => <span key={h} className="badge conf-low">{h}</span>)}
+                    </td>
+                    <td className="l muted">{e.zone || 'Unknown zone'}</td>
+                    <td>{fmt.time(e.started_ts)}</td>
+                    <td>{fmt.dur(e.duration_s)}</td>
+                    <td>{fmt.num(e.logger_damage)}</td>
+                    <td>{fmt.num(e.logger_dps)}</td>
+                    <td>{e.logger_heals ? fmt.num(e.logger_heals) : ''}</td>
+                    <td>{e.actor_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      ))}
+      )}
     </>
   )
 }
