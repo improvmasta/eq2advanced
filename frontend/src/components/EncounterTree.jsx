@@ -35,7 +35,9 @@ function buildTree(encounters) {
 const idsOf = (encs) => encs.map((e) => e.id).join(',')
 const sumDur = (encs) => encs.reduce((s, e) => s + Math.max(e.duration_s, 1), 0)
 
-export default function EncounterTree({ encounters, sel, onSelect, sessionLabel }) {
+/* hideZones: a zone run is one zone by construction — the block header would
+   duplicate the root node, so the rail shows just the fight list. */
+export default function EncounterTree({ encounters, sel, onSelect, sessionLabel, hideZones = false }) {
   const blocks = useMemo(() => buildTree(encounters), [encounters])
   const [open, setOpen] = useState({})   // trash-group key -> expanded
 
@@ -57,7 +59,7 @@ export default function EncounterTree({ encounters, sel, onSelect, sessionLabel 
         const blockIds = idsOf(b.encounters)
         return (
           <div className="treezone" key={bi}>
-            {node(blockIds, b.zone || 'Unknown zone',
+            {!hideZones && node(blockIds, b.zone || 'Unknown zone',
               `[${fmt.dur(sumDur(b.encounters))}]`, sel === blockIds, 'zone')}
             {b.nodes.map((n, ni) => {
               if (n.type === 'enc') {

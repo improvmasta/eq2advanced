@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
-import Sessions from './pages/Sessions.jsx'
+import Home from './pages/Home.jsx'
+import Uploads from './pages/Uploads.jsx'
+import ZoneRun from './pages/ZoneRun.jsx'
 import Live from './pages/Live.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
@@ -26,9 +28,10 @@ export default function App() {
         <Link to="/" className="brand">EQ2 Advanced<span>combat parsing for TLE</span></Link>
         {user && (
           <nav>
-            <NavLink to="/">Sessions</NavLink>
+            <NavLink to="/">Raids</NavLink>
             <NavLink to="/live">Live</NavLink>
             <NavLink to="/characters">Characters</NavLink>
+            <NavLink to="/uploads">Uploads</NavLink>
             <NavLink to="/calibration">Calibration</NavLink>
             <NavLink to="/account">Account</NavLink>
           </nav>
@@ -48,7 +51,9 @@ export default function App() {
         {user === null && <Login onAuthed={setUser} />}
         {user && (
           <Routes>
-            <Route path="/" element={<Sessions />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/zones/:id" element={<ZoneRun />} />
+            <Route path="/uploads" element={<Uploads />} />
             <Route path="/live" element={<Live />} />
             <Route path="/sessions/:id" element={<Workspace />} />
             <Route path="/calibration" element={<Calibration />} />

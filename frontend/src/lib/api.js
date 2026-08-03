@@ -35,6 +35,11 @@ export const api = {
   spell: (id) => req(`/api/spells/${id}`),
   sessions: () => req('/api/sessions'),
   session: (id) => req(`/api/sessions/${id}`),
+  zoneRuns: () => req('/api/zone-runs'),
+  zoneRun: (id) => req(`/api/zone-runs/${id}`),
+  zoneRunReport: (id) => req(`/api/zone-runs/${id}/report`),
+  coach: (sessionId) => req(`/api/sessions/${sessionId}/coach`),
+  generateCoach: (sessionId) => req(`/api/sessions/${sessionId}/coach`, { method: 'POST' }),
   reparse: (id) => req(`/api/sessions/${id}/reparse`, { method: 'POST' }),
   encounter: (id) => req(`/api/encounters/${id}`),
   encountersAgg: (ids) => req(`/api/encounters/agg?ids=${ids.join(',')}`),
@@ -57,5 +62,8 @@ export const fmt = {
   },
   time: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
   date: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })),
+  dateLong: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })),
+  timeRange: (a, b) => (a == null ? '—' : b == null ? fmt.time(a) : `${fmt.time(a)} – ${fmt.time(b)}`),
+  dayKey: (epoch) => new Date(epoch * 1000).toLocaleDateString('en-CA'), // local YYYY-MM-DD
   pct: (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—'),
 }

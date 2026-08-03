@@ -428,6 +428,32 @@ table.data th.sortable:hover { color: var(--text); }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---------- home: date-grouped zone runs ---------- */
+
+.dropzone.compact { padding: 10px 16px; }
+.dropzone.compact input[type="text"] { width: 170px; }
+
+.dayblock { margin-top: 22px; }
+.dayhead {
+  font-size: var(--fs-md); color: var(--text);
+  border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 10px;
+}
+.runlist { display: flex; flex-direction: column; gap: 8px; }
+.runrow {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-top: 0; padding: 10px 14px; text-decoration: none; color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
+}
+.runrow:hover { border-color: var(--gold-dim); background: var(--row-hover); text-decoration: none; }
+.runmain { display: flex; align-items: baseline; gap: 12px; min-width: 260px; flex: 1; }
+.runzone { font-weight: 600; color: var(--gold-bright); font-size: var(--fs-md); }
+.runtime { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.runmeta {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.runmeta .named { color: var(--gold-bright); }
+
 /* ---------- narrow screens ---------- */
 
 @media (max-width: 900px) {
