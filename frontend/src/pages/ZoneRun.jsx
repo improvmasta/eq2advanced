@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ActorPanel from '../components/ActorPanel.jsx'
+import ComparePanel from '../components/ComparePanel.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
 import ShareBar from '../components/ShareBar.jsx'
 import SortableTable from '../components/SortableTable.jsx'
@@ -144,6 +145,7 @@ export default function ZoneRun() {
   const [sel, setSel] = useQueryState('sel', 'all')
   const [actorQ, setActorQ] = useQueryState('actor')
   const [tab, setTab] = useQueryState('tab', 'overview')
+  const [cmpQ, setCmpQ] = useQueryState('cmp')
 
   useEffect(() => {
     api.zoneRun(id)
@@ -222,6 +224,15 @@ export default function ZoneRun() {
 
   const selectedActor = actorQ && actors.some((a) => a.key === actorQ) ? actorQ : null
   const selName = actors.find((a) => a.key === selectedActor)?.name
+
+  // checked-off combatants for comparison, order preserved in the URL
+  const cmpList = useMemo(() => (cmpQ || '').split(',').filter(Boolean), [cmpQ])
+  const cmpKeys = useMemo(() => new Set(cmpList), [cmpList])
+  const toggleCmp = (key) => {
+    const next = cmpKeys.has(key) ? cmpList.filter((k) => k !== key) : [...cmpList, key]
+    setCmpQ(next.length ? next.join(',') : null)
+  }
+  const comparing = cmpList.length >= 2
 
   if (error) return <p className="err">{error}</p>
   if (!run || !encounters) return <p className="muted">Loading…</p>
@@ -359,8 +370,9 @@ export default function ZoneRun() {
     defense: { key: 'damage_taken', dir: 'desc' },
   }
 
+  const panelOpen = comparing || selectedActor
   return (
-    <div className={`workspace ${selectedActor ? 'withpanel' : ''}`}>
+    <div className={`workspace ${panelOpen ? 'withpanel' : ''}`}>
       <EncounterTree
         encounters={encounters}
         sel={selIds && selIds.length === encounters.length ? 'all' : sel}
@@ -397,6 +409,11 @@ export default function ZoneRun() {
 
         {detail && tab !== 'insights' && (
           <div className="card">
+            {cmpList.length === 1 && (
+              <p className="note" style={{ margin: '0 0 6px' }}>
+                Check one more combatant to compare.
+              </p>
+            )}
             <SortableTable
               columns={tabCols[tab] || overviewCols}
               rows={tabRows[tab] || visibleActors}
@@ -404,6 +421,9 @@ export default function ZoneRun() {
               rowKey={(a) => a.key}
               selectedKey={selectedActor}
               onRowClick={(a) => setActorQ(a.key === selectedActor ? null : a.key)}
+              checkable={(a) => a.kind === 'player'}
+              checkedKeys={cmpKeys}
+              onCheck={toggleCmp}
             />
           </div>
         )}
@@ -441,7 +461,18 @@ export default function ZoneRun() {
         {detail && tab === 'overview' && <DpsBars actors={actors} duration={duration} />}
       </div>
 
-      {selectedActor && detail && (
+      {comparing && detail && (
+        <ComparePanel
+          actors={actors}
+          keys={cmpList}
+          derived={derived}
+          repRows={repRows}
+          duration={duration}
+          onRemove={toggleCmp}
+          onClear={() => setCmpQ(null)}
+        />
+      )}
+      {!comparing && selectedActor && detail && (
         <ActorPanel
           name={selName}
           abilities={detail.abilities}

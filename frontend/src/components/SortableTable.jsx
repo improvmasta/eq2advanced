@@ -4,9 +4,13 @@ import { useMemo, useState } from 'react'
    columns: [{ key, label, align ('l' for left), render(row), format(value),
               sortValue(row), sortable (default true) }]
    Numeric-first: default direction on a fresh column is descending (big
-   numbers on top, the ACT way); clicking the active column flips it. */
+   numbers on top, the ACT way); clicking the active column flips it.
+   checkable(row) adds a leading checkbox column (controlled via checkedKeys, a
+   Set of row keys, + onCheck(key)); rows where checkable returns false get an
+   empty cell. */
 export default function SortableTable({
   columns, rows, defaultSort, rowKey, onRowClick, selectedKey, className = '',
+  checkable, checkedKeys, onCheck,
 }) {
   const [sort, setSort] = useState(defaultSort || null) // {key, dir: 'asc'|'desc'}
 
@@ -39,6 +43,7 @@ export default function SortableTable({
       <table className={`data ${className}`}>
         <thead>
           <tr>
+            {checkable && <th className="checkcol" aria-label="Compare" />}
             {columns.map((c) => (
               <th
                 key={c.key}
@@ -61,6 +66,18 @@ export default function SortableTable({
                 className={`${onRowClick ? 'clickable' : ''} ${k === selectedKey ? 'selected' : ''}`}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
               >
+                {checkable && (
+                  <td className="checkcol" onClick={(e) => e.stopPropagation()}>
+                    {checkable(r) && (
+                      <input
+                        type="checkbox"
+                        checked={checkedKeys?.has(k) || false}
+                        onChange={() => onCheck?.(k)}
+                        aria-label={`Compare ${k}`}
+                      />
+                    )}
+                  </td>
+                )}
                 {columns.map((c) => (
                   <td key={c.key} className={c.align === 'l' ? 'l' : ''}>
                     {c.render ? c.render(r) : c.format ? c.format(r[c.key]) : r[c.key]}

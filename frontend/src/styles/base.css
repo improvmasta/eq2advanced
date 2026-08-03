@@ -454,6 +454,26 @@ table.data th.sortable:hover { color: var(--text); }
   .workspace.withpanel .actorpanel { grid-column: 1 / -1; position: static; max-height: none; }
 }
 
+/* compare panel: grouped horizontal bars, one section per metric */
+table.data .checkcol { width: 24px; padding-right: 0; }
+.checkcol input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
+.cmpmetric { margin-bottom: 12px; }
+.cmplabel {
+  text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: var(--fs-label); color: var(--gold); font-weight: 600;
+  margin-bottom: 3px;
+}
+.cmprow {
+  display: grid; grid-template-columns: 90px 1fr 70px;
+  align-items: center; gap: 8px; padding: 1px 0;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.cmpname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmpbar { display: block; height: 10px; background: var(--surface-raised); border-radius: 2px; }
+.cmpbar i { display: block; height: 100%; background: var(--bar); border-radius: 2px; }
+.cmpbar.worse i { background: var(--danger); opacity: 0.55; }
+.cmpval { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+
 /* ---------- home: date-grouped zone runs ---------- */
 
 .dropzone.compact { padding: 10px 16px; }
