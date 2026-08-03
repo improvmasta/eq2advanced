@@ -1,34 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import ActorPanel from '../components/ActorPanel.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
 import ShareBar from '../components/ShareBar.jsx'
 import SortableTable from '../components/SortableTable.jsx'
+import Tabs from '../components/Tabs.jsx'
 import { api, fmt } from '../lib/api.js'
+import { autoPct, castsPerMin, critPct, damageDerived, deathRows, reportRollup } from '../lib/stats.js'
 import { useQueryState } from '../lib/useQueryState.js'
-
-const KIND_FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'damage', label: 'Damage', kinds: ['damage'] },
-  { key: 'heal', label: 'Heals', kinds: ['heal'] },
-  { key: 'ward', label: 'Wards', kinds: ['ward'] },
-  { key: 'power', label: 'Power', kinds: ['power'] },
-  { key: 'threat', label: 'Threat', kinds: ['threat', 'detaunt'] },
-  { key: 'self', label: 'Self', kinds: ['self'] },
-]
 
 const PET_KINDS = new Set(['own_pet', 'swarm_pet', 'named_pet'])
 
-/* "Bobby's blighted horde" + "Grave Decay" -> "blighted horde's Grave Decay",
-   the way ACT prints pet rows inside the owner's breakdown. */
-function abilityLabel(r) {
-  if (!PET_KINDS.has(r.source_kind)) return r.ability
-  const short = r.source_name.includes("'s ")
-    ? r.source_name.slice(r.source_name.indexOf("'s ") + 3)
-    : r.source_name
-  if (r.ability === '(melee)') return short
-  if (r.ability.startsWith('(')) return `${short} ${r.ability}`
-  return `${short}'s ${r.ability}`
-}
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'damage', label: 'Damage' },
+  { key: 'healing', label: 'Healing' },
+  { key: 'defense', label: 'Defense' },
+  { key: 'insights', label: 'Insights' },
+]
 
 function kindBadge(kind) {
   if (kind === 'mob') return <span className="badge">mob</span>
@@ -55,17 +44,106 @@ function DpsBars({ actors, duration }) {
   )
 }
 
+const SEVERITY_CLASS = { warn: 'warn', opportunity: 'opportunity' }
+
+function Insights({ report, coach, coachErr, busy, onGenerate }) {
+  const cur = coach?.currencies
+  const tiles = cur ? [
+    ['DPS', fmt.num(cur.dps)],
+    ['HPS', cur.hps ? fmt.num(cur.hps) : null],
+    ['Crit', cur.crit_pct != null ? `${Math.round(cur.crit_pct)}%` : null],
+    ['Autoattack', cur.autoattack_pct != null ? `${Math.round(cur.autoattack_pct)}%` : null],
+    ['Casts/min', cur.cpm != null ? cur.cpm.toFixed(1) : null],
+    ['Idle', cur.idle_pct != null ? `${Math.round(cur.idle_pct)}%` : null],
+    ['Overheal', cur.overheal_pct != null ? `${Math.round(cur.overheal_pct)}%` : null],
+    ['Time dead', cur.time_dead_s ? fmt.dur(cur.time_dead_s) : null],
+    ['Cure latency', cur.cure_latency_self_s != null ? `${cur.cure_latency_self_s}s` : null],
+    ['Rez delay', cur.rez_delay_s != null ? `${cur.rez_delay_s}s` : null],
+  ].filter(([, v]) => v != null) : []
+
+  return (
+    <>
+      {coach == null && (
+        <div className="card">
+          <h2>Coach</h2>
+          {coachErr && <p className="err">{coachErr}</p>}
+          <p className="muted">No coach report for this run's log yet.</p>
+          <button disabled={busy} onClick={onGenerate}>{busy ? 'Generating…' : 'Generate coach report'}</button>
+        </div>
+      )}
+      {coach && (
+        <>
+          <div className="card">
+            <div className="drillhead">
+              <h2>Coach — {coach.character}</h2>
+              <span className="muted">{coach.archetype}</span>
+              <button className="chip" style={{ marginLeft: 'auto' }} disabled={busy} onClick={onGenerate}>
+                {busy ? 'Generating…' : 'Regenerate'}
+              </button>
+            </div>
+            {tiles.length > 0 && (
+              <div className="metrics">
+                {tiles.map(([k, v]) => (
+                  <div className="metric" key={k}><div className="v">{v}</div><div className="k">{k}</div></div>
+                ))}
+              </div>
+            )}
+            {coach.findings?.length > 0 && coach.findings.map((f, i) => (
+              <div key={i} className={`finding ${SEVERITY_CLASS[f.severity] || ''}`}>
+                <span className="badge">{f.severity}</span>
+                <span><strong>{f.title}</strong>{f.detail ? ` — ${f.detail}` : ''}</span>
+              </div>
+            ))}
+          </div>
+          {coach.stat_priorities?.length > 0 && (
+            <div className="card">
+              <h2>Stat priorities</h2>
+              <div className="tablewrap">
+                <table className="data">
+                  <thead>
+                    <tr><th className="l">Stat</th><th>Step</th><th>Damage gain</th><th>DPS gain</th><th className="l">Why</th></tr>
+                  </thead>
+                  <tbody>
+                    {coach.stat_priorities.map((p) => (
+                      <tr key={p.stat}>
+                        <td className="name l">{p.label}</td>
+                        <td>{p.step}</td>
+                        <td>{fmt.num(p.damage_gain)}</td>
+                        <td>{p.dps_gain}</td>
+                        <td className="l muted">{p.why}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {coach.caveats?.length > 0 && (
+            <p className="note">{coach.caveats.join(' ')}</p>
+          )}
+        </>
+      )}
+      {report?.caveats?.length > 0 && (
+        <p className="note">{report.caveats.join(' ')}</p>
+      )}
+    </>
+  )
+}
+
 export default function ZoneRun() {
   const { id } = useParams()
   const [run, setRun] = useState(null)
   const [encounters, setEncounters] = useState(null)
   const [detail, setDetail] = useState(null)
   const [report, setReport] = useState(null)
+  const [coach, setCoach] = useState(null)
+  const [coachErr, setCoachErr] = useState(null)
+  const [coachBusy, setCoachBusy] = useState(false)
   const [error, setError] = useState(null)
   const [detailErr, setDetailErr] = useState(null)
   const [sel, setSel] = useQueryState('sel', 'all')
   const [actorQ, setActorQ] = useQueryState('actor')
-  const [kindFilter, setKindFilter] = useState('all')
+  const [tab, setTab] = useQueryState('tab', 'overview')
 
   useEffect(() => {
     api.zoneRun(id)
@@ -99,32 +177,38 @@ export default function ZoneRun() {
     return () => { gone = true }
   }, [selIds && selIds.join(',')])
 
-  // report columns for the CURRENT selection: sum the per-encounter player
-  // rows across selected fights (works on any node, not just the whole run)
-  const repRows = useMemo(() => {
-    if (!report || !selIds) return null
-    const want = new Set(selIds)
-    const by = {}
-    for (const enc of report.encounters) {
-      if (!want.has(enc.encounter.id)) continue
-      for (const p of enc.players) {
-        const n = by[p.name] ??= { engage: [], death_dps_lost: 0, overheal_est: 0, saves: 0, time_dead_s: 0, deaths: 0, cures: 0 }
-        if (p.engage_delay_s != null) n.engage.push(p.engage_delay_s)
-        n.death_dps_lost += p.death_dps_lost || 0
-        n.overheal_est += p.overheal_est || 0
-        n.saves += p.saves || 0
-        n.time_dead_s += p.time_dead_s || 0
-        n.deaths += p.deaths || 0
-        n.cures += p.cures || 0
-      }
+  // the coach engine is per session; a run's log is its dominant session
+  const domSession = useMemo(() => {
+    if (!encounters?.length) return null
+    const counts = {}
+    for (const e of encounters) counts[e.session_id] = (counts[e.session_id] || 0) + 1
+    return Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0])
+  }, [encounters])
+
+  useEffect(() => {
+    if (tab !== 'insights' || !domSession) return
+    let gone = false
+    api.coach(domSession)
+      .then((d) => { if (!gone) setCoach(d.report) })
+      .catch((e) => { if (!gone) setCoachErr(e.message) })
+    return () => { gone = true }
+  }, [tab, domSession])
+
+  async function generateCoach() {
+    setCoachBusy(true)
+    setCoachErr(null)
+    try {
+      const d = await api.generateCoach(domSession)
+      setCoach(d.report)
+    } catch (e) {
+      setCoachErr(e.message)
     }
-    for (const n of Object.values(by)) {
-      n.avg_engage_delay_s = n.engage.length
-        ? Math.round((n.engage.reduce((s, x) => s + x, 0) / n.engage.length) * 10) / 10
-        : null
-    }
-    return by
-  }, [report, selIds && selIds.join(',')])
+    setCoachBusy(false)
+  }
+
+  const repRows = useMemo(() => reportRollup(report, selIds), [report, selIds && selIds.join(',')])
+  const derived = useMemo(() => damageDerived(detail?.abilities), [detail])
+  const deaths = useMemo(() => deathRows(report, selIds), [report, selIds && selIds.join(',')])
 
   const actors = detail?.actors ?? []
   const duration = Math.max(detail?.encounter?.duration_s || 0, 1)
@@ -136,48 +220,44 @@ export default function ZoneRun() {
     (a.damage || 0) > 0 || (a.heals || 0) > 0 || (a.damage_taken || 0) > 0
     || (a.wards_absorbed || 0) > 0 || (a.power_fed || 0) > 0), [actors])
 
-  const selectedActor = useMemo(() => {
-    if (actorQ && actors.some((a) => a.key === actorQ)) return actorQ
-    const top = actors.find((a) => a.kind === 'player' && a.damage > 0) || actors[0]
-    return top?.key ?? null
-  }, [actors, actorQ])
-
-  const abilityRows = useMemo(() => {
-    if (!detail || selectedActor == null) return []
-    const f = KIND_FILTERS.find((k) => k.key === kindFilter)
-    return detail.abilities.filter((r) =>
-      (r.source_key === selectedActor || r.rollup_key === selectedActor)
-      && (f?.kinds ? f.kinds.includes(r.kind) : r.kind !== 'self')
-      && !(r.total === 0 && r.hits > 0 && r.max === null && r.kind === 'damage'
-           && r.swings === r.hits))
-  }, [detail, selectedActor, kindFilter])
-  const abilityMax = Math.max(...abilityRows.map((r) => r.total || 0), 1)
+  const selectedActor = actorQ && actors.some((a) => a.key === actorQ) ? actorQ : null
+  const selName = actors.find((a) => a.key === selectedActor)?.name
 
   if (error) return <p className="err">{error}</p>
   if (!run || !encounters) return <p className="muted">Loading…</p>
 
-  const selName = actors.find((a) => a.key === selectedActor)?.name
   const enc = detail?.encounter
   const zoneLabel = run.zone || 'Unknown zone'
   const title = sel === 'all'
     ? zoneLabel
     : enc?.name || (selIds && selIds.length > 1 ? `${selIds.length} fights` : '…')
 
-  const actorCols = [
-    {
-      key: 'name', label: 'Name', align: 'l',
-      render: (a) => <span className="name">{a.name}{kindBadge(a.kind)}</span>,
-      sortValue: (a) => a.name,
+  const nameCol = {
+    key: 'name', label: 'Name', align: 'l',
+    render: (a) => <span className="name">{a.name}{kindBadge(a.kind)}</span>,
+    sortValue: (a) => a.name,
+  }
+  const shareCol = {
+    key: 'share', label: 'Dmg %', align: 'l',
+    render: (a) => (a.kind === 'player' && a.damage > 0
+      ? <span className="sharecell"><ShareBar value={a.damage} max={topDamage} />
+          <span className="pctnum">{raidDamage ? `${((a.damage / raidDamage) * 100).toFixed(1)}%` : ''}</span></span>
+      : null),
+    sortValue: (a) => (a.kind === 'player' ? a.damage : -1),
+  }
+  const rep = (name, label, get, renderVal) => ({
+    key: name, label,
+    render: (a) => {
+      const v = repRows?.[a.name] ? get(repRows[a.name]) : null
+      return v != null && v !== 0 ? (renderVal ? renderVal(v) : fmt.num(v)) : ''
     },
+    sortValue: (a) => (repRows?.[a.name] ? get(repRows[a.name]) : null),
+  })
+
+  const overviewCols = [
+    nameCol,
     { key: 'damage', label: 'Damage', format: fmt.num },
-    {
-      key: 'share', label: 'Dmg %', align: 'l',
-      render: (a) => (a.kind === 'player' && a.damage > 0
-        ? <span className="sharecell"><ShareBar value={a.damage} max={topDamage} />
-            <span className="pctnum">{raidDamage ? `${((a.damage / raidDamage) * 100).toFixed(1)}%` : ''}</span></span>
-        : null),
-      sortValue: (a) => (a.kind === 'player' ? a.damage : -1),
-    },
+    shareCol,
     { key: 'dps', label: 'EncDPS', format: fmt.num },
     { key: 'damage_taken', label: 'DmgTaken', format: fmt.num },
     { key: 'heals', label: 'Heals', format: fmt.num },
@@ -188,98 +268,99 @@ export default function ZoneRun() {
     },
     { key: 'wards_absorbed', label: 'Wards', format: fmt.num },
     { key: 'power_fed', label: 'PowerRepl', format: fmt.num },
-    { key: 'power_drain', label: 'PowerDrain', format: fmt.num },
     { key: 'cure_count', label: 'Cures', render: (a) => a.cure_count || '' },
     { key: 'deaths', label: 'Deaths', render: (a) => a.deaths || '' },
+    rep('engage', 'Engage', (n) => n.avg_engage_delay_s, (v) => `${v}s`),
+    rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
+    rep('overheal', 'Overheal', (n) => n.overheal_est),
+    rep('saves', 'Saves', (n) => n.saves, (v) => v),
   ]
-  if (repRows) {
-    actorCols.push(
-      {
-        key: 'engage', label: 'Engage',
-        render: (a) => {
-          const n = repRows[a.name]
-          return n?.avg_engage_delay_s != null ? `${n.avg_engage_delay_s}s` : ''
-        },
-        sortValue: (a) => repRows[a.name]?.avg_engage_delay_s ?? null,
-      },
-      {
-        key: 'dead_loss', label: 'Dmg lost dead',
-        render: (a) => (repRows[a.name]?.death_dps_lost ? fmt.num(repRows[a.name].death_dps_lost) : ''),
-        sortValue: (a) => repRows[a.name]?.death_dps_lost ?? null,
-      },
-      {
-        key: 'overheal', label: 'Overheal',
-        render: (a) => (repRows[a.name]?.overheal_est ? fmt.num(repRows[a.name].overheal_est) : ''),
-        sortValue: (a) => repRows[a.name]?.overheal_est ?? null,
-      },
-      {
-        key: 'saves', label: 'Saves',
-        render: (a) => repRows[a.name]?.saves || '',
-        sortValue: (a) => repRows[a.name]?.saves ?? null,
-      },
-    )
-  }
 
-  const abilityCols = [
-    {
-      key: 'ability', label: 'Type', align: 'l',
-      render: (r) => (
-        <span className="name">
-          {abilityLabel(r)}
-          {PET_KINDS.has(r.source_kind) && <span className="badge pet">pet</span>}
-          {r.via_pet && <span className="badge pet">pet cast</span>}
-        </span>
-      ),
-      sortValue: (r) => abilityLabel(r),
-    },
-    { key: 'kind', label: 'Kind', render: (r) => <span className="muted">{r.kind}</span>, sortValue: (r) => r.kind },
-    { key: 'total', label: 'Total', format: fmt.num },
-    {
-      key: 'encdps', label: 'EncDPS',
-      render: (r) => (r.total ? fmt.num(r.total / duration) : '—'),
-      sortValue: (r) => (r.total || 0) / duration,
-    },
-    {
-      key: 'share', label: 'Share', align: 'l',
-      render: (r) => <ShareBar value={r.total || 0} max={abilityMax} kind={r.kind === 'heal' ? 'heal' : 'dps'} />,
-      sortValue: (r) => r.total || 0,
-    },
-    { key: 'casts', label: 'Casts', render: (r) => r.casts || '' },
-    { key: 'hits', label: 'Hits' },
-    { key: 'swings', label: 'Swings' },
-    {
-      key: 'to_hit_pct', label: 'ToHit',
-      render: (r) => (r.to_hit_pct != null ? `${r.to_hit_pct.toFixed(1)}%` : '—'),
-    },
+  const damageCols = [
+    nameCol,
+    { key: 'damage', label: 'Damage', format: fmt.num },
+    shareCol,
+    { key: 'dps', label: 'EncDPS', format: fmt.num },
     {
       key: 'crit', label: 'Crit %',
-      render: (r) => (r.hits ? `${Math.round((r.crits / r.hits) * 100)}%` : ''),
-      sortValue: (r) => (r.hits ? r.crits / r.hits : null),
+      render: (a) => { const v = critPct(derived[a.key]); return v != null ? `${Math.round(v)}%` : '' },
+      sortValue: (a) => critPct(derived[a.key]),
     },
     {
-      key: 'avg', label: 'Average',
-      render: (r) => (r.hits ? fmt.num(r.total / r.hits) : '—'),
-      sortValue: (r) => (r.hits ? r.total / r.hits : null),
-    },
-    { key: 'median', label: 'Median', format: fmt.num },
-    { key: 'min', label: 'MinHit', format: fmt.num },
-    { key: 'max', label: 'MaxHit', format: fmt.num },
-    {
-      key: 'avg_delay_s', label: 'AvgDelay',
-      render: (r) => (r.avg_delay_s != null ? r.avg_delay_s.toFixed(2) : '—'),
+      key: 'auto', label: 'Auto %',
+      render: (a) => { const v = autoPct(derived[a.key]); return v != null ? `${Math.round(v)}%` : '' },
+      sortValue: (a) => autoPct(derived[a.key]),
     },
     {
-      key: 'dtype', label: 'Type(s)', align: 'l',
-      render: (r) => (r.dtypes
-        ? Object.entries(r.dtypes).sort((a, b) => b[1] - a[1]).map(([t]) => t).join('/')
-        : ''),
-      sortValue: (r) => (r.dtypes ? Object.keys(r.dtypes).sort().join('/') : null),
+      key: 'cpm', label: 'Casts/min',
+      render: (a) => { const v = castsPerMin(derived[a.key], duration); return v != null ? v.toFixed(1) : '' },
+      sortValue: (a) => castsPerMin(derived[a.key], duration),
     },
-    { key: 'resists', label: 'Resist', render: (r) => r.resists || '' },
+    rep('engage', 'Engage', (n) => n.avg_engage_delay_s, (v) => `${v}s`),
+    rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
+    { key: 'deaths', label: 'Deaths', render: (a) => a.deaths || '' },
   ]
 
+  const healingCols = [
+    nameCol,
+    { key: 'heals', label: 'Heals', format: fmt.num },
+    {
+      key: 'hps', label: 'EncHPS',
+      render: (a) => fmt.num((a.heals || 0) / duration),
+      sortValue: (a) => (a.heals || 0) / duration,
+    },
+    rep('overheal', 'Overheal', (n) => n.overheal_est),
+    {
+      key: 'overheal_pct', label: 'Overheal %',
+      render: (a) => {
+        const n = repRows?.[a.name]
+        const healed = (a.heals || 0) + (n?.overheal_est || 0)
+        return healed && n?.overheal_est ? `${Math.round((100 * n.overheal_est) / healed)}%` : ''
+      },
+      sortValue: (a) => {
+        const n = repRows?.[a.name]
+        const healed = (a.heals || 0) + (n?.overheal_est || 0)
+        return healed && n?.overheal_est ? (100 * n.overheal_est) / healed : null
+      },
+    },
+    rep('saves', 'Saves', (n) => n.saves, (v) => v),
+    { key: 'wards_absorbed', label: 'Wards', format: fmt.num },
+    { key: 'ward_bleedthrough', label: 'Bleedthrough', format: fmt.num },
+    { key: 'cure_count', label: 'Cures', render: (a) => a.cure_count || '' },
+    { key: 'power_fed', label: 'PowerRepl', format: fmt.num },
+    { key: 'rez_casts', label: 'Rezzes', render: (a) => a.rez_casts || '' },
+    rep('rez_delay', 'Rez delay', (n) => n.avg_rez_delay_s, (v) => `${v}s`),
+  ]
+
+  const defenseCols = [
+    nameCol,
+    { key: 'damage_taken', label: 'DmgTaken', format: fmt.num },
+    { key: 'deaths', label: 'Deaths', render: (a) => a.deaths || '' },
+    rep('time_dead', 'Time dead', (n) => n.time_dead_s, (v) => fmt.dur(v)),
+    rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
+    { key: 'power_drain', label: 'PowerDrain', format: fmt.num },
+  ]
+
+  const tabRows = {
+    overview: visibleActors,
+    damage: players.filter((a) => (a.damage || 0) > 0),
+    healing: players.filter((a) =>
+      (a.heals || 0) > 0 || (a.wards_absorbed || 0) > 0 || (a.cure_count || 0) > 0
+      || (a.power_fed || 0) > 0 || (a.rez_casts || 0) > 0),
+    defense: players.filter((a) => (a.damage_taken || 0) > 0 || (a.deaths || 0) > 0),
+  }
+  const tabCols = {
+    overview: overviewCols, damage: damageCols, healing: healingCols, defense: defenseCols,
+  }
+  const tabSort = {
+    overview: { key: 'dps', dir: 'desc' },
+    damage: { key: 'dps', dir: 'desc' },
+    healing: { key: 'hps', dir: 'desc' },
+    defense: { key: 'damage_taken', dir: 'desc' },
+  }
+
   return (
-    <div className="workspace">
+    <div className={`workspace ${selectedActor ? 'withpanel' : ''}`}>
       <EncounterTree
         encounters={encounters}
         sel={selIds && selIds.length === encounters.length ? 'all' : sel}
@@ -294,60 +375,81 @@ export default function ZoneRun() {
             {fmt.dateLong(run.started_ts)}
             {` · ${fmt.timeRange(enc?.started_ts ?? run.started_ts, enc?.ended_ts ?? run.ended_ts)}`}
             {` · ${run.character_name}`}
+            {report?.partial ? ' · partial (pruned)' : ''}
           </span>
         </div>
+        <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'overview' ? null : k)} />
         {detailErr && <p className="err">{detailErr}</p>}
-        {!detail && !detailErr && <p className="muted">Loading…</p>}
-        {detail && (
-          <>
-            <div className="metrics">
-              <div className="metric"><div className="v">{fmt.dur(enc.duration_s)}</div><div className="k">Combat</div></div>
-              <div className="metric"><div className="v">{fmt.num(raidDamage)}</div><div className="k">Raid damage</div></div>
-              <div className="metric"><div className="v">{fmt.num(raidDamage / duration)}</div><div className="k">Raid DPS</div></div>
-              <div className="metric"><div className="v">{players.filter((p) => p.damage > 0 || p.heals > 0).length}</div><div className="k">Raiders</div></div>
-              {selIds.length > 1 && <div className="metric"><div className="v">{selIds.length}</div><div className="k">Fights</div></div>}
-            </div>
+        {!detail && !detailErr && tab !== 'insights' && <p className="muted">Loading…</p>}
 
-            <div className="card">
-              <SortableTable
-                columns={actorCols}
-                rows={visibleActors}
-                defaultSort={{ key: 'dps', dir: 'desc' }}
-                rowKey={(a) => a.key}
-                selectedKey={selectedActor}
-                onRowClick={(a) => setActorQ(a.key)}
-              />
-            </div>
-
-            {selectedActor != null && (
-              <div className="card">
-                <div className="drillhead">
-                  <h2>{selName}</h2>
-                  <div className="chips">
-                    {KIND_FILTERS.map((f) => (
-                      <button
-                        key={f.key}
-                        className={`chip ${kindFilter === f.key ? 'on' : ''}`}
-                        onClick={() => setKindFilter(f.key)}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <SortableTable
-                  columns={abilityCols}
-                  rows={abilityRows}
-                  defaultSort={{ key: 'encdps', dir: 'desc' }}
-                  rowKey={(r) => `${r.source_key}:${r.ability}:${r.kind}`}
-                />
-              </div>
+        {detail && tab === 'overview' && (
+          <div className="metrics">
+            <div className="metric"><div className="v">{fmt.dur(enc.duration_s)}</div><div className="k">Combat</div></div>
+            <div className="metric"><div className="v">{fmt.num(raidDamage)}</div><div className="k">Raid damage</div></div>
+            <div className="metric"><div className="v">{fmt.num(raidDamage / duration)}</div><div className="k">Raid DPS</div></div>
+            <div className="metric"><div className="v">{players.filter((p) => p.damage > 0 || p.heals > 0).length}</div><div className="k">Raiders</div></div>
+            {run.named_count > 0 && sel === 'all' && (
+              <div className="metric"><div className="v">{run.success_count}/{run.named_count}</div><div className="k">Named</div></div>
             )}
-
-            <DpsBars actors={actors} duration={duration} />
-          </>
+            {selIds.length > 1 && <div className="metric"><div className="v">{selIds.length}</div><div className="k">Fights</div></div>}
+          </div>
         )}
+
+        {detail && tab !== 'insights' && (
+          <div className="card">
+            <SortableTable
+              columns={tabCols[tab] || overviewCols}
+              rows={tabRows[tab] || visibleActors}
+              defaultSort={tabSort[tab] || tabSort.overview}
+              rowKey={(a) => a.key}
+              selectedKey={selectedActor}
+              onRowClick={(a) => setActorQ(a.key === selectedActor ? null : a.key)}
+            />
+          </div>
+        )}
+
+        {detail && tab === 'defense' && deaths.length > 0 && (
+          <div className="card">
+            <h2>Deaths by fight</h2>
+            <div className="tablewrap">
+              <table className="data">
+                <thead>
+                  <tr><th className="l">Fight</th><th>Time</th><th className="l">Player</th><th>Deaths</th><th>Time dead</th><th>Dmg lost</th></tr>
+                </thead>
+                <tbody>
+                  {deaths.map((d, i) => (
+                    <tr key={i}>
+                      <td className="name l">{d.encounter.name || 'trash'}</td>
+                      <td>{fmt.time(d.encounter.started_ts)}</td>
+                      <td className="l">{d.name}</td>
+                      <td>{d.deaths}</td>
+                      <td>{fmt.dur(d.time_dead_s)}</td>
+                      <td>{fmt.num(d.death_dps_lost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'insights' && (
+          <Insights report={report} coach={coach} coachErr={coachErr}
+                    busy={coachBusy} onGenerate={generateCoach} />
+        )}
+
+        {detail && tab === 'overview' && <DpsBars actors={actors} duration={duration} />}
       </div>
+
+      {selectedActor && detail && (
+        <ActorPanel
+          name={selName}
+          abilities={detail.abilities}
+          actorKey={selectedActor}
+          duration={duration}
+          onClose={() => setActorQ(null)}
+        />
+      )}
     </div>
   )
 }

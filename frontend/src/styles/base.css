@@ -428,6 +428,32 @@ table.data th.sortable:hover { color: var(--text); }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ---------- zone page: tabs + right-hand actor panel ---------- */
+
+.workspace.withpanel { grid-template-columns: 250px minmax(0, 1fr) minmax(380px, 34%); }
+.actorpanel {
+  position: sticky; top: 12px; margin-top: 0;
+  max-height: calc(100vh - 24px); overflow-y: auto; min-width: 0;
+}
+.actorpanel .drillhead .closex { margin-left: auto; }
+
+.tabs { display: flex; gap: 4px; margin: 10px 0 4px; flex-wrap: wrap; }
+.tab {
+  background: none; border: 1px solid transparent; color: var(--text-muted);
+  border-radius: var(--radius-sm); padding: 4px 14px;
+  font-family: var(--font-data); font-size: var(--fs-data); cursor: pointer;
+}
+.tab:hover { background: var(--row-hover); color: var(--text); }
+.tab.on {
+  background: rgba(var(--gold-rgb), 0.12); color: var(--gold-bright);
+  border-color: var(--gold-dim);
+}
+
+@media (max-width: 1200px) {
+  .workspace.withpanel { grid-template-columns: 250px 1fr; }
+  .workspace.withpanel .actorpanel { grid-column: 1 / -1; position: static; max-height: none; }
+}
+
 /* ---------- home: date-grouped zone runs ---------- */
 
 .dropzone.compact { padding: 10px 16px; }
