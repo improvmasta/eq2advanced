@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 /* Generic click-to-sort data table.
-   columns: [{ key, label, align ('l' for left), render(row), format(value),
+   columns: [{ key, label, align ('l' left, 'c' centred), headAlign (the header
+              alone, when a wide column's left-hugged label reads as belonging
+              to the column before it), render(row), format(value),
               sortValue(row), sortable (default true), fixed (never hidden or
               dragged — the name column) }]
    Numeric-first: default direction on a fresh column is descending (big
@@ -16,7 +18,10 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
    wrapClass 'sticky' pins the header for long raid tables.
    groupBy: {key, of(row), label(row, rows)} draws a heading row whenever the
    group changes — only while the table is sorted by `key`, because a heading
-   that repeats every third row is not a grouping.
+   that repeats every third row is not a grouping. Pass an ARRAY of those to
+   group differently per sort column (the raid list: nights under a date sort,
+   zones under a zone sort); whichever def matches the active sort is the one
+   that draws.
    prefsKey turns on per-user column layout: drag a header to reorder, hide
    columns from the Columns menu, both remembered in localStorage under that
    key. Which columns a table SHOULD offer is still the caller's decision;
@@ -128,12 +133,14 @@ export default function SortableTable({
 
   /* A heading only means something while the table is ordered by the thing it
      groups on; sorted by DPS, the same date would head half the rows. */
-  const grouped = !!groupBy && active?.key === groupBy.key
+  const groupDef = (Array.isArray(groupBy) ? groupBy : groupBy ? [groupBy] : [])
+    .find((g) => g.key === active?.key)
+  const grouped = !!groupDef
   const groupHead = (r, prev) => {
     if (r.__sub) return null
-    const g = groupBy.of(r)
-    if (prev != null && !prev.__sub && groupBy.of(prev) === g) return null
-    return groupBy.label(r)
+    const g = groupDef.of(r)
+    if (prev != null && !prev.__sub && groupDef.of(prev) === g) return null
+    return groupDef.label(r)
   }
 
   const click = (col) => {
@@ -191,7 +198,8 @@ export default function SortableTable({
               <th
                 key={c.key}
                 className={[
-                  c.align === 'l' ? 'l' : '',
+                  (c.headAlign || c.align) === 'l' ? 'l'
+                    : (c.headAlign || c.align) === 'c' ? 'c' : '',
                   c.sortable === false ? '' : 'sortable',
                   prefsKey && !c.fixed ? 'draggable' : '',
                   drag?.over === c.key && drag.key !== c.key ? 'dragover' : '',
@@ -246,7 +254,7 @@ export default function SortableTable({
                   {cols.map((c) => (
                     <td
                       key={c.key}
-                      className={`${c.align === 'l' ? 'l ' : ''}${(!r.__sub && c.cellClass?.(r)) || ''}`}
+                      className={`${c.align === 'l' ? 'l ' : c.align === 'c' ? 'c ' : ''}${(!r.__sub && c.cellClass?.(r)) || ''}`}
                       style={(!r.__sub && c.cellStyle?.(r)) || undefined}
                     >
                       {c.render ? c.render(r) : c.format ? c.format(r[c.key]) : r[c.key]}

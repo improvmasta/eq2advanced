@@ -79,9 +79,15 @@ def get_character_shares(character_id: int, user=Depends(require_user)):
     the back catalogue too."""
     conn = get_db()
     owned_character(conn, user, character_id)
-    on = {r["group_id"] for r in conn.execute(
-        "SELECT group_id FROM character_shares WHERE character_id=?", (character_id,))}
-    return {"groups": [{"group_id": g["id"], "name": g["name"], "shared": g["id"] in on}
+    on = {r["group_id"]: r for r in conn.execute(
+        "SELECT group_id, since_ts, raids_only FROM character_shares "
+        "WHERE character_id=?", (character_id,))}
+    # history: does the share include the back catalogue (since_ts unset)?
+    # group_content: does it carry runs under a full raid's roster?
+    return {"groups": [{"group_id": g["id"], "name": g["name"],
+                        "shared": g["id"] in on,
+                        "history": g["id"] in on and on[g["id"]]["since_ts"] is None,
+                        "group_content": g["id"] in on and not on[g["id"]]["raids_only"]}
                        for g in groupsmod.my_groups(conn, user["id"])]}
 
 
@@ -90,9 +96,19 @@ def set_character_shares(character_id: int, payload: dict = Body(...),
                          user=Depends(require_user)):
     conn = get_db()
     owned_character(conn, user, character_id)
-    wanted = {int(x) for x in payload.get("group_ids") or []}
+    # `shares` [{group_id, history, group_content}] is the full form; a bare
+    # `group_ids` list still works and means history included, raids only
+    if payload.get("shares") is not None:
+        wanted = {int(s["group_id"]): {"history": bool(s.get("history", True)),
+                                       "group_content": bool(s.get("group_content"))}
+                  for s in payload["shares"]}
+    else:
+        # the legacy form keeps its pre-v16 meaning exactly: everything this
+        # character records, past included. Only the explicit form narrows.
+        wanted = {int(x): {"history": True, "group_content": True}
+                  for x in payload.get("group_ids") or []}
     mine = {g["id"] for g in groupsmod.my_groups(conn, user["id"])}
-    if wanted - mine:
+    if set(wanted) - mine:
         raise HTTPException(404, "no such group")
     with conn:
         groupsmod.set_character_auto_shares(conn, character_id, user["id"], wanted)

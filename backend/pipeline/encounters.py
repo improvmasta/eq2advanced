@@ -96,13 +96,99 @@ def encounter_label(seg_events: list[dict], name_of, logger: str,
             continue
         dmg[r["tgt_entity"]] = dmg.get(r["tgt_entity"], 0) + abs(r["amount"] or 0)
     if not dmg:
-        # no enemy was ever hit — a stray segment (self-damage, a lone DoT tick)
+        # Nobody hit an enemy. If one was hitting US it still has a name, and
+        # ACT uses it: its export of the corpse-tick stub after the Freeport
+        # pull is titled "Velna T`Kril", not "trash".
+        for r in seg_events:
+            if (r["type"] == "damage" and r["src_kind"] == "mob"
+                    and r["src_entity"] is not None):
+                name = name_of(r["src_entity"])
+                if name:
+                    return name, _is_named_mob(name, logger, known_mobs), None
+        # a stray segment (self-damage, an expiry) — nothing to name it after
         return "trash", False, None
     top = max(dmg, key=lambda eid: (dmg[eid], -eid))
     name = name_of(top) or "trash"
     killed = any(r["type"] == "kill" and r["tgt_entity"] == top
                  and r["src_kind"] in _ALLY_KINDS for r in seg_events)
     return name, _is_named_mob(name, logger, known_mobs), (1 if killed else 0)
+
+
+def split_trailing_corpse(seg: Segment, rows: list[dict]) -> list[Segment]:
+    """Drop a dead mob's leftover ticks off the end of a segment.
+
+    A DoT the mob landed before it died keeps ticking on the raid for a few
+    seconds after the kill. The silence rule counts those ticks as combat, so
+    the fight's clock runs past the kill: ACT read Lindsay's Freeport pull as
+    28s and we read 32s — 12% off the EncDPS on a fight that short, plus the
+    tick's damage on the mob's row.
+
+    ACT ends the fight at the kill and opens a NEW encounter for the tick (its
+    tree shows the 28s pull, then a [00:00] stub 4s later). This reproduces
+    that: the clock stops at the last real beat, and a trailing tick that
+    carries damage becomes its own segment.
+
+    It is deliberately a SUFFIX operation. Cutting at every point where the
+    engaged mobs were all dead splits chain pulls in half — measured against
+    ACT's Emerald Halls zone view (61 encounters), mid-fight variants produced
+    74 to 149. This one produces 62, and re-times 2 of those 60 fights.
+
+    Nothing is discarded: every event stays in some encounter, so zone totals
+    are untouched. Trimming trailing events outright was tried on 2026-08-03
+    and regressed cures/EncHPS — see ARCHITECTURE.md.
+
+    `rows[k]` is the resolved row for `seg.event_indices[k]`.
+    """
+    if not rows:
+        return [seg]
+    dead = {r["tgt_entity"] for r in rows
+            if r["type"] == "kill" and r["tgt_kind"] == "mob"}
+
+    last = None                 # last beat: the group's last action
+    for k, r in enumerate(rows):
+        if r["type"] == "kill" and r["tgt_kind"] == "mob":
+            last = k
+        elif r["type"] in ("damage", "avoid") and r["src_kind"] != "mob":
+            last = k
+    if last is None:
+        return [seg]
+
+    # the killing blow is the fight's last beat, so the clock stops there even
+    # when the kill line is the final event — ACT's 28s on the Freeport pull is
+    # start-to-kill, not start-to-last-damage
+    fight_end = rows[last]["ts"]
+    if last == len(rows) - 1:
+        if fight_end == seg.end_ts:
+            return [seg]
+        return [Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
+                        event_indices=list(seg.event_indices))]
+    # the kill's own second belongs to the fight (a lifetap heal on the killing
+    # blow is part of it, and ACT's encounter ends on that second)
+    cut = last + 1
+    while cut < len(rows) and rows[cut]["ts"] <= fight_end:
+        cut += 1
+    if cut >= len(rows):
+        return [Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
+                        event_indices=list(seg.event_indices))]
+
+    head = Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
+                   event_indices=list(seg.event_indices[:cut]))
+    tail_rows = rows[cut:]
+    hitters = {r["src_entity"] for r in tail_rows if r["type"] == "damage"}
+    if not hitters or not hitters <= dead:
+        # Only a CORPSE opens a new encounter. On a wipe the mobs are alive and
+        # still swinging at the bodies: ACT keeps that damage in the fight and
+        # stops the clock anyway (its knotted guardian wipe is 40s while the
+        # hits run 3s longer), so the tail rides along untrimmed.
+        head.event_indices = list(seg.event_indices)
+        return [head]
+    tail_end = seg.start_ts
+    for r in tail_rows:
+        if r["type"] in ("damage", "avoid"):
+            tail_end = r["ts"]
+    return [head, Segment(zone=seg.zone, start_ts=tail_rows[0]["ts"],
+                          end_ts=max(tail_end, tail_rows[0]["ts"]),
+                          event_indices=list(seg.event_indices[cut:]))]
 
 
 def segment_events(events: list, logger: str, initial_zone: str | None = None,

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import SelectionBar from '../components/SelectionBar.jsx'
+import RaidCompare from '../components/RaidCompare.jsx'
+import RaidParseCompare from '../components/RaidParseCompare.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import SortableTable from '../components/SortableTable.jsx'
+import SourceFilter from '../components/SourceFilter.jsx'
 import Sparkline from '../components/Sparkline.jsx'
 import { api, fmt } from '../lib/api.js'
 
@@ -18,17 +20,38 @@ import { api, fmt } from '../lib/api.js'
 
 const DAY_MS = 86_400_000
 
-/* A group is six, so seven raiders means the night was a raid. `raider_count`
+/* A group is six, so seven raiders means the night was a raid, and two to six
+   is group content — a different kind of evening, not a worse one. `raider_count`
    is the run's ROSTER, not everyone the log overheard — the backend
    (pipeline/zoneruns.py) drops mobs, bystanders who only ever got hit, and the
    group that fought past you, all of which used to push a six-man run over
-   this line. Solo and group runs are real parses, just not what this list is
-   for, so they are off unless you ask. */
+   this line. */
 const RAID_MIN_RAIDERS = 7
-const RAIDS_ONLY_KEY = 'eq2advanced-raids-only'
-const SHOW_PUBLIC_KEY = 'eq2advanced-show-public'
+const SIZE_KEY = 'eq2advanced-run-size'
 
 const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
+
+/* How much of a night a parse holds — the same order the backend ranks them in
+   (`raidmatch._score`), so the row you land on is the one the site would have
+   picked for anyone else. Ties go to the first upload. */
+const byCoverage = (a, b) => (b.encounter_count || 0) - (a.encounter_count || 0)
+  || (b.combat_s || 0) - (a.combat_s || 0)
+  || (b.raider_count || 0) - (a.raider_count || 0)
+  || a.id - b.id
+/* Two toggles rather than a three-way choice, because they PARTITION the list:
+   a run is a raid or it isn't. Both on is what "all" used to mean, so a third
+   button for it was a synonym taking up room. Raids on, group off. */
+const SIZES = {
+  raid: { label: 'Raids', of: isRaid, hint: `${RAID_MIN_RAIDERS}+ raiders` },
+  group: {
+    /* "Group" alone read as a SHARING group (the pills one control over); this
+       button is about the size of the night, and a solo zone is on this side
+       of the line too. */
+    label: 'Solo/Group',
+    of: (r) => !isRaid(r),
+    hint: `Fewer than ${RAID_MIN_RAIDERS} raiders — group and solo runs`,
+  },
+}
 
 /* "Tonight" / "Yesterday" / weekday — a raid list is read by when, and the
    exact date is one column over anyway. */
@@ -52,31 +75,43 @@ export default function Home({ user }) {
   const [confirm, setConfirm] = useState(null)   // {kind, runs} pending action
   const [orphans, setOrphans] = useState(null)   // logs with nothing left in them
   const [undo, setUndo] = useState(null)         // {fingerprints, character_id, n}
-  const [raidsOnly, setRaidsOnly] = useState(
-    () => localStorage.getItem(RAIDS_ONLY_KEY) !== '0')
-  /* Published raids are readable by anyone, so they turn up in the list of a
-     brand-new account that has parsed nothing. `via_public` marks the ones you
-     can ONLY see because they were published — a raid of your own that is also
-     public is still yours and never disappears with this off. */
-  const [showPublic, setShowPublic] = useState(
-    () => localStorage.getItem(SHOW_PUBLIC_KEY) !== '0')
-  // mine | shared | all — a group's raids sit in the same list as your own,
-  // labelled, because they answer the same question
-  const [scope, setScope] = useState('all')
+  // which kinds of run this is a list of — a set, both on means everything
+  const [sizes, setSizes] = useState(() => {
+    const saved = (localStorage.getItem(SIZE_KEY) || '').split(',').filter((k) => SIZES[k])
+    return new Set(saved.length ? saved : ['raid'])
+  })
   const [sharing, setSharing] = useState(null)   // run id whose share panel is open
+  /* WHERE a raid came from, as ONE filter: a set of `char:<id>`, `group:<id>`
+     and `public` keys, OR'd, empty meaning everything you can see. The menu
+     (SourceFilter) groups them into sections; this owns the answer.
 
-  useEffect(() => {
-    localStorage.setItem(RAIDS_ONLY_KEY, raidsOnly ? '1' : '0')
-  }, [raidsOnly])
+     It was two controls before — a Shared-with-me switch beside a group filter
+     — and they sat on the same axis. Worse, the switch silently changed what
+     a group pill MEANT: on your own raid a group says "I sent it here", on
+     somebody else's it says "it reached me through here". Listing sources says
+     the true thing in both directions with nothing to cross-reference. */
+  const [sources, setSources] = useState(() => new Set())
+  const [myGroups, setMyGroups] = useState([])
+  const [parseCmp, setParseCmp] = useState(false) // the parse comparison modal
+  /* Which parse of a shared night to show, per raid — {raid_key: run id}, and
+     only where the reader has said. Everything else follows the precedence in
+     `chooseParse`. */
+  const [parseOf, setParseOf] = useState(() => ({}))
 
-  useEffect(() => {
-    localStorage.setItem(SHOW_PUBLIC_KEY, showPublic ? '1' : '0')
-  }, [showPublic])
+  useEffect(() => { localStorage.setItem(SIZE_KEY, [...sizes].join(',')) }, [sizes])
 
+  /* Always everything you can see; narrowing is the source filter's job, in
+     the browser, so flipping it back is instant and never refetches. */
   const refresh = useCallback(() => {
-    api.zoneRuns(scope).then((d) => setRuns(d.zone_runs)).catch((e) => setError(e.message))
+    api.zoneRuns('all').then((d) => setRuns(d.zone_runs)).catch((e) => setError(e.message))
     if (user) api.sessions().then((d) => setSessions(d.sessions)).catch(() => {})
-  }, [scope, user])
+  }, [user])
+
+  // the groups you're in, for the filter and for whether Manage is yours to offer
+  useEffect(() => {
+    if (!user) { setMyGroups([]); return }
+    api.groups().then((d) => setMyGroups(d.groups || [])).catch(() => {})
+  }, [user])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -88,20 +123,110 @@ export default function Home({ user }) {
     return () => clearInterval(t)
   }, [parsing, refresh])
 
+  /* Every group this run reaches, from whichever side you're on: yours name
+     who you sent it to, somebody else's names the group that brought it here.
+     One list, so the filter is one predicate. */
+  const groupsOf = (r) => (r.mine ? r.shared_with : r.shared_via) ?? []
+
+  const ofSize = (r) => [...sizes].some((k) => SIZES[k].of(r))
+
   const visible = useMemo(() => {
-    let list = runs || []
-    if (raidsOnly) list = list.filter(isRaid)
-    // signed out, everything IS public — filtering it would empty the page
-    if (!showPublic && user) list = list.filter((r) => !r.via_public)
+    let list = (runs || []).filter(ofSize)
+    // several sources ticked is an OR: raids reaching you through ANY of them
+    if (sources.size) {
+      list = list.filter((r) => (r.mine && sources.has(`char:${r.character_id}`))
+        || (r.via_public && sources.has('public'))
+        || groupsOf(r).some((g) => sources.has(`group:${g.group_id}`)))
+    }
     return list
-  }, [runs, raidsOnly, showPublic, user])
-  const hidden = (runs?.length || 0) - visible.length
+  }, [runs, sizes, sources])
+  /* One night, several uploaders: the backend has already said which rows are
+     the same raid (`raid_key`) and which parse it would open (`primary`).
+     Whose parse YOU open is decided here, because it depends on who you are:
+
+       1. your own, if you have one — you uploaded it, its numbers are the ones
+          you can check, and it is the one that survives the person who shared
+          theirs leaving the group
+       2. otherwise the site's pick, so two people talking about a raid are
+          reading the same parse unless one of them says otherwise
+       3. and whatever you picked from the row's menu beats both
+
+     Clustering happens AFTER the filters, so narrowing to one group narrows the
+     parses too rather than leaving a menu of raids that are no longer listed. */
+  const chooseParse = useCallback((members) => {
+    const mine = members.filter((r) => r.mine)
+    const pool = mine.length ? mine : members
+    // the site's pick can be filtered away, and two of your own characters can
+    // both be in one raid — so there is always a fallback, and it is the
+    // backend's rule again (raidmatch._score): the widest parse wins
+    return (mine.length ? null : pool.find((r) => r.primary))
+      || [...pool].sort(byCoverage)[0]
+  }, [])
+
+  /* The rows the table draws: one per raid, not one per parse. */
+  const listRows = useMemo(() => {
+    const byRaid = new Map()
+    for (const r of visible) {
+      const key = r.raid_key ?? r.id
+      if (!byRaid.has(key)) byRaid.set(key, [])
+      byRaid.get(key).push(r)
+    }
+    return [...byRaid].map(([key, members]) => {
+      const shown = members.find((r) => r.id === parseOf[key]) || chooseParse(members)
+      return members.length > 1 ? { ...shown, raid_key: key, alts: members } : shown
+    }).sort((a, b) => b.started_ts - a.started_ts)
+  }, [visible, parseOf, chooseParse])
+
+  // switching parses keeps the row checked: it is the same raid either way
+  const pickParse = (key, id, from) => {
+    setParseOf((s) => ({ ...s, [key]: id }))
+    setPicked((s) => {
+      if (!s.has(from)) return s
+      const next = new Set(s)
+      next.delete(from)
+      next.add(id)
+      return next
+    })
+  }
+
+  // what the SIZE toggles leave out, counted on their own — it is a claim
+  // about those, not about the groups you happen to have checked
+  const hidden = useMemo(
+    () => (runs || []).filter((r) => !ofSize(r)).length, [runs, sizes])
   const publicCount = useMemo(
     () => (runs || []).filter((r) => r.via_public).length, [runs])
+  /* The characters worth offering as a filter are the ones with raids in the
+     list — a character you have claimed but never parsed on is a row that can
+     only ever return nothing. Derived from the runs, so it costs no request. */
+  const myChars = useMemo(() => {
+    const seen = new Map()
+    for (const r of runs || []) if (r.mine) seen.set(r.character_id, r.character_name)
+    return [...seen].map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [runs])
+
+  const toggleSize = (k) => {
+    setSizes((s) => {
+      const next = new Set(s)
+      if (next.has(k)) next.delete(k); else next.add(k)
+      return next
+    })
+    setPicked(new Set())
+  }
+
+  const toggleSource = (id) => {
+    setSources((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+    setPicked(new Set())
+  }
 
   const multiChar = useMemo(
     () => new Set(visible.map((r) => r.character_name)).size > 1, [visible])
-  const someoneElses = useMemo(() => visible.some((r) => !r.mine), [visible])
+  // the Parse column is the answer to a question only a shared night raises
+  const anyAlts = useMemo(() => listRows.some((r) => r.alts), [listRows])
 
   // a run you cannot see is a run you cannot merge or delete: filtering out
   // drops it from the selection rather than leaving it armed off-screen
@@ -110,6 +235,12 @@ export default function Home({ user }) {
   // merge/delete/share act on raids you own; someone else's shared night is
   // read-only, so it never arms those buttons
   const editable = useMemo(() => pickedRuns.filter((r) => r.mine), [pickedRuns])
+
+  // unchecking down to one raid ends the comparison rather than leaving the
+  // modal armed to reappear the next time a second one is checked
+  useEffect(() => {
+    if (pickedRuns.length < 2) setParseCmp(false)
+  }, [pickedRuns.length])
 
   useEffect(() => {
     setPicked((s) => {
@@ -167,14 +298,12 @@ export default function Home({ user }) {
     setUndo(null)      // the log is gone; there is nothing left to restore into
   })
 
-  const peak = (r) => (r.spark?.length ? Math.max(...r.spark) : null)
-
   const columns = [
     {
       /* Sorted by night (the default) the date sits in the group heading, so
          the cell would say it twice; sorted by zone or DPS there is no
          heading and the cell is the only place it appears. */
-      key: 'day', label: 'Night', align: 'l',
+      key: 'day', label: 'Date', align: 'l',
       render: (r) => (
         <span className="runday">
           <span className="d">{dayLabel(r.started_ts)}</span>
@@ -184,7 +313,9 @@ export default function Home({ user }) {
       sortValue: (r) => r.started_ts,
     },
     {
-      key: 'zone', label: 'Zone', align: 'l',
+      /* The widest column in the table, so a left-hugged header reads as
+         belonging to the one before it — the label centres, the names don't. */
+      key: 'zone', label: 'Zone', align: 'l', headAlign: 'c',
       render: (r) => (
         <span className="runzone">
           {r.zone || 'Unknown zone'}
@@ -194,61 +325,97 @@ export default function Home({ user }) {
       sortValue: (r) => r.zone || '',
     },
     {
-      key: 'time', label: 'Time', render: (r) => fmt.timeRange(r.started_ts, r.ended_ts),
+      /* When it ran. Centred — a time range is text, not a figure, so a
+         right-justified header over it reads like a mistake. */
+      key: 'time', label: 'Time', align: 'c',
+      render: (r) => fmt.timeRange(r.started_ts, r.ended_ts),
       sortValue: (r) => r.started_ts,
     },
+    {
+      /* Wall-clock length: it used to sit under the time range, where it could
+         not be sorted on and read as an annotation of the range rather than as
+         the figure it is. Its own column, beside the time in combat it is the
+         denominator of. */
+      key: 'length', label: 'Length', menuLabel: 'Raid length',
+      render: (r) => (r.ended_ts ? fmt.durH(r.ended_ts - r.started_ts) : ''),
+      sortValue: (r) => (r.ended_ts ? r.ended_ts - r.started_ts : null),
+    },
+    {
+      key: 'combat_s', label: 'In Combat', menuLabel: 'Time in combat',
+      render: (r) => fmt.dur(r.combat_s), sortValue: (r) => r.combat_s,
+    },
     { key: 'encounter_count', label: 'Fights' },
-    {
-      key: 'named', label: 'Named',
-      render: (r) => (r.named_count > 0
-        ? <span className={r.success_count === r.named_count ? 'rank-top' : ''}>
-            {r.success_count}/{r.named_count}
-          </span>
-        : ''),
-      sortValue: (r) => r.named_count,
-    },
     { key: 'raider_count', label: 'Raiders', render: (r) => r.raider_count || '' },
-    { key: 'combat_s', label: 'Combat', render: (r) => fmt.dur(r.combat_s), sortValue: (r) => r.combat_s },
     {
-      key: 'peak', label: 'Peak DPS',
-      render: (r) => (peak(r) != null ? fmt.num(peak(r)) : ''),
-      sortValue: peak,
+      /* One number for the night: everything the raid did over its combat
+         time. The per-fight peak was a trivia answer; this one ranks nights. */
+      key: 'raid_dps', label: 'Raid DPS', menuLabel: 'Raid DPS',
+      render: (r) => (r.raid_dps ? fmt.num(r.raid_dps) : ''),
+      sortValue: (r) => r.raid_dps || null,
     },
     {
-      key: 'spark', label: 'Shape', sortable: false,
+      key: 'spark', label: 'Timeline', sortable: false, align: 'c',
       render: (r) => <Sparkline values={r.spark} title="Raid DPS by fight" />,
     },
-    /* Whose parse this is, named by the CHARACTER who logged it — that is who
-       you raided with. Account names belong on the Groups and Admin pages, not
-       in a raid list. It subsumes the Character column, so they never both
-       show. */
-    ...(someoneElses
-      ? [{
-          key: 'character_name', label: 'From', align: 'l',
-          render: (r) => (r.mine
-            ? <span className="muted">you</span>
-            : <span>{r.character_name}</span>),
-        }]
-      : multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
+    /* Which of YOUR characters logged the night, and only once you have more
+       than one. Whose parse a shared raid is was a column of its own ("From")
+       and is gone: the Shared column already names the group it reached you
+       through, which is the answer people actually wanted from it. */
+    ...(multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
+    /* Whose parse you are reading, and only once a night has more than one.
+       Several people in a raid all upload it, so the same evening arrives as
+       several parses — the list shows ONE (yours first, otherwise the site's
+       pick) and this is how you read somebody else's. A select rather than a
+       row of names: the answer is one of a short list, and the current one has
+       to be legible without opening anything. */
+    ...(anyAlts ? [{
+      key: 'parse', label: 'Parse', sortable: false, align: 'l',
+      render: (r) => (r.alts ? (
+        <span className="parsepick" onClick={(ev) => ev.stopPropagation()}>
+          <select
+            value={r.id}
+            aria-label="Whose parse of this raid to show"
+            title={`${r.alts.length} people parsed this raid`}
+            onChange={(ev) => pickParse(r.raid_key, Number(ev.target.value), r.id)}
+          >
+            {[...r.alts].sort(byCoverage).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.character_name}{a.mine ? ' (yours)' : ''}
+                {` — ${a.encounter_count} fight${a.encounter_count === 1 ? '' : 's'}`}
+              </option>
+            ))}
+          </select>
+        </span>
+      ) : <span className="muted">{r.character_name}</span>),
+    }] : []),
     {
       key: 'shared', label: 'Shared', sortable: false, align: 'l',
-      // An empty cell is ambiguous — it reads as "unknown" when it means "nobody
-      // else can see this". Say so. Only for raids you OWN: `shared_with` is
-      // only populated for those, and printing "private" on somebody else's raid
-      // that was shared *with you* would be exactly backwards.
+      /* Two directions, one column. Your own raid says who ELSE can see it —
+         and an empty cell would read as "unknown" when it means "nobody", so
+         it says "private". Somebody else's raid says which of YOUR groups
+         brought it here (`shared_via`) — the row that used to sit blankest is
+         exactly the one this column exists to explain. */
       render: (r) => {
-        const groups = r.shared_with ?? []
+        const groups = groupsOf(r)
         if (r.mine && !r.public && groups.length === 0) {
           return <span className="muted" title="Only you can see this raid">private</span>
         }
         return (
-          <span className="row" style={{ gap: 4 }}>
-            {r.public && <span className="badge named" title="Readable without an account">public</span>}
+          // the pills are controls, so the row's own navigation stops here
+          <span className="row" style={{ gap: 4 }} onClick={(ev) => ev.stopPropagation()}>
+            {r.public && (r.mine || r.via_public) &&
+              <span className="badge public" title="Readable without an account">public</span>}
             {groups.map((g) => (
-              <span key={g.group_id} className="badge"
-                    title={g.auto ? `${g.name} — every raid on this character` : g.name}>
+              <button
+                key={g.group_id}
+                className={`badge grouppill ${sources.has(`group:${g.group_id}`) ? 'on' : ''}`}
+                title={sources.has(`group:${g.group_id}`) ? `Stop filtering by ${g.name}`
+                  : g.auto ? `${g.name} — every raid on this character. Click to filter by it.`
+                    : `Show only what ${g.name} can see`}
+                onClick={() => toggleSource(`group:${g.group_id}`)}
+              >
                 {g.name}
-              </span>
+              </button>
             ))}
           </span>
         )
@@ -256,63 +423,108 @@ export default function Home({ user }) {
     },
   ]
 
+  /* The compare column takes real width, and the list would answer by growing
+     a horizontal scrollbar. Instead it drops the columns you are least likely
+     to be reading while comparing two nights — the shape, the roster size and
+     time-in-combat are all in the comparison itself. */
+  const comparing = pickedRuns.length >= 2
+  const CONDENSED = ['spark', 'combat_s', 'raider_count', 'length']
+  const listColumns = comparing
+    ? columns.filter((c) => !CONDENSED.includes(c.key)) : columns
+
   return (
     <>
       <div className="pagehead">
         <h1>Raid Parses</h1>
         {!user && <span className="sub">Sign in to parse your own logs</span>}
         <span className="actions">
-          {user && (
-            <span className="chiprow">
-              {[['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me']].map(([k, label]) => (
-                <button key={k} className={`chip ${scope === k ? 'on' : ''}`}
-                        onClick={() => { setScope(k); setPicked(new Set()) }}>
-                  {label}
-                </button>
-              ))}
-            </span>
-          )}
-          {/* A switch, not a checkbox: it changes what the whole page is a list
-              of, and you should be able to see which way it is set. */}
-          <label
-            className={`switch ${raidsOnly ? 'on' : ''}`}
-            title={`${RAID_MIN_RAIDERS}+ raiders. Off also lists solo and group runs.`}
-          >
-            <input
-              type="checkbox"
-              checked={raidsOnly}
-              onChange={(ev) => setRaidsOnly(ev.target.checked)}
-            />
-            <i className="track"><i className="knob" /></i>
-            Raids only
-            {raidsOnly && hidden > 0 && <span className="muted"> ({hidden} hidden)</span>}
-          </label>
-          {user && publicCount > 0 && (
-            <label
-              className={`switch ${showPublic ? 'on' : ''}`}
-              title="Raids somebody else published. Yours stay listed either way."
-            >
-              <input
-                type="checkbox"
-                checked={showPublic}
-                onChange={(ev) => setShowPublic(ev.target.checked)}
-              />
-              <i className="track"><i className="knob" /></i>
-              Public
-              <span className="muted"> ({publicCount})</span>
-            </label>
-          )}
           {user
             ? <Link className="btnlink" to="/import">Import a log</Link>
             : <Link className="btnlink" to="/login">Sign in</Link>}
         </span>
       </div>
 
+      {/* Three questions, three controls, one sticky line — and on the right,
+          once anything is checked, what you can do about it. WHAT KIND of run
+          (a raid, a group instance, everything), WHOSE (yours are always here,
+          so the only question is whether everyone else's are too), and WHICH
+          GROUPS (several at once — that's an OR, not a sequence of lists).
+          Sorting is the table's own headers, where sorting always is. */}
+      <div className="listtools">
+        <span className="chiprow" role="group" aria-label="Run size">
+          {Object.entries(SIZES).map(([k, def]) => (
+            <button key={k} className={`chip ${sizes.has(k) ? 'on' : ''}`}
+                    title={def.hint}
+                    onClick={() => toggleSize(k)}>
+              {def.label}
+            </button>
+          ))}
+        </span>
+        {hidden > 0 && <span className="muted">{hidden} hidden</span>}
+
+        {user && <i className="vr" />}
+        {user && (
+          <SourceFilter
+            chars={myChars}
+            groups={myGroups}
+            hasPublic={publicCount > 0}
+            sources={sources}
+            onToggle={toggleSource}
+            onClear={() => { setSources(new Set()); setPicked(new Set()) }}
+          />
+        )}
+
+        {pickedRuns.length > 0 && (
+          <span className="seltools">
+            <span className="sl">{pickedRuns.length} selected</span>
+            <span className="muted">
+              {pickedRuns.reduce((s, r) => s + r.encounter_count, 0)} fights ·{' '}
+              {fmt.dur(pickedRuns.reduce((s, r) => s + r.combat_s, 0))}
+            </span>
+            {editable.length > 0 && (
+              <button className="chip" disabled={busy}
+                      onClick={() => setSharing(editable.map((r) => r.id))}
+                      title={editable.length === 1
+                        ? 'Choose which groups can see this raid'
+                        : `Choose which groups can see these ${editable.length} raids`}>
+                Share
+              </button>
+            )}
+            {editable.length >= 2 && (
+              <button className="chip" disabled={busy} onClick={doMerge}
+                      title="Treat these as one raid">
+                Merge
+              </button>
+            )}
+            {editable.some((r) => r.merged) && (
+              <button className="chip" disabled={busy} onClick={doUnmerge}
+                      title="Undo the merge">
+                Unmerge
+              </button>
+            )}
+            {editable.length > 0 && (
+              <button className="chip danger" disabled={busy}
+                      onClick={() => setConfirm({ kind: 'delete', runs: editable })}>
+                Delete{editable.length < pickedRuns.length ? ` ${editable.length}` : ''}
+              </button>
+            )}
+            {/* Somebody else's raid offers nothing but reading it, and a row of
+                missing buttons is not an explanation. */}
+            {editable.length === 0 && (
+              <span className="muted" title="You can read these, not change them">
+                shared with you — read only
+              </span>
+            )}
+            <button className="chip" onClick={() => setPicked(new Set())}>Clear</button>
+          </span>
+        )}
+      </div>
+
       {sharing && (
-        <ShareDialog runId={sharing} isAdmin={user?.role === 'admin'}
+        <ShareDialog runIds={sharing} isAdmin={user?.role === 'admin'}
                      onClose={() => setSharing(null)} onChanged={refresh} />
       )}
-      {parsing && <p className="muted">Parsing…</p>}
+      {/* parsing state lives in the topnav Live pill, not under the title */}
       {error && <p className="err">{error}</p>}
       {undo && (
         <p className="note flash">
@@ -355,55 +567,103 @@ export default function Home({ user }) {
       {runs?.length === 0 && (
         <p className="muted">
           {!user ? 'Nothing published yet.'
-            : scope === 'shared'
-              ? 'Nothing shared with your groups yet.'
-              : <>Nothing yet — <Link to="/import">import a log</Link>.</>}
+            : <>Nothing yet — <Link to="/import">import a log</Link>.</>}
         </p>
       )}
-      {runs?.length > 0 && visible.length === 0 && (
+      {/* Say which filter emptied the page, and offer to undo that one. */}
+      {runs?.length > 0 && listRows.length === 0 && (
         <p className="muted">
-          Nothing with {RAID_MIN_RAIDERS}+ raiders.{' '}
-          <button className="chip" onClick={() => setRaidsOnly(false)}>
-            Show all {runs.length} runs
-          </button>
+          {sizes.size === 0 ? (
+            <>
+              Raids and Solo/Group are both off, so this is a list of nothing.{' '}
+              <button className="chip" onClick={() => setSizes(new Set(['raid']))}>
+                Show raids
+              </button>
+            </>
+          ) : sources.size > 0 ? (
+            <>
+              Nothing from{' '}
+              {[...myChars.filter((c) => sources.has(`char:${c.id}`)).map((c) => c.name),
+                ...myGroups.filter((g) => sources.has(`group:${g.id}`)).map((g) => g.name),
+                ...(sources.has('public') ? ['published raids'] : [])].join(' or ')}
+              {' '}here.{' '}
+              <button className="chip" onClick={() => setSources(new Set())}>
+                Show everything
+              </button>
+            </>
+          ) : (
+            <>
+              No {[...sizes].map((k) => SIZES[k].label.toLowerCase()).join(' or ')} runs here.{' '}
+              <button className="chip" onClick={() => setSizes(new Set(['raid', 'group']))}>
+                Show all {runs.length} runs
+              </button>
+            </>
+          )}
         </p>
       )}
 
-      {visible.length > 0 && (
+      {parseCmp && pickedRuns.length >= 2 && (
+        <RaidParseCompare runs={pickedRuns} onClose={() => setParseCmp(false)} />
+      )}
+
+      {/* Checking a second raid opens the head-to-head beside the list, the way
+          checking a second raider does on the raid page — and the list gives up
+          its softer columns to make room rather than scrolling sideways. */}
+      {listRows.length > 0 && (
+        <div className={`raidpage ${comparing ? 'withcmp' : ''}`}>
         <div className="card">
           <SortableTable
-            columns={columns}
-            rows={visible}
+            columns={listColumns}
+            rows={listRows}
             defaultSort={{ key: 'day', dir: 'desc' }}
             /* A raid night is the unit people remember, and three zones from
                one Saturday read as one night only if the list says so. Sorted
-               by anything else the headings would be noise, so they go away —
-               see SortableTable. */
-            groupBy={{
-              key: 'day',
-              of: (r) => new Date(r.started_ts * 1000).toDateString(),
-              label: (r) => {
-                const day = visible.filter(
-                  (x) => new Date(x.started_ts * 1000).toDateString()
-                    === new Date(r.started_ts * 1000).toDateString())
-                const fights = day.reduce((s, x) => s + x.encounter_count, 0)
-                const named = day.reduce((s, x) => s + (x.named_count || 0), 0)
-                const won = day.reduce((s, x) => s + (x.success_count || 0), 0)
-                return (
-                  <span className="daygroup">
-                    <span className="d">{dayLabel(r.started_ts)}</span>
-                    <span className="muted">{fmt.date(r.started_ts)}</span>
-                    <span className="muted">
-                      {day.length} zone{day.length === 1 ? '' : 's'} · {fights} fights
-                      {named > 0 && ` · ${won}/${named} named`}
+               by zone, the same idea regrouped: every visit to Emerald Halls
+               under one heading. Sorted by anything else the headings would be
+               noise, so they go away — see SortableTable. */
+            groupBy={[
+              {
+                key: 'day',
+                of: (r) => new Date(r.started_ts * 1000).toDateString(),
+                label: (r) => {
+                  const day = listRows.filter(
+                    (x) => new Date(x.started_ts * 1000).toDateString()
+                      === new Date(r.started_ts * 1000).toDateString())
+                  const fights = day.reduce((s, x) => s + x.encounter_count, 0)
+                  return (
+                    <span className="daygroup">
+                      <span className="d">{dayLabel(r.started_ts)}</span>
+                      <span className="muted">{fmt.date(r.started_ts)}</span>
+                      <span className="muted">
+                        {day.length} zone{day.length === 1 ? '' : 's'} · {fights} fights
+                      </span>
                     </span>
-                  </span>
-                )
+                  )
+                },
               },
-            }}
+              {
+                key: 'zone',
+                of: (r) => r.zone || 'Unknown zone',
+                label: (r) => {
+                  const zone = r.zone || 'Unknown zone'
+                  const runs_ = listRows.filter((x) => (x.zone || 'Unknown zone') === zone)
+                  const fights = runs_.reduce((s, x) => s + x.encounter_count, 0)
+                  const best = Math.max(...runs_.map((x) => x.raid_dps || 0))
+                  return (
+                    <span className="daygroup">
+                      <span className="d">{zone}</span>
+                      <span className="muted">
+                        {runs_.length} run{runs_.length === 1 ? '' : 's'} · {fights} fights
+                        {best > 0 && ` · best ${fmt.num(best)} DPS`}
+                      </span>
+                    </span>
+                  )
+                },
+              },
+            ]}
             rowKey={(r) => r.id}
             className="raidlist"
-            wrapClass={visible.length > 14 ? 'sticky' : ''}
+            wrapClass={listRows.length > 14 ? 'sticky' : ''}
             onRowClick={(r) => navigate(`/zones/${r.id}`)}
             checkable={() => true}
             checkedKeys={picked}
@@ -414,51 +674,23 @@ export default function Home({ user }) {
             })}
           />
         </div>
-      )}
 
-      {pickedRuns.length > 0 && (
-        <SelectionBar
-          label={`${pickedRuns.length} raid${pickedRuns.length === 1 ? '' : 's'}`}
-          stats={[
-            { k: 'Fights', v: pickedRuns.reduce((s, r) => s + r.encounter_count, 0) },
-            { k: 'Combat', v: fmt.dur(pickedRuns.reduce((s, r) => s + r.combat_s, 0)) },
-            {
-              k: 'Named', v: pickedRuns.some((r) => r.named_count)
-                ? `${pickedRuns.reduce((s, r) => s + r.success_count, 0)}/${pickedRuns.reduce((s, r) => s + r.named_count, 0)}`
-                : null,
-            },
-          ]}
-          onClear={() => setPicked(new Set())}
-          actions={
-            <>
-              {editable.length === 1 && (
-                <button className="chip" disabled={busy}
-                        onClick={() => setSharing(editable[0].id)}
-                        title="Choose which groups can see this raid">
-                  Share
-                </button>
-              )}
-              {editable.length >= 2 && (
-                <button className="chip" disabled={busy} onClick={doMerge}
-                        title="Treat these as one raid">
-                  Merge
-                </button>
-              )}
-              {editable.some((r) => r.merged) && (
-                <button className="chip" disabled={busy} onClick={doUnmerge}
-                        title="Undo the merge">
-                  Unmerge
-                </button>
-              )}
-              {editable.length > 0 && (
-                <button className="chip danger" disabled={busy}
-                        onClick={() => setConfirm({ kind: 'delete', runs: editable })}>
-                  Delete
-                </button>
-              )}
-            </>
-          }
-        />
+        {comparing && (
+          // the column is only as wide as the raids in it — a two-raid table
+          // has no business spanning half the screen
+          <div className="cmpcol" style={{ maxWidth: Math.min(180 + pickedRuns.length * 150, 620) }}>
+            <RaidCompare
+              runs={pickedRuns}
+              onCompareParses={() => setParseCmp(true)}
+              onRemove={(id) => setPicked((s) => {
+                const next = new Set(s)
+                next.delete(id)
+                return next
+              })}
+            />
+          </div>
+        )}
+        </div>
       )}
     </>
   )

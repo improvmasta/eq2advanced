@@ -408,19 +408,23 @@ neither is what retiring an address means.
 
 The site SERVES the plugin DLL: `backend/refdata/plugin/EQ2Advanced.dll`,
 committed here, exposed by `routers/plugin_api.py` as `GET /api/plugin`
-(metadata) and `GET /api/plugin/download` (the file), both unauthenticated. It
-is built by CI in `improvmasta/eq2advanced-act`; refresh it with
+(metadata) and `GET /api/plugin/download`, both unauthenticated. It is built by
+CI in `improvmasta/eq2advanced-act`; refresh it with
 `bash scripts/update-plugin.sh` and ship this repo.
+
+**The download is a ZIP** (`EQ2Advanced.zip`, built in memory and cached, the
+DLL unchanged inside): Chrome and Edge block a bare `.dll`. The install steps
+say to Unblock the zip BEFORE extracting — Explorer copies the mark-of-the-web
+onto what it unpacks and ACT won't load a marked plugin.
 
 Why committed rather than linked: that repo is PRIVATE and a GitHub Actions
 artifact needs an authenticated session and expires after 90 days, so a link to
 one works for nobody and eventually not even for Lindsay. 35 KB buys a download
 link that works for a stranger and ships inside the container.
 
-The Import page's first panel is the plugin: download, four install steps, and
-the per-character auto-share chips (`components/AutoShare.jsx`, shared with the
-Characters page — sharing is the site's job, never the plugin's). A header pill
-links to it.
+The Import page's first panel is the plugin: download, install steps, and the
+account API key (see phase 20 — sharing is the site's job, never the plugin's,
+and its controls live on the Sharing page). A header pill links to it.
 
 Phase 18 (2026-08-04, **schema v13**): **device tokens belong to an ACCOUNT,
 not a character.** Pairing used to ask "which character?" — the one question
@@ -441,8 +445,155 @@ uploader, imported-log table. `/characters` is off the nav and must not be linke
 — upload derives the character from the FILE NAME (`components/UploadDrop.jsx`),
 so nobody is asked to pick one.
 
+Phase 19 (2026-08-04, **schema v14**): **manage-page UI unification + the back
+catalogue becomes a choice.** The non-raid pages (Import / Sharing / Account /
+Admin) share one pattern: pagehead → cards with small-caps h2 + one line of
+`.note` → lists as `table.data` or ruled rows → forms as `.formcol`. A group is
+never a pill — it's a `.togglerow` (switch + name), used by AutoShare and
+ShareDialog alike. The Sharing page is auto-share first (one `.autochar` row
+per character), then Groups as a ruled master–detail (`.mdgrid`): list left,
+open group right with Members table, then a one-line Invite section (code +
+Copy invite link + quiet `new code · turn off` text links). The plugin box on
+Import is state-aware: install steps until paired, a status line + collapsible
+steps after; its auto-share block is gone.
+**`character_shares.since_ts`** (NULL = back catalogue included, else only runs
+with `started_ts >= since_ts`): a NEW auto-share defaults to new-raids-only and
+an "include past raids" checkbox on the enabled row flips it; since_ts pins to
+the FIRST enable and survives later saves. The guard lives in all three query
+sites — `PERSONAL_RUN_IDS`, `shares_for_runs`, and `set_run_shares`' `auto` set
+(where a share that doesn't reach the run must NOT leave a `hide` behind).
+`PUT /characters/{id}/shares` takes `shares` `[{group_id, history}]`; bare
+`group_ids` still means history included. Pinned by
+`test_auto_share_new_raids_only_excludes_the_back_catalogue`; migration is a
+shape-guarded ADD COLUMN, existing rows stay NULL (nothing already visible
+disappears).
+
+Phase 20 (2026-08-04, **schema v15**): **Sonarr-style API key + the manage
+readability scope.** The QR/shown-once pairing is gone: the account has ONE
+API key, persistent and readable on Import behind Show/Copy/Refresh — exactly
+the control everyone running Sonarr/Radarr already knows. `device_tokens`
+gained `token_plain` (v15); ingest lookups still go through the hash, and the
+ingest-only scope is what makes storing the plaintext acceptable.
+`GET /api/tokens` serves the plaintext for LIVE keys only (owner-only route);
+`POST /api/tokens/refresh` revokes every live key and mints the one
+replacement (`test_api_key_is_readable_and_refresh_replaces_it`). Plain
+`POST /api/tokens` keeps its old semantics for tests/scripts. Keys minted
+before v15 have no plaintext — the UI says so and offers Refresh. The plugin
+side needs nothing: `ApplyPairPayload` accepts a bare pasted token and its
+Host already defaults to `https://eq2advanced.com`. The `qrcode` npm dep is
+removed.
+**Readability**: raid pages keep the tight data scale; the manage pages
+(Import/Sharing/Account/Admin/Characters/Login) sit in a `.manage` scope that
+overrides the type tokens one step up (base 14px), brightens `--text-muted`
+per theme, and adds hierarchy — the subject of a row (group name, join code,
+API key, character) reads larger than its metadata. Retune in the `.manage`
+block in `base.css`, not per component.
+
+## The fight clock (2026-08-04, PARSE_VERSION 15)
+
+The encounter's clock runs to the GROUP's last action, not to the last log
+line in it. `pipeline/encounters.split_trailing_corpse` stops it there and
+hands a dead mob's trailing tick its own encounter.
+
+Verified against ACT exports (`/home/lindsay/tmp/act-export*.xml`), which are
+the ground truth to use — get one per fight rather than tuning off screenshots:
+the Freeport pull (28s + a stub, every number exact), the `a knotted guardian`
+wipe (40s exact, 24/26 damage exact), and the Malkonis D'Morte kill (27/30
+exact, cures exact). Mob damage never extends the clock even while the mobs are
+alive and hitting bodies; heals after the kill never did either.
+
+Membership and clock are DIFFERENT questions — the tail stays in the encounter
+(zone totals unchanged), only the duration stops. ACT's own source
+(`ACT_English_Parser.cs`) has its kill-based `EndCombat` commented out and no
+combat-state handling at all, so our rule is a behavioural match, not ACT's
+mechanism. Before re-deriving it, read `ARCHITECTURE.md` -> "The corpse tail"
+for the table of rejected rules and the three open gaps (ACT opens an encounter
+on THREAT ~3s earlier; the boss's Damage column is ~10% light in statsroll;
+deaths on mob rows and other players' pets).
+
+Phase 21 (2026-08-04, the raid list as a list) is BUILT, frontend + two list
+fields, no schema change. `GET /api/zone-runs` gained **`raid_dps`** (player
+damage over `combat_s`, from the same query as the sparkline) which replaces
+Peak DPS, and **`shared_via`** (`groups.shared_via_for_runs`) — the viewer's
+mirror of `shares_for_runs`, so a raid shared WITH you finally names the group
+that brought it. Both carry `group_id`; the toolbar's ONE
+source filter (`Mine` + a pill per group, OR'd, empty = everything) replaced
+two controls that sat on the same axis, and a gear beside it deep-links
+`/groups?g=<id>`. **Named is gone from the
+UI** (still written, not trusted enough to print). `SortableTable groupBy`
+takes an ARRAY now and draws whichever def matches the active sort — nights
+under a date sort, zones under a zone sort. Selection moved onto the sticky
+toolbar line (no card, no bottom bar) and says "shared with you — read only"
+instead of showing nothing. Two comparisons: `RaidCompare` opens beside the
+table (the list drops Timeline/Combat/Raiders to make room) and
+`RaidParseCompare` is a modal over `/encounters/agg` with a per-column fight
+picker, matching raiders BY NAME across raids. The topnav **Live pill** is now
+the parse-state light (streaming / parsing / idle); Home no longer prints
+"Parsing…". See `ARCHITECTURE.md` -> "The raid list as a list".
+
+Phase 22 (2026-08-04, **schema v16**): **auto-share carries raids only.**
+`character_shares.raids_only` (new shares 1, existing rows migrated to 0 so a
+migration never revokes access somebody already has); the Sharing page's
+enabled row gained an "include group content" tick beside "include past raids",
+both starting at the narrow reading. The read-time guard is ONE definition —
+`groups.AUTO_SHARE_REACHES` (since_ts window + size + no `hide`) — used by all
+four query sites: `PERSONAL_RUN_IDS`, `shares_for_runs`, `shared_via_for_runs`
+and `set_run_shares`' auto set. That last one is the trap the phase-17 note
+warned about: a share that does NOT reach a run must be unticked with a plain
+delete, never a `hide`, or the row lingers and blocks a later opt-in. Pinned by
+`test_auto_share_carries_raids_only_by_default` (a real eight-man roster and a
+solo zone in one log). `PUT /characters/{id}/shares` takes `group_content` in
+the `shares` form; the bare `group_ids` form keeps its pre-v16 meaning
+(everything, past included).
+
+Phase 23 (2026-08-04, **schema v17**): **deleting a group is reversible, and it
+costs you typing the name.** `groups.deleted_ts` — a delete erases nothing, so
+members, invites, join code and every share stay put and an admin restores the
+group with one row update (`GET /api/admin/groups` +
+`POST /api/admin/groups/{id}/restore`, a "Deleted groups" card on the Admin
+page). That makes "deleted" a READ-TIME condition like the rest of `groups.py`:
+the guard is written once as `groups.LIVE_GROUP(col)` and spliced into
+`AUTO_SHARE_REACHES` (covering all four auto-share sites), the `run_shares`
+branch of `PERSONAL_RUN_IDS`, `shares_for_runs`, `shared_via_for_runs`, and —
+because membership rows survive — `is_member` / `member_role` / `my_groups` /
+`group_by_code`. GOTCHA: miss one of those and a deleted group goes on sharing
+raids; the deleted row KEEPS its join code (unjoinable, still reserved, so a
+restore is exact). `DELETE /api/groups/{id}` now requires `?confirm=<name>`
+matching byte for byte, case included, enforced server-side. Pinned by
+`test_deleting_a_group_needs_its_name_and_can_be_restored`.
+Also `POST /api/admin/users/{id}/username` (Rename on the Accounts table):
+nothing but `users` stores a username — everything else points at the user id —
+so it is a relabel and the account stays signed in.
+Also frontend: the Compare-parses modal sizes itself to its columns
+(`.modalcard.pccard`, `--pccols`) instead of stretching two raids across 1120px.
+
+Phase 24 (2026-08-04, **schema v18**): **one raid, several uploaders.**
+Everyone in a raid runs their own ACT, so a night shared with a guild group
+arrived four times and the list called it four raids. `backend/raidmatch.py`
+says which runs are the same night, at READ time over what the viewer can see:
+same zone (NULL-safe), windows overlapping ± `CLOCK_SKEW_S` (120s — the epoch
+prefix comes off the raider's own machine), and enough of the same people.
+The roster is the rule that says NO (two guilds in one instance zone at one
+hour pass the first two and share nobody), which is why **`zone_runs.roster_json`
+is new** — `_raider_count` became `_roster` and `raider_count` is its length.
+Old rows are NULL until the startup relink rewrites them; a missing roster
+costs the match its cross-check, never a wrong merge.
+**Precedence is deliberately split.** `GET /api/zone-runs` stamps `raid_key`
+(the cluster's lowest run id), `parses` and `primary` — the site's pick, the
+same for everyone, scored by COVERAGE (fights, combat time, roster, ties to the
+first upload) so a stranger doesn't land on someone's two-pull parse. **Your own
+parse wins**, and that is the browser's call (`Home.jsx chooseParse`), because
+it depends on who is looking and the payload is shared. The list draws one row
+per raid with a `Parse` select; the raid page has the same control in its head
+and switching NAVIGATES (`GET /api/zone-runs/{id}` → `alternates`, filtered
+through `VISIBLE_RUN_IDS` — it re-sorts raids you could already open, it is not
+a directory of who parsed the night). Clustering runs AFTER the source/size
+filters. Pinned by `backend/tests/test_raidmatch.py`. See `ARCHITECTURE.md` ->
+"The same raid, uploaded by several people".
+
 ## Ship log
 
+- 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page
 - 2026-08-04 (claude): Import page rebuild: account-scoped pairing (schema v13), drag-drop uploader, no character prompt, no ACT export box
 - 2026-08-04 (claude): Serve the ACT plugin from the site: download + install steps + auto-sharing on Import, header pill
 - 2026-08-04 (claude): Revert phase 17: sharing belongs on the site, the ACT plugin only sends logs (schema v12 drops session_shares + can_share)

@@ -19,6 +19,7 @@ export default function Admin() {
   const [users, setUsers] = useState(null)
   const [audit, setAudit] = useState(null)
   const [publicRuns, setPublicRuns] = useState(null)
+  const [deletedGroups, setDeletedGroups] = useState(null)
   const [error, setError] = useState(null)
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -32,6 +33,7 @@ export default function Admin() {
     api.adminUsers().then((d) => setUsers(d.users)).catch(() => {})
     api.adminAudit().then((d) => setAudit(d.entries)).catch(() => {})
     api.adminPublicRuns().then((d) => setPublicRuns(d.runs)).catch(() => {})
+    api.adminDeletedGroups().then((d) => setDeletedGroups(d.groups)).catch(() => {})
   }, [])
   useEffect(() => { refresh() }, [refresh])
 
@@ -78,12 +80,26 @@ export default function Admin() {
                   }}>
             Reset password
           </button>
+          {/* a relabel: everything points at the user id, so nothing moves */}
+          <button className="chip" disabled={busy}
+                  onClick={() => {
+                    const name = prompt(
+                      `New username for ${u.username} — 3-20 letters, numbers or `
+                      + 'underscore. Usernames are lower case; they stay signed in.',
+                      u.username)
+                    if (name && name.trim().toLowerCase() !== u.username) {
+                      run(() => api.adminRenameUser(u.id, name.trim()),
+                          `Renamed to ${name.trim().toLowerCase()}.`)
+                    }
+                  }}>
+            Rename
+          </button>
         </span>
       ) },
   ]
 
   return (
-    <>
+    <div className="manage">
       <div className="pagehead">
         <h1>Admin</h1>
         <span className="sub">Users, storage and job health</span>
@@ -98,26 +114,31 @@ export default function Admin() {
       {msg && <p className="note flash">{msg}</p>}
 
       {overview && (
-        <div className="card">
-          <h2>Site</h2>
-          <div className="row" style={{ gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+        <>
+          <div className="metrics">
             {Object.entries(overview.counts).map(([k, v]) => (
-              <span key={k}><strong>{v}</strong> <span className="muted">{k.replace(/_/g, ' ')}</span></span>
+              <div key={k} className="metric">
+                <div className="v">{v}</div>
+                <div className="k">{k.replace(/_/g, ' ')}</div>
+              </div>
             ))}
-            <span><strong>{mb(overview.storage.uploads_dir_bytes)}</strong> <span className="muted">on disk</span></span>
+            <div className="metric">
+              <div className="v">{mb(overview.storage.uploads_dir_bytes)}</div>
+              <div className="k">on disk</div>
+            </div>
           </div>
           {overview.jobs.length > 0 && (
-            <>
-              <h3>Jobs needing attention</h3>
+            <div className="card">
+              <h2>Jobs needing attention</h2>
               {overview.jobs.map((j) => (
                 <div key={j.id} className="muted">
                   session {j.id} — {j.status}
                   {j.error && <span className="err"> {String(j.error).split('\n').pop()}</span>}
                 </div>
               ))}
-            </>
+            </div>
           )}
-        </div>
+        </>
       )}
 
       {overview && (
@@ -148,16 +169,73 @@ export default function Admin() {
           <p className="note" style={{ marginTop: 4 }}>
             Readable by anyone on the internet without an account.
           </p>
-          {publicRuns.map((r) => (
-            <div key={r.zone_run_id} className="row" style={{ gap: 8, marginTop: 4 }}>
-              {r.mine
-                ? <Link to={`/zones/${r.zone_run_id}`}>{r.zone || 'Unknown zone'}</Link>
-                : <span>{r.zone || 'Unknown zone'}</span>}
-              <span className="muted">
-                {fmt.date(r.started_ts)} · {r.raider_count || '—'} raiders · by {r.publisher}
-              </span>
-            </div>
-          ))}
+          <table className="data" style={{ maxWidth: 640 }}>
+            <thead>
+              <tr>
+                <th className="l">Zone</th>
+                <th>Date</th>
+                <th>Raiders</th>
+                <th className="l">Published by</th>
+              </tr>
+            </thead>
+            <tbody>
+              {publicRuns.map((r) => (
+                <tr key={r.zone_run_id}>
+                  <td className="name l">
+                    {r.mine
+                      ? <Link to={`/zones/${r.zone_run_id}`}>{r.zone || 'Unknown zone'}</Link>
+                      : (r.zone || 'Unknown zone')}
+                  </td>
+                  <td>{fmt.date(r.started_ts)}</td>
+                  <td>{r.raider_count || '—'}</td>
+                  <td className="l muted">{r.publisher}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {deletedGroups?.length > 0 && (
+        <div className="card">
+          <h2>Deleted groups</h2>
+          <p className="note" style={{ marginTop: 4 }}>
+            A delete is reversible. Restoring puts the group back with its
+            members, invites, join code and shares exactly as they were — the
+            rows were never removed, only stopped from counting.
+          </p>
+          <table className="data" style={{ maxWidth: 720 }}>
+            <thead>
+              <tr>
+                <th className="l">Group</th>
+                <th className="l">Owner</th>
+                <th>Members</th>
+                <th>Shares</th>
+                <th>Deleted</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {deletedGroups.map((gr) => (
+                <tr key={gr.id}>
+                  <td className="name l">{gr.name}</td>
+                  <td className="l muted">{gr.owner || '—'}</td>
+                  <td>{gr.member_count}</td>
+                  <td title="standing auto-shares + raids shared with this group">
+                    {gr.auto_share_count + gr.run_share_count || '—'}
+                  </td>
+                  <td className="muted">{fmt.date(gr.deleted_ts)}</td>
+                  <td>
+                    <button className="chip" disabled={busy}
+                            onClick={() => run(() => api.adminRestoreGroup(gr.id),
+                                               `${gr.name} restored.`)}>
+                      Restore
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -177,13 +255,27 @@ export default function Admin() {
           Every admin action lands here.
         </p>
         {audit?.length === 0 && <p className="muted">Nothing yet.</p>}
-        {audit?.slice(0, 50).map((e) => (
-          <div key={e.id} className="muted">
-            {fmt.date(e.ts)} {fmt.time(e.ts)} — <strong>{e.actor || 'system'}</strong>{' '}
-            {e.action} {e.target || ''} {e.detail || ''}
-          </div>
-        ))}
+        {audit?.length > 0 && (
+          <table className="data" style={{ maxWidth: 720 }}>
+            <thead>
+              <tr>
+                <th className="l">When</th>
+                <th className="l">Who</th>
+                <th className="l">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audit.slice(0, 50).map((e) => (
+                <tr key={e.id}>
+                  <td className="l muted">{fmt.date(e.ts)} {fmt.time(e.ts)}</td>
+                  <td className="l">{e.actor || 'system'}</td>
+                  <td className="l muted">{e.action} {e.target || ''} {e.detail || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
-    </>
+    </div>
   )
 }

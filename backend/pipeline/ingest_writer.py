@@ -16,15 +16,19 @@ from parser import petnames
 from parser.events import ParsedEvent, Subject
 from parser.subjects import classify_entity_kind, decompose
 from pipeline.classguess import guess_session_classes
-from pipeline.encounters import encounter_label, segment_events
+from pipeline.encounters import (encounter_label, segment_events,
+                                 split_trailing_corpse)
 from pipeline.refine import refine_known_mobs
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
                                 ability_rows, actor_rows, roll_encounter)
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 13    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 15    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
+#                      15: the clock stops at the group's last action; a dead
+#                            mob's trailing ticks leave the fight
+#                            (pipeline.encounters.split_trailing_corpse)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -303,7 +307,12 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
             clear_derived(conn, session_id)
             res = EntityResolver(conn, session_id, logger, pet_names, known_mobs)
             resolved = _resolve_events(events, res)
-            segments = segment_events(events, logger, known_mobs=known_mobs)
+            segments = [
+                piece
+                for seg in segment_events(events, logger, known_mobs=known_mobs)
+                for piece in split_trailing_corpse(
+                    seg, [resolved[i] for i in seg.event_indices])
+            ]
             pet_cast: set[str] = set()
 
             # encounter ids per event index

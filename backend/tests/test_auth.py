@@ -220,6 +220,35 @@ def test_device_token_lifecycle(client):
     conn.commit()
 
 
+def test_api_key_is_readable_and_refresh_replaces_it(client):
+    """Sonarr semantics: the key is readable again after minting (the list
+    carries the plaintext for the owner), Refresh revokes every live key and
+    mints the one replacement, and a revoked key's plaintext is never served."""
+    import auth as authmod
+    import db as dbmod
+
+    sign_in(client, "two")
+    a = client.post("/api/tokens", json={"label": "ACT plugin"}).json()
+    b = client.post("/api/tokens", json={}).json()
+
+    listed = client.get("/api/tokens").json()["tokens"]
+    live = [t for t in listed if not t["revoked_ts"]]
+    assert {t["token"] for t in live} >= {a["token"], b["token"]}
+
+    r = client.post("/api/tokens/refresh", json={"label": "ACT plugin"})
+    assert r.status_code == 200
+    fresh = r.json()
+    listed = client.get("/api/tokens").json()["tokens"]
+    live = [t for t in listed if not t["revoked_ts"]]
+    assert [t["token"] for t in live] == [fresh["token"]]
+    # the old keys are dead for ingest, and their plaintext is gone from the list
+    conn = dbmod.get_db()
+    assert authmod.device_token_row(conn, a["token"]) is None
+    assert authmod.device_token_row(conn, fresh["token"]) is not None
+    conn.commit()
+    assert all(t["token"] is None for t in listed if t["revoked_ts"])
+
+
 def test_character_claim_and_delete(client):
     sign_in(client, "two")
     r = client.post("/api/characters", json={"name": "Legacy"})

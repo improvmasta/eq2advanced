@@ -43,7 +43,7 @@ export default function Account({ user, onSignedOut, onUserChange }) {
   }
 
   return (
-    <>
+    <div className="manage">
       <div className="pagehead">
         <h1>Account</h1>
         <span className="sub">
@@ -58,7 +58,7 @@ export default function Account({ user, onSignedOut, onUserChange }) {
       </div>
 
       {user.needs_security_question && (
-        <div className="card" style={{ maxWidth: 520, borderColor: 'var(--warn, #b58900)' }}>
+        <div className="card" style={{ maxWidth: 720, borderColor: 'var(--warning)' }}>
           <strong>Set a security question.</strong>{' '}
           <span className="muted">
             Without one, only an admin can reset a forgotten password.
@@ -66,46 +66,49 @@ export default function Account({ user, onSignedOut, onUserChange }) {
         </div>
       )}
 
-      <div className="card" style={{ maxWidth: 380 }}>
-        <h2>Change password</h2>
-        <form onSubmit={changePw} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-          <input
-            type="password" placeholder="Current password" value={current} style={{ width: '100%' }}
-            autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} required
-          />
-          <input
-            type="password" placeholder="New password (8+ characters)" value={next} style={{ width: '100%' }}
-            autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required
-          />
-          <button type="submit">Change password</button>
-        </form>
-        {msg && <p className="status-ready" style={{ marginTop: 8 }}>{msg}</p>}
-        {error && <p className="err" style={{ marginTop: 8 }}>{error}</p>}
-      </div>
+      <div className="panelgrid" style={{ maxWidth: 720, marginTop: 12 }}>
+        <div className="card">
+          <h2>Change password</h2>
+          <form onSubmit={changePw} className="formcol">
+            <input
+              type="password" placeholder="Current password" value={current}
+              autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} required
+            />
+            <input
+              type="password" placeholder="New password (8+ characters)" value={next}
+              autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required
+            />
+            <button type="submit">Change password</button>
+          </form>
+          {msg && <p className="status-ready" style={{ marginTop: 8 }}>{msg}</p>}
+          {error && <p className="err" style={{ marginTop: 8 }}>{error}</p>}
+        </div>
 
-      <div className="card" style={{ maxWidth: 380 }}>
-        <h2>{user.needs_security_question ? 'Set security question' : 'Change security question'}</h2>
-        <p className="note" style={{ marginTop: 4 }}>
-          Answers ignore capitals and extra spaces.
-        </p>
-        <form onSubmit={saveQuestion} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-          <select value={sqId} onChange={(e) => setSqId(e.target.value)} style={{ width: '100%' }} required>
-            {questions.map((q) => <option key={q.id} value={q.id}>{q.text}</option>)}
-          </select>
-          <input
-            type="text" placeholder="Answer" value={answer} style={{ width: '100%' }}
-            autoComplete="off" onChange={(e) => setAnswer(e.target.value)} required
-          />
-          <input
-            type="password" placeholder="Confirm with your password" value={sqPassword}
-            style={{ width: '100%' }} autoComplete="current-password"
-            onChange={(e) => setSqPassword(e.target.value)} required
-          />
-          <button type="submit">Save question</button>
-        </form>
-        {sqMsg && <p className="status-ready" style={{ marginTop: 8 }}>{sqMsg}</p>}
-        {sqError && <p className="err" style={{ marginTop: 8 }}>{sqError}</p>}
+        <div className="card">
+          <h2>{user.needs_security_question ? 'Set security question' : 'Change security question'}</h2>
+          <p className="note" style={{ marginTop: 4 }}>
+            The only self-service way back into a locked account. Answers ignore
+            capitals and extra spaces.
+          </p>
+          <form onSubmit={saveQuestion} className="formcol">
+            <select value={sqId} onChange={(e) => setSqId(e.target.value)} required>
+              {questions.map((q) => <option key={q.id} value={q.id}>{q.text}</option>)}
+            </select>
+            <input
+              type="text" placeholder="Answer" value={answer}
+              autoComplete="off" onChange={(e) => setAnswer(e.target.value)} required
+            />
+            <input
+              type="password" placeholder="Confirm with your password" value={sqPassword}
+              autoComplete="current-password"
+              onChange={(e) => setSqPassword(e.target.value)} required
+            />
+            <button type="submit">Save question</button>
+          </form>
+          {sqMsg && <p className="status-ready" style={{ marginTop: 8 }}>{sqMsg}</p>}
+          {sqError && <p className="err" style={{ marginTop: 8 }}>{sqError}</p>}
+        </div>
       </div>
-    </>
+    </div>
   )
 }

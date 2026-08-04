@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 18
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   user_id INTEGER NOT NULL REFERENCES users(id),
   character_id INTEGER REFERENCES characters(id),
   token_hash TEXT UNIQUE NOT NULL,
+  token_plain TEXT,       -- readable in settings (Sonarr-style); NULL on pre-v15 keys
   label TEXT,
   created_ts INTEGER NOT NULL,
   last_seen_ts INTEGER,
@@ -157,7 +158,8 @@ CREATE TABLE IF NOT EXISTS zone_runs (
   named_count INTEGER NOT NULL DEFAULT 0,
   success_count INTEGER NOT NULL DEFAULT 0,
   combat_s INTEGER NOT NULL DEFAULT 0,
-  raider_count INTEGER,                   -- max distinct players in one fight
+  raider_count INTEGER,                   -- the roster's size (pipeline/zoneruns)
+  roster_json TEXT,                       -- the roster itself, sorted names
   updated_ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_zone_runs_char ON zone_runs(character_id, started_ts);
@@ -331,7 +333,8 @@ CREATE TABLE IF NOT EXISTS groups (
   join_code TEXT UNIQUE,                  -- 6 digits; NULL = code joining is off
   join_code_ts INTEGER,
   join_code_expires_ts INTEGER,           -- NULL = no expiry
-  created_ts INTEGER NOT NULL
+  created_ts INTEGER NOT NULL,
+  deleted_ts INTEGER                      -- soft delete; an admin can restore it
 );
 CREATE TABLE IF NOT EXISTS group_members (
   group_id INTEGER NOT NULL REFERENCES groups(id),
@@ -354,6 +357,8 @@ CREATE TABLE IF NOT EXISTS character_shares (
   character_id INTEGER NOT NULL REFERENCES characters(id),
   group_id INTEGER NOT NULL REFERENCES groups(id),
   created_ts INTEGER NOT NULL,
+  since_ts INTEGER,       -- NULL = back catalogue included; else runs started >= this
+  raids_only INTEGER NOT NULL DEFAULT 1,  -- 1 = raids (7+ raiders) only
   PRIMARY KEY (character_id, group_id)
 );
 CREATE TABLE IF NOT EXISTS run_shares (
@@ -692,6 +697,39 @@ def init_db() -> None:
         # fallback for any plugin still out there that doesn't name a character.
         if "user_id" not in token_cols:
             _rebuild_device_tokens(conn)
+        # v15: the API key is readable in settings like Sonarr/Radarr's, so the
+        # plaintext is stored beside the hash the ingest path looks up. Keys
+        # minted before this stay NULL — shown as replaceable, never recovered.
+        token_cols = {r[1] for r in conn.execute("PRAGMA table_info(device_tokens)")}
+        if "token_plain" not in token_cols:
+            conn.execute("ALTER TABLE device_tokens ADD COLUMN token_plain TEXT")
+        # v14: the back catalogue becomes a choice per auto-share. NULL keeps
+        # the pre-v14 meaning (every raid, past included); a set since_ts
+        # limits the share to runs started at or after it.
+        cs_cols = {r[1] for r in conn.execute("PRAGMA table_info(character_shares)")}
+        if "since_ts" not in cs_cols:
+            conn.execute("ALTER TABLE character_shares ADD COLUMN since_ts INTEGER")
+        # v16: an auto-share carries raids by default and group content only if
+        # asked. Existing rows get 0 — the pre-v16 meaning, every run — because
+        # a migration must not revoke access somebody already has. New shares
+        # are written with 1 (see groups.set_character_auto_shares).
+        if "raids_only" not in cs_cols:
+            conn.execute("ALTER TABLE character_shares "
+                         "ADD COLUMN raids_only INTEGER NOT NULL DEFAULT 0")
+        # v17: deleting a group is a soft delete, so an admin can put back a
+        # roster somebody deleted by mistake. Existing rows stay NULL = live;
+        # every read path already says so (groups.LIVE_GROUP).
+        grp_cols = {r[1] for r in conn.execute("PRAGMA table_info(groups)")}
+        if "deleted_ts" not in grp_cols:
+            conn.execute("ALTER TABLE groups ADD COLUMN deleted_ts INTEGER")
+        # v18: the roster is kept, not just counted — two people's uploads of
+        # the same night are matched by who was in them (backend/raidmatch.py).
+        # Existing rows stay NULL until the startup relink sweep rewrites them,
+        # which it does on every boot; a NULL roster only costs the match its
+        # cross-check, never a wrong merge.
+        run_cols = {r[1] for r in conn.execute("PRAGMA table_info(zone_runs)")}
+        if "roster_json" not in run_cols:
+            conn.execute("ALTER TABLE zone_runs ADD COLUMN roster_json TEXT")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

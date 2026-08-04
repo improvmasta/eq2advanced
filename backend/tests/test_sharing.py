@@ -150,8 +150,9 @@ def test_create_claims_the_code_it_showed_you(client):
     third = client.post("/api/groups", json={"name": "Junk", "join_code": "abc"}
                         ).json()["group"]
     assert len(third["join_code"]) == 6 and third["join_code"].isdigit()
-    for gid in (made["id"], second["id"], third["id"]):
-        client.delete(f"/api/groups/{gid}")
+    for gid, name in ((made["id"], "Preflight"), (second["id"], "Raced"),
+                      (third["id"], "Junk")):
+        assert client.delete(f"/api/groups/{gid}?confirm={name}").status_code == 200
 
 
 def test_invite_link_preview_and_join(client, world):
@@ -269,6 +270,62 @@ def test_removing_a_member_revokes_their_access(client, world):
     ratelimit.reset_all()
 
 
+def test_deleting_a_group_needs_its_name_and_can_be_restored(client, world):
+    """Two rules in one round trip, because they answer the same worry:
+    deleting a group is one click from the member list, so it costs you typing
+    the name back exactly — and if it happens anyway, an admin puts it back.
+
+    The restore has to bring the SHARES with it, not just the roster. A group
+    with no members and nothing shared is not the thing that was deleted."""
+    import ratelimit
+    ratelimit.reset_all()
+    shared = world["shared"]
+    sign_in(client, "owner")
+    gone = client.post("/api/groups", json={"name": "Delete Me"}).json()["group"]
+    code = gone["join_code"]
+    client.put(f"/api/zone-runs/{shared['id']}/shares", json={"group_ids": [gone["id"]]})
+    sign_in(client, "mate")
+    client.post("/api/groups/join", json={"code": code})
+    assert client.get(f"/api/zone-runs/{shared['id']}").status_code == 200
+
+    # the name, exactly: wrong case is wrong, and so is nothing at all
+    sign_in(client, "owner")
+    assert client.delete(f"/api/groups/{gone['id']}").status_code == 422
+    assert client.delete(f"/api/groups/{gone['id']}?confirm=delete me").status_code == 422
+    assert client.delete(f"/api/groups/{gone['id']}?confirm=Delete%20Me").status_code == 200
+
+    # gone means gone: off everyone's list, unjoinable, and the raid it was
+    # carrying is private again
+    assert [g["name"] for g in client.get("/api/groups").json()["groups"]] \
+        == ["Tuesday Raid"]
+    assert client.get(f"/api/groups/{gone['id']}").status_code == 404
+    sign_in(client, "mate")
+    assert client.get(f"/api/zone-runs/{shared['id']}").status_code == 404
+    assert client.get(f"/api/groups/preview/{code}").status_code == 404
+    assert client.post("/api/groups/join", json={"code": code}).status_code == 404
+    ratelimit.reset_all()
+
+    # the admin sees it in the restore list, with what would come back
+    sign_in(client, "owner")
+    listed = [g for g in client.get("/api/admin/groups").json()["groups"]
+              if g["id"] == gone["id"]]
+    assert len(listed) == 1 and listed[0]["member_count"] == 2
+    assert listed[0]["run_share_count"] == 1 and listed[0]["owner"] == "owner"
+    assert client.post(f"/api/admin/groups/{gone['id']}/restore").status_code == 200
+    assert client.post(f"/api/admin/groups/{gone['id']}/restore").status_code == 409
+
+    # ...and everything comes back: the roster, the code, and the shared raid
+    sign_in(client, "mate")
+    assert client.get(f"/api/zone-runs/{shared['id']}").status_code == 200
+    assert [g["name"] for g in client.get("/api/groups").json()["groups"]] \
+        == ["Delete Me", "Tuesday Raid"]
+    assert client.get(f"/api/groups/preview/{code}").json()["group"]["member"] is True
+    sign_in(client, "owner")
+    client.put(f"/api/zone-runs/{shared['id']}/shares", json={"group_ids": []})
+    assert client.delete(f"/api/groups/{gone['id']}?confirm=Delete%20Me").status_code == 200
+    ratelimit.reset_all()
+
+
 def test_wrong_join_code_is_rate_limited(client, world):
     import ratelimit
     ratelimit.reset_all()
@@ -332,7 +389,7 @@ def test_shared_raid_is_read_only(client, world):
     mine = client.post("/api/groups", json={"name": "Mine"}).json()["group"]
     assert client.put(f"/api/zone-runs/{shared['id']}/shares",
                       json={"group_ids": [mine["id"]]}).status_code == 403
-    client.delete(f"/api/groups/{mine['id']}")
+    client.delete(f"/api/groups/{mine['id']}?confirm=Mine")
 
 
 def test_scopes_split_mine_from_shared(client, world):
@@ -345,8 +402,15 @@ def test_scopes_split_mine_from_shared(client, world):
     assert listing["zone_runs"][0]["character_name"] == "Bobby"
     # reachable through the group, so the Public switch never takes it away
     assert listing["zone_runs"][0]["via_public"] is False
-    # a viewer is not told who else the raid reaches
+    # a viewer is not told who else the raid reaches…
     assert listing["zone_runs"][0]["shared_with"] == []
+    # …but IS told which of their own groups brought it to them — the list's
+    # Shared column would otherwise sit empty on exactly the rows it explains
+    assert [g["name"] for g in listing["zone_runs"][0]["shared_via"]] == ["Tuesday Raid"]
+    # the id too — the list filters by group, and a name is not a handle
+    assert listing["zone_runs"][0]["shared_via"][0]["group_id"] == world["group"]["id"]
+    # the list's raid-wide DPS: total player damage over combat time
+    assert listing["zone_runs"][0]["raid_dps"] > 0
     assert client.get("/api/zone-runs?scope=mine").json()["zone_runs"] == []
     assert len(client.get("/api/zone-runs?scope=shared").json()["zone_runs"]) == 1
 
@@ -398,6 +462,48 @@ def test_auto_share_covers_the_back_catalogue_and_hide_overrides_it(client, worl
     client.put(f"/api/characters/{world['character_id']}/shares", json={"group_ids": []})
     sign_in(client, "mate")
     assert client.get("/api/zone-runs").json()["zone_runs"] == []
+
+
+def test_auto_share_new_raids_only_excludes_the_back_catalogue(client, world):
+    """The back catalogue is a choice per share: `history: false` reaches only
+    raids recorded after the share was turned on. Both of the world's runs
+    predate any share made now, so a new-raids-only share shows the groupmate
+    nothing — until history is flipped on, which opens everything, and flipping
+    it back off closes it again (since_ts is pinned to the FIRST enable, so the
+    round trip cannot move the cutoff)."""
+    gid = world["group"]["id"]
+    sign_in(client, "owner")
+    r = client.put(f"/api/characters/{world['character_id']}/shares",
+                   json={"shares": [{"group_id": gid, "history": False}]})
+    g = r.json()["groups"][0]
+    assert g["shared"] is True and g["history"] is False
+    sign_in(client, "mate")
+    assert client.get("/api/zone-runs").json()["zone_runs"] == []
+    # not reachable through the standing share, so the run's own Share control
+    # reports auto=False — and saving it empty must write a plain delete, not a
+    # `hide` that would block the opt-in below (it also clears the hide the
+    # previous test left on the private run)
+    sign_in(client, "owner")
+    listed = client.get(f"/api/zone-runs/{world['shared']['id']}/shares").json()
+    assert listed["groups"][0]["auto"] is False
+    client.put(f"/api/zone-runs/{world['shared']['id']}/shares", json={"group_ids": []})
+    client.put(f"/api/zone-runs/{world['private']['id']}/shares", json={"group_ids": []})
+
+    r = client.put(f"/api/characters/{world['character_id']}/shares",
+                   json={"shares": [{"group_id": gid, "history": True,
+                                     "group_content": True}]})
+    assert r.json()["groups"][0]["history"] is True
+    sign_in(client, "mate")
+    assert len(client.get("/api/zone-runs").json()["zone_runs"]) == 2
+
+    sign_in(client, "owner")
+    client.put(f"/api/characters/{world['character_id']}/shares",
+               json={"shares": [{"group_id": gid, "history": False}]})
+    sign_in(client, "mate")
+    assert client.get("/api/zone-runs").json()["zone_runs"] == []
+
+    sign_in(client, "owner")
+    client.put(f"/api/characters/{world['character_id']}/shares", json={"shares": []})
 
 
 def test_share_survives_a_reparse(client, world):
@@ -493,3 +599,78 @@ def test_publishing_is_audited(client, world):
     sign_in(client, "mate")
     assert client.get("/api/admin/audit").status_code == 403
     assert client.get("/api/admin/users").status_code == 403
+
+
+# A real raid roster and a solo zone in one log, two hours apart so they are two
+# runs: the pair a raids-only share has to tell apart.
+RAID_NIGHT = (
+    "(1722643200)[Sat Aug  2 21:00:00 2026] You have entered The Emerald Halls.\r\n"
+    "(1722643201)[Sat Aug  2 21:00:01 2026] YOU hit a dread lord for 100 crushing damage.\r\n"
+    "(1722643202)[Sat Aug  2 21:00:02 2026] Alpha hits a dread lord for 110 crushing damage.\r\n"
+    "(1722643203)[Sat Aug  2 21:00:03 2026] Bravo hits a dread lord for 120 crushing damage.\r\n"
+    "(1722643204)[Sat Aug  2 21:00:04 2026] Charlie hits a dread lord for 130 crushing damage.\r\n"
+    "(1722643205)[Sat Aug  2 21:00:05 2026] Delta hits a dread lord for 140 crushing damage.\r\n"
+    "(1722643206)[Sat Aug  2 21:00:06 2026] Echo hits a dread lord for 150 crushing damage.\r\n"
+    "(1722643207)[Sat Aug  2 21:00:07 2026] Foxtrot hits a dread lord for 160 crushing damage.\r\n"
+    "(1722643208)[Sat Aug  2 21:00:08 2026] Golf hits a dread lord for 170 crushing damage.\r\n"
+    "(1722643209)[Sat Aug  2 21:00:09 2026] You have killed a dread lord.\r\n"
+)
+SOLO_ZONE = (
+    "(1722650400)[Sat Aug  2 23:00:00 2026] You have entered The Estate of Unrest.\r\n"
+    "(1722650401)[Sat Aug  2 23:00:01 2026] YOU hit a training dummy for 100 crushing damage.\r\n"
+    "(1722650403)[Sat Aug  2 23:00:03 2026] YOU hit a training dummy for 120 crushing damage.\r\n"
+    "(1722650404)[Sat Aug  2 23:00:04 2026] You have killed a training dummy.\r\n"
+)
+
+
+def test_auto_share_carries_raids_only_by_default(client, world):
+    """A standing share is for RAIDS. "Share my raids with the guild" is not a
+    request to broadcast every six-man zone and solo dummy parse, and the two
+    readings cost differently: opting in is one tick, while noticing you have
+    been leaking is luck. So a new auto-share reaches runs with a raid's roster
+    and nothing else, until `group_content` says otherwise.
+
+    Uploaded as its own character with a real eight-man roster, because that is
+    the number under test — and it goes last in this file so the extra runs
+    can't move the counts every test above asserts on."""
+    gid = world["group"]["id"]
+    sign_in(client, "owner")
+    # start from nothing: earlier tests leave explicit shares and published runs
+    # behind, and either would show the groupmate a run the standing share is
+    # supposed to be holding back. Auto-share goes first — clearing a run's
+    # shares while a standing one reaches it writes a `hide`.
+    client.put(f"/api/characters/{world['character_id']}/shares", json={"shares": []})
+    for key in ("shared", "private"):
+        client.put(f"/api/zone-runs/{world[key]['id']}/shares", json={"group_ids": []})
+        client.put(f"/api/zone-runs/{world[key]['id']}/public", json={"public": False})
+
+    upload(client, "Raidy", RAID_NIGHT + SOLO_ZONE)
+    raidy = next(c["id"] for c in client.get("/api/characters").json()["characters"]
+                 if c["name"] == "Raidy")
+    runs = {r["zone"]: r for r in client.get("/api/zone-runs?scope=mine").json()["zone_runs"]}
+    assert runs["The Emerald Halls"]["raider_count"] == 8
+    assert runs["The Estate of Unrest"]["raider_count"] == 1
+
+    r = client.put(f"/api/characters/{raidy}/shares",
+                   json={"shares": [{"group_id": gid, "history": True}]})
+    assert r.json()["groups"][0]["group_content"] is False
+
+    # the raid arrives; the solo zone from the same log and the same standing
+    # share does not
+    sign_in(client, "mate")
+    # mate has runs of their own by now; the question is what REACHED them
+    theirs = [x for x in client.get("/api/zone-runs").json()["zone_runs"] if not x["mine"]]
+    assert [x["zone"] for x in theirs] == ["The Emerald Halls"]
+    assert [g["name"] for g in theirs[0]["shared_via"]] == ["Tuesday Raid"]
+
+    # a run the standing share does NOT reach must not be marked auto, or
+    # unticking it would leave a `hide` blocking a later opt-in
+    sign_in(client, "owner")
+    solo = runs["The Estate of Unrest"]["id"]
+    assert client.get(f"/api/zone-runs/{solo}/shares").json()["groups"][0]["auto"] is False
+
+    client.put(f"/api/characters/{raidy}/shares",
+               json={"shares": [{"group_id": gid, "history": True, "group_content": True}]})
+    sign_in(client, "mate")
+    opened = [x for x in client.get("/api/zone-runs").json()["zone_runs"] if not x["mine"]]
+    assert sorted(x["zone"] for x in opened) == ["The Emerald Halls", "The Estate of Unrest"]

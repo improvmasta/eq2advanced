@@ -80,6 +80,8 @@ export const api = {
   // device tokens are per ACCOUNT (v13) — one pairing covers every character
   tokens: () => req('/api/tokens'),
   mintToken: (label) => req('/api/tokens', json({ label })),
+  // Sonarr-style: revokes every live key and mints the replacement
+  refreshToken: (label) => req('/api/tokens/refresh', json({ label })),
   revokeToken: (id) => req(`/api/tokens/${id}/revoke`, { method: 'POST' }),
   census: (charId) => req(`/api/characters/${charId}/census`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
@@ -130,7 +132,9 @@ export const api = {
   // a free code to show alongside the name being typed; claimed at create time
   newJoinCode: () => req('/api/groups/new-code'),
   updateGroup: (id, body) => req(`/api/groups/${id}`, { ...json(body), method: 'PATCH' }),
-  deleteGroup: (id) => req(`/api/groups/${id}`, { method: 'DELETE' }),
+  // `confirm` is the group's name typed back exactly — the server checks it too
+  deleteGroup: (id, confirm) => mutate(req(
+    `/api/groups/${id}?confirm=${encodeURIComponent(confirm)}`, { method: 'DELETE' })),
   joinGroup: (code) => mutate(req('/api/groups/join', json({ code }))),
   // what an invite link resolves to before the visitor has an account
   previewInvite: (code) => req(`/api/groups/preview/${encodeURIComponent(code)}`),
@@ -146,14 +150,20 @@ export const api = {
   setRunPublic: (runId, isPublic) => mutate(req(
     `/api/zone-runs/${runId}/public`, { ...json({ public: isPublic }), method: 'PUT' })),
   characterShares: (charId) => req(`/api/characters/${charId}/shares`),
-  setCharacterShares: (charId, groupIds) => mutate(req(
-    `/api/characters/${charId}/shares`, { ...json({ group_ids: groupIds }), method: 'PUT' })),
+  // shares: [{group_id, history}] — history=false shares only raids recorded
+  // while the switch has been on, true includes the back catalogue
+  setCharacterShares: (charId, shares) => mutate(req(
+    `/api/characters/${charId}/shares`, { ...json({ shares }), method: 'PUT' })),
 
   // admin console — metadata only, by design (backend/routers/admin_api.py)
   adminOverview: () => req('/api/admin/overview'),
   adminUsers: () => req('/api/admin/users'),
   adminSetDisabled: (id, disabled) => req(`/api/admin/users/${id}/disabled`, json({ disabled })),
   adminResetPassword: (id, password) => req(`/api/admin/users/${id}/password`, json({ password })),
+  adminRenameUser: (id, username) => req(`/api/admin/users/${id}/username`, json({ username })),
+  // deleted groups, and putting one back for whoever deleted it
+  adminDeletedGroups: () => req('/api/admin/groups'),
+  adminRestoreGroup: (id) => mutate(req(`/api/admin/groups/${id}/restore`, { method: 'POST' })),
   adminSetLimits: (id, body) => req(`/api/admin/users/${id}/limits`, json(body)),
   adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
   adminAudit: () => req('/api/admin/audit'),
@@ -169,6 +179,12 @@ export const fmt = {
     if (s == null) return '—'
     const m = Math.floor(s / 60), r = s % 60
     return m ? `${m}m ${r}s` : `${r}s`
+  },
+  // wall-clock spans: a raid night is "2h 23m", never "143m 34s"
+  durH: (s) => {
+    if (s == null) return '—'
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
+    return h ? `${h}h ${m}m` : `${m}m`
   },
   time: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
   date: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })),

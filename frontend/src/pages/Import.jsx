@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import QRCode from 'qrcode'
 import UploadDrop from '../components/UploadDrop.jsx'
-import AutoShare from '../components/AutoShare.jsx'
 import { api, fmt } from '../lib/api.js'
 
 /* The two ways combat data gets in, and what came in so far.
 
-   Everything a raider needs is on this page: the plugin download, pairing, the
-   dropzone, and the list. It used to send people to /characters to pair, which
-   is a page they should never have to find — and to a third "ACT export" box
-   for a feature that does not exist. Both are gone. */
+   The plugin box shows one thing at a time: the install manual until a device
+   is paired, a quiet status line after — the steps stay one click away. Sharing
+   is deliberately absent here; it lives on the Sharing page, and the box says
+   so in one line instead of embedding the controls. */
 
 function Method({ title, blurb, state, children }) {
   return (
@@ -25,86 +23,72 @@ function Method({ title, blurb, state, children }) {
   )
 }
 
-/* Pairing, in the box with the download, because it is step 2 of installing the
-   plugin and nothing else.
-
-   No "which character?" prompt: a token belongs to the ACCOUNT, and the plugin
-   reads the character off the log ACT is tailing. Asking at pairing time was
-   asking the one question nobody can answer yet — you pair on a Tuesday and
-   play whichever alt you feel like on Friday — and it made alts need a second
-   token for no reason. */
-function Pairing() {
-  const [tokens, setTokens] = useState(null)
-  const [minted, setMinted] = useState(null)     // {token, qr}
+/* The API key, the way Sonarr/Radarr present theirs, because that is what
+   everyone running a home server already knows: a persistent masked field with
+   Show / Copy / Refresh. One key per account — every device pastes the same
+   one, and Refresh revokes them all at once. No QR, nothing shown-once: the
+   key is readable here whenever you need it (it can send logs and nothing
+   else, which is what makes that fine). */
+function ApiKey({ tokens, reload }) {
+  const [show, setShow] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [copied, setCopied] = useState(false)
 
-  const load = useCallback(() => {
-    api.tokens().then((d) => setTokens(d.tokens)).catch((e) => setError(e.message))
-  }, [])
-  useEffect(() => { load() }, [load])
+  if (tokens === null) return null
+  const active = tokens.filter((t) => !t.revoked_ts)
+  const key = active[0]   // newest first; Refresh keeps this the only one
 
-  async function pair() {
+  async function generate() {
     setBusy(true); setError(null)
-    try {
-      const d = await api.mintToken('ACT plugin')
-      const qr = await QRCode.toDataURL(d.pair_payload,
-        { margin: 1, width: 160, errorCorrectionLevel: 'M' })
-      setMinted({ token: d.token, qr })
-      load()
-    } catch (e) { setError(e.message) } finally { setBusy(false) }
+    try { await api.refreshToken('ACT plugin'); setShow(true); setConfirm(false); reload() }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-
-  async function revoke(id) {
-    try { await api.revokeToken(id); if (minted) setMinted(null); load() }
-    catch (e) { setError(e.message) }
-  }
-
-  const active = tokens?.filter((t) => !t.revoked_ts) ?? []
 
   return (
-    <div className="pairing">
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={pair} disabled={busy}>Create pairing code</button>
-        <span className="muted">
-          {active.length
-            ? `${active.length} device${active.length === 1 ? '' : 's'} paired`
-            : 'No device paired yet.'}
-        </span>
+    <div className="apikey">
+      <div className="keyrow">
+        <span className="k">API key</span>
+        {key ? (
+          <>
+            <code className="keyfield">
+              {show && key.token ? key.token : '•'.repeat(28)}
+            </code>
+            <button className="chip" disabled={!key.token}
+                    title={key.token ? '' : 'This key predates viewable keys — Refresh to replace it'}
+                    onClick={() => setShow((v) => !v)}>
+              {show ? 'Hide' : 'Show'}
+            </button>
+            <button className="chip" disabled={!key.token}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(key.token)
+                      setCopied(true); setTimeout(() => setCopied(false), 1500)
+                    }}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            {confirm ? (
+              <>
+                <button className="chip danger" disabled={busy} onClick={generate}>
+                  refresh — old key stops working
+                </button>
+                <button className="chip" onClick={() => setConfirm(false)}>cancel</button>
+              </>
+            ) : (
+              <button className="chip" disabled={busy} onClick={() => setConfirm(true)}>
+                Refresh
+              </button>
+            )}
+          </>
+        ) : (
+          <button disabled={busy} onClick={generate}>Generate API key</button>
+        )}
       </div>
-
-      {minted && (
-        <div className="minted">
-          <p><b>Paste this into the plugin now — it isn't shown again.</b></p>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <code className="tokenvalue">{minted.token}</code>
-            <button onClick={() => {
-              navigator.clipboard?.writeText(minted.token)
-              setCopied(true); setTimeout(() => setCopied(false), 1500)
-            }}>{copied ? 'Copied' : 'Copy'}</button>
-            <img src={minted.qr} alt="Pairing QR code" width="160" height="160" />
-          </div>
-          <p className="fineprint">
-            Covers every character you play — the plugin reads the name off the log.
-            It can send logs and nothing else: it can't read your parses or change
-            who sees them.
-          </p>
-        </div>
-      )}
-
-      {active.length > 0 && (
-        <ul className="devicelist">
-          {active.map((t) => (
-            <li key={t.id}>
-              <span>{t.label || 'device'}</span>
-              <span className="muted">
-                {t.last_seen_ts ? `last seen ${fmt.date(t.last_seen_ts)} ${fmt.time(t.last_seen_ts)}` : 'never used'}
-              </span>
-              <button className="chip danger" onClick={() => revoke(t.id)}>revoke</button>
-            </li>
-          ))}
-        </ul>
+      {key && !key.token && (
+        <p className="fineprint">
+          This key was made before keys were viewable. It still works —
+          Refresh replaces it with one you can read here.
+        </p>
       )}
       {error && <p className="err">{error}</p>}
     </div>
@@ -113,19 +97,22 @@ function Pairing() {
 
 export default function Import() {
   const [sessions, setSessions] = useState(null)
-  const [chars, setChars] = useState([])
+  const [tokens, setTokens] = useState(null)
   const [error, setError] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [busy, setBusy] = useState(false)
   const [plugin, setPlugin] = useState(null)
+  const [showSteps, setShowSteps] = useState(false)
   const seen = useRef(false)
 
   const refresh = useCallback(() => {
     api.sessions().then((d) => setSessions(d.sessions)).catch((e) => setError(e.message))
-    api.characters().then((d) => setChars(d.characters)).catch(() => {})
+  }, [])
+  const loadTokens = useCallback(() => {
+    api.tokens().then((d) => setTokens(d.tokens)).catch((e) => setError(e.message))
   }, [])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { refresh(); loadTokens() }, [refresh, loadTokens])
   useEffect(() => { api.plugin().then(setPlugin).catch(() => {}) }, [])
 
   useEffect(() => {
@@ -148,14 +135,16 @@ export default function Import() {
 
   const receiving = sessions?.filter((s) => s.source === 'live' && s.status === 'receiving') ?? []
   const working = sessions?.filter((s) => s.status === 'parsing') ?? []
-  const paired = chars.filter((c) => c.token_count > 0)
+  const active = tokens?.filter((t) => !t.revoked_ts) ?? []
+  const paired = active.length > 0
+  const lastSeen = active.reduce((m, t) => Math.max(m, t.last_seen_ts || 0), 0)
   const ready = sessions?.filter((s) => s.status === 'ready') ?? []
   const fightTotal = ready.reduce((n, s) => n + (s.encounter_count || 0), 0)
   const lineTotal = ready.reduce((n, s) => n + (s.line_count || 0), 0)
   if (sessions) seen.current = true
 
   return (
-    <>
+    <div className="manage">
       <div className="pagehead">
         <h1>Import</h1>
         <span className="sub">Get your raids in. Two ways, both take a minute.</span>
@@ -166,46 +155,62 @@ export default function Import() {
       <div className="methods">
         <Method
           title="ACT plugin"
-          state={receiving.length ? 'live' : paired.length ? 'paired' : null}
+          state={receiving.length ? 'live' : paired ? 'paired' : null}
           blurb="Sends your log while you raid, and uploads your old logs in bulk. Set it up once."
         >
-          <ol className="steps">
-            <li>
-              <a className="btnlink" href="/api/plugin/download" download>
-                Download EQ2Advanced.dll
-              </a>
-              {plugin?.available && (
-                <span className="muted" style={{ marginLeft: 8 }}>
-                  {fmt.bytes(plugin.size)} · built {fmt.date(plugin.built_ts)}
-                </span>
-              )}
-            </li>
-            <li>In ACT: <b>Plugins → Plugin Listing → Browse</b>, pick the file, <b>Add/Enable</b>.</li>
-            <li>Make a pairing code below and paste it into the plugin's <b>eq2advanced</b> tab.</li>
-            <li>
-              Tick <b>Send my combat log as I play</b>. For old raids, use the plugin's{' '}
-              <b>Import logs you already have</b> — point it at your whole logs folder.
-            </li>
-          </ol>
-
-          <Pairing />
-
-          {paired.length > 0 && (
-            <div className="pluginshare">
-              {paired.map((c) => (
-                <div key={c.id} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <b>{c.name}</b>
-                  <AutoShare char={c} label="shares every raid with:" />
-                </div>
-              ))}
+          {paired && (
+            <div className="pluginstatus">
+              <span>
+                <b>Key in use</b>
+                {lastSeen > 0
+                  ? <span className="muted"> · last upload {fmt.date(lastSeen)} {fmt.time(lastSeen)}</span>
+                  : <span className="muted"> · nothing uploaded with it yet</span>}
+              </span>
+              <button className="linklike" onClick={() => setShowSteps((v) => !v)}>
+                {showSteps ? 'Hide install steps' : 'Install steps'}
+              </button>
             </div>
           )}
+
+          {/* The file itself is never collapsed: someone already paired is who
+              comes back for it when the DLL is rebuilt. Only the steps hide. */}
+          <p style={{ marginTop: paired ? 10 : 4 }}>
+            <a className="btnlink" href="/api/plugin/download" download>
+              Download {plugin?.download_name || 'EQ2Advanced.zip'}
+            </a>
+            {plugin?.available && (
+              <span className="muted" style={{ marginLeft: 8, fontSize: 'var(--fs-xs)' }}>
+                {fmt.bytes(plugin.download_size ?? plugin.size)} · built {fmt.date(plugin.built_ts)}
+              </span>
+            )}
+          </p>
+
+          {(!paired || showSteps) && (
+            <ol className="steps">
+              {/* Unblock the zip, not the extracted DLL — Explorer copies the
+                  web mark onto what it unpacks and ACT won't load a marked one. */}
+              <li>Right-click the .zip → <b>Properties</b> → <b>Unblock</b>, then extract.</li>
+              <li>In ACT: <b>Plugins → Plugin Listing → Browse</b>, pick <b>EQ2Advanced.dll</b>, <b>Add/Enable</b>.</li>
+              <li>Copy the API key below into the plugin's <b>eq2advanced</b> tab.</li>
+              <li>
+                Tick <b>Send my combat log as I play</b>. For old raids, use{' '}
+                <b>Import logs you already have</b> — point it at your whole logs folder.
+              </li>
+            </ol>
+          )}
+
+          <ApiKey tokens={tokens} reload={loadTokens} />
 
           {receiving.length > 0 && (
             <p style={{ marginTop: 8 }}>
               <Link className="btnlink" to="/live">Watch the live raid →</Link>
             </p>
           )}
+
+          <p className="fineprint">
+            The plugin only sends logs. Who sees your raids is set on the{' '}
+            <Link to="/groups">Sharing</Link> page.
+          </p>
         </Method>
 
         <Method
@@ -302,6 +307,6 @@ export default function Import() {
           </div>
         )}
       </div>
-    </>
+    </div>
   )
 }

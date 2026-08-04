@@ -147,13 +147,21 @@ def update_group(group_id: int, payload: dict = Body(...), user=Depends(require_
 
 
 @router.delete("/groups/{group_id}")
-def remove_group(group_id: int, user=Depends(require_user)):
-    """Only the owner, and it takes the shares with it — raids shared nowhere
-    else go back to being private."""
+def remove_group(group_id: int, confirm: str = "", user=Depends(require_user)):
+    """Only the owner, and only after typing the group's name back exactly —
+    same case, same spacing. A delete revokes everyone's access to every raid
+    that reached them through this group, and it sits one click from the member
+    list, so the confirmation is a deliberate act of typing rather than an OK
+    button muscle memory clears. Enforced here and not only in the browser.
+
+    The delete itself is soft (`groups.delete_group`): shares stop resolving at
+    once, and an admin can put the group back."""
     conn = get_db()
     row = _group(conn, group_id, user)
     if row["owner_user_id"] != user["id"]:
         raise HTTPException(403, "only the group's owner can delete it")
+    if confirm != row["name"]:
+        raise HTTPException(422, f'type the group name exactly — "{row["name"]}"')
     with conn:
         g.delete_group(conn, group_id)
     return {"deleted": group_id}

@@ -33,6 +33,11 @@ def overview(admin=Depends(require_admin)):
     counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
               for t in ("users", "characters", "sessions", "zone_runs", "encounters",
                         "groups", "public_runs")}
+    # a deleted group is still a row (it can be restored), so it is counted
+    # separately rather than inflating the live number
+    counts["groups_deleted"] = conn.execute(
+        "SELECT COUNT(*) FROM groups WHERE deleted_ts IS NOT NULL").fetchone()[0]
+    counts["groups"] -= counts["groups_deleted"]
     stored = conn.execute(
         "SELECT COALESCE(SUM(raw_bytes),0) AS raw, COALESCE(SUM(src_bytes),0) AS src "
         "FROM sessions").fetchone()
@@ -112,6 +117,32 @@ def reset_password(user_id: int, payload: dict = Body(...), admin=Depends(requir
     return {"user_id": user_id, "ok": True}
 
 
+@router.post("/admin/users/{user_id}/username")
+def rename_user(user_id: int, payload: dict = Body(...), admin=Depends(require_admin)):
+    """Rename an account. Nothing else stores the username — characters, raids,
+    groups and shares all point at the user id — so this is a relabel, not a
+    move, and the account stays signed in.
+
+    Same rules as sign-up (`auth.USERNAME_RE`, lower case), because login,
+    invites and password reset all look an account up by exactly that string."""
+    conn = get_db()
+    row = conn.execute("SELECT id, username FROM users WHERE id=?", (user_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "no such user")
+    name = str(payload.get("username") or "").strip().lower()
+    if not auth.USERNAME_RE.match(name):
+        raise HTTPException(422, "username is 3-20 characters: letters, numbers, underscore")
+    if name in auth.RESERVED_USERNAMES:
+        raise HTTPException(409, "that username is reserved")
+    if name != row["username"] and conn.execute(
+            "SELECT 1 FROM users WHERE username=?", (name,)).fetchone():
+        raise HTTPException(409, "that username is taken")
+    with conn:
+        conn.execute("UPDATE users SET username=? WHERE id=?", (name, user_id))
+        g.audit(conn, admin["id"], "rename_user", f"user:{row['username']}", name)
+    return {"user_id": user_id, "username": name}
+
+
 @router.post("/admin/users/{user_id}/limits")
 def set_limits(user_id: int, payload: dict = Body(...), admin=Depends(require_admin)):
     """Per-user overrides. NULL means "use the site default", 0 means unlimited."""
@@ -157,6 +188,31 @@ def audit_log(limit: int = 200, admin=Depends(require_admin)):
         # id breaks the tie: several actions land in the same second and the
         # order they happened in is the whole point of a log
         "ORDER BY a.ts DESC, a.id DESC LIMIT ?", (max(1, min(limit, 1000)),)))}
+
+
+@router.get("/admin/groups")
+def deleted_groups(admin=Depends(require_admin)):
+    """Groups somebody deleted, and what would come back with each one.
+
+    This is the one support request the metadata-only admin can answer: a
+    delete is soft, so putting a roster back is a row update, not a rebuild.
+    Still no route from here into anything the group could see."""
+    return {"groups": g.deleted_groups(get_db())}
+
+
+@router.post("/admin/groups/{group_id}/restore")
+def restore_group(group_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    row = conn.execute("SELECT id, name, deleted_ts FROM groups WHERE id=?",
+                       (group_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "no such group")
+    if row["deleted_ts"] is None:
+        raise HTTPException(409, "that group isn't deleted")
+    with conn:
+        g.restore_group(conn, group_id)
+        g.audit(conn, admin["id"], "restore_group", f"group:{row['name']}")
+    return {"group_id": group_id, "restored": True}
 
 
 @router.get("/admin/public-runs")

@@ -12,6 +12,7 @@ The scope really is ingest and nothing else — a token sends logs, and who can
 see the resulting raids is decided on the site by someone signed in.
 """
 
+import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,13 +41,21 @@ def _pair_payload(token: str) -> str:
 
 @router.get("/tokens")
 def list_tokens(user=Depends(require_user)):
+    """The account's keys, newest first. A live key's plaintext rides along —
+    the Import page shows it behind a Show button, Sonarr-style; the owner is
+    the only one who can reach this route. A revoked key's never does, and a
+    pre-v15 key has none to give (token_plain NULL)."""
     conn = get_db()
     rows = conn.execute(
         "SELECT t.id, t.label, t.created_ts, t.last_seen_ts, t.revoked_ts, "
-        "c.name AS character_name "
+        "t.token_plain, c.name AS character_name "
         "FROM device_tokens t LEFT JOIN characters c ON c.id = t.character_id "
         "WHERE t.user_id=? ORDER BY t.created_ts DESC", (user["id"],)).fetchall()
-    return {"tokens": rows_to_dicts(rows)}
+    out = []
+    for r in rows_to_dicts(rows):
+        r["token"] = r.pop("token_plain") if not r["revoked_ts"] else None
+        out.append(r)
+    return {"tokens": out}
 
 
 @router.post("/tokens")
@@ -55,6 +64,21 @@ def mint_token(body: TokenCreate, user=Depends(require_user)):
     label = (body.label or "").strip() or None
     with conn:
         token_id, token = auth.mint_device_token(conn, user["id"], label)
+    return {"id": token_id, "token": token, "pair_payload": _pair_payload(token)}
+
+
+@router.post("/tokens/refresh")
+def refresh_token(body: TokenCreate, user=Depends(require_user)):
+    """Sonarr's refresh: one API key per account — every live key is revoked
+    and one new one takes its place. A device with the old key stops uploading
+    until the new one is pasted in, which is the point of refreshing."""
+    conn = get_db()
+    with conn:
+        conn.execute("UPDATE device_tokens SET revoked_ts=? "
+                     "WHERE user_id=? AND revoked_ts IS NULL",
+                     (int(time.time()), user["id"]))
+        token_id, token = auth.mint_device_token(
+            conn, user["id"], (body.label or "").strip() or None)
     return {"id": token_id, "token": token, "pair_payload": _pair_payload(token)}
 
 

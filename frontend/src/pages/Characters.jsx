@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
-import AutoShare from '../components/AutoShare.jsx'
 
 export default function Characters() {
   const [chars, setChars] = useState(null)
@@ -30,7 +29,7 @@ export default function Characters() {
   }
 
   return (
-    <>
+    <div className="manage">
       <div className="pagehead">
         <h1>Characters</h1>
         <span className="sub">Uploads and live ingest attach to a character.</span>
@@ -66,9 +65,13 @@ export default function Characters() {
               )}
             </div>
           </div>
-          <div style={{ marginTop: 8 }}><AutoShare char={c} /></div>
+          {/* auto-share lives on the Sharing page — one place, not three */}
+          <p className="fineprint">
+            Automatic sharing for this character is set on the{' '}
+            <Link to="/groups">Sharing</Link> page.
+          </p>
         </div>
       ))}
-    </>
+    </div>
   )
 }

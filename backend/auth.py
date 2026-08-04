@@ -146,16 +146,20 @@ def delete_session(conn, token: str | None) -> None:
 # ---- device tokens (per character+device; ingest scope) ----
 
 def mint_device_token(conn, user_id: int, label: str | None) -> tuple[int, str]:
-    """Create a token for one device on one ACCOUNT. Returns (row id, plaintext)
-    — the plaintext is shown once and never stored. Scope is ingest, and only
-    ingest: see `routers/ingest_api.py`.
+    """Create an ingest token for an ACCOUNT. Returns (row id, plaintext).
+
+    The plaintext is stored (v15) so the Import page can show it again, the way
+    Sonarr shows its API key — the scope is ingest and only ingest (see
+    `routers/ingest_api.py`), which is what makes that acceptable. Lookups
+    still go through the hash.
 
     Not bound to a character (v13): pairing happens before anyone knows which
     alt they'll play, and the log itself says who it belongs to."""
     token = secrets.token_urlsafe(32)
     row_id = conn.execute(
-        "INSERT INTO device_tokens (user_id, token_hash, label, created_ts) VALUES (?,?,?,?)",
-        (user_id, _sha(token), label, int(time.time()))).lastrowid
+        "INSERT INTO device_tokens (user_id, token_hash, token_plain, label, created_ts) "
+        "VALUES (?,?,?,?,?)",
+        (user_id, _sha(token), token, label, int(time.time()))).lastrowid
     return row_id, token
 
 

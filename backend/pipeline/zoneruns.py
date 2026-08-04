@@ -36,6 +36,7 @@ import time
 
 import groups
 import memo
+from db import json_dumps
 
 # Split a same-zone encounter stream when combat pauses this long. Observed
 # real idle gaps (zoned-out overnight etc.) are >= 70 min; real raid breaks
@@ -138,7 +139,11 @@ def roster_min_fights(fight_count: int) -> int:
     return max(MIN_ROSTER_FIGHTS, math.ceil(fight_count * ROSTER_PRESENCE))
 
 
-def _raider_count(conn: sqlite3.Connection, enc_ids: list[int]) -> int | None:
+def _roster(conn: sqlite3.Connection, enc_ids: list[int]) -> list[str] | None:
+    """The names, sorted. `raider_count` is its length; the names themselves are
+    stored (`zone_runs.roster_json`) because who was in a night is what tells
+    two people's uploads of the SAME night apart from two different nights —
+    see `backend/raidmatch.py`."""
     if not enc_ids:
         return None
     ph = ",".join("?" * len(enc_ids))
@@ -150,7 +155,7 @@ def _raider_count(conn: sqlite3.Connection, enc_ids: list[int]) -> int | None:
         f"AND en.name <> ? AND ({_CONTRIBUTED}) "
         f"GROUP BY en.name", (*enc_ids, POOLED_UNKNOWN)).fetchall()
     need = roster_min_fights(len(enc_ids))
-    return sum(1 for r in rows if r["fights"] >= need)
+    return sorted(r["name"] for r in rows if r["fights"] >= need)
 
 
 def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
@@ -191,6 +196,7 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
              if ex["id"] not in consumed and ex["zone"] == zone
              and start <= ex["ended_ts"] and end >= ex["started_ts"]), None)
         enc_ids = [e["id"] for e in members]
+        roster = _roster(conn, enc_ids)
         fields = (
             zone, start, end, len(members),
             sum(1 for e in members if e["is_named"]),
@@ -200,19 +206,21 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
             # finally be recorded as success=0
             sum(1 for e in members if e["is_named"] and e["success"] == 1),
             sum(e["duration_s"] for e in members),
-            _raider_count(conn, enc_ids), now)
+            len(roster) if roster is not None else None,
+            json_dumps(roster) if roster is not None else None, now)
         if match is not None:
             consumed.add(match["id"])
             run_id = match["id"]
             conn.execute(
                 "UPDATE zone_runs SET zone=?, started_ts=?, ended_ts=?, "
                 "encounter_count=?, named_count=?, success_count=?, combat_s=?, "
-                "raider_count=?, updated_ts=? WHERE id=?", fields + (run_id,))
+                "raider_count=?, roster_json=?, updated_ts=? WHERE id=?",
+                fields + (run_id,))
         else:
             run_id = conn.execute(
                 "INSERT INTO zone_runs (character_id, zone, started_ts, ended_ts, "
                 "encounter_count, named_count, success_count, combat_s, raider_count, "
-                "updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "roster_json, updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (character_id,) + fields).lastrowid
         for eid in enc_ids:
             run_id_of_enc[eid] = run_id

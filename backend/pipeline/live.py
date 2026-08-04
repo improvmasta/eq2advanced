@@ -22,7 +22,7 @@ from db import RAW_DIR, get_db, json_dumps
 from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
-                                 segment_events)
+                                 segment_events, split_trailing_corpse)
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
                                 actor_rows, roll_encounter)
@@ -221,6 +221,14 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     flushed = [events[i] for i in flush_idx]
     resolved = _resolve_events(flushed, res)
     pos = {orig: k for k, orig in enumerate(flush_idx)}
+
+    # a closed segment can still be carrying a dead mob's last ticks; only
+    # closed ones, since the open segment may yet grow (pipeline.encounters)
+    closed = [
+        piece for seg in closed
+        for piece in split_trailing_corpse(
+            seg, [resolved[pos[i]] for i in seg.event_indices])
+    ]
 
     # encounters are inserted AFTER resolution: naming them after the enemy
     # fought needs to know which target is a mob (pipeline.encounters)

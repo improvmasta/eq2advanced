@@ -57,7 +57,7 @@ export default function Login({ onAuthed }) {
     : mode === 'register' ? 'Create account' : 'Reset password'
 
   return (
-    <div className="card authcard">
+    <div className="card authcard manage">
       <h1>{title}</h1>
       {mode !== 'login' && (
         <p className="note" style={{ marginTop: 4 }}>

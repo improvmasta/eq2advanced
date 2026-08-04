@@ -733,6 +733,172 @@ otherwise re-uploading the same log would come back with every deleted fight
 still hidden and nothing on screen to explain why. Home surfaces this as: all
 fights deleted -> "this log has nothing left in it, delete it too?"
 
+## The raid list as a list (phase 21 — 2026-08-04)
+
+Frontend, plus two fields on `GET /api/zone-runs`. The list had grown a header
+full of unrelated controls and answered questions nobody asks.
+
+- **`raid_dps`**: total player damage over the run's `combat_s`, computed in
+  the same grouped query that builds the sparkline (`_spark` returns both).
+  It replaces "Peak DPS", which ranked nights by their single best pull.
+  **Named is gone from the UI** — `named_count` is still written, but the
+  count is not trusted enough to print, so the column, the day heading and the
+  selection totals no longer show it.
+- **`shared_via`** (`groups.shared_via_for_runs`): the VIEWER's mirror of
+  `shares_for_runs` — which of *your* groups reach somebody else's raid, by
+  the same three-way rule (run share, or a standing auto-share inside its
+  `since_ts` window with no `hide`). Both carry `group_id`, because the list
+  filters by group and a name is not a handle. A viewer still learns nothing
+  about who ELSE can see a raid: `shared_with` stays owner-only.
+- **Filtering is by group**, from the toolbar select or by clicking a group's
+  pill in the Shared column; `Manage <group>` appears beside it when your role
+  in that group is owner or admin and deep-links `/groups?g=<id>`.
+- **Grouping follows the sort**: `SortableTable groupBy` now takes an ARRAY of
+  defs and draws whichever one matches the active sort column — nights under a
+  date sort, zones under a zone sort, nothing otherwise.
+- **Selection lives on the toolbar line** (sticky, `.listtools`), not in a
+  card above the table and not in a bar pinned to the bottom. A selection with
+  nothing you own says "shared with you — read only" rather than showing an
+  empty row of buttons.
+- **Two comparisons**: `RaidCompare` (list-row numbers, opens beside the table
+  in `.cmpcol`, and the list drops Timeline/Combat/Raiders to make room) and
+  `RaidParseCompare` — a modal that pulls `/encounters/agg` per raid with a
+  per-column fight picker, so the same named boss on two different nights can
+  be read raider by raider. Rows match BY NAME across raids (entity ids are
+  session-scoped); the raid row sums its raiders, for rates as well as totals,
+  because every raider's rate is measured over the same fight clock.
+- The **Live pill** in the topnav is the parse-state light (streaming /
+  parsing / idle); the Home page no longer prints "Parsing…" under its title.
+- **The filters are two questions.** SIZE — `Raids` and `Group` as independent
+  toggles that partition the list, so a third "All" button was a synonym for
+  both on. And SOURCE — `components/SourceFilter.jsx`, one menu of ticks in
+  three sections (your characters, groups, published), OR'd, empty meaning
+  everything you can see. Keys are `char:<id>` / `group:<id>` / `public`; the
+  page always fetches `scope=all` and narrows in the browser, so flipping a
+  tick never refetches.
+  Three earlier attempts were worse and are worth not repeating. (1) All /
+  Mine / Shared-with-me chips — Mine was a filter that never filtered, since
+  your own raids are always listed. (2) A Shared-with-me switch beside a group
+  filter: two controls on ONE axis, and the switch silently changed what a
+  group pill MEANT, because a group says "I sent it here" on your own raid and
+  "it reached me through here" on somebody else's. (3) The same sources as a
+  row of always-visible pills — honest, but a toolbar of proper nouns competing
+  with the mode chips beside them. A menu keeps one meaning per row, states the
+  current answer on its button, and costs a click nobody makes often.
+
+## Auto-share carries raids only (phase 22 — 2026-08-04, schema v16)
+
+`character_shares.raids_only`. "Share my raids with the guild" is not a request
+to broadcast every six-man zone, and the two readings cost differently: opting
+in is one tick, noticing you have been leaking is luck. New shares are written
+with `raids_only = 1`; the migration gives EXISTING rows 0 — their pre-v16
+meaning — because a migration must never revoke access somebody already has.
+
+The read-time rule is one definition, `groups.AUTO_SHARE_REACHES` (since_ts
+window AND size AND no `hide`), interpolated into all four query sites:
+`PERSONAL_RUN_IDS`, `shares_for_runs`, `shared_via_for_runs`, and
+`set_run_shares`' `auto` set. That last one is the trap: a share that does NOT
+reach a run must be unticked with a plain delete and never a `hide`, or the row
+lingers and blocks a later opt-in. `RAID_MIN_RAIDERS = 7` now lives in
+`groups.py` — the same line the raid list draws in the UI.
+
+`PUT /characters/{id}/shares` takes `group_content` in its `shares` form; the
+bare `group_ids` form keeps its pre-v16 meaning (everything, past included), so
+it stays a true legacy shim. Pinned by
+`test_auto_share_carries_raids_only_by_default`, which uploads a real eight-man
+roster and a solo zone in one log and checks that exactly one of them arrives.
+
+## Deleting a group is a soft delete (phase 23 — 2026-08-04, schema v17)
+
+`groups.deleted_ts`. Nothing is erased: members, invites, the join code, the
+auto-shares and the run shares all stay exactly where they were, and an admin
+restores the group with one row update (`groups.restore_group`,
+`GET /admin/groups` + `POST /admin/groups/{id}/restore`). A group is a roster
+somebody spent time building, "delete group" sits one click under the member
+list, and the only support answer worth having is putting it back as it was.
+
+That makes "deleted" a READ-TIME condition like every other rule in
+`groups.py`, and it has to be said in every branch — a group whose rows are all
+still present would otherwise go on sharing raids after it was deleted. The
+guard is written once as `groups.LIVE_GROUP(col)` and spliced into
+`AUTO_SHARE_REACHES` (which covers all four auto-share sites at a stroke), the
+`run_shares` branch of `PERSONAL_RUN_IDS`, `shares_for_runs`,
+`shared_via_for_runs`, and — because membership rows survive a delete —
+`is_member` / `member_role` / `my_groups` / `group_by_code`. Miss one and a
+deleted group keeps leaking; the test deletes a group carrying a shared raid
+and checks the member 404s on it, then restores and checks they get it back.
+
+The join code stays on the deleted row on purpose: it can't be joined
+(`group_by_code` filters), it stays reserved by the UNIQUE index so it is never
+handed to a second group, and a restore is therefore exact.
+
+`DELETE /groups/{id}` now requires `?confirm=<name>` matching the group's name
+byte for byte, case included — enforced server-side, not just in the browser.
+The delete revokes everyone else's access to every raid that reached them
+through the group, so the confirmation is an act of typing rather than an OK
+button that muscle memory clears.
+
+`POST /admin/users/{id}/username` renames an account. Nothing stores a username
+except `users` — characters, raids, groups and shares all point at the user id
+— so it is a relabel and the account stays signed in. Same rules as sign-up
+(`auth.USERNAME_RE`, lower case), because login, invites and password reset all
+look an account up by exactly that string.
+
+## The same raid, uploaded by several people (phase 24 — 2026-08-04, schema v18)
+
+Everyone in a raid runs their own ACT. Share a night with a guild group and it
+arrives four times over, and the list called that four raids. Within ONE
+character's uploads the copies already collapse by content (`_dedupe`, above),
+but two people's logs are not the same bytes — different subjects, different
+vantage points, different fights heard — so both parses are real and neither is
+a copy. Nothing here merges or deletes anything. It answers two questions:
+which rows are the same night, and which one to open first.
+
+`backend/raidmatch.py` decides the first, at READ time over the runs a viewer
+can already see. Materialising it would be a fact about somebody else's
+account, and it would go stale the moment a share was revoked.
+
+- **zone** — equal, NULL-safe. An "Unknown zone" run (the log began mid-zone)
+  can still match, but only on the roster; the place is what it cannot state.
+- **time** — the windows overlap, ± `CLOCK_SKEW_S` (120s). The epoch prefix is
+  authoritative and comes off the raider's own machine, so two clocks in one
+  raid agree to within seconds; the slack is not a fuzzy-match knob.
+- **roster** — enough of the same people. This is the rule that says NO: two
+  guilds in the same instance zone at the same hour pass the first two and
+  share nobody. `ROSTER_AGREEMENT` (0.34 of the smaller roster, minimum 2
+  names) sits well under a real pair (they run ~1.0) and well over the overlap
+  a passing group leaves behind.
+
+That needed the roster itself, not its size, so **schema v18 adds
+`zone_runs.roster_json`** — `_raider_count` became `_roster` and
+`raider_count` is now its length. Existing rows stay NULL until the startup
+relink sweep rewrites them, which it does on every boot; a missing roster costs
+the match its cross-check, never a wrong merge (a named zone plus an
+overlapping window still stands, an unknown zone does not).
+
+**Precedence is two decisions, in two places, on purpose.**
+
+- `GET /api/zone-runs` stamps `raid_key` (the cluster's lowest run id — a
+  handle, meaningless outside the payload), `parses`, and `primary`: the site's
+  pick, viewer-independent, so two people discussing a raid are reading the
+  same numbers. `_score` is coverage — fights, then combat time, then roster
+  size, tie-broken toward the first upload. Someone who zoned in for the last
+  two pulls has a real parse of two pulls, and a stranger should not land on it.
+- **Your own parse wins**, and that is the browser's to apply (`Home.jsx`
+  `chooseParse`), because it depends on who is looking and the payload is
+  shared. Your numbers are the ones you can check against what you remember,
+  and yours is the one that survives the sharer leaving the group.
+
+The list draws one row per raid with a `Parse` select naming the uploaders
+(`character_name`, fight count, "(yours)"); the raid page carries the same
+control in its head and switching NAVIGATES, because the fights and the vantage
+point are all theirs. `GET /api/zone-runs/{id}` serves `alternates` for it,
+filtered through `VISIBLE_RUN_IDS` — the switch re-sorts raids the viewer was
+always allowed to open, it is not a directory of who else parsed the night.
+
+Clustering happens AFTER the source/size filters, so narrowing to one group
+narrows the menu with it rather than offering parses that are no longer listed.
+
 ## Reading the raid, not just counting it (2026-08-03)
 
 The tables were complete but flat: every number was a per-fight total, nobody
@@ -980,6 +1146,80 @@ Still open, in residual-size order:
   trimming. Trailing-event trimming was tried and REGRESSED cures/EncHPS —
   ACT keeps idle-window heals/power in the encounter; don't re-add it.
 - Emericant's ±6,307: ACT files manastone/potion self-power as PowerDrain.
+
+### The corpse tail (2026-08-04, PARSE_VERSION 14)
+
+`pipeline/encounters.split_trailing_corpse` — a mob's DoT keeps ticking for a
+few seconds after it dies, and the silence rule counted those ticks as combat.
+On Lindsay's Freeport pull ACT read 28s and we read 32s: same 28,634 damage,
+EncDPS 894.8 against ACT's 1,022.64, plus 32 damage on the mob's row ACT never
+counted. ACT ends the fight at the kill and opens a new encounter for the tick
+(its tree showed the 28s pull, then a `[00:00]` stub 4s later). We now do the
+same, and the replayed pull reproduces every number on that screenshot exactly.
+
+**The rule is a SUFFIX operation and that is the whole design.** Walk back from
+the end of a gap-cut segment over events that are only a dead mob still
+ticking; the clock stops at the last real beat (an ally acting, a kill, or a
+live mob swinging), and if the tail carries damage it becomes its own segment.
+It cannot cut a chain pull in half. Everything else was measured against ACT's
+Emerald Halls zone view (61 encounters, 4392s) and rejected:
+
+| rule | encounters | clock |
+| --- | --- | --- |
+| ACT | 61 | 4392s |
+| `>=7s` silence alone (before) | 60 | 4421s |
+| cut whenever every engaged mob is dead | 132 | 4453s |
+| cut at `You stop fighting.` | 149 | 4433s |
+| both of those together | 120 | 4462s |
+| cut at a kill the logger stopped fighting on | 83 | 4392s |
+| **the corpse tail (shipped)** | **61** | **4419s** |
+
+`You stop fighting.` is in the log and it is NOT the boundary ACT uses: cutting
+on it fragments a raid, because the logger drops combat constantly while 24
+other people keep swinging. A shorter silence threshold matches the count (6s
+gives 61) but not the clock, and would not have fixed the Freeport pull at all
+— that gap was 4s.
+
+**Confirmed against ACT's own source** (`/home/lindsay/tmp/ACT_English_Parser.cs`,
+the EQ2 parser plugin): the kill handler's `EndCombat(true)` is COMMENTED OUT,
+and the string "fighting" does not appear anywhere in the file. ACT never ends
+an encounter on a kill or on the combat-state line — boundaries come from
+`ActGlobals.oFormActMain.SetEncounter(time, attacker, victim)`, i.e. ACT core's
+idle timeout. So this is a behavioural match, not ACT's mechanism.
+
+**What ACT's exports then showed** (`Import/Export` -> XML, kept in
+`/home/lindsay/tmp/act-export*.xml`) is that the clock and the membership are
+DIFFERENT questions. An encounter holds everything the timeout keeps together,
+but its duration runs only to the GROUP's last action:
+
+- `a knotted guardian`, the interrupted Emerald Halls wipe: ACT reads 40s while
+  the mobs go on hitting bodies for 3 more seconds. Their damage is still in
+  ACT's totals — only the clock stops. We now read 40s too.
+- `Malkonis D'Morte`, a 411s raid kill: ACT ends on the killing blow at
+  21:23:33, not on the heals still landing at 21:23:39. Same as ours.
+- The Freeport pull: ACT ends on the kill, and the corpse tick 4s later is a
+  separate `[00:00]` encounter titled after the mob.
+
+So `last` is the last ALLY action (ally damage/avoid, or a mob kill); mob
+damage never extends the clock, and heals never did. A corpse tick opens a new
+segment; a LIVE mob's swing does not (on a wipe the tail rides along).
+
+Diffed against ACT's exports, per combatant: the Malkonis kill is 27 of 30
+damage numbers exact with cures exact, and the knotted guardian wipe is 24 of
+26 exact with cures and deaths exact.
+
+Still open, with evidence:
+- **ACT starts an encounter ~3s before we do** when the pull opens with THREAT
+  (Sorengail's 117,800 taunt at 21:16:42 opened ACT's Malkonis encounter; our
+  first damage is at 21:16:45). Adding `threat` as a segment anchor was tried
+  and moved Emerald Halls the wrong way (clock 4415 -> 4419s against ACT's
+  4392), so it needs its own investigation, not a one-line change.
+- **The boss's own Damage column is ~10% light** (Malkonis 1,102,897 rolled vs
+  1,234,182 in our own events, ACT 1,234,857) — a `statsroll` question, not a
+  segmentation one.
+- **Deaths**: ACT counts a mob's death on the mob's row (Malkonis 1, a
+  bloodgorger 2; we report 0), and does NOT roll another player's pet death
+  into its owner (we gave Bobby/Beaux/Aros a death each for pets).
 
 ## Rezzes, revives, intercepts and the adjusted delay (2026-08-03, schema v10)
 

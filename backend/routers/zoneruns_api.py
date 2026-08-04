@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 import groups as groupsmod
 import memo
+import raidmatch
 from db import get_db, row_to_dict, rows_to_dicts
 from groups import PERSONAL_RUN_IDS, SHARED_RUN_IDS, VISIBLE_RUN_IDS
 from pipeline.zoneruns import encounter_fp, rebuild_zone_runs
@@ -18,15 +19,16 @@ from security import (optional_user, owned_zone_run, require_admin, require_user
 router = APIRouter(tags=["zone-runs"])
 
 
-def _spark(conn, run_ids: list[int]) -> dict[int, list[int]]:
-    """Raid DPS per fight, in fight order, for the home page's sparklines. One
-    grouped query for every listed run — the shape of a night is cheap enough
-    to ship with the list, and it is decoration next to numbers that are also
-    written out."""
+def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, int]]:
+    """Raid DPS per fight, in fight order, for the home page's sparklines —
+    plus each run's total player damage, which over `combat_s` is the raid-wide
+    DPS the list prints. One grouped query for every listed run — the shape of
+    a night is cheap enough to ship with the list."""
     if not run_ids:
-        return {}
+        return {}, {}
     ph = ",".join("?" * len(run_ids))
     out: dict[int, list[int]] = {}
+    dmg: dict[int, int] = {}
     for r in conn.execute(
             "SELECT e.zone_run_id AS run_id, e.duration_s, "
             "COALESCE(SUM(CASE WHEN en.kind='player' THEN a.damage END), 0) AS dmg "
@@ -37,7 +39,8 @@ def _spark(conn, run_ids: list[int]) -> dict[int, list[int]]:
             "GROUP BY e.id ORDER BY e.started_ts", run_ids):
         out.setdefault(r["run_id"], []).append(
             round(r["dmg"] / max(r["duration_s"], 1)))
-    return out
+        dmg[r["run_id"]] = dmg.get(r["run_id"], 0) + r["dmg"]
+    return out, dmg
 
 
 @router.get("/zone-runs")
@@ -62,10 +65,13 @@ def list_zone_runs(scope: str = "all", user=Depends(optional_user)):
         f"{where} ORDER BY z.started_ts DESC", {"uid": uid}).fetchall()
     runs = rows_to_dicts(rows)
     run_ids = [r["id"] for r in runs]
-    spark = _spark(conn, run_ids)
+    spark, run_dmg = _spark(conn, run_ids)
     mine_ids = {r["id"] for r in runs if r["owner_id"] == uid} if uid else set()
     joined = _merged_runs(conn, {r["character_id"] for r in runs if r["id"] in mine_ids})
     shares = groupsmod.shares_for_runs(conn, sorted(mine_ids))
+    # the other direction: which of MY groups bring me the runs that are not mine
+    via = groupsmod.shared_via_for_runs(
+        conn, uid, sorted(set(run_ids) - mine_ids)) if uid else {}
     public = {r["zone_run_id"] for r in conn.execute(
         "SELECT zone_run_id FROM public_runs")}
     # runs reaching you through a group or your own account, ignoring publishing:
@@ -74,15 +80,24 @@ def list_zone_runs(scope: str = "all", user=Depends(optional_user)):
     personal = {r["id"] for r in conn.execute(PERSONAL_RUN_IDS, {"uid": uid})} if uid else set()
     for r in runs:
         r["spark"] = spark.get(r["id"], [])
+        r["raid_dps"] = round(run_dmg.get(r["id"], 0) / max(r["combat_s"] or 0, 1))
         r["mine"] = r["id"] in mine_ids
         r["public"] = r["id"] in public
         r["via_public"] = r["id"] in public and r["id"] not in personal
         # sharing state is the owner's business; a viewer is told nothing about
-        # who else can see it
+        # who else can see it — only which of their OWN groups brought it here
         r["shared_with"] = shares.get(r["id"], []) if r["mine"] else []
+        r["shared_via"] = [] if r["mine"] else via.get(r["id"], [])
         # "this run only looks like one visit because you merged it" — the list
         # offers Unmerge exactly here
         r["merged"] = r["id"] in joined
+    # Several people uploading one night is several runs, and a list that prints
+    # them as five raids is wrong about the evening. `raid_key` groups them and
+    # `primary` is the site's pick; whose parse a VIEWER opens is the browser's
+    # decision, because your own always wins and the payload is shared.
+    raidmatch.annotate(runs)
+    for r in runs:
+        r.pop("roster_json", None)
     return {"zone_runs": runs, "scope": scope, "signed_in": user is not None}
 
 
@@ -134,6 +149,11 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
         "SELECT 1 FROM public_runs WHERE zone_run_id=?", (run_id,)).fetchone() is not None
     payload["shared_with"] = (
         groupsmod.shares_for_runs(conn, [run_id]).get(run_id, []) if mine else [])
+    payload.pop("roster_json", None)
+    # Somebody else parsed the same night: the page says so and offers the
+    # switch, rather than leaving a link somewhere else as the only way across.
+    payload["alternates"] = raidmatch.alternates(
+        conn, VISIBLE_RUN_IDS, user["id"] if user else None, run)
     return {"zone_run": payload,
             "encounters": rows_to_dicts(_run_encounters(conn, run))}
 
@@ -174,9 +194,15 @@ def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_
     mine = {g["id"] for g in groupsmod.my_groups(conn, user["id"])}
     if wanted - mine:
         raise HTTPException(404, "no such group")
+    # the guards must match the read-time predicate exactly (one definition,
+    # `groups.AUTO_SHARE_REACHES`): a share that doesn't reach this run — too
+    # old for its since_ts, or group content under a raids-only share — must be
+    # unticked with a plain delete and no `hide`, or the row lingers and blocks
+    # a later opt-in
     auto = {r["group_id"] for r in conn.execute(
         "SELECT cs.group_id FROM character_shares cs JOIN zone_runs z "
-        "ON z.character_id = cs.character_id WHERE z.id=?", (run_id,))}
+        f"ON z.character_id = cs.character_id WHERE z.id=? "
+        f"AND {groupsmod.AUTO_SHARE_REACHES}", (run_id,))}
     now = int(time.time())
     with conn:
         # only my own groups are rewritten: a run can also carry shares to groups

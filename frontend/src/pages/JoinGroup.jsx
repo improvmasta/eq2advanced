@@ -37,7 +37,7 @@ export default function JoinGroup({ user, onAuthed }) {
 
   if (error) {
     return (
-      <div className="card authcard">
+      <div className="card authcard manage">
         <h1>Invitation</h1>
         <p className="err">{error}</p>
         <p className="muted">
@@ -51,7 +51,7 @@ export default function JoinGroup({ user, onAuthed }) {
 
   if (group.member) {
     return (
-      <div className="card authcard">
+      <div className="card authcard manage">
         <h1>{group.name}</h1>
         <p>You're already in this group.</p>
         <Link className="btnlink" to="/groups">Go to Sharing</Link>
@@ -61,7 +61,7 @@ export default function JoinGroup({ user, onAuthed }) {
 
   if (user) {
     return (
-      <div className="card authcard">
+      <div className="card authcard manage">
         <h1>{group.name}</h1>
         <p className="muted">{busy ? 'Joining…' : 'Joining you now…'}</p>
       </div>
@@ -70,7 +70,7 @@ export default function JoinGroup({ user, onAuthed }) {
 
   return (
     <>
-      <div className="card authcard" style={{ marginBottom: 0 }}>
+      <div className="card authcard manage" style={{ marginBottom: 0 }}>
         <h1>You're invited to {group.name}</h1>
         <p className="note" style={{ marginTop: 4 }}>
           {group.description || `${group.member_count} member${group.member_count === 1 ? '' : 's'}`}

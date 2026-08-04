@@ -29,28 +29,34 @@ function NeedsAccount({ user, children }) {
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
-  const [streaming, setStreaming] = useState(false)
+  const [live, setLive] = useState(null) // null | 'idle' | 'parsing' | 'on'
   const location = useLocation()
 
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
   }, [])
 
-  /* Live is only a place when something is streaming to it — the link appears
-     while an uploader is sending and goes away when it stops. */
+  /* The on-air light. 'on' while the plugin is streaming, '(parsing)' while
+     any import is still chewing, '(idle)' once you have ever streamed —
+     null (no pill) if the plugin has never been here. Polls faster while
+     something is actually happening. */
   useEffect(() => {
-    if (!user) { setStreaming(false); return undefined }
+    if (!user) { setLive(null); return undefined }
     let dead = false
     const check = () => api.sessions()
       .then((d) => {
-        if (!dead) setStreaming(d.sessions.some(
-          (s) => s.source === 'live' && s.status === 'receiving'))
+        if (dead) return
+        const s = d.sessions
+        setLive(
+          s.some((x) => x.source === 'live' && x.status === 'receiving') ? 'on'
+            : s.some((x) => x.status === 'parsing' || x.status === 'receiving') ? 'parsing'
+              : s.some((x) => x.source === 'live') ? 'idle' : null)
       })
       .catch(() => {})
     check()
-    const t = setInterval(check, 30_000)
+    const t = setInterval(check, live === 'on' || live === 'parsing' ? 5_000 : 30_000)
     return () => { dead = true; clearInterval(t) }
-  }, [user])
+  }, [user, live])
 
   return (
     <>
@@ -59,13 +65,23 @@ export default function App() {
         <nav>
           <NavLink to="/">Raid Parses</NavLink>
           {user && <>
-            {streaming && <NavLink to="/live">Live</NavLink>}
             <NavLink to="/groups">Sharing</NavLink>
             <NavLink to="/import">Import</NavLink>
             {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
             <NavLink to="/account">Account</NavLink>
           </>}
           {user === null && <NavLink to="/login">Sign in</NavLink>}
+          {/* the on-air light: sits apart from the tabs because it is a state,
+              not a place you were going anyway */}
+          {user && live && (
+            <NavLink to="/live" className={`livepill ${live}`}
+                     title={live === 'on' ? 'Streaming from ACT right now'
+                       : live === 'parsing' ? 'A log is being parsed'
+                         : 'Plugin connected, nothing streaming'}>
+              <i className="dot" />
+              Live{live === 'on' ? '' : ` (${live})`}
+            </NavLink>
+          )}
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
           {/* Said up front, on every page, because it is the question anyone

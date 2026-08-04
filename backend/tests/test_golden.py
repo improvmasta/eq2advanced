@@ -162,6 +162,37 @@ def test_act_parity_zylphax(parsed):
     assert damage("Thinkbigsti") == 18_559
 
 
+def test_corpse_tail_barely_touches_a_raid_night(parsed):
+    """`split_trailing_corpse` runs in the write path, so the parity numbers
+    above are only honest if it stays out of the way here — and it does: 28
+    segments in, 28 out, no splits, and one fight re-timed by 3s (mobs still
+    hitting bodies after the group stopped, the shape ACT's knotted guardian
+    export reads as 40s against our 43s)."""
+    import sqlite3 as _sqlite3
+
+    from db import SCHEMA
+    from pipeline.encounters import split_trailing_corpse
+    from pipeline.ingest_writer import EntityResolver, _resolve_events
+
+    events, segments = parsed
+    conn = _sqlite3.connect(":memory:")
+    conn.row_factory = _sqlite3.Row
+    conn.executescript(SCHEMA)
+    conn.execute("INSERT INTO characters (id, user_id, name, world_id) VALUES (1, 1, 'Bobby', 618)")
+    conn.execute(
+        "INSERT INTO sessions (id, character_id, source, status, created_ts) "
+        "VALUES (1, 1, 'upload', 'ready', 0)")
+    res = EntityResolver(conn, 1, "Bobby")
+    resolved = _resolve_events(events, res)
+
+    pieces = [p for seg in segments
+              for p in split_trailing_corpse(seg, [resolved[i] for i in seg.event_indices])]
+    assert len(pieces) == len(segments)                       # nothing split
+    assert [p.start_ts for p in pieces] == [s.start_ts for s in segments]
+    trimmed = [(s.end_ts - p.end_ts) for p, s in zip(pieces, segments) if p.end_ts != s.end_ts]
+    assert trimmed == [3]
+
+
 def test_stats_v2_drilldown_golden(parsed):
     """Stats-engine v2 invariants on the Zylphax fight: the Unknown pool
     (sourceless `hit by <Effect>` lines), mob actor rows with damage taken,

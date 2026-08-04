@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import ActorPanel from '../components/ActorPanel.jsx'
 import AoePanel from '../components/AoePanel.jsx'
 import ComparePanel from '../components/ComparePanel.jsx'
@@ -485,6 +485,7 @@ function CoachFit({ fit }) {
 
 export default function ZoneRun({ user }) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [sharing, setSharing] = useState(false)
   const [run, setRun] = useState(null)
   const [encounters, setEncounters] = useState(null)
@@ -1168,7 +1169,7 @@ export default function ZoneRun({ user }) {
       />
       <div className={`wsmain ${stale && detail ? 'stale' : ''}`}>
         {sharing && (
-          <ShareDialog runId={id} isAdmin={user?.role === 'admin'}
+          <ShareDialog runIds={[id]} isAdmin={user?.role === 'admin'}
                        onClose={() => setSharing(false)}
                        onChanged={() => api.zoneRun(id).then((d) => setRun(d.zone_run)).catch(() => {})} />
         )}
@@ -1191,6 +1192,30 @@ export default function ZoneRun({ user }) {
               <span key={g.group_id} className="badge">{g.name}</span>
             ))}
           </span>
+          {/* Everyone in a raid runs their own ACT, so the same night can be
+              here several times over. The page opens on yours if you have one
+              and on the site's pick otherwise (backend `raidmatch`); this is
+              how you read somebody else's — the fights, the numbers and the
+              vantage point are all theirs, so it is a different page, not a
+              filter on this one. */}
+          {run.alternates?.length > 0 && (
+            <span className="parsepick" title="The same raid, parsed by someone else">
+              <select
+                value={id}
+                aria-label="Whose parse of this raid to show"
+                onChange={(ev) => navigate(`/zones/${ev.target.value}`)}
+              >
+                <option value={id}>
+                  {run.character_name}{run.mine ? ' (yours)' : ''} — {run.encounter_count} fights
+                </option>
+                {run.alternates.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.character_name}{a.mine ? ' (yours)' : ''} — {a.encounter_count} fights
+                  </option>
+                ))}
+              </select>
+            </span>
+          )}
           {run.mine && user && (
             <button className="chip" style={{ marginLeft: 8 }} onClick={() => setSharing(true)}>
               Share

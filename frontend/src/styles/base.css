@@ -50,6 +50,27 @@ p + p { margin-top: 8px; }
 .topnav nav { display: flex; gap: 16px; font-size: var(--fs-xs); font-family: var(--font-data); }
 .topnav nav a.active { color: var(--gold-bright); }
 
+/* The on-air light. A pill set off from the tabs: red while ACT is streaming,
+   gold while a log is parsing, muted when the plugin is connected but idle. */
+.topnav .livepill {
+  display: inline-flex; align-items: center; gap: 6px; align-self: center;
+  margin-left: 6px; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-muted);
+}
+.topnav .livepill .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+}
+.topnav .livepill.on {
+  color: var(--danger); border-color: var(--danger);
+  background: rgba(248, 113, 113, 0.1);
+}
+.topnav .livepill.on .dot { animation: livepulse 1.6s ease-in-out infinite; }
+.topnav .livepill.parsing { color: var(--gold-bright); border-color: var(--gold-dim); }
+@keyframes livepulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  .topnav .livepill.on .dot { animation: none; }
+}
+
 /* ---------- cards ---------- */
 
 .card {
@@ -137,6 +158,10 @@ table.data tr.clickable { cursor: pointer; }
 table.data tr.clickable:hover td { background: var(--row-hover); }
 table.data tr.selected td { background: var(--row-selected); }
 table.data th.l, table.data td.l { text-align: left; }
+/* centred: for columns whose cell is neither a figure nor a name — a time
+   range, a sparkline — where a right-justified header reads as a mistake */
+table.data th.c, table.data td.c { text-align: center; }
+table.data td.c > * { margin-inline: auto; }
 /* numbers carry the eye; names and prose stay in the reading font */
 table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
 
@@ -289,16 +314,20 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .mintrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .mintrow input { margin-right: 0; }
 .tokenpanel { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
-.minted {
-  background: var(--surface-raised); border: 1px solid var(--gold-dim);
-  border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px;
+/* the API key, presented the way Sonarr/Radarr present theirs: a persistent
+   masked field with Show / Copy / Refresh beside it */
+.apikey { margin-top: 12px; }
+.apikey .keyrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.apikey .k {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-muted);
 }
-.tokenvalue {
-  display: block; word-break: break-all; margin: 6px 0 8px;
-  font-family: var(--font-mono); color: var(--gold-bright); font-size: var(--fs-xs);
+.keyfield {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--gold-bright);
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 5px 10px;
+  min-width: 30ch; max-width: 100%; overflow-wrap: anywhere;
 }
-.qr { margin-top: 10px; }
-.qr img { border-radius: var(--radius-sm); background: #fff; padding: 5px; }
 
 /* ---------- character page ---------- */
 
@@ -630,15 +659,191 @@ tr.cmpsection td {
 
 /* Same table as the raid page's — one visual language for "rows of fights"
    and "rows of nights", so sorting works the way it already looks like it
-   should. The night cell stacks its two readings; everything else is one line. */
+   should. One step up from the data scale, though: this is the landing list,
+   read at arm's length, and 12.5px numbers under 15px zone names read as two
+   different pages. The night and time cells stack their two readings;
+   everything else is one line. */
+table.data.raidlist { font-size: var(--fs-base); }
 .raidlist .runday { display: flex; flex-direction: column; line-height: 1.35; }
 .raidlist .runday .d { color: var(--text); font-weight: 600; }
 .raidlist .runday .muted { font-size: var(--fs-label); }
 .raidlist .runzone {
   font-family: var(--font-body); font-weight: 600; color: var(--gold-bright);
+  font-size: 0.95rem;
 }
 .raidlist td { padding-top: 7px; padding-bottom: 7px; }
 .raidlist .spark { vertical-align: middle; }
+
+/* Whose parse of a shared night you are reading. It has to look like a control
+   — a raid several people uploaded is ONE row, and nothing else on it says
+   there is another version to open — so it keeps its border and its arrow
+   rather than sitting flat like the text around it. Used by the raid list and
+   by the raid page's head. */
+.parsepick select {
+  margin: 0; max-width: 240px; padding: 2px 6px;
+  font-size: var(--fs-label); color: var(--gold-bright);
+  border-color: var(--gold-dim);
+}
+.parsepick select:hover { background: rgba(var(--gold-rgb), 0.12); }
+.raidlist .parsepick select { max-width: 210px; }
+
+/* One control line for the whole list: filters on the left, and whatever the
+   current selection can do on the right. It sticks, so acting on a raid you
+   checked forty rows down never means scrolling back up — and it sits above
+   the sticky table header, which is the only other thing pinned here. */
+.listtools {
+  position: sticky; top: 0; z-index: 6;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 10px; padding: 8px 0;
+  /* translucent + blurred rather than a solid band: the page's glow sits
+     behind everything at the top of the viewport, which is exactly where this
+     parks, and a flat rectangle of --bg over it reads as a seam */
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(var(--blur));
+}
+/* One control language on the line: same type size, same height, same "on"
+   colour. Chips are 0.66rem elsewhere and the switch label is 13px, which put
+   three scales and two accent colours (chip-blue, switch-gold) on one row. */
+.listtools .chip {
+  font-size: var(--fs-data); line-height: 1.7; padding: 1px 9px;
+  cursor: pointer;
+}
+.listtools .chip.on {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.16);
+}
+.listtools .switch { font-size: var(--fs-data); }
+.listtools .muted { font-size: var(--fs-data); }
+/* the boundary between one question and the next — quieter than a gap alone */
+.listtools .vr { width: 1px; height: 15px; background: var(--border); }
+.listtools .seltools {
+  margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.listtools .seltools .sl { color: var(--gold-bright); font-weight: 600; }
+
+/* The list beside its comparison. Same idea as the workspace's drilldown: the
+   table gives up width rather than the page growing a sideways scrollbar. */
+.raidpage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.raidpage.withcmp { grid-template-columns: minmax(0, 1fr) minmax(240px, auto); }
+.raidpage > .card { margin-top: 0; }
+/* clears the sticky toolbar rather than sliding under it */
+.raidpage .cmpcol { top: 52px; max-height: calc(100vh - 64px); }
+@media (max-width: 1100px) {
+  .raidpage.withcmp { grid-template-columns: 1fr; }
+  .raidpage.withcmp .cmpcol { position: static; max-height: none; }
+}
+
+/* the raid head-to-head reuses the compare table language */
+.raidcmp { margin-top: 0; }
+/* A fixed label column, not a percentage: at four raids a third of the width
+   for the word "Duration" is width the numbers needed. */
+.raidcmp table.cmptable col.cmplabelcol { width: 88px; }
+.raidcmp td.lbl { white-space: normal; }
+/* Zone names are long and the column is not — wrap them instead of letting
+   "Mistmoore's Inner Sanctum" run under its neighbour. */
+.raidcmp .cmphead {
+  font-size: var(--fs-sm); text-align: left; white-space: normal;
+  line-height: 1.25; overflow-wrap: anywhere; display: block; width: 100%;
+}
+.raidcmp th { vertical-align: top; }
+.raidcmp th .cls { font-weight: 400; margin-top: 2px; font-size: var(--fs-label); }
+
+/* Leads the card: this is the button worth finding. */
+.cmpbar { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.cmpbar .cmpparse { padding: 4px 14px; font-size: var(--fs-sm); }
+.cmpbar .muted { font-family: var(--font-data); font-size: var(--fs-label); }
+
+/* Groups are pills — the same gold outline everywhere a group is named, and
+   clickable in the list because "show me only theirs" is the question you have
+   while looking at the name. `public` wears the same colour filled in: it is
+   the same kind of fact, one step louder, because it means anyone at all. */
+.badge.grouppill {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  cursor: pointer; font-family: var(--font-data);
+}
+/* The source filter: one button, one menu, sections inside it. Same bones as
+   the table's Columns menu — a quiet chip that opens a list of ticks — because
+   it is the same gesture over a different question. */
+.srcfilter { position: relative; display: inline-flex; }
+.srcfilter .caret { opacity: 0.6; margin-left: 2px; }
+.srcmenu {
+  left: 0; right: auto; min-width: 210px;
+  /* clear of the sticky toolbar it hangs from */
+  z-index: 8;
+}
+/* A section head, not a row: the three kinds of source are not interchangeable
+   and a flat list of ticks would say they were. */
+.srcsection {
+  display: flex; align-items: center; gap: 6px;
+  margin: 8px 0 3px; padding-top: 7px; border-top: 1px solid var(--row-line);
+  font-size: var(--fs-label); color: var(--gold); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.09em;
+}
+.colmenu-head + .srcsection { margin-top: 0; padding-top: 0; border-top: none; }
+.srcmenu .colmenu-row input { accent-color: var(--gold); cursor: pointer; }
+
+/* The way to the Sharing page, sitting with the header it belongs to. */
+.gearlink {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 19px; height: 19px; border-radius: 50%; margin-left: auto;
+  color: var(--text-muted); font-size: 0.8rem; line-height: 1;
+}
+.gearlink:hover { color: var(--gold-bright); background: rgba(var(--gold-rgb), 0.14); }
+.badge.clearpill { color: var(--text-muted); border-color: var(--border); }
+.badge.clearpill:hover { color: var(--danger); border-color: var(--danger); background: none; }
+.badge.grouppill:hover { background: rgba(var(--gold-rgb), 0.12); }
+/* On is INVERTED, not tinted: a filled pill reading dark-on-gold is legible as
+   "this one" from across the row, where a slightly brighter background of the
+   same colour needed a second pill beside it for comparison. `--gold` is light
+   in the dark theme and dark in the light one, and `--bg` is the opposite in
+   both, so the pair carries its contrast either way. */
+.badge.grouppill.on {
+  background: var(--gold); border-color: var(--gold);
+  color: var(--bg); font-weight: 600;
+}
+.badge.grouppill.on:hover { background: var(--gold-dim); border-color: var(--gold-dim); }
+.badge.public {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.16);
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: var(--fs-label);
+}
+
+/* ---------- modal ---------- */
+
+/* Used by the parse comparison, which is a whole table's worth of answer and
+   has nowhere to live in a list of nights. Click-away and Escape both close. */
+.modalwrap {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 36px 16px; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.55);
+}
+.modalcard { width: min(1120px, 100%); margin: 0; }
+.modalcard .tablewrap { max-height: calc(100vh - 260px); overflow-y: auto; }
+/* Two raids is the common case, and a full-width modal gave each of them a
+   440px column to print one number in. The card is sized to its columns
+   instead (--pccols, set by the component) and only grows to the cap once
+   there are enough raids to need it. */
+.modalcard.pccard {
+  width: min(1120px, 100%, calc(220px + var(--pccols, 2) * 200px));
+}
+
+/* Each column names its raid and carries the fight picker under it, so the
+   dropdown belongs to the column it changes rather than to a toolbar. */
+.parsecmp .pchead { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+.parsecmp .pchead .z {
+  font-family: var(--font-body); font-size: var(--fs-sm); color: var(--gold-bright);
+  text-transform: none; letter-spacing: 0;
+}
+.parsecmp .pchead .muted { font-size: var(--fs-label); text-transform: none; }
+.parsecmp .pchead select {
+  margin: 4px 0 0; width: 100%; min-width: 0; font-size: var(--fs-label);
+}
+.parsecmp col.cmplabelcol { width: 190px; }
+.parsecmp tr.parsetotal td { border-bottom: 1px solid var(--gold-dim); }
+.parsecmp tr.parsetotal td.lbl { color: var(--gold); font-weight: 600; }
+.parsecmp td.lbl { color: var(--text); font-family: var(--font-body); }
 
 /* A night, then the zones inside it. The heading is a band rather than a
    bolder row so it never reads as data you can sort or select. */
@@ -955,10 +1160,6 @@ tr.healrow .recapbar > i { background: var(--success); }
    the four things to press, not prose about them. */
 .steps { margin: 8px 0 6px; padding-left: 20px; }
 .steps li { margin: 3px 0; line-height: 1.5; }
-.pluginshare {
-  border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px;
-  display: flex; flex-direction: column; gap: 6px;
-}
 
 /* ---------- the log uploader ---------- */
 
@@ -992,18 +1193,150 @@ tr.healrow .recapbar > i { background: var(--success); }
 .queuelist li.q-sending .qstate { color: var(--gold); }
 .queuelist .qdetail { grid-column: 1 / -1; font-size: var(--fs-label); }
 
-/* pairing, inside the plugin box */
-.pairing { margin-top: 10px; }
-.pairing .minted {
-  background: var(--surface-raised); border: 1px solid var(--gold-dim);
-  border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px;
-}
+/* ---------- manage pages: readability scope ----------
 
-/* paired devices, under the pairing button */
-.devicelist { list-style: none; margin: 8px 0 0; padding: 0; }
-.devicelist li {
-  display: flex; gap: 10px; align-items: center; padding: 3px 0;
-  border-bottom: 1px solid var(--row-line);
+   The raid pages are dense data surfaces and keep the tight scale. The manage
+   pages (Import / Sharing / Account / Admin / Login) are READING surfaces: the
+   same components render one step larger and the muted ink one step stronger,
+   by overriding the tokens inside this scope instead of forking the classes.
+   On top of that, a real hierarchy: the thing a row is ABOUT — a group's name,
+   the join code, who is paired — reads bigger than the metadata around it. */
+.manage {
+  --fs-base: 14px;
+  --fs-data: 13px;
+  --fs-sm: 0.9rem;
+  --fs-xs: 0.84rem;
+  --fs-label: 0.72rem;
+  --fs-h2: 0.8rem;
+  --fs-h1: 1.35rem;
+  --text-muted: #99a0bd;
+  font-size: var(--fs-base);
+}
+:root[data-theme="light"] .manage { --text-muted: #4d5263; }
+.manage .note { max-width: 70ch; }
+
+/* the subject of each row/pane, one step above its surroundings */
+.manage .togglerow .gname { font-size: var(--fs-sm); }
+.manage .mdrow .n { font-size: 0.95rem; }
+.manage .panehead .cardtitle { font-size: 1.15rem; }
+.manage .autochar .who .cardtitle { font-size: 1.05rem; }
+.manage .joincode { font-size: 1.3rem; }
+.manage .pluginstatus { font-size: var(--fs-sm); }
+
+/* ---------- manage pages: one pattern for Sharing / Import / Account / Admin ----------
+
+   Every non-raid page is built from the same parts: a .pagehead, then .card
+   sections with an h2 label and a .note of explanation, lists as table.data
+   or quiet bordered rows, forms as .formcol. Nothing on these pages is a pill:
+   a group is a named row with a control. */
+
+/* a group (or any named thing) with a switch/checkbox — replaces chip pickers */
+.togglelist { margin-top: 4px; max-width: 460px; }
+.togglerow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 2px; border-bottom: 1px solid var(--row-line);
   font-family: var(--font-data); font-size: var(--fs-data);
 }
-.devicelist li > .muted { margin-left: auto; }
+.togglerow:last-child { border-bottom: none; }
+.togglerow .switch { font-size: var(--fs-data); gap: 10px; flex: 1; }
+.togglerow .gname { font-weight: 600; color: var(--text); }
+.togglerow .switch.on .gname { color: var(--gold-bright); }
+.togglerow .gmeta { color: var(--text-muted); font-size: var(--fs-label); }
+/* the back-catalogue choice: a real checkbox at the row's right edge, shown
+   only while the share is on (same chip.toggle idiom as "Combine pets") */
+.togglerow .pastraids { margin-left: auto; white-space: nowrap; font-size: var(--fs-xs); }
+.togglerow > input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
+label.togglerow { cursor: pointer; }
+
+/* auto-share: one block per character — name on the left, its groups beside */
+.autochar {
+  display: grid; grid-template-columns: 170px minmax(0, 460px);
+  gap: 2px 18px; align-items: start;
+  padding: 9px 0; border-bottom: 1px solid var(--row-line);
+}
+.autochar:last-child { border-bottom: none; padding-bottom: 2px; }
+.autochar .who { line-height: 1.3; padding-top: 5px; }
+.autochar .who .muted { font-family: var(--font-data); font-size: var(--fs-label); }
+
+/* master–detail: list of things on the left, the open one on the right.
+   Ruled like a table — row lines in the list, a divider between the columns,
+   underlined section heads in the pane — so the card reads as a spreadsheet
+   rather than floating text. */
+.mdgrid {
+  display: grid; grid-template-columns: 240px minmax(0, 1fr);
+  gap: 0 18px; margin-top: 10px;
+  border-top: 1px solid var(--border); padding-top: 10px;
+}
+.mdlist { display: flex; flex-direction: column; align-self: start; }
+.mdrow {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: none; border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--row-line); border-radius: 0;
+  padding: 7px 10px;
+  color: var(--text); font-family: var(--font-data); font-size: var(--fs-data);
+}
+.mdrow:last-child { border-bottom: none; }
+.mdrow:hover { background: var(--row-hover); }
+.mdrow.active { background: var(--row-selected); border-left-color: var(--gold); }
+.mdrow .n { display: block; font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600; }
+.mdrow.active .n { color: var(--gold-bright); }
+.mdrow .m { display: block; color: var(--text-muted); font-size: var(--fs-label); }
+.mdpane { min-width: 0; max-width: 700px; border-left: 1px solid var(--border); padding-left: 18px; }
+.mdpane > h3 {
+  margin-top: 16px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border); padding-bottom: 3px;
+}
+.panehead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.panehead .muted { font-family: var(--font-data); font-size: var(--fs-xs); }
+
+/* inviting is a sentence, not a panel: code, the one real button, quiet rest */
+.inviterow {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 6px; font-family: var(--font-data); font-size: var(--fs-data);
+}
+.inviterow input { margin-right: 0; }
+.joincode {
+  font-family: var(--font-mono); font-size: 1.05rem; letter-spacing: 0.15em;
+  color: var(--gold-bright); font-weight: 600;
+}
+.quietacts {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  color: var(--text-muted); font-size: var(--fs-xs);
+}
+.quietacts .linklike { color: var(--text-muted); font-size: var(--fs-xs); }
+.quietacts .linklike:hover { color: var(--gold-bright); }
+
+/* Deleting a group: the sentence and the field it asks you to fill in, boxed
+   in the danger colour so it reads as a different kind of control from the
+   invite rows above it. */
+.confirmdel {
+  display: flex; flex-direction: column; gap: 8px; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--danger); border-radius: var(--radius-sm);
+  background: rgba(248, 113, 113, 0.06);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.confirmdel strong { color: var(--text); font-family: var(--font-mono); }
+.confirmdel input { margin-right: 0; }
+
+/* a compact toolbar of inline forms — create | join */
+.toolrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.toolrow .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 6px; }
+.toolrow input { margin-right: 0; }
+
+/* stacked form fields, full-width inside their card */
+.formcol { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.formcol input, .formcol select { width: 100%; margin-right: 0; }
+
+/* the plugin box once a device is paired: a status line, not a manual */
+.pluginstatus {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.pluginstatus b { color: var(--success); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .mdgrid { grid-template-columns: 1fr; }
+  .mdpane { border-left: none; padding-left: 0; border-top: 1px solid var(--border); margin-top: 8px; }
+  .autochar { grid-template-columns: 1fr; }
+}
+
