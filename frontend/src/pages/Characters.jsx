@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { api, fmt } from '../lib/api.js'
+import AutoShare from '../components/AutoShare.jsx'
 
 function TokenPanel({ char }) {
   const [tokens, setTokens] = useState(null)
@@ -86,47 +87,6 @@ function TokenPanel({ char }) {
       )}
       {error && <p className="err">{error}</p>}
     </div>
-  )
-}
-
-/* Auto-share: a standing instruction that every raid this character records
-   goes to these groups, back catalogue included. It is evaluated when a raid is
-   read, not copied onto it, so unticking a group closes the old nights too — and
-   a single raid can still be pulled back out from its own Share control. */
-function AutoShare({ char }) {
-  const [groups, setGroups] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
-
-  useEffect(() => {
-    api.characterShares(char.id).then((d) => setGroups(d.groups)).catch((e) => setError(e.message))
-  }, [char.id])
-
-  async function toggle(gid) {
-    const next = groups.map((g) => (g.group_id === gid ? { ...g, shared: !g.shared } : g))
-    setGroups(next); setBusy(true); setError(null)
-    try {
-      const d = await api.setCharacterShares(
-        char.id, next.filter((g) => g.shared).map((g) => g.group_id))
-      setGroups(d.groups)
-    } catch (e) { setError(e.message) } finally { setBusy(false) }
-  }
-
-  if (groups === null) return null
-  if (!groups.length) {
-    return <span className="muted">No groups yet — <Link to="/groups">make one</Link>.</span>
-  }
-  return (
-    <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-      <span className="muted">Auto-share every raid with:</span>
-      {groups.map((g) => (
-        <button key={g.group_id} className={`chip ${g.shared ? 'on' : ''}`} disabled={busy}
-                onClick={() => toggle(g.group_id)}>
-          {g.name}
-        </button>
-      ))}
-      {error && <span className="err">{error}</span>}
-    </span>
   )
 }
 

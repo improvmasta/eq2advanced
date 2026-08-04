@@ -118,6 +118,8 @@ export const api = {
     return mutate(req('/api/uploads', { method: 'POST', body: fd }))
   },
   uploadLimits: () => req('/api/uploads/limits'),
+  // the ACT plugin build this server is serving (size/date for the Import page)
+  plugin: () => req('/api/plugin'),
 
   // groups + sharing
   groups: () => req('/api/groups'),

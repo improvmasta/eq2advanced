@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import UploadDrop from '../components/UploadDrop.jsx'
+import AutoShare from '../components/AutoShare.jsx'
 import { api, fmt } from '../lib/api.js'
 
 /* Everything that gets combat data into the app, in one place and in the order
@@ -33,6 +34,7 @@ export default function Import() {
   const [error, setError] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)   // session id awaiting confirm
   const [busy, setBusy] = useState(false)
+  const [plugin, setPlugin] = useState(null)
 
   const refresh = useCallback(() => {
     api.sessions().then((d) => setSessions(d.sessions)).catch((e) => setError(e.message))
@@ -40,6 +42,8 @@ export default function Import() {
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => { api.plugin().then(setPlugin).catch(() => {}) }, [])
 
   useEffect(() => {
     if (!sessions?.some((s) => s.status === 'parsing' || s.status === 'receiving')) return
@@ -74,26 +78,49 @@ export default function Import() {
 
       <div className="methods">
         <Method
-          title="Live link"
+          title="ACT plugin"
           state={receiving.length ? 'live' : paired.length ? 'paired' : null}
-          blurb="Streams your log as you play. Pair once per PC with a device token."
+          blurb="Sends your combat log as you play, and imports old logs in bulk."
         >
-          {receiving.length > 0 ? (
-            <p>
-              <Link className="btnlink" to="/live">Watch the live raid →</Link>
-            </p>
-          ) : (
-            <>
-              <p className="muted">
-                {paired.length
-                  ? `${paired.length} character${paired.length === 1 ? '' : 's'} paired — start the uploader to stream.`
-                  : 'No device paired yet.'}
-              </p>
-              <Link className="btnlink" to="/characters">
-                {paired.length ? 'Manage pairing' : 'Pair a device'}
-              </Link>
-            </>
-          )}
+          <p className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <a className="btnlink" href="/api/plugin/download" download>
+              Download EQ2Advanced.dll
+            </a>
+            {plugin?.available && (
+              <span className="muted">
+                {Math.round(plugin.size / 1024)} KB · built {fmt.date(plugin.built_ts)}
+              </span>
+            )}
+            {receiving.length > 0 && <Link className="btnlink" to="/live">Watch the live raid →</Link>}
+          </p>
+
+          <ol className="steps">
+            <li>In ACT: <b>Plugins → Plugin Listing → Browse</b>, pick the file, <b>Add/Enable</b>.</li>
+            <li>On <Link to="/characters">Characters</Link>, mint a device token and copy it.</li>
+            <li>Paste it into the plugin's <b>eq2advanced</b> tab and hit <b>Pair</b>.</li>
+            <li>Tick <b>Send my combat log as I play</b>, or use <b>Import logs you already have</b> for old ones.</li>
+          </ol>
+          <p className="fineprint">
+            Fights appear here as each one ends. Importing a log twice is safe —
+            only lines the server hasn't seen are kept.
+          </p>
+
+          {/* Sharing lives here, not in the plugin: a device token sends logs
+              and cannot change who reads them. This is the moment somebody is
+              thinking about it, so it belongs next to the download. */}
+          <div className="pluginshare">
+            {paired.length === 0 && (
+              <span className="muted">
+                <Link to="/characters">Pair a device</Link> to start uploading.
+              </span>
+            )}
+            {paired.map((c) => (
+              <div key={c.id} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <b>{c.name}</b>
+                <AutoShare char={c} label="shares every raid with:" />
+              </div>
+            ))}
+          </div>
         </Method>
 
         <Method

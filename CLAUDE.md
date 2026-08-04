@@ -404,8 +404,27 @@ record and Zoraxy route while leaving the app, repo and containers alone.
 `disable` stops the app and keeps the name; `delete` takes the repo with it;
 neither is what retiring an address means.
 
+## The ACT plugin download
+
+The site SERVES the plugin DLL: `backend/refdata/plugin/EQ2Advanced.dll`,
+committed here, exposed by `routers/plugin_api.py` as `GET /api/plugin`
+(metadata) and `GET /api/plugin/download` (the file), both unauthenticated. It
+is built by CI in `improvmasta/eq2advanced-act`; refresh it with
+`bash scripts/update-plugin.sh` and ship this repo.
+
+Why committed rather than linked: that repo is PRIVATE and a GitHub Actions
+artifact needs an authenticated session and expires after 90 days, so a link to
+one works for nobody and eventually not even for Lindsay. 35 KB buys a download
+link that works for a stranger and ships inside the container.
+
+The Import page's first panel is the plugin: download, four install steps, and
+the per-character auto-share chips (`components/AutoShare.jsx`, shared with the
+Characters page — sharing is the site's job, never the plugin's). A header pill
+links to it.
+
 ## Ship log
 
+- 2026-08-04 (claude): Serve the ACT plugin from the site: download + install steps + auto-sharing on Import, header pill
 - 2026-08-04 (claude): Revert phase 17: sharing belongs on the site, the ACT plugin only sends logs (schema v12 drops session_shares + can_share)
 - 2026-08-04 (claude): Phase 17: sharing from the ACT plugin (schema v11) — session_shares, token can_share scope, share_groups on ingest batches; also carries phases 11-16, which were still uncommitted
 - 2026-08-03 (claude): Phase 9+10: editable raid list, import hub, fight rail rebuild, engagement v3, read caches

@@ -940,3 +940,19 @@ tr.healrow .recapbar > i { background: var(--success); }
   .workspace { grid-template-columns: 1fr; }
   .rail { position: static; max-height: 320px; }
 }
+
+/* ACT plugin: the header pill, and the Import page's plugin panel */
+.navpill {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--gold-dim); color: var(--gold);
+  font-size: var(--fs-label); text-decoration: none; white-space: nowrap;
+}
+.navpill:hover { background: var(--surface-raised); text-decoration: none; }
+/* Numbered install steps. Terse on purpose — someone installing a plugin wants
+   the four things to press, not prose about them. */
+.steps { margin: 8px 0 6px; padding-left: 20px; }
+.steps li { margin: 3px 0; line-height: 1.5; }
+.pluginshare {
+  border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}

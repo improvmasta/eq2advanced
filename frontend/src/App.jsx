@@ -67,7 +67,13 @@ export default function App() {
           </>}
           {user === null && <NavLink to="/login">Sign in</NavLink>}
         </nav>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* The plugin is the fastest way in, and nothing in the nav said so.
+              Points at Import rather than straight at the download so the
+              install steps and the sharing settings arrive with the file. */}
+          <Link to="/import" className="navpill" title="Get the ACT plugin">
+            ACT plugin
+          </Link>
           <button
             onClick={() => setTheme(toggleTheme())}
             title="Toggle light/dark"
