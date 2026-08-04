@@ -6,10 +6,8 @@ import { api } from '../lib/api.js'
    publish switch, which is the only control here that reaches past the site's
    accounts entirely. It is kept visually apart and spelled out for that reason.
 
-   A group ticked by a STANDING decision is labelled with where that decision was
-   made — the character's auto-share, or the ACT uploader's "share tonight" — so
-   it is clear what else it covers. Unticking either hides this one raid without
-   switching the standing share off. */
+   A group ticked by the character's auto-share is labelled as such: unticking it
+   hides this one raid without switching the standing share off. */
 export default function ShareDialog({ runId, isAdmin, onClose, onChanged }) {
   const [groups, setGroups] = useState(null)
   const [isPublic, setIsPublic] = useState(false)
@@ -58,9 +56,7 @@ export default function ShareDialog({ runId, isAdmin, onClose, onChanged }) {
           <input type="checkbox" checked={g.shared} disabled={busy}
                  onChange={() => toggle(g.group_id)} />
           {g.name}
-          {g.auto && (g.source === 'session'
-            ? <span className="badge" title="The ACT uploader shared this raid with this group as it was recorded">from ACT</span>
-            : <span className="badge" title="This character shares every raid with this group">auto</span>)}
+          {g.auto && <span className="badge" title="This character shares every raid with this group">auto</span>}
         </label>
       ))}
       {isAdmin && (

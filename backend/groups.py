@@ -8,15 +8,14 @@ the whole privacy model of the site and it needs to be readable in one place:
       * it is explicitly shared with a group you are in, or
       * its character auto-shares with a group you are in AND this run has not
         been hidden from that group, or
-      * a session it came out of was shared with a group you are in AND this run
-        has not been hidden from that group, or
       * an admin has published it to everyone (`public_runs`).
 
-The session branch is the ACT plugin's "share tonight" (v11): the uploader picks
-the groups before the raid, when the only thing that exists is the session — a
-run id would be meaningless, since runs are derived at parse time and re-derived
-on every reparse. It reads at query time like the other two, so it inherits the
-same properties for free, `hide` included.
+Every one of these is decided ON THE SITE, by someone signed in. The ACT
+uploader deliberately has no say in it: a device token sends logs and nothing
+else. A `session_shares` branch letting the plugin share a raid as it recorded
+it was built and removed in v12 — if it comes up again, the reason it went is
+that "who can see my raids" is a decision for the account, not for a config
+file on a gaming PC.
 
 Sharing is never copied onto the run. `rebuild_zone_runs` drops and re-derives
 run membership on every upload, reparse and hand edit, so anything materialised
@@ -53,13 +52,6 @@ PERSONAL_RUN_IDS = """
       JOIN group_members m ON m.group_id = cs.group_id AND m.user_id = :uid
       WHERE NOT EXISTS (SELECT 1 FROM run_shares h WHERE h.zone_run_id = z.id
                           AND h.group_id = cs.group_id AND h.mode = 'hide')
-    UNION
-    SELECT e.zone_run_id FROM encounters e
-      JOIN session_shares ss ON ss.session_id = e.session_id
-      JOIN group_members m ON m.group_id = ss.group_id AND m.user_id = :uid
-      WHERE e.zone_run_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM run_shares h WHERE h.zone_run_id = e.zone_run_id
-                          AND h.group_id = ss.group_id AND h.mode = 'hide')
 """
 
 # One SELECT of run ids: the whole predicate. Derived from PERSONAL_RUN_IDS
@@ -137,22 +129,15 @@ def add_member(conn, group_id: int, user_id: int, role: str = "member") -> None:
 def delete_group(conn, group_id: int) -> None:
     """Membership, invites and every share that pointed at this group. Runs
     shared only here go back to being private."""
-    for table in ("group_members", "group_invites", "character_shares",
-                  "session_shares", "run_shares"):
+    for table in ("group_members", "group_invites", "character_shares", "run_shares"):
         conn.execute(f"DELETE FROM {table} WHERE group_id=?", (group_id,))
     conn.execute("DELETE FROM groups WHERE id=?", (group_id,))
 
 
 def shares_for_runs(conn, run_ids: list[int]) -> dict[int, list[dict]]:
-    """{run_id: [{group_id, name, mode, auto, source}]} — what each run is shared
-    with, for the owner's share control. `auto` marks a share that is not a
-    decision about this run: the character's standing auto-share (`source`
-    'character') or the uploader's "share tonight" (`source` 'session'). Both
-    behave the same — one `hide` on the run takes it back — so the site can keep
-    treating them as one class and only name the origin.
-
-    A run whose encounters came out of several sessions carries the union, and a
-    `share` decided on the site outranks either."""
+    """{run_id: [{group_id, name, mode, auto}]} — what each run is shared with,
+    for the owner's share control. `auto` marks a share that comes from the
+    character's auto-share rather than a decision about this run."""
     if not run_ids:
         return {}
     ph = ",".join("?" * len(run_ids))
@@ -164,26 +149,16 @@ def shares_for_runs(conn, run_ids: list[int]) -> dict[int, list[dict]]:
             f"WHERE rs.zone_run_id IN ({ph})", run_ids):
         if r["mode"] == "share":
             out[r["run_id"]].append({"group_id": r["group_id"], "name": r["name"],
-                                     "mode": "share", "auto": False,
-                                     "source": "run"})
+                                     "mode": "share", "auto": False})
         seen.add((r["run_id"], r["group_id"]))
-    for source, sql in (
-        ("character",
-         f"SELECT z.id AS run_id, cs.group_id, g.name FROM zone_runs z "
-         f"JOIN character_shares cs ON cs.character_id = z.character_id "
-         f"JOIN groups g ON g.id = cs.group_id WHERE z.id IN ({ph})"),
-        ("session",
-         f"SELECT DISTINCT e.zone_run_id AS run_id, ss.group_id, g.name "
-         f"FROM encounters e JOIN session_shares ss ON ss.session_id = e.session_id "
-         f"JOIN groups g ON g.id = ss.group_id WHERE e.zone_run_id IN ({ph})"),
-    ):
-        for r in conn.execute(sql, run_ids):
-            if (r["run_id"], r["group_id"]) in seen:
-                continue
-            seen.add((r["run_id"], r["group_id"]))
+    for r in conn.execute(
+            f"SELECT z.id AS run_id, cs.group_id, g.name FROM zone_runs z "
+            f"JOIN character_shares cs ON cs.character_id = z.character_id "
+            f"JOIN groups g ON g.id = cs.group_id "
+            f"WHERE z.id IN ({ph})", run_ids):
+        if (r["run_id"], r["group_id"]) not in seen:
             out[r["run_id"]].append({"group_id": r["group_id"], "name": r["name"],
-                                     "mode": "share", "auto": True,
-                                     "source": source})
+                                     "mode": "share", "auto": True})
     return out
 
 
@@ -208,21 +183,6 @@ def set_character_auto_shares(conn, character_id: int, owner_user_id: int,
     for gid in sorted(group_ids):
         conn.execute("INSERT INTO character_shares (character_id, group_id, created_ts) "
                      "VALUES (?,?,?)", (character_id, gid, now))
-
-
-def session_share_groups(conn, session_id: int) -> list[int]:
-    return sorted(r["group_id"] for r in conn.execute(
-        "SELECT group_id FROM session_shares WHERE session_id=?", (session_id,)))
-
-
-def set_session_shares(conn, session_id: int, group_ids: set[int]) -> None:
-    """Replace a session's share list. Caller has already checked that every id
-    is a group the session's owner belongs to."""
-    now = int(time.time())
-    conn.execute("DELETE FROM session_shares WHERE session_id=?", (session_id,))
-    for gid in sorted(group_ids):
-        conn.execute("INSERT INTO session_shares (session_id, group_id, created_ts) "
-                     "VALUES (?,?,?)", (session_id, gid, now))
 
 
 def carry_shares(conn, merged_into: dict[int, int]) -> None:

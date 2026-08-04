@@ -314,6 +314,22 @@ NAME, so several trash mobs sharing one look like a single fast caster —
 `instances_hint` says so rather than calling the ACT list wrong. See
 `ARCHITECTURE.md` -> "GET /api/encounters/aoes".
 
+Phase 17 (sharing from the ACT plugin) was BUILT and then REVERTED on
+2026-08-04. **Sharing is set on the site, never by the uploader.** The ACT
+plugin sends log lines and nothing else; a device token cannot read a parse back
+and cannot change who sees one. The two site controls already cover it: the
+character's standing auto-share (Characters page) and a raid's own Share control.
+Schema v11 added `session_shares` + `device_tokens.can_share`; **v12 drops both**
+(shape-guarded, verified against the real 431 MB DB with its device tokens
+intact). Don't rebuild it — the reasoning is in `ARCHITECTURE.md` -> "Sharing is
+a decision for the account, not the uploader".
+GOTCHA worth keeping from that round: `set_run_shares` writes a `hide` for groups
+reaching a run through a STANDING decision, and it only counted `character_shares`
+— any future read-time share branch must be added there too, or unticking the box
+looks like it works and revokes nothing.
+The plugin is `/home/lindsay/eq2advanced-act` (improvmasta/eq2advanced-act), which
+builds on the Linux dev host via `bash build.sh`.
+
 ## The domain (2026-08-04)
 
 The site is **https://eq2advanced.com**, with `www.eq2advanced.com` routed to
@@ -342,6 +358,7 @@ neither is what retiring an address means.
 
 ## Ship log
 
+- 2026-08-04 (claude): Revert phase 17: sharing belongs on the site, the ACT plugin only sends logs (schema v12 drops session_shares + can_share)
 - 2026-08-04 (claude): Phase 17: sharing from the ACT plugin (schema v11) — session_shares, token can_share scope, share_groups on ingest batches; also carries phases 11-16, which were still uncommitted
 - 2026-08-03 (claude): Phase 9+10: editable raid list, import hub, fight rail rebuild, engagement v3, read caches
 - 2026-08-03 (claude): Fix Insights crash (coach.character is an object, render its name) + error boundaries at route and panel level

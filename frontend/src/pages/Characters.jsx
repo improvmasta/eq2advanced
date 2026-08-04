@@ -6,7 +6,6 @@ import { api, fmt } from '../lib/api.js'
 function TokenPanel({ char }) {
   const [tokens, setTokens] = useState(null)
   const [label, setLabel] = useState('')
-  const [canShare, setCanShare] = useState(false)
   const [minted, setMinted] = useState(null) // {id, token, pair_payload, qr}
   const [error, setError] = useState(null)
 
@@ -19,11 +18,10 @@ function TokenPanel({ char }) {
   async function mint() {
     setError(null)
     try {
-      const d = await api.mintToken(char.id, label.trim() || null, canShare)
+      const d = await api.mintToken(char.id, label.trim() || null)
       const qr = await QRCode.toDataURL(d.pair_payload, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       setMinted({ ...d, qr })
       setLabel('')
-      setCanShare(false)
       refresh()
     } catch (e) { setError(e.message) }
   }
@@ -53,20 +51,6 @@ function TokenPanel({ char }) {
         />
         <button onClick={mint}>Mint token</button>
       </div>
-      {/* Scope is fixed at mint: there is no route that raises it later, because
-          the token lives in a config file on a gaming PC and this answer has to
-          come from someone signed in here. Widening means a new token. */}
-      <label className="checkrow">
-        <input type="checkbox" checked={canShare}
-               onChange={(e) => setCanShare(e.target.checked)} />
-        <span>
-          Let this device choose who sees the raids it sends
-          <span className="note">
-            {' '}— the ACT plugin can then tick groups for tonight's raid, and change
-            {' '}{char.name}'s standing auto-share. Leave off and it can only send logs.
-          </span>
-        </span>
-      </label>
       {minted && (
         <div className="minted">
           <p><b>Copy this now — it won't be shown again.</b></p>
@@ -83,12 +67,11 @@ function TokenPanel({ char }) {
       {active.length > 0 && (
         <div className="tablewrap">
           <table className="data">
-            <thead><tr><th>Label</th><th>Can do</th><th>Created</th><th>Last seen</th><th /></tr></thead>
+            <thead><tr><th>Label</th><th>Created</th><th>Last seen</th><th /></tr></thead>
             <tbody>
               {active.map((t) => (
                 <tr key={t.id}>
                   <td className="name">{t.label || '—'}</td>
-                  <td>{t.can_share ? 'Send logs + set sharing' : 'Send logs'}</td>
                   <td>{fmt.date(t.created_ts)}</td>
                   <td>{t.last_seen_ts ? `${fmt.date(t.last_seen_ts)} ${fmt.time(t.last_seen_ts)}` : 'never'}</td>
                   <td><button className="danger" onClick={() => revoke(t.id)}>Revoke</button></td>

@@ -78,8 +78,7 @@ export const api = {
   addCharacter: (name) => req('/api/characters', json({ name })),
   deleteCharacter: (id) => req(`/api/characters/${id}`, { method: 'DELETE' }),
   tokens: (charId) => req(`/api/characters/${charId}/tokens`),
-  mintToken: (charId, label, canShare = false) =>
-    req(`/api/characters/${charId}/tokens`, json({ label, can_share: canShare })),
+  mintToken: (charId, label) => req(`/api/characters/${charId}/tokens`, json({ label })),
   revokeToken: (id) => req(`/api/tokens/${id}/revoke`, { method: 'POST' }),
   census: (charId) => req(`/api/characters/${charId}/census`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),

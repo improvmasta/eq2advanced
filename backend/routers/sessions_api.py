@@ -119,7 +119,7 @@ def delete_session(session_id: int, user=Depends(require_user)):
     with conn:
         clear_derived(conn, session_id)
         for table in ("ingest_lines", "ingest_batches", "raw_chunks",
-                      "raid_reports", "coach_reports", "session_shares"):
+                      "raid_reports", "coach_reports"):
             conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         survivors = {encounter_fp(r) for r in conn.execute(

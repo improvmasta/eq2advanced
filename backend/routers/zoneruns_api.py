@@ -143,13 +143,7 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
 @router.get("/zone-runs/{run_id}/shares")
 def get_run_shares(run_id: int, user=Depends(require_user)):
     """Which of MY groups this raid goes to. Every group I'm in is listed, with
-    the ones it currently reaches marked, so the control is one list.
-
-    `auto` means the share is not a decision about this raid; `source` says
-    which standing decision it came from ('character' auto-share, 'session' —
-    the ACT plugin's "share tonight" — or 'run' when it was set right here).
-    Unticking writes a `hide` either way, so the control behaves identically;
-    the origin is worth naming only so the owner knows what else it covers."""
+    the ones it currently reaches marked, so the control is one list."""
     conn = get_db()
     owned_zone_run(conn, user, run_id)
     current = {s["group_id"]: s for s in
@@ -158,23 +152,22 @@ def get_run_shares(run_id: int, user=Depends(require_user)):
     for g in groupsmod.my_groups(conn, user["id"]):
         s = current.get(g["id"])
         out.append({"group_id": g["id"], "name": g["name"],
-                    "shared": s is not None, "auto": bool(s and s["auto"]),
-                    "source": s["source"] if s else None})
+                    "shared": s is not None, "auto": bool(s and s["auto"])})
     return {"groups": out, "public": conn.execute(
         "SELECT 1 FROM public_runs WHERE zone_run_id=?", (run_id,)).fetchone() is not None}
 
 
 @router.put("/zone-runs/{run_id}/shares")
 def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_user)):
-    """Set the exact set of groups this raid reaches. A group that reaches this
-    raid through a STANDING decision is turned off with a `hide` row rather than
-    by revoking that decision, so the rest of the raids it covers keep flowing.
+    """Set the exact set of groups this raid reaches. A group the character
+    auto-shares with is turned off with a `hide` row rather than by deleting the
+    auto-share, so the rest of that character's raids keep flowing.
 
-    There are two such decisions and both must be counted: the character's
-    auto-share, and the ACT plugin's "share tonight" on the session this run
-    came out of. Missing either one means unticking the box appears to work and
-    revokes nothing — the deletion below only removes explicit `share` rows, and
-    a read-time branch it never wrote survives it."""
+    Every group reaching this raid through a STANDING decision has to be counted
+    in `auto` below: the delete only removes explicit `share` rows, so a
+    read-time branch missing from that set would survive it and the untick would
+    silently revoke nothing. Today auto-share is the only such branch — if
+    another is ever added to `groups.py`, it belongs here too."""
     conn = get_db()
     owned_zone_run(conn, user, run_id)
     wanted = {int(g) for g in payload.get("group_ids") or []}
@@ -184,9 +177,6 @@ def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_
     auto = {r["group_id"] for r in conn.execute(
         "SELECT cs.group_id FROM character_shares cs JOIN zone_runs z "
         "ON z.character_id = cs.character_id WHERE z.id=?", (run_id,))}
-    auto |= {r["group_id"] for r in conn.execute(
-        "SELECT DISTINCT ss.group_id FROM session_shares ss JOIN encounters e "
-        "ON e.session_id = ss.session_id WHERE e.zone_run_id=?", (run_id,))}
     now = int(time.time())
     with conn:
         # only my own groups are rewritten: a run can also carry shares to groups

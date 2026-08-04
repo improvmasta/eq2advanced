@@ -288,9 +288,6 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .charactions { margin-left: auto; display: flex; gap: 8px; }
 .mintrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .mintrow input { margin-right: 0; }
-.checkrow { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; cursor: pointer; }
-.checkrow input { margin: 3px 0 0; flex: none; }
-.checkrow .note { display: inline; margin: 0; }
 .tokenpanel { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
 .minted {
   background: var(--surface-raised); border: 1px solid var(--gold-dim);

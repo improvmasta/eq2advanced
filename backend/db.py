@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -61,12 +61,7 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   label TEXT,
   created_ts INTEGER NOT NULL,
   last_seen_ts INTEGER,
-  revoked_ts INTEGER,
-  -- v11: may this token CHANGE sharing, or only send logs? The plugin's
-  -- sharing panel is read-only without it. Off by default: a token lives in a
-  -- config file on a raiding PC, and "send my logs" must not silently mean
-  -- "publish my back catalogue to every group I'm in".
-  can_share INTEGER NOT NULL DEFAULT 0
+  revoked_ts INTEGER
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY,
@@ -353,18 +348,6 @@ CREATE TABLE IF NOT EXISTS character_shares (
   created_ts INTEGER NOT NULL,
   PRIMARY KEY (character_id, group_id)
 );
--- v11: "share THIS raid", decided by the uploader before the raid rather than
--- afterwards on the site. Scoped to one session because that is the only thing
--- that exists while the log is still being written — zone runs are derived at
--- parse time and re-derived on every reparse, so an intent recorded against a
--- run id would not survive the night. Read at query time exactly like
--- character_shares, and beaten by a `hide` on the run the same way.
-CREATE TABLE IF NOT EXISTS session_shares (
-  session_id INTEGER NOT NULL REFERENCES sessions(id),
-  group_id INTEGER NOT NULL REFERENCES groups(id),
-  created_ts INTEGER NOT NULL,
-  PRIMARY KEY (session_id, group_id)
-);
 CREATE TABLE IF NOT EXISTS run_shares (
   zone_run_id INTEGER NOT NULL REFERENCES zone_runs(id),
   group_id INTEGER NOT NULL REFERENCES groups(id),
@@ -650,15 +633,15 @@ def init_db() -> None:
         if "press_delay_s" not in abil_cols:
             conn.execute(
                 "ALTER TABLE encounter_ability_stats ADD COLUMN press_delay_s REAL")
-        # v11: the ACT plugin's sharing panel. `session_shares` arrives with the
-        # schema (CREATE TABLE IF NOT EXISTS); only the column needs a shape
-        # guard. Existing tokens get can_share=0 — they were minted before the
-        # capability existed and nobody consented to it, so the site has to
-        # re-issue for a device that wants it.
+        # v12 undoes v11. v11 let the ACT plugin set sharing (a `session_shares`
+        # table and a `device_tokens.can_share` scope); sharing belongs on the
+        # site, and the plugin only sends logs, so both are removed rather than
+        # left as controls nothing can reach. Dropped by shape like everything
+        # else, because a v11 database exists.
         token_cols = {r[1] for r in conn.execute("PRAGMA table_info(device_tokens)")}
-        if "can_share" not in token_cols:
-            conn.execute("ALTER TABLE device_tokens ADD COLUMN "
-                         "can_share INTEGER NOT NULL DEFAULT 0")
+        if "can_share" in token_cols:
+            conn.execute("ALTER TABLE device_tokens DROP COLUMN can_share")
+        conn.execute("DROP TABLE IF EXISTS session_shares")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

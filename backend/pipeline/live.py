@@ -110,20 +110,9 @@ def _line_key(line: str, ordinal: int) -> bytes:
     return hashlib.sha256(f"{ordinal}:{line}".encode()).digest()[:16]
 
 
-def process_batch(token_row, batch_id: str, mode: str, lines: list[str],
-                  share_groups: set[int] | None = None) -> dict:
+def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict:
     """One ingest batch, called with the per-token lock held. token_row is the
-    character row (+token_id) from device_token_character.
-
-    `share_groups` is the uploader's "share this raid with" list, already
-    checked by the router against the token's scope and the owner's
-    memberships. It rides along with the data rather than arriving on its own
-    route because the session it applies to does not exist until the first
-    batch opens it, and because a raid must never stream to a session whose
-    audience was set by a request that might not have landed. It is
-    authoritative on every batch, so unticking a group mid-raid takes effect on
-    the next one; None means "don't touch", which is what a plugin without the
-    scope sends."""
+    character row (+token_id) from device_token_character."""
     conn = get_db()
     now = int(time.time())
     replay = conn.execute(
@@ -136,12 +125,6 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str],
     logger = token_row["name"]
     session_id = open_live_session(conn, token_row["id"], logger)
     state = _get_state(conn, session_id, logger)
-
-    if share_groups is not None:
-        from groups import session_share_groups, set_session_shares
-        if set(session_share_groups(conn, session_id)) != share_groups:
-            with conn:
-                set_session_shares(conn, session_id, share_groups)
 
     with state.lock, conn:
         # line-level dedupe: key = (occurrence ordinal within this batch, line).

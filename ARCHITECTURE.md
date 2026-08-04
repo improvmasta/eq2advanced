@@ -177,9 +177,8 @@ which the console shows back. Support is "ask them to share the raid".
 
 A zone run is visible to you if you own it, OR it is explicitly shared with a
 group you're in, OR its character auto-shares with a group you're in and this
-run isn't hidden from that group, OR **a session it came out of was shared with
-a group you're in** and this run isn't hidden from that group, OR it has been
-published. That is one SQL SELECT (`VISIBLE_RUN_IDS`, parameterised by `:uid`)
+run isn't hidden from that group, OR it has been published. That is one SQL
+SELECT (`VISIBLE_RUN_IDS`, parameterised by `:uid`)
 and nothing else composes it. `PERSONAL_RUN_IDS` is the same thing minus the
 published branch, and `VISIBLE_RUN_IDS` is now *derived from it* rather than
 repeated — a branch added to one and forgotten in the other is either a silent
@@ -191,13 +190,12 @@ leak or a silent hiding, and there is no longer a second copy to forget.
   effect on the next request. When runs collapse into one id the survivor
   inherits the union (`groups.carry_shares`, called from the rebuild before the
   stale rows are deleted) — otherwise a merge would silently unshare a night.
-- **`hide` beats every standing share, an explicit `share` beats everything.**
-  Auto-share and the plugin's "share tonight" are useful defaults; one wipe can
-  still be pulled back out. `set_run_shares` must count BOTH as standing when it
-  decides where to write a `hide` — it deletes only explicit `share` rows, so a
-  read-time branch it doesn't know about survives the delete and the untick
-  silently revokes nothing. That bug shipped for exactly as long as it took the
-  v11 test to catch it.
+- **`hide` beats auto-share, `share` beats everything.** Auto-share is the
+  useful default; one wipe can still be pulled back out. `set_run_shares` has to
+  count EVERY standing branch when it decides where to write a `hide`: it
+  deletes only explicit `share` rows, so a read-time branch missing from that
+  set survives the delete and the untick silently revokes nothing. Auto-share is
+  the only such branch today; a new one belongs there too.
 - **Seeing is not changing.** `owned_zone_run` guards delete/merge/split/edits,
   so a shared raid is read-only to everyone including admins, and cannot be
   re-shared onward into the viewer's own groups.
@@ -211,47 +209,27 @@ leak or a silent hiding, and there is no longer a second copy to forget.
   payload is a pure function of the already-authorized id set. Do not memoize
   an authorization decision here.
 
-### Sharing from the ACT plugin (phase 17 — schema v11, 2026-08-04)
+### Sharing is a decision for the account, not the uploader (v12, 2026-08-04)
 
-The uploader (`improvmasta/eq2advanced-act`) decides who sees a raid *before*
-the raid, in ACT, rather than on the site afterwards. Two controls, and the
-difference between them is the design:
+Every branch above is set on the site by someone signed in. The ACT uploader
+(`improvmasta/eq2advanced-act`) sends log lines and has no say in who sees the
+result: a device token cannot read a parse back and cannot change its audience.
 
-| Control | Covers | Table |
-|---|---|---|
-| ticked groups | the raid being uploaded **now** | `session_shares` |
-| + "keep these for every raid" | every raid the character records, back catalogue included | `character_shares` |
+v11 built the opposite — a `session_shares` table so the plugin could share the
+raid it was recording, a `device_tokens.can_share` scope, `share_groups` on every
+ingest batch, and a sharing panel in ACT. v12 removed all of it (the migration
+drops the table and the column). It is written down because the design was
+tempting and the reason it went is not obvious from the code that remains: the
+token lives in a config file on a gaming PC, and "who can see my raids" should
+not be answerable from there. The two site controls already cover the ground —
+the character's standing auto-share for "always", and a raid's own Share control
+for one night.
 
-- **Why the session, not the run.** While the log is still being written the
-  only thing that exists is the session. Zone runs are derived at parse time and
-  re-derived on every reparse, so an intent recorded against a run id would not
-  survive the night. `session_shares` is read at query time exactly like
-  `character_shares`, so it inherits `hide`, leave-a-group, and
-  nothing-is-materialised for free.
-- **Why it rides on the batch.** `share_groups` is an optional field on
-  `POST /api/ingest/batch`, not its own route: the session it applies to does
-  not exist until the first batch opens it, and a raid must never stream into a
-  session whose audience was set by a request that might not have landed. It is
-  authoritative on every batch, so unticking a group mid-raid takes the night
-  back on the next one. **Omitting the field means "don't touch"** — a plugin
-  without the scope sends nothing, and sending `[]` instead would read as "share
-  with nobody" and silently undo what was set on the site.
-- **Scope is fixed at mint.** `device_tokens.can_share` (default 0, and 0 for
-  every token that predates v11) gates both writes; without it `GET
-  /api/ingest/shares` still answers, read-only, because "who can see this" is
-  the question the raider actually has. There is deliberately no route that
-  raises the scope: the token sits in a config file on a gaming PC, so widening
-  it has to be done by someone signed in to the site. `POST
-  /characters/{id}/tokens` takes `can_share`, and the Characters page has the
-  checkbox next to the label field.
-- Unknown or not-mine group ids are **404, not dropped**. A plugin that shared
-  with fewer people than its checkboxes show would be lying about the one thing
-  here that matters.
-- `shares_for_runs` now returns `source` ('run' | 'character' | 'session') and
-  `GET /zone-runs/{id}/shares` passes it through, so the owner's control can say
-  where a share came from — and therefore what else unticking it affects.
-
-Covered end to end by `tests/test_ingest_sharing.py`.
+One bug from that round is worth keeping in mind, because the same shape will
+recur with any future read-time share branch: `set_run_shares` writes a `hide`
+for groups reaching a run through a standing decision, and it only knew about
+`character_shares`. A branch it did not know about survived the untick, so the
+control looked like it worked and revoked nothing.
 
 Groups: `groups` / `group_members` / `group_invites`. Three ways in, all the
 same credential — an invite addressed to a username, the 6-digit join code read
@@ -306,14 +284,14 @@ are skipped by `POST /sessions/{id}/reparse` and by the startup
 
 ## Live ingest (phase 3 — the frozen ACT-DLL contract)
 
-`GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`,
-and (v11) `GET`/`PUT /api/ingest/shares`; auth is
-`Authorization: Bearer <device_token>` only. A batch is gzip (or plain) JSON
-`{batch_id, mode: live|backfill, lines: [verbatim lines], share_groups?: [ids]}`
-→ `{accepted, duplicates, session_id}`. `backend/tools/simulate_live.py` is the
-reference client (and feeds the equivalence test's batch cutter);
-`improvmasta/eq2advanced-act` is the ACT plugin that implements it for real, and
-the two must stay in step.
+`GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`;
+auth is `Authorization: Bearer <device_token>` only. A batch is gzip (or plain)
+JSON `{batch_id, mode: live|backfill, lines: [verbatim lines]}` → `{accepted,
+duplicates, session_id}`. That is the whole surface a device token reaches — it
+sends logs and does nothing else (see "Sharing is a decision for the account").
+`backend/tools/simulate_live.py` is the reference client (and feeds the
+equivalence test's batch cutter); `improvmasta/eq2advanced-act` is the ACT plugin
+that implements it for real, and the two must stay in step.
 
 Design points, in the order they bit:
 
