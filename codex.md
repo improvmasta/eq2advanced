@@ -370,8 +370,28 @@ record and Zoraxy route while leaving the app, repo and containers alone.
 `disable` stops the app and keeps the name; `delete` takes the repo with it;
 neither is what retiring an address means.
 
+Phase 18 (2026-08-04, **schema v13**): **device tokens belong to an ACCOUNT,
+not a character.** Pairing used to ask "which character?" — the one question
+nobody can answer at pairing time, and it made every alt need its own token.
+Now `POST /api/tokens` mints for the user, and each ingest batch carries
+`character` (the plugin reads it off `eq2log_<Name>.txt`); an unseen name is
+created on the spot, exactly like an upload does. `hello` answers for the
+account and lists what is receiving. A batch with no character and no legacy
+binding is 422 — the parser cannot resolve subjects without knowing whose log
+it is. Migration `_rebuild_device_tokens` backfills `user_id` through the old
+character and KEEPS `character_id` as the fallback for pre-v13 plugins; verified
+on the real DB, 3 tokens intact.
+GOTCHA: `process_batch(token_row, char, ...)` — `token_row` used to BE the
+character row, so anything reading `token_row["id"]` for a character id is a
+bug (`rebuild_zone_runs` was one).
+The Import page is now the whole onboarding: plugin download, pairing, drag-drop
+uploader, imported-log table. `/characters` is off the nav and must not be linked
+— upload derives the character from the FILE NAME (`components/UploadDrop.jsx`),
+so nobody is asked to pick one.
+
 ## Ship log
 
+- 2026-08-04 (claude): Import page rebuild: account-scoped pairing (schema v13), drag-drop uploader, no character prompt, no ACT export box
 - 2026-08-04 (claude): Serve the ACT plugin from the site: download + install steps + auto-sharing on Import, header pill
 - 2026-08-04 (claude): Revert phase 17: sharing belongs on the site, the ACT plugin only sends logs (schema v12 drops session_shares + can_share)
 - 2026-08-04 (claude): Phase 17: sharing from the ACT plugin (schema v11) — session_shares, token can_share scope, share_groups on ingest batches; also carries phases 11-16, which were still uncommitted

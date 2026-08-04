@@ -110,9 +110,14 @@ def _line_key(line: str, ordinal: int) -> bytes:
     return hashlib.sha256(f"{ordinal}:{line}".encode()).digest()[:16]
 
 
-def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict:
-    """One ingest batch, called with the per-token lock held. token_row is the
-    character row (+token_id) from device_token_character."""
+def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -> dict:
+    """One ingest batch, called with the per-token lock held.
+
+    `token_row` is the device token (account + token_id); `char` is the
+    character row this batch belongs to, resolved by the router from the name
+    the plugin read off the log. They are separate because one token uploads for
+    every character on the account — switching alts mid-evening just lands in a
+    different session."""
     conn = get_db()
     now = int(time.time())
     replay = conn.execute(
@@ -122,8 +127,8 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict
         return {"accepted": replay["accepted"], "duplicates": replay["duplicates"],
                 "session_id": replay["session_id"], "replayed": True}
 
-    logger = token_row["name"]
-    session_id = open_live_session(conn, token_row["id"], logger)
+    logger = char["name"]
+    session_id = open_live_session(conn, char["id"], logger)
     state = _get_state(conn, session_id, logger)
 
     with state.lock, conn:
@@ -166,7 +171,9 @@ def process_batch(token_row, batch_id: str, mode: str, lines: list[str]) -> dict
 
         if _flush(conn, state):
             from pipeline.zoneruns import rebuild_zone_runs
-            rebuild_zone_runs(conn, token_row["id"])
+            # the CHARACTER's runs, not the token's — `token_row` used to be the
+            # character row and this read `["id"]` off it
+            rebuild_zone_runs(conn, char["id"])
 
         conn.execute(
             "UPDATE sessions SET line_count = COALESCE(line_count,0) + ?, last_ingest_ts=? "

@@ -232,17 +232,27 @@ export default function Home({ user }) {
       : multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
     {
       key: 'shared', label: 'Shared', sortable: false, align: 'l',
-      render: (r) => (
-        <span className="row" style={{ gap: 4 }}>
-          {r.public && <span className="badge named" title="Readable without an account">public</span>}
-          {r.shared_with?.map((g) => (
-            <span key={g.group_id} className="badge"
-                  title={g.auto ? `${g.name} — every raid on this character` : g.name}>
-              {g.name}
-            </span>
-          ))}
-        </span>
-      ),
+      // An empty cell is ambiguous — it reads as "unknown" when it means "nobody
+      // else can see this". Say so. Only for raids you OWN: `shared_with` is
+      // only populated for those, and printing "private" on somebody else's raid
+      // that was shared *with you* would be exactly backwards.
+      render: (r) => {
+        const groups = r.shared_with ?? []
+        if (r.mine && !r.public && groups.length === 0) {
+          return <span className="muted" title="Only you can see this raid">private</span>
+        }
+        return (
+          <span className="row" style={{ gap: 4 }}>
+            {r.public && <span className="badge named" title="Readable without an account">public</span>}
+            {groups.map((g) => (
+              <span key={g.group_id} className="badge"
+                    title={g.auto ? `${g.name} — every raid on this character` : g.name}>
+                {g.name}
+              </span>
+            ))}
+          </span>
+        )
+      },
     },
   ]
 

@@ -1,9 +1,16 @@
-"""Device tokens: one per (character, device), ingest-only scope, shown once at
-mint, revocable. The QR payload is what the ACT plugin's pairing flow scans;
-pasting the token works the same.
+"""Device tokens: one per device, ingest-only scope, shown once at mint,
+revocable. The QR payload is what the ACT plugin's pairing flow scans; pasting
+the token works the same.
+
+**A token belongs to an ACCOUNT** (v13), not a character. Asking "which
+character?" at pairing time was a question with no good answer — people play
+alts, and the one they'll log in tonight isn't decided yet. The character comes
+off the log instead (`ingest_api`), created on first sight, so one pairing covers
+every character forever.
 
 The scope really is ingest and nothing else — a token sends logs, and who can
-see the resulting raids is decided on the site by someone signed in."""
+see the resulting raids is decided on the site by someone signed in.
+"""
 
 from urllib.parse import quote
 
@@ -13,7 +20,7 @@ from pydantic import BaseModel
 import auth
 import siteconfig
 from db import get_db, rows_to_dicts
-from security import owned_character, require_user
+from security import require_user
 
 router = APIRouter(tags=["tokens"])
 
@@ -31,34 +38,33 @@ def _pair_payload(token: str) -> str:
     return f"eq2advanced://pair?host={quote(host, safe='')}&token={token}"
 
 
-@router.get("/characters/{character_id}/tokens")
-def list_tokens(character_id: int, user=Depends(require_user)):
+@router.get("/tokens")
+def list_tokens(user=Depends(require_user)):
     conn = get_db()
-    char = owned_character(conn, user, character_id)
     rows = conn.execute(
-        "SELECT id, label, created_ts, last_seen_ts, revoked_ts FROM device_tokens "
-        "WHERE character_id=? ORDER BY created_ts DESC", (char["id"],)).fetchall()
+        "SELECT t.id, t.label, t.created_ts, t.last_seen_ts, t.revoked_ts, "
+        "c.name AS character_name "
+        "FROM device_tokens t LEFT JOIN characters c ON c.id = t.character_id "
+        "WHERE t.user_id=? ORDER BY t.created_ts DESC", (user["id"],)).fetchall()
     return {"tokens": rows_to_dicts(rows)}
 
 
-@router.post("/characters/{character_id}/tokens")
-def mint_token(character_id: int, body: TokenCreate, user=Depends(require_user)):
+@router.post("/tokens")
+def mint_token(body: TokenCreate, user=Depends(require_user)):
     conn = get_db()
-    char = owned_character(conn, user, character_id)
     label = (body.label or "").strip() or None
     with conn:
-        token_id, token = auth.mint_device_token(conn, char["id"], label)
+        token_id, token = auth.mint_device_token(conn, user["id"], label)
     return {"id": token_id, "token": token, "pair_payload": _pair_payload(token)}
 
 
 @router.post("/tokens/{token_id}/revoke")
 def revoke_token(token_id: int, user=Depends(require_user)):
     conn = get_db()
-    row = conn.execute("SELECT character_id FROM device_tokens WHERE id=?",
+    row = conn.execute("SELECT user_id FROM device_tokens WHERE id=?",
                        (token_id,)).fetchone()
-    if row is None:
+    if row is None or row["user_id"] != user["id"]:
         raise HTTPException(404, "no such token")
-    owned_character(conn, user, row["character_id"])
     with conn:
         auth.revoke_device_token(conn, token_id)
     return {"ok": True}

@@ -77,8 +77,9 @@ export const api = {
   characters: () => req('/api/characters'),
   addCharacter: (name) => req('/api/characters', json({ name })),
   deleteCharacter: (id) => req(`/api/characters/${id}`, { method: 'DELETE' }),
-  tokens: (charId) => req(`/api/characters/${charId}/tokens`),
-  mintToken: (charId, label) => req(`/api/characters/${charId}/tokens`, json({ label })),
+  // device tokens are per ACCOUNT (v13) — one pairing covers every character
+  tokens: () => req('/api/tokens'),
+  mintToken: (label) => req('/api/tokens', json({ label })),
   revokeToken: (id) => req(`/api/tokens/${id}/revoke`, { method: 'POST' }),
   census: (charId) => req(`/api/characters/${charId}/census`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
@@ -175,4 +176,11 @@ export const fmt = {
   timeRange: (a, b) => (a == null ? '—' : b == null ? fmt.time(a) : `${fmt.time(a)} – ${fmt.time(b)}`),
   dayKey: (epoch) => new Date(epoch * 1000).toLocaleDateString('en-CA'), // local YYYY-MM-DD
   pct: (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—'),
+  bytes: (n) => {
+    if (n == null) return '—'
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+    const mb = n / (1024 * 1024)
+    return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`
+  },
 }

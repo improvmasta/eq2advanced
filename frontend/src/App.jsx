@@ -67,7 +67,12 @@ export default function App() {
           </>}
           {user === null && <NavLink to="/login">Sign in</NavLink>}
         </nav>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
+          {/* Said up front, on every page, because it is the question anyone
+              uploading their raid logs somewhere has first. */}
+          <span className="privacynote">
+            All parse uploads are private until <Link to="/groups">shared</Link>
+          </span>
           {/* The plugin is the fastest way in, and nothing in the nav said so.
               Points at Import rather than straight at the download so the
               install steps and the sharing settings arrive with the file. */}

@@ -188,30 +188,35 @@ def test_device_token_lifecycle(client):
     chars = client.get("/api/characters").json()["characters"]
     beta = next(c for c in chars if c["name"] == "Beta")
 
-    r = client.post(f"/api/characters/{beta['id']}/tokens", json={"label": "raid PC"})
+    r = client.post("/api/tokens", json={"label": "raid PC"})
     assert r.status_code == 200
     minted = r.json()
     assert minted["pair_payload"].startswith("eq2advanced://pair?host=")
     assert minted["token"] in minted["pair_payload"]
 
-    # plaintext resolves to the character, and touches last_seen
+    # plaintext resolves to the ACCOUNT (v13 — not to a character), and the
+    # character is whatever the batch names
     conn = dbmod.get_db()
-    resolved = authmod.device_token_character(conn, minted["token"])
+    resolved = authmod.device_token_row(conn, minted["token"])
     conn.commit()  # the last_seen touch, else this test connection blocks the app's
-    assert resolved["name"] == "Beta"
-    tokens = client.get(f"/api/characters/{beta['id']}/tokens").json()["tokens"]
+    assert resolved["character_id"] is None
+    assert authmod.resolve_ingest_character(conn, resolved, "Beta")["id"] == beta["id"]
+    # a name this account has never used is created on the spot
+    made = authmod.resolve_ingest_character(conn, resolved, "Freshalt")
+    assert made["name"] == "Freshalt" and made["user_id"] == resolved["user_id"]
+    conn.commit()
+    tokens = client.get("/api/tokens").json()["tokens"]
     assert tokens[0]["label"] == "raid PC" and tokens[0]["last_seen_ts"] is not None
 
-    # someone else's character: tokens are invisible and unmintable
+    # someone else's account: their tokens are invisible and unrevokable
     sign_in(client, "one2", fresh=True)
-    assert client.get(f"/api/characters/{beta['id']}/tokens").status_code == 404
-    assert client.post(f"/api/characters/{beta['id']}/tokens", json={}).status_code == 404
+    assert client.get("/api/tokens").json()["tokens"] == []
 
     # revoke kills it
     sign_in(client, "two")
     assert client.post(f"/api/tokens/{minted['id']}/revoke").status_code == 200
-    assert authmod.device_token_character(conn, minted["token"]) is None
-    assert authmod.device_token_character(conn, "not-a-token") is None
+    assert authmod.device_token_row(conn, minted["token"]) is None
+    assert authmod.device_token_row(conn, "not-a-token") is None
     conn.commit()
 
 
@@ -455,5 +460,5 @@ def test_public_links_use_the_public_address(client, monkeypatch):
     assert client.post("/api/characters", json={"name": "Linky"}).status_code == 200
     char = next(c for c in client.get("/api/characters").json()["characters"]
                 if c["name"] == "Linky")
-    payload = client.post(f"/api/characters/{char['id']}/tokens", json={}).json()["pair_payload"]
+    payload = client.post("/api/tokens", json={}).json()["pair_payload"]
     assert payload.startswith("eq2advanced://pair?host=https%3A%2F%2Feq2advanced.example.org&token=")

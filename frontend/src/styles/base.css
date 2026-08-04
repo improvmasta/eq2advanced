@@ -627,8 +627,6 @@ tr.cmpsection td {
 
 /* ---------- home: the raid list ---------- */
 
-.dropzone.compact { padding: 10px 16px; }
-.dropzone.compact input[type="text"] { width: 170px; }
 
 /* Same table as the raid page's — one visual language for "rows of fights"
    and "rows of nights", so sorting works the way it already looks like it
@@ -705,6 +703,7 @@ a.btnlink:hover { background: rgba(var(--gold-rgb), 0.12); text-decoration: none
   margin: 0 0 8px; padding-left: 18px;
   font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
 }
+p.fineprint { padding-left: 0; margin-top: 8px; }
 .fineprint li { margin-bottom: 3px; }
 .fineprint b { color: var(--text); font-weight: 600; }
 .rowactions { white-space: nowrap; }
@@ -942,6 +941,10 @@ tr.healrow .recapbar > i { background: var(--success); }
 }
 
 /* ACT plugin: the header pill, and the Import page's plugin panel */
+.privacynote {
+  font-size: var(--fs-label); font-family: var(--font-data); color: var(--text-muted);
+  white-space: nowrap;
+}
 .navpill {
   display: inline-block; padding: 2px 10px; border-radius: 999px;
   border: 1px solid var(--gold-dim); color: var(--gold);
@@ -956,3 +959,51 @@ tr.healrow .recapbar > i { background: var(--success); }
   border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px;
   display: flex; flex-direction: column; gap: 6px;
 }
+
+/* ---------- the log uploader ---------- */
+
+/* A big obvious target that behaves the way every upload box does: drag onto
+   it, or click it. The whole panel is the button — a small "browse" link inside
+   a drop area is the thing people miss. */
+.uploader .dropzone {
+  padding: 22px 16px; cursor: pointer; user-select: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.uploader .dropzone:hover { border-color: var(--gold-dim); background: var(--row-hover); }
+.uploader .dropzone:focus-visible { outline: 1px solid var(--gold-dim); }
+.dropicon { font-size: 1.6rem; line-height: 1; color: var(--gold-dim); }
+.dropmain { color: var(--text); font-size: var(--fs-sm); }
+.dropsub { color: var(--text-muted); font-size: var(--fs-xs); max-width: 56ch; }
+
+.queue { margin-top: 10px; }
+.queuehead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.queuelist { list-style: none; margin: 6px 0 0; padding: 0; }
+.queuelist li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9ch 7ch 10ch;
+  gap: 8px; align-items: baseline;
+  padding: 3px 0; border-bottom: 1px solid var(--row-line);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.queuelist .qname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queuelist .qstate { text-align: right; color: var(--text-muted); }
+.queuelist li.q-done .qstate { color: var(--success); }
+.queuelist li.q-failed .qstate { color: var(--danger); }
+.queuelist li.q-sending .qstate { color: var(--gold); }
+.queuelist .qdetail { grid-column: 1 / -1; font-size: var(--fs-label); }
+
+/* pairing, inside the plugin box */
+.pairing { margin-top: 10px; }
+.pairing .minted {
+  background: var(--surface-raised); border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 10px;
+}
+
+/* paired devices, under the pairing button */
+.devicelist { list-style: none; margin: 8px 0 0; padding: 0; }
+.devicelist li {
+  display: flex; gap: 10px; align-items: center; padding: 3px 0;
+  border-bottom: 1px solid var(--row-line);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.devicelist li > .muted { margin-left: auto; }

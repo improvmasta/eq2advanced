@@ -35,6 +35,7 @@ def list_sessions(user=Depends(require_user)):
     rows = conn.execute(
         "SELECT s.id, s.source, s.status, s.error, s.started_ts, s.ended_ts, s.line_count, "
         "s.upload_name, s.created_ts, s.calibration, s.pinned, s.pruned, "
+        "s.src_bytes, s.raw_bytes, s.raw_deleted_ts, "
         "c.name AS character_name, "
         "(SELECT COUNT(*) FROM encounters e WHERE e.session_id = s.id "
         " AND e.deleted_ts IS NULL) AS encounter_count "
@@ -199,8 +200,9 @@ async def session_stream(session_id: int, user=Depends(require_user)):
                 last_enc_id = e["id"]
                 yield f"event: encounter\ndata: {json.dumps(dict(e))}\n\n"
             online = conn.execute(
-                "SELECT 1 FROM device_tokens WHERE character_id=? AND revoked_ts IS NULL "
-                "AND last_seen_ts > ?", (sess["char_id"], int(time.time()) - ONLINE_S)
+                "SELECT 1 FROM device_tokens t JOIN characters c ON c.user_id = t.user_id "
+                "WHERE c.id=? AND t.revoked_ts IS NULL AND t.last_seen_ts > ?",
+                (sess["char_id"], int(time.time()) - ONLINE_S)
             ).fetchone() is not None
             status = {
                 "status": sess["status"], "line_count": sess["line_count"],

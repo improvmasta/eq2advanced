@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -54,9 +54,17 @@ CREATE TABLE IF NOT EXISTS characters (
   last_census_ts INTEGER,
   UNIQUE(user_id, name, world_id)
 );
+-- v13: a token belongs to an ACCOUNT, not a character. People play alts, and a
+-- per-character token made "which character?" a question at pairing time — the
+-- one moment nobody knows the answer, because the answer is "whichever one I
+-- happen to log in tonight". The character is resolved per batch instead, from
+-- the log ACT is reading (EQ2 names it eq2log_<Character>.txt), so switching
+-- toons mid-evening just opens a different session. `character_id` survives as
+-- the fallback for tokens minted before v13.
 CREATE TABLE IF NOT EXISTS device_tokens (
   id INTEGER PRIMARY KEY,
-  character_id INTEGER NOT NULL REFERENCES characters(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  character_id INTEGER REFERENCES characters(id),
   token_hash TEXT UNIQUE NOT NULL,
   label TEXT,
   created_ts INTEGER NOT NULL,
@@ -402,6 +410,42 @@ def _username_from_email(email: str, user_id: int, taken: set[str]) -> str:
     return local
 
 
+def _rebuild_device_tokens(conn: sqlite3.Connection) -> None:
+    """v13: device_tokens gains user_id and character_id becomes optional.
+
+    Rebuilt rather than ALTERed because SQLite cannot drop a NOT NULL. Ids are
+    preserved so nothing pointing at a token breaks, and `user_id` comes from
+    the character the token was bound to — every existing token was minted for
+    a character on exactly one account, so the backfill is exact. Live tokens
+    keep working: they still carry `character_id`, which is the fallback when a
+    batch doesn't name a character."""
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("ALTER TABLE device_tokens RENAME TO device_tokens_old")
+        conn.execute("""
+            CREATE TABLE device_tokens (
+              id INTEGER PRIMARY KEY,
+              user_id INTEGER NOT NULL REFERENCES users(id),
+              character_id INTEGER REFERENCES characters(id),
+              token_hash TEXT UNIQUE NOT NULL,
+              label TEXT,
+              created_ts INTEGER NOT NULL,
+              last_seen_ts INTEGER,
+              revoked_ts INTEGER
+            )""")
+        conn.execute("""
+            INSERT INTO device_tokens
+              (id, user_id, character_id, token_hash, label, created_ts, last_seen_ts, revoked_ts)
+            SELECT t.id, c.user_id, t.character_id, t.token_hash, t.label,
+                   t.created_ts, t.last_seen_ts, t.revoked_ts
+              FROM device_tokens_old t JOIN characters c ON c.id = t.character_id""")
+        conn.execute("DROP TABLE device_tokens_old")
+        bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+        assert not bad, f"device_tokens rebuild broke referential integrity: {bad[:3]}"
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def _rebuild_users(conn: sqlite3.Connection) -> None:
     """v9 migration: `users.email UNIQUE NOT NULL` -> `users.username` + security
     question columns. SQLite can't drop a constraint, so the table is rebuilt.
@@ -642,6 +686,12 @@ def init_db() -> None:
         if "can_share" in token_cols:
             conn.execute("ALTER TABLE device_tokens DROP COLUMN can_share")
         conn.execute("DROP TABLE IF EXISTS session_shares")
+        # v13: tokens move from a character to an account. SQLite can't relax a
+        # NOT NULL, so the table is rebuilt; user_id is backfilled through the
+        # character each token was bound to, and character_id is KEPT as the
+        # fallback for any plugin still out there that doesn't name a character.
+        if "user_id" not in token_cols:
+            _rebuild_device_tokens(conn)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

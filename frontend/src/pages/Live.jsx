@@ -66,8 +66,8 @@ export default function Live() {
         <div className="card">
           <p>No live session is receiving right now.</p>
           <p className="note" style={{ marginTop: 6, marginBottom: 0 }}>
-            Mint a device token on the <Link to="/characters">Characters</Link> page,
-            then start the uploader.
+            Set up the ACT plugin on the <Link to="/import">Import</Link> page and
+            tick "Send my combat log as I play".
           </p>
         </div>
       </>

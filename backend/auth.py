@@ -145,31 +145,64 @@ def delete_session(conn, token: str | None) -> None:
 
 # ---- device tokens (per character+device; ingest scope) ----
 
-def mint_device_token(conn, character_id: int, label: str | None) -> tuple[int, str]:
-    """Create a token for one (character, device). Returns (row id, plaintext) —
-    the plaintext is shown once and never stored. Scope is ingest, and only
-    ingest: see `routers/ingest_api.py`."""
+def mint_device_token(conn, user_id: int, label: str | None) -> tuple[int, str]:
+    """Create a token for one device on one ACCOUNT. Returns (row id, plaintext)
+    — the plaintext is shown once and never stored. Scope is ingest, and only
+    ingest: see `routers/ingest_api.py`.
+
+    Not bound to a character (v13): pairing happens before anyone knows which
+    alt they'll play, and the log itself says who it belongs to."""
     token = secrets.token_urlsafe(32)
     row_id = conn.execute(
-        "INSERT INTO device_tokens (character_id, token_hash, label, created_ts) VALUES (?,?,?,?)",
-        (character_id, _sha(token), label, int(time.time()))).lastrowid
+        "INSERT INTO device_tokens (user_id, token_hash, label, created_ts) VALUES (?,?,?,?)",
+        (user_id, _sha(token), label, int(time.time()))).lastrowid
     return row_id, token
 
 
-def device_token_character(conn, token: str | None):
-    """Character row for a live (un-revoked) device token, else None. Touches
-    last_seen_ts — the Characters page's 'uploader online' badge reads it."""
+def device_token_row(conn, token: str | None):
+    """The live (un-revoked) device-token row, else None. Touches last_seen_ts —
+    the 'uploader online' badge reads it.
+
+    Carries `user_id` (the account), and `character_id`, which is NULL for
+    v13-and-later tokens and only set on ones minted when tokens still belonged
+    to a character. Callers resolve the character from the batch."""
     if not token:
         return None
     row = conn.execute(
-        "SELECT c.*, t.id AS token_id FROM device_tokens t "
-        "JOIN characters c ON c.id = t.character_id "
-        "WHERE t.token_hash=? AND t.revoked_ts IS NULL",
+        "SELECT t.id AS token_id, t.user_id, t.character_id, t.label "
+        "FROM device_tokens t WHERE t.token_hash=? AND t.revoked_ts IS NULL",
         (_sha(token),)).fetchone()
     if row is not None:
         conn.execute("UPDATE device_tokens SET last_seen_ts=? WHERE id=?",
                      (int(time.time()), row["token_id"]))
     return row
+
+
+def resolve_ingest_character(conn, token_row, name: str | None):
+    """Which character row a batch belongs to.
+
+    `name` is the logger the plugin read off the log file. It is created on the
+    spot if this account hasn't used it before — exactly what an upload does —
+    so an alt's first raid needs no setup at all. Falling back to the token's
+    own character keeps pre-v13 pairings working.
+
+    Returns None when there is neither, which is a 422 for the caller: the
+    parser cannot resolve subjects without knowing whose log this is."""
+    clean = (name or "").strip().capitalize()
+    if clean and clean.isalpha():
+        row = conn.execute(
+            "SELECT * FROM characters WHERE user_id=? AND name=? AND world_id=618",
+            (token_row["user_id"], clean)).fetchone()
+        if row is not None:
+            return row
+        char_id = conn.execute(
+            "INSERT INTO characters (name, user_id, world_id) VALUES (?, ?, 618)",
+            (clean, token_row["user_id"])).lastrowid
+        return conn.execute("SELECT * FROM characters WHERE id=?", (char_id,)).fetchone()
+    if token_row["character_id"]:
+        return conn.execute("SELECT * FROM characters WHERE id=?",
+                            (token_row["character_id"],)).fetchone()
+    return None
 
 
 def revoke_device_token(conn, token_id: int) -> None:

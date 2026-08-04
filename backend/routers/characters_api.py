@@ -26,9 +26,11 @@ def list_characters(user=Depends(require_user)):
     rows = conn.execute(
         "SELECT c.id, c.user_id, c.name, c.world_id, c.class, c.level, "
         "(SELECT COUNT(*) FROM sessions s WHERE s.character_id = c.id) AS session_count, "
-        "(SELECT COUNT(*) FROM device_tokens t WHERE t.character_id = c.id "
+        # v13: tokens are per ACCOUNT, so these are the account's — every
+        # character is uploadable the moment any device is paired.
+        "(SELECT COUNT(*) FROM device_tokens t WHERE t.user_id = c.user_id "
         " AND t.revoked_ts IS NULL) AS token_count, "
-        "(SELECT MAX(t.last_seen_ts) FROM device_tokens t WHERE t.character_id = c.id "
+        "(SELECT MAX(t.last_seen_ts) FROM device_tokens t WHERE t.user_id = c.user_id "
         " AND t.revoked_ts IS NULL) AS uploader_seen_ts "
         "FROM characters c WHERE c.user_id = ? ORDER BY c.name",
         (user["id"],)).fetchall()
@@ -62,7 +64,9 @@ def delete_character(character_id: int, user=Depends(require_user)):
     if sessions:
         raise HTTPException(409, "character has sessions — delete is blocked to protect them")
     with conn:
-        conn.execute("DELETE FROM device_tokens WHERE character_id=?", (char["id"],))
+        # a token outlives any one character now; just unbind a legacy one
+        conn.execute("UPDATE device_tokens SET character_id=NULL WHERE character_id=?",
+                     (char["id"],))
         conn.execute("DELETE FROM character_shares WHERE character_id=?", (char["id"],))
         conn.execute("DELETE FROM characters WHERE id=?", (char["id"],))
     return {"ok": True}

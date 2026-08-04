@@ -45,17 +45,33 @@ def client(tmp_path_factory):
 
 
 def mint_token(client, char_name):
+    """A character plus an ACCOUNT token (v13 — the token is not bound to the
+    character; batches name it). Returns (char_id, token_id, token) where the
+    token is a `Tok` carrying the name the tests send with each batch."""
     r = client.post("/api/characters", json={"name": char_name})
     assert r.status_code == 200, r.text
     char_id = r.json()["id"]
-    r = client.post(f"/api/characters/{char_id}/tokens", json={"label": "test"})
+    r = client.post("/api/tokens", json={"label": "test"})
     assert r.status_code == 200, r.text
-    return char_id, r.json()["id"], r.json()["token"]
+    return char_id, r.json()["id"], Tok(r.json()["token"], char_name)
 
 
-def send_batch(client, token, lines, batch_id=None, mode="live", gz=False):
-    body = json.dumps({"batch_id": batch_id or str(uuid.uuid4()),
-                       "mode": mode, "lines": lines}).encode()
+class Tok(str):
+    """The token string, remembering which character the test is uploading as."""
+
+    def __new__(cls, value, character):
+        obj = super().__new__(cls, value)
+        obj.character = character
+        return obj
+
+
+def send_batch(client, token, lines, batch_id=None, mode="live", gz=False,
+               character=None):
+    payload = {"batch_id": batch_id or str(uuid.uuid4()), "mode": mode, "lines": lines}
+    name = character if character is not None else getattr(token, "character", None)
+    if name:
+        payload["character"] = name
+    body = json.dumps(payload).encode()
     headers = {"Authorization": f"Bearer {token}"}
     if gz:
         body = gzip.compress(body)
@@ -81,14 +97,41 @@ FIGHT_B = [
 
 
 def test_hello_and_bad_tokens(client):
+    """v13: hello answers for the ACCOUNT. There is no character to name until a
+    log turns up, which is the whole point — one pairing covers every alt."""
     _, _, token = mint_token(client, "Hellotest")
     r = client.get("/api/ingest/hello", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
-    assert r.json()["character"]["name"] == "Hellotest"
+    assert r.json()["account"] == "ingest"
     assert r.json()["session"] is None
+    assert r.json()["receiving"] == []
     assert client.get("/api/ingest/hello").status_code == 401
     assert client.get("/api/ingest/hello",
                       headers={"Authorization": "Bearer nope"}).status_code == 401
+
+
+def test_batch_must_name_a_character(client):
+    """Without a name there is nobody to attribute the log to, and the parser
+    cannot resolve subjects without knowing whose it is. 422, not a guess."""
+    client.post("/api/characters", json={"name": "Namey"})
+    token = client.post("/api/tokens", json={}).json()["token"]
+    r = send_batch(client, token, FIGHT_A, character=None)
+    assert r.status_code == 422, r.text
+
+
+def test_one_token_serves_every_character(client):
+    """The reason tokens stopped belonging to a character: alts. Two names on
+    one token land in two sessions, and the second needs no setup at all."""
+    _, _, token = mint_token(client, "Maintank")
+    first = send_batch(client, token, FIGHT_A).json()["session_id"]
+    # a name this account has never used — created on the spot
+    second = send_batch(client, token, FIGHT_A, character="Altpriest").json()["session_id"]
+    assert first != second
+    names = {c["name"] for c in client.get("/api/characters").json()["characters"]}
+    assert {"Maintank", "Altpriest"} <= names
+    hello = client.get("/api/ingest/hello",
+                       headers={"Authorization": f"Bearer {token}"}).json()
+    assert {r["character"] for r in hello["receiving"]} >= {"Maintank", "Altpriest"}
 
 
 def test_batch_incremental_finalization(client):
