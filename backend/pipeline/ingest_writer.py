@@ -23,7 +23,8 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 12    # 12: encounters named by the enemy fought, real success
+PARSE_VERSION = 13    # 13: every rez family, revives + time dead, intercepts,
+#                            presses ("adjusted delay")
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -227,6 +228,38 @@ def _resolve_events(events: list[ParsedEvent], res: EntityResolver) -> list[dict
     return resolved
 
 
+def drop_raw_if_unwanted(conn: sqlite3.Connection, session_id: int) -> bool:
+    """`retain_raw=0` means "parse it, don't keep it" — the trade a huge log can
+    make instead of being refused. The stats stay forever; the bytes go as soon
+    as the parse lands.
+
+    Two consequences, both enforced rather than hoped for: the file is only
+    unlinked when no other session points at that content address (uploads are
+    shared between people who were on the same raid), and the session can never
+    be re-parsed, so the PARSE_VERSION sweep must skip it — a parser improvement
+    will not reach these sessions."""
+    from db import UPLOADS_DIR
+    row = conn.execute(
+        "SELECT source, upload_sha256, retain_raw, raw_deleted_ts FROM sessions "
+        "WHERE id=?", (session_id,)).fetchone()
+    if row is None or row["retain_raw"] or row["raw_deleted_ts"]:
+        return False
+    chunks = [r["path"] for r in conn.execute(
+        "SELECT path FROM raw_chunks WHERE session_id=?", (session_id,))]
+    with conn:
+        conn.execute("DELETE FROM raw_chunks WHERE session_id=?", (session_id,))
+        conn.execute("UPDATE sessions SET raw_deleted_ts=?, raw_bytes=0 WHERE id=?",
+                     (int(time.time()), session_id))
+        shared = conn.execute(
+            "SELECT 1 FROM sessions WHERE upload_sha256=? AND id<>? LIMIT 1",
+            (row["upload_sha256"], session_id)).fetchone() if row["upload_sha256"] else None
+    for p in chunks:
+        Path(p).unlink(missing_ok=True)
+    if row["source"] == "upload" and row["upload_sha256"] and shared is None:
+        (UPLOADS_DIR / f"{row['upload_sha256']}.txt.gz").unlink(missing_ok=True)
+    return True
+
+
 def parse_session(session_id: int, path: Path | list[Path]) -> None:
     """Parse stored raw (one upload file, or a live session's chunk files in
     order) into events/encounters/rollups. Idempotent: derived rows are cleared
@@ -263,6 +296,8 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
 
         events = list(parse_lines(counted(), logger, pet_names))
         known_mobs = refine_known_mobs(events, logger)
+        from census.catalog import press_inputs
+        periods, proc_names = press_inputs(conn)
 
         with conn:
             clear_derived(conn, session_id)
@@ -290,7 +325,8 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                     enc_of[i] = enc_id
 
                 actor_stats, ability_stats = roll_encounter(
-                    seg_events, max(seg.end_ts - seg.start_ts, 1)
+                    seg_events, max(seg.end_ts - seg.start_ts, 1),
+                    periods, proc_names,
                 )
                 conn.executemany(ACTOR_INSERT, actor_rows(enc_id, actor_stats))
                 conn.executemany(
@@ -334,6 +370,8 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
 
             from pipeline.zoneruns import rebuild_zone_runs
             rebuild_zone_runs(conn, character_id)
+
+        drop_raw_if_unwanted(conn, session_id)
     except Exception:
         conn.execute(
             "UPDATE sessions SET status='error', error=? WHERE id=?",

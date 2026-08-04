@@ -1,10 +1,16 @@
-"""Per-entity class inference: what class is each player in this log?
+"""Per-player class inference: what class is each player in this log?
 
 The log never says. What it does say is which abilities every player used, and
 `ability_catalog` already knows which ability names belong to which class (from
-the cached Census spell books). So each distinct ability a player used casts one
-vote for its class and the winner takes the row — stored as JSON in
-`entities.class_guess`.
+the cached Census spell books). So the abilities a player used vote for a class
+and the winner takes the row — stored as JSON in `entities.class_guess`.
+
+Evidence is gathered per NAME across every session, not per session: one raid
+night shows a healer casting three spells, and the same healer in last week's
+log shows six more. Guessing per file gave the same person a class in one raid,
+nothing in the next, and (for Zooey: defiler here, mystic there) two different
+answers in the same list. The answer is written back to EVERY entity row with
+that name, so a name resolved tonight is resolved in older raids too.
 
 Honesty rules baked in:
 - **Procs never vote.** A "may cast X on ..." ability comes from GEAR, not the
@@ -13,14 +19,23 @@ Honesty rules baked in:
 - **Pet kits never vote** (`unit='pet'`): a conjuror's pet casting Protofire is
   the pet's ability, and conflated pets hide under their owner's name.
 - **Autoattack never votes** — every class swings.
-- **Shared abilities never vote.** A catalog `class` of "conjuror,necromancer"
-  resolves to no single class, so it is evidence for neither.
+- **Shared abilities vote in fractions.** A catalog `class` of
+  "conjuror,necromancer" is half a vote each: it cannot pick between the two,
+  but it is real evidence against the other twenty-two. Only a whole vote (a
+  spell exactly one class scribes) can carry a winner, which is what MIN_STRONG
+  enforces.
 - **Census ground truth wins outright.** A `characters` row with a class (from
   the Census sync) is the answer, at confidence 1.0 and source `census`.
 
-Thresholds are deliberately blunt: the winner needs >= MIN_MATCHES abilities and
->= MIN_SHARE of all votes cast, otherwise `class_guess` stays NULL and every
-reader shows nothing rather than a guess.
+A winner needs whole-vote evidence (MIN_STRONG), enough total weight
+(MIN_SCORE), and either a majority of the weight cast or a clear MARGIN over
+the runner-up — the margin is what carries a real class whose player wore a lot
+of unflagged proc gear. Otherwise `class_guess` stays NULL and every reader
+shows nothing rather than a guess.
+
+What this still cannot do is name a class whose spells are not in Census: AA
+abilities, gear procs and item effects are absent from the spell books, and
+they are roughly half of the ability names a raid log actually contains.
 """
 
 import json
@@ -29,8 +44,10 @@ from collections import Counter, defaultdict
 # autoattack buckets from statsroll._melee_bucket — class-blind by definition
 MELEE_BUCKETS = frozenset(("(melee)", "(multi attack)", "(aoe attack)", "(flurry)"))
 
-MIN_MATCHES = 3         # distinct class-defining abilities behind the winner
-MIN_SHARE = 0.4         # winner's share of all votes cast
+MIN_STRONG = 2          # single-class abilities behind the winner
+MIN_SCORE = 2.0         # winner's weight, shared abilities counted in fractions
+MIN_SHARE = 0.5         # ...of all weight cast, unless the margin carries it
+MARGIN = 2.0            # winner over runner-up when it is not a majority
 
 # the 24 EoF-era adventure classes (census.sync.ALL_CLASSES) plus the two that
 # only exist on live — Census class keys are lowercase, so this doubles as the
@@ -48,59 +65,94 @@ VALID_CLASSES = frozenset((
 _ATTEMPTED: set[int] = set()
 
 
-def _single_class(raw: str | None) -> str | None:
-    """A catalog/ability class string -> the one class it identifies, or None.
-    Census stores every class that can scribe a spell as a comma list; a shared
-    spell identifies nobody."""
+def _classes(raw: str | None) -> set[str]:
+    """A catalog/ability class string -> the classes it identifies. Census
+    stores every class that can scribe a spell as a comma list."""
     if not raw:
-        return None
-    parts = {p.strip().lower() for p in raw.split(",") if p.strip()} & VALID_CLASSES
+        return set()
+    return {p.strip().lower() for p in raw.split(",") if p.strip()} & VALID_CLASSES
+
+
+def _single_class(raw: str | None) -> str | None:
+    """The ONE class a class string identifies, or None if it names several."""
+    parts = _classes(raw)
     return next(iter(parts)) if len(parts) == 1 else None
 
 
-def _catalog(conn) -> tuple[set[str], dict[str, str]]:
-    """-> (ability names that may never vote, ability name -> class)."""
+def _catalog(conn) -> tuple[set[str], dict[str, set[str]]]:
+    """-> (ability names that may never vote, ability name -> its classes)."""
     muted: set[str] = set()
-    cls_of: dict[str, str] = {}
+    cls_of: dict[str, set[str]] = {}
     for name, cls, unit, proc in conn.execute(
             "SELECT ability_name, class, unit, proc FROM ability_catalog"):
         if unit == "pet" or proc:
             muted.add(name)
             continue
-        one = _single_class(cls)
-        if one:
-            cls_of[name] = one
+        classes = _classes(cls)
+        if classes:
+            cls_of[name] = classes
     return muted, cls_of
 
 
 def _infer(used: set[tuple[str, str | None]], muted: set[str],
-           cls_of: dict[str, str]) -> dict | None:
-    votes: Counter = Counter()
+           cls_of: dict[str, set[str]]) -> dict | None:
+    score: Counter = Counter()      # weight, shared abilities split k ways
+    strong: Counter = Counter()     # abilities exactly one class scribes
     for name, ability_class in used:
         if name in MELEE_BUCKETS or name in muted:
             continue
-        one = cls_of.get(name) or _single_class(ability_class)
-        if one:
-            votes[one] += 1
-    total = sum(votes.values())
+        classes = cls_of.get(name) or _classes(ability_class)
+        if not classes:
+            continue
+        for cls in classes:
+            score[cls] += 1 / len(classes)
+        if len(classes) == 1:
+            strong[next(iter(classes))] += 1
+    total = sum(score.values())
     if not total:
         return None
-    # ties break on the class name so the same log always yields the same answer
-    top, n = max(sorted(votes.items()), key=lambda kv: kv[1])
-    if n < MIN_MATCHES or n / total < MIN_SHARE:
+    # ties break on the class name so the same evidence always yields the same
+    # answer, whatever order the rows came back in
+    ranked = sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))
+    top, weight = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
+    share = weight / total
+    # a tie is never an answer, however much weight is behind it
+    if (strong[top] < MIN_STRONG or weight < MIN_SCORE or weight <= runner_up
+            or (share < MIN_SHARE and weight < MARGIN * runner_up)):
         return None
-    return {"class": top, "confidence": round(n / total, 2),
-            "matches": total, "source": "inferred"}
+    return {"class": top, "confidence": round(share, 2),
+            "matches": strong[top], "source": "inferred"}
+
+
+def _evidence(conn) -> dict[str, set[tuple[str, str | None]]]:
+    """Every ability every player has EVER been seen using, keyed by name.
+
+    One query over the whole database (4.8k distinct rows on the real one,
+    ~0.1s) — cheap enough to redo per parse, and the only way a name that is
+    thin in tonight's log gets the benefit of last week's."""
+    used: dict[str, set] = defaultdict(set)
+    for r in conn.execute(
+            "SELECT DISTINCT e.name AS name, ab.name AS ability, ab.class AS acls "
+            "FROM encounter_ability_stats s "
+            "JOIN entities e ON e.id = s.entity_id "
+            "JOIN abilities ab ON ab.id = s.ability_id "
+            "WHERE e.kind='player'"):
+        used[r["name"]].add((r["ability"], r["acls"]))
+    return used
 
 
 def guess_session_classes(conn, session_id: int) -> int:
-    """Write `entities.class_guess` for every player entity in a session.
+    """Write `entities.class_guess` for every player in a session, from
+    evidence pooled across every session, and apply the answer to that name's
+    rows in the other sessions too.
+
     Returns the number of rows updated. Runs inside the caller's transaction
     when there is one (the parse path); otherwise autocommits per statement."""
-    players = {r["id"]: r["name"] for r in conn.execute(
-        "SELECT id, name FROM entities WHERE session_id=? AND kind='player'",
+    names = {r["name"] for r in conn.execute(
+        "SELECT DISTINCT name FROM entities WHERE session_id=? AND kind='player'",
         (session_id,))}
-    if not players:
+    if not names:
         return 0
 
     truth = {}
@@ -111,29 +163,23 @@ def guess_session_classes(conn, session_id: int) -> int:
             truth[r["name"].lower()] = cls
 
     muted, cls_of = _catalog(conn)
-    used: dict[int, set] = defaultdict(set)
-    for r in conn.execute(
-            "SELECT s.entity_id AS eid, ab.name AS name, ab.class AS acls "
-            "FROM encounter_ability_stats s "
-            "JOIN encounters e ON e.id = s.encounter_id "
-            "JOIN abilities ab ON ab.id = s.ability_id "
-            "WHERE e.session_id=?", (session_id,)):
-        if r["eid"] in players:
-            used[r["eid"]].add((r["name"], r["acls"]))
+    used = _evidence(conn)
 
-    rows = []
-    for eid, name in players.items():
+    updated = 0
+    for name in names:
         known = truth.get(name.lower())
         if known:
             guess = {"class": known, "confidence": 1.0,
-                     "matches": len(used.get(eid, ())), "source": "census"}
+                     "matches": len(used.get(name, ())), "source": "census"}
         else:
-            guess = _infer(used.get(eid, set()), muted, cls_of)
-        if guess is not None:
-            rows.append((json.dumps(guess, separators=(",", ":")), eid))
-    if rows:
-        conn.executemany("UPDATE entities SET class_guess=? WHERE id=?", rows)
-    return len(rows)
+            guess = _infer(used.get(name, set()), muted, cls_of)
+        if guess is None:
+            continue
+        cur = conn.execute(
+            "UPDATE entities SET class_guess=? WHERE name=? AND kind='player'",
+            (json.dumps(guess, separators=(",", ":")), name))
+        updated += cur.rowcount
+    return updated
 
 
 def parse_class_guess(text: str | None) -> dict | None:

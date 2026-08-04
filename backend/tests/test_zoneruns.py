@@ -21,7 +21,7 @@ def conn():
     conn.executescript(SCHEMA)
     # parse_version lives in init_db's ALTER path, not the base SCHEMA
     conn.execute("ALTER TABLE sessions ADD COLUMN parse_version INTEGER")
-    conn.execute("INSERT INTO characters (id, name, world_id) VALUES (1, 'Bobby', 618)")
+    conn.execute("INSERT INTO characters (id, user_id, name, world_id) VALUES (1, 1, 'Bobby', 618)")
     return conn
 
 
@@ -150,19 +150,97 @@ def test_dissolved_runs_deleted(conn):
     assert runs(conn) == []
 
 
-def test_raider_count(conn):
+# ---------- the roster (raider_count) ----------
+
+
+def add_entity(conn, eid, name, kind="player", sid=1):
+    conn.execute("INSERT INTO entities (id, session_id, name, kind) VALUES (?,?,?,?)",
+                 (eid, sid, name, kind))
+
+
+def add_actor(conn, enc_id, entity_id, damage=1000, taken=0):
+    conn.execute(
+        "INSERT INTO encounter_actor_stats (encounter_id, entity_id, damage, "
+        "damage_taken) VALUES (?,?,?,?)", (enc_id, entity_id, damage, taken))
+
+
+def test_roster_counts_players_who_did_something(conn):
     add_session(conn, 1, T0, T0 + 5000)
     e1 = add_enc(conn, 1, "Zone A", "Boss", T0, T0 + 100)
-    for i, (name, kind) in enumerate(
-            [("P1", "player"), ("P2", "player"), ("Mob", "mob")], start=1):
-        conn.execute(
-            "INSERT INTO entities (id, session_id, name, kind) VALUES (?, 1, ?, ?)",
-            (i, name, kind))
-        conn.execute(
-            "INSERT INTO encounter_actor_stats (encounter_id, entity_id) VALUES (?, ?)",
-            (e1, i))
+    add_entity(conn, 1, "P1")
+    add_entity(conn, 2, "P2")
+    add_entity(conn, 3, "Mob", kind="mob")
+    add_entity(conn, 4, "Bystander")
+    add_entity(conn, 5, "Unknown")
+    add_actor(conn, e1, 1)
+    add_actor(conn, e1, 2)
+    add_actor(conn, e1, 3)                          # mobs are not raiders
+    add_actor(conn, e1, 4, damage=0, taken=9000)    # only ever got hit
+    add_actor(conn, e1, 5)                          # the pooled sourceless actor
     rebuild_zone_runs(conn, 1)
     assert runs(conn)[0]["raider_count"] == 2
+
+
+def test_roster_drops_the_group_that_fought_past_you(conn):
+    """Castle Mistmoore, run 9: four regulars over most of the night and six
+    strangers who appear in two fights as they go by."""
+    add_session(conn, 1, T0, T0 + 20000)
+    encs = [add_enc(conn, 1, "Zone A", f"Pull {i}", T0 + i * 200, T0 + i * 200 + 100)
+            for i in range(20)]
+    for i in range(1, 5):
+        add_entity(conn, i, f"Regular{i}")
+        for e in encs:
+            add_actor(conn, e, i)
+    for i in range(5, 11):
+        add_entity(conn, i, f"Passerby{i}")
+        for e in encs[7:9]:
+            add_actor(conn, e, i)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[0]["raider_count"] == 4
+
+
+def test_roster_keeps_a_real_raid_whole(conn):
+    """The rule must not eat a 24-man raid: everyone who is actually there is
+    there for most of it."""
+    add_session(conn, 1, T0, T0 + 40000)
+    encs = [add_enc(conn, 1, "Zone A", f"Pull {i}", T0 + i * 200, T0 + i * 200 + 100)
+            for i in range(30)]
+    for i in range(1, 25):
+        add_entity(conn, i, f"Raider{i}")
+        for e in encs[: 20 + (i % 10)]:
+            add_actor(conn, e, i)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[0]["raider_count"] == 24
+
+
+def test_roster_takes_everyone_on_a_short_run(conn):
+    """Under SHORT_RUN_FIGHTS there is no attendance to read, so one fight is
+    enough — the alternative is a blank column on every quick zone."""
+    add_session(conn, 1, T0, T0 + 5000)
+    e1 = add_enc(conn, 1, "Zone A", "Boss", T0, T0 + 100)
+    e2 = add_enc(conn, 1, "Zone A", "Boss 2", T0 + 200, T0 + 300)
+    add_entity(conn, 1, "P1")
+    add_entity(conn, 2, "P2")
+    add_actor(conn, e1, 1)
+    add_actor(conn, e2, 2)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[0]["raider_count"] == 2
+
+
+def test_roster_counts_people_not_entity_rows(conn):
+    """Entities are session-scoped; a run spanning two logs must not count the
+    same raider twice."""
+    add_session(conn, 1, T0, T0 + 1000)
+    add_session(conn, 2, T0 + 1000, T0 + 2000)
+    e1 = add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    e2 = add_enc(conn, 2, "Zone A", "Boss 2", T0 + 200, T0 + 300)
+    add_entity(conn, 1, "P1", sid=1)
+    add_entity(conn, 2, "P1", sid=2)
+    add_actor(conn, e1, 1)
+    add_actor(conn, e2, 2)
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert len(rs) == 1 and rs[0]["raider_count"] == 1
 
 
 # ---------- hand edits (delete / merge / unmerge) ----------

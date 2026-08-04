@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import SelectionBar from '../components/SelectionBar.jsx'
+import ShareDialog from '../components/ShareDialog.jsx'
 import SortableTable from '../components/SortableTable.jsx'
 import Sparkline from '../components/Sparkline.jsx'
 import { api, fmt } from '../lib/api.js'
@@ -17,6 +18,18 @@ import { api, fmt } from '../lib/api.js'
 
 const DAY_MS = 86_400_000
 
+/* A group is six, so seven raiders means the night was a raid. `raider_count`
+   is the run's ROSTER, not everyone the log overheard — the backend
+   (pipeline/zoneruns.py) drops mobs, bystanders who only ever got hit, and the
+   group that fought past you, all of which used to push a six-man run over
+   this line. Solo and group runs are real parses, just not what this list is
+   for, so they are off unless you ask. */
+const RAID_MIN_RAIDERS = 7
+const RAIDS_ONLY_KEY = 'eq2advanced-raids-only'
+const SHOW_PUBLIC_KEY = 'eq2advanced-show-public'
+
+const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
+
 /* "Tonight" / "Yesterday" / weekday — a raid list is read by when, and the
    exact date is one column over anyway. */
 function dayLabel(ts) {
@@ -29,7 +42,7 @@ function dayLabel(ts) {
   return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-export default function Home() {
+export default function Home({ user }) {
   const navigate = useNavigate()
   const [runs, setRuns] = useState(null)
   const [sessions, setSessions] = useState(null)
@@ -39,11 +52,31 @@ export default function Home() {
   const [confirm, setConfirm] = useState(null)   // {kind, runs} pending action
   const [orphans, setOrphans] = useState(null)   // logs with nothing left in them
   const [undo, setUndo] = useState(null)         // {fingerprints, character_id, n}
+  const [raidsOnly, setRaidsOnly] = useState(
+    () => localStorage.getItem(RAIDS_ONLY_KEY) !== '0')
+  /* Published raids are readable by anyone, so they turn up in the list of a
+     brand-new account that has parsed nothing. `via_public` marks the ones you
+     can ONLY see because they were published — a raid of your own that is also
+     public is still yours and never disappears with this off. */
+  const [showPublic, setShowPublic] = useState(
+    () => localStorage.getItem(SHOW_PUBLIC_KEY) !== '0')
+  // mine | shared | all — a group's raids sit in the same list as your own,
+  // labelled, because they answer the same question
+  const [scope, setScope] = useState('all')
+  const [sharing, setSharing] = useState(null)   // run id whose share panel is open
+
+  useEffect(() => {
+    localStorage.setItem(RAIDS_ONLY_KEY, raidsOnly ? '1' : '0')
+  }, [raidsOnly])
+
+  useEffect(() => {
+    localStorage.setItem(SHOW_PUBLIC_KEY, showPublic ? '1' : '0')
+  }, [showPublic])
 
   const refresh = useCallback(() => {
-    api.zoneRuns().then((d) => setRuns(d.zone_runs)).catch((e) => setError(e.message))
-    api.sessions().then((d) => setSessions(d.sessions)).catch(() => {})
-  }, [])
+    api.zoneRuns(scope).then((d) => setRuns(d.zone_runs)).catch((e) => setError(e.message))
+    if (user) api.sessions().then((d) => setSessions(d.sessions)).catch(() => {})
+  }, [scope, user])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -55,11 +88,36 @@ export default function Home() {
     return () => clearInterval(t)
   }, [parsing, refresh])
 
-  const multiChar = useMemo(
-    () => new Set((runs || []).map((r) => r.character_name)).size > 1, [runs])
+  const visible = useMemo(() => {
+    let list = runs || []
+    if (raidsOnly) list = list.filter(isRaid)
+    // signed out, everything IS public — filtering it would empty the page
+    if (!showPublic && user) list = list.filter((r) => !r.via_public)
+    return list
+  }, [runs, raidsOnly, showPublic, user])
+  const hidden = (runs?.length || 0) - visible.length
+  const publicCount = useMemo(
+    () => (runs || []).filter((r) => r.via_public).length, [runs])
 
+  const multiChar = useMemo(
+    () => new Set(visible.map((r) => r.character_name)).size > 1, [visible])
+  const someoneElses = useMemo(() => visible.some((r) => !r.mine), [visible])
+
+  // a run you cannot see is a run you cannot merge or delete: filtering out
+  // drops it from the selection rather than leaving it armed off-screen
   const pickedRuns = useMemo(
-    () => (runs || []).filter((r) => picked.has(r.id)), [runs, picked])
+    () => visible.filter((r) => picked.has(r.id)), [visible, picked])
+  // merge/delete/share act on raids you own; someone else's shared night is
+  // read-only, so it never arms those buttons
+  const editable = useMemo(() => pickedRuns.filter((r) => r.mine), [pickedRuns])
+
+  useEffect(() => {
+    setPicked((s) => {
+      const ids = new Set(visible.map((r) => r.id))
+      const kept = [...s].filter((id) => ids.has(id))
+      return kept.length === s.size ? s : new Set(kept)
+    })
+  }, [visible])
 
   async function perform(fn) {
     setBusy(true)
@@ -71,12 +129,12 @@ export default function Home() {
   }
 
   const doMerge = () => perform(async () => {
-    await api.mergeZoneRuns(pickedRuns.map((r) => r.id))
+    await api.mergeZoneRuns(editable.map((r) => r.id))
     setPicked(new Set())
   })
 
   const doUnmerge = () => perform(async () => {
-    for (const r of pickedRuns) await api.unmergeZoneRun(r.id)
+    for (const r of editable) await api.unmergeZoneRun(r.id)
     setPicked(new Set())
   })
 
@@ -85,8 +143,8 @@ export default function Home() {
     const fps = []
     // restore is per character; offering Undo across a mixed selection would
     // put half the fights back and say nothing about the other half
-    const chars = new Set(pickedRuns.map((r) => r.character_id))
-    for (const r of pickedRuns) {
+    const chars = new Set(editable.map((r) => r.character_id))
+    for (const r of editable) {
       const d = await api.deleteZoneRun(r.id)
       fps.push(...(d.fingerprints || []))
       empties = d.empty_sessions || empties
@@ -113,6 +171,9 @@ export default function Home() {
 
   const columns = [
     {
+      /* Sorted by night (the default) the date sits in the group heading, so
+         the cell would say it twice; sorted by zone or DPS there is no
+         heading and the cell is the only place it appears. */
       key: 'day', label: 'Night', align: 'l',
       render: (r) => (
         <span className="runday">
@@ -127,7 +188,7 @@ export default function Home() {
       render: (r) => (
         <span className="runzone">
           {r.zone || 'Unknown zone'}
-          {r.merged && <span className="badge" title="Merged by hand — Unmerge puts it back">merged</span>}
+          {r.merged && <span className="badge" title="Merged by hand">merged</span>}
         </span>
       ),
       sortValue: (r) => r.zone || '',
@@ -155,22 +216,93 @@ export default function Home() {
     },
     {
       key: 'spark', label: 'Shape', sortable: false,
-      render: (r) => <Sparkline values={r.spark} title="Raid DPS, fight by fight" />,
+      render: (r) => <Sparkline values={r.spark} title="Raid DPS by fight" />,
     },
-    ...(multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
+    /* Whose parse this is, named by the CHARACTER who logged it — that is who
+       you raided with. Account names belong on the Groups and Admin pages, not
+       in a raid list. It subsumes the Character column, so they never both
+       show. */
+    ...(someoneElses
+      ? [{
+          key: 'character_name', label: 'From', align: 'l',
+          render: (r) => (r.mine
+            ? <span className="muted">you</span>
+            : <span>{r.character_name}</span>),
+        }]
+      : multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
+    {
+      key: 'shared', label: 'Shared', sortable: false, align: 'l',
+      render: (r) => (
+        <span className="row" style={{ gap: 4 }}>
+          {r.public && <span className="badge named" title="Readable without an account">public</span>}
+          {r.shared_with?.map((g) => (
+            <span key={g.group_id} className="badge"
+                  title={g.auto ? `${g.name} — every raid on this character` : g.name}>
+              {g.name}
+            </span>
+          ))}
+        </span>
+      ),
+    },
   ]
 
   return (
     <>
       <div className="pagehead">
-        <h1>Raids</h1>
-        <span className="sub">Every zone run you have parsed, newest first</span>
+        <h1>Raid Parses</h1>
+        {!user && <span className="sub">Sign in to parse your own logs</span>}
         <span className="actions">
-          <Link className="btnlink" to="/import">Import a log</Link>
+          {user && (
+            <span className="chiprow">
+              {[['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me']].map(([k, label]) => (
+                <button key={k} className={`chip ${scope === k ? 'on' : ''}`}
+                        onClick={() => { setScope(k); setPicked(new Set()) }}>
+                  {label}
+                </button>
+              ))}
+            </span>
+          )}
+          {/* A switch, not a checkbox: it changes what the whole page is a list
+              of, and you should be able to see which way it is set. */}
+          <label
+            className={`switch ${raidsOnly ? 'on' : ''}`}
+            title={`${RAID_MIN_RAIDERS}+ raiders. Off also lists solo and group runs.`}
+          >
+            <input
+              type="checkbox"
+              checked={raidsOnly}
+              onChange={(ev) => setRaidsOnly(ev.target.checked)}
+            />
+            <i className="track"><i className="knob" /></i>
+            Raids only
+            {raidsOnly && hidden > 0 && <span className="muted"> ({hidden} hidden)</span>}
+          </label>
+          {user && publicCount > 0 && (
+            <label
+              className={`switch ${showPublic ? 'on' : ''}`}
+              title="Raids somebody else published. Yours stay listed either way."
+            >
+              <input
+                type="checkbox"
+                checked={showPublic}
+                onChange={(ev) => setShowPublic(ev.target.checked)}
+              />
+              <i className="track"><i className="knob" /></i>
+              Public
+              <span className="muted"> ({publicCount})</span>
+            </label>
+          )}
+          {user
+            ? <Link className="btnlink" to="/import">Import a log</Link>
+            : <Link className="btnlink" to="/login">Sign in</Link>}
         </span>
       </div>
 
-      {parsing && <p className="muted">Parsing… new runs appear as logs finish.</p>}
+      {sharing && (
+        <ShareDialog runId={sharing} isAdmin={user?.role === 'admin'}
+                     onClose={() => setSharing(null)} onChanged={refresh} />
+      )}
+      {parsing && <p className="muted">Parsing…</p>}
       {error && <p className="err">{error}</p>}
       {undo && (
         <p className="note flash">
@@ -185,7 +317,7 @@ export default function Home() {
             {orphans.length === 1
               ? `${orphans[0].upload_name || `Log ${orphans[0].id}`} has no fights left in it.`
               : `${orphans.length} logs have no fights left in them.`}
-            {' '}Delete the uploaded log too? The raw file goes with it.
+            {' '}Delete the uploaded log too?
           </p>
           <div className="row">
             <button disabled={busy} onClick={deleteLogs}>Delete the log</button>
@@ -199,8 +331,8 @@ export default function Home() {
             Delete {confirm.runs.length === 1
               ? <strong>{confirm.runs[0].zone || 'Unknown zone'}</strong>
               : `${confirm.runs.length} raids`}
-            {' '}— {confirm.runs.reduce((s, r) => s + r.encounter_count, 0)} fights disappear
-            from every total. The log stays; you can undo right after.
+            {' '}— {confirm.runs.reduce((s, r) => s + r.encounter_count, 0)} fights. The log
+            stays, and you can undo right after.
           </p>
           <div className="row">
             <button disabled={busy} onClick={doDelete}>Delete</button>
@@ -212,19 +344,56 @@ export default function Home() {
       {runs === null && !error && <p className="muted">Loading…</p>}
       {runs?.length === 0 && (
         <p className="muted">
-          Nothing yet — <Link to="/import">import a log</Link> to get started.
+          {!user ? 'Nothing published yet.'
+            : scope === 'shared'
+              ? 'Nothing shared with your groups yet.'
+              : <>Nothing yet — <Link to="/import">import a log</Link>.</>}
+        </p>
+      )}
+      {runs?.length > 0 && visible.length === 0 && (
+        <p className="muted">
+          Nothing with {RAID_MIN_RAIDERS}+ raiders.{' '}
+          <button className="chip" onClick={() => setRaidsOnly(false)}>
+            Show all {runs.length} runs
+          </button>
         </p>
       )}
 
-      {runs?.length > 0 && (
+      {visible.length > 0 && (
         <div className="card">
           <SortableTable
             columns={columns}
-            rows={runs}
+            rows={visible}
             defaultSort={{ key: 'day', dir: 'desc' }}
+            /* A raid night is the unit people remember, and three zones from
+               one Saturday read as one night only if the list says so. Sorted
+               by anything else the headings would be noise, so they go away —
+               see SortableTable. */
+            groupBy={{
+              key: 'day',
+              of: (r) => new Date(r.started_ts * 1000).toDateString(),
+              label: (r) => {
+                const day = visible.filter(
+                  (x) => new Date(x.started_ts * 1000).toDateString()
+                    === new Date(r.started_ts * 1000).toDateString())
+                const fights = day.reduce((s, x) => s + x.encounter_count, 0)
+                const named = day.reduce((s, x) => s + (x.named_count || 0), 0)
+                const won = day.reduce((s, x) => s + (x.success_count || 0), 0)
+                return (
+                  <span className="daygroup">
+                    <span className="d">{dayLabel(r.started_ts)}</span>
+                    <span className="muted">{fmt.date(r.started_ts)}</span>
+                    <span className="muted">
+                      {day.length} zone{day.length === 1 ? '' : 's'} · {fights} fights
+                      {named > 0 && ` · ${won}/${named} named`}
+                    </span>
+                  </span>
+                )
+              },
+            }}
             rowKey={(r) => r.id}
             className="raidlist"
-            wrapClass={runs.length > 14 ? 'sticky' : ''}
+            wrapClass={visible.length > 14 ? 'sticky' : ''}
             onRowClick={(r) => navigate(`/zones/${r.id}`)}
             checkable={() => true}
             checkedKeys={picked}
@@ -252,22 +421,31 @@ export default function Home() {
           onClear={() => setPicked(new Set())}
           actions={
             <>
-              {pickedRuns.length >= 2 && (
+              {editable.length === 1 && (
+                <button className="chip" disabled={busy}
+                        onClick={() => setSharing(editable[0].id)}
+                        title="Choose which groups can see this raid">
+                  Share
+                </button>
+              )}
+              {editable.length >= 2 && (
                 <button className="chip" disabled={busy} onClick={doMerge}
-                        title="Treat these as one raid — a zone you re-entered is still one night">
+                        title="Treat these as one raid">
                   Merge
                 </button>
               )}
-              {pickedRuns.some((r) => r.merged) && (
+              {editable.some((r) => r.merged) && (
                 <button className="chip" disabled={busy} onClick={doUnmerge}
-                        title="Undo the merge and let the segmenter decide again">
+                        title="Undo the merge">
                   Unmerge
                 </button>
               )}
-              <button className="chip danger" disabled={busy}
-                      onClick={() => setConfirm({ kind: 'delete', runs: pickedRuns })}>
-                Delete
-              </button>
+              {editable.length > 0 && (
+                <button className="chip danger" disabled={busy}
+                        onClick={() => setConfirm({ kind: 'delete', runs: editable })}>
+                  Delete
+                </button>
+              )}
             </>
           }
         />

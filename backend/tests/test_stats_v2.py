@@ -138,7 +138,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         r = c.post("/api/auth/register",
-                   json={"email": "statsv2@test.local", "password": "hunter2hunter2"})
+                   json={"username": "statsv2", "password": "hunter2hunter2"})
         assert r.status_code == 200, r.text
         yield c
     mp.undo()
@@ -234,3 +234,94 @@ def test_agg_sums_and_validates(client):
     assert xbobby["damage"] == 410 and len(xbobby["entity_ids"]) == 2
     assert client.get("/api/encounters/agg?ids=abc").status_code == 422
     assert client.get("/api/encounters/agg?ids=999999").status_code == 404
+
+
+# ---- presses ("adjusted delay"), intercepts, time dead ----
+
+def test_dot_ticks_collapse_into_one_press():
+    """Six ticks of one DoT on one mob is one button press, and the ability
+    keeps BOTH readings: ACT's landing delay and the press delay."""
+    events = [rev(t, "damage", ability="Soulrot", amount=100, dtype="disease")
+              for t in (0, 3, 6, 9, 12, 15)]
+    _, abil = roll_encounter(events, 20)
+    st = abil[(1, "Soulrot", "damage")]
+    assert st["hits"] == 6
+    assert st["presses"] == 1
+    assert st["avg_delay_s"] == 3.0     # between landings
+    assert st["press_delay_s"] is None  # one press has no gap
+
+
+def test_dot_recast_after_it_falls_off_is_a_second_press():
+    events = [rev(t, "damage", ability="Soulrot", amount=100, dtype="disease")
+              for t in (0, 3, 6, 9, 40, 43, 46, 49)]
+    _, abil = roll_encounter(events, 60)
+    assert abil[(1, "Soulrot", "damage")]["presses"] == 2
+
+
+def test_aoe_across_targets_in_one_second_is_one_press():
+    events = [rev(0, "damage", tgt=90 + i, ability="Rift", amount=50, dtype="magic")
+              for i in range(5)]
+    events += [rev(20, "damage", tgt=90 + i, ability="Rift", amount=50, dtype="magic")
+               for i in range(5)]
+    _, abil = roll_encounter(events, 30)
+    st = abil[(1, "Rift", "damage")]
+    assert (st["hits"], st["presses"], st["press_delay_s"]) == (10, 2, 20.0)
+
+
+def test_known_census_period_beats_the_inferred_one():
+    """Two ticks are too few to infer regularity, but Census knows the spell
+    ticks every 3s — so this is one press, not two."""
+    events = [rev(0, "damage", ability="Acid", amount=10, dtype="poison"),
+              rev(3, "damage", ability="Acid", amount=10, dtype="poison")]
+    _, plain = roll_encounter(events, 10)
+    _, known = roll_encounter(events, 10, {"Acid": 3.0})
+    assert plain[(1, "Acid", "damage")]["presses"] == 2
+    assert known[(1, "Acid", "damage")]["presses"] == 1
+
+
+def test_spammed_nuke_is_not_read_as_a_dot():
+    """Human recast jitter (2s, 3s, 2s, 4s...) is what separates a rotation
+    from a tick — every one of these is a press."""
+    events = [rev(t, "damage", ability="Ice Comet", amount=900, dtype="cold")
+              for t in (0, 2, 5, 7, 11, 13)]
+    _, abil = roll_encounter(events, 20)
+    assert abil[(1, "Ice Comet", "damage")]["presses"] == 6
+
+
+def test_actor_presses_skip_autoattack_and_procs():
+    events = [rev(t, "damage", ability=None, amount=10, flags=F_AUTOATTACK)
+              for t in (0, 2, 4)]
+    events += [rev(t, "damage", ability="Lich's Siphoning", amount=10) for t in (1, 3)]
+    events += [rev(t, "damage", ability="Ice Comet", amount=900) for t in (0, 5, 12)]
+    actors, _ = roll_encounter(events, 20, {}, frozenset({"Lich's Siphoning"}))
+    assert actors[1]["presses"] == 3            # only the three Ice Comets
+    assert actors[1]["press_span_s"] == 12
+
+
+def test_intercepts_counted_for_the_interceptor():
+    events = [rev(t, "intercept", tgt=None, tgt_kind=None) for t in (1, 4, 9)]
+    actors, _ = roll_encounter(events, 10)
+    assert actors[1]["intercepts"] == 3
+
+
+def test_time_dead_ends_at_the_revive():
+    events = [
+        rev(0, "damage", ability="Stab", amount=10),
+        rev(5, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+        rev(20, "revive", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+    ]
+    actors, _ = roll_encounter(events, 60)
+    assert actors[1]["deaths"] == 1
+    assert actors[1]["time_dead_s"] == 15
+
+
+def test_time_dead_runs_to_the_end_of_the_fight_without_a_revive():
+    events = [
+        rev(0, "damage", ability="Stab", amount=10),
+        rev(10, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+    ]
+    actors, _ = roll_encounter(events, 30)
+    assert actors[1]["time_dead_s"] == 30 - 10

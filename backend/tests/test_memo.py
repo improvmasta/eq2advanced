@@ -48,7 +48,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "memo@x.test", "password": "hunter2hunter2"})
+               json={"username": "memo", "password": "hunter2hunter2"})
         c.post("/api/characters", json={"name": "Bobby"})
         r = c.post("/api/uploads", files={"file": ("a.txt", log().encode())},
                    data={"character_name": "Bobby"})

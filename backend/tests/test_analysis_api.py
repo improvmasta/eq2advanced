@@ -78,7 +78,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "analysis@x.test", "password": "hunter2hunter2"})
+               json={"username": "analysis", "password": "hunter2hunter2"})
         c.post("/api/characters", json={"name": "Bobby"})
         yield c
     mp.undo()
@@ -211,22 +211,22 @@ def test_timeline_marks_deaths(client, run):
     assert aros["bucket"] < tl["segments"][1]["start_bucket"] <= tanky["bucket"]
 
 
-def test_agg_time_dead_is_not_a_data_source(client, run):
-    """`encounter_actor_stats.time_dead_s` exists but the roller never writes
-    it — the real figure comes from the raid report. Pinned because a UI that
-    reads it off the aggregate gets a confident, permanent zero instead of an
-    obvious blank."""
+def test_agg_time_dead_matches_the_report(client, run):
+    """`encounter_actor_stats.time_dead_s` used to be a column the roller never
+    wrote, so the aggregate reported a confident, permanent zero. It is written
+    now, and it has to agree with the raid report — the two must not be able to
+    print different numbers for the same fight."""
     merged = client.get(f"/api/encounters/agg?ids={run['ids']}").json()
     tanky = next(a for a in merged["actors"] if a["name"] == "Tanky")
     assert tanky["deaths"] == 1              # he definitely died
-    assert tanky["time_dead_s"] == 0         # ...and this column still says 0
+    assert tanky["time_dead_s"] > 0
 
     runs = client.get("/api/zone-runs").json()["zone_runs"]
     mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
     report = client.get(f"/api/zone-runs/{mist['id']}/report").json()
     dead = sum(p["time_dead_s"] for e in report["encounters"]
                for p in e["players"] if p["name"] == "Tanky")
-    assert dead > 0                          # the report is where it lives
+    assert dead == tanky["time_dead_s"]
 
 
 def test_timeline_bucket_override(client, run):

@@ -15,7 +15,7 @@
 
 ## App
 
-- Public URL: https://eq2advanced.jupiterns.org
+- Public URL: https://eq2advanced.com
 - Local port: 8450
 - Docker image: ghcr.io/improvmasta/eq2advanced:main
 
@@ -41,23 +41,37 @@ and `/home/lindsay/AGENTS.md` — don't duplicate them here.
 
 FastAPI + SQLite backend (`backend/`), Vite+React SPA (`frontend/` → `dist/`
 served by the API). Dev server binds 0.0.0.0:8450 → http://10.1.1.15:8450.
-Live site is a Docker container **on 10.1.1.5** (Zoraxy routes the public
-hostname there) — Lindsay deploys it himself; never auto-ship, never deploy.
+The Docker container **on 10.1.1.5** is Lindsay's to deploy — never auto-ship,
+never deploy.
+
+**As of 2026-08-03 the public hostname points at the DEV box**:
+
+```bash
+/home/lindsay/scripts/provision-app.sh route eq2advanced 8450 --deploy-server media   # back to the container
+```
+
+The Cloudflare record was proxied for part of 2026-08-03 and Lindsay turned the
+proxy **off** the same day, because the edge caps a request body at **100 MB**
+and a raid backfill is bigger than that — the 413 comes from Cloudflare, the
+app never hears about the upload. `siteconfig.edge_max_bytes()` reports that
+ceiling per request (`CF-Ray` is the evidence) so the dropzone can say it
+before someone spends ten minutes uploading; with the proxy off it reports 0
+and nothing is claimed. Every request still arrives from Zoraxy —
+`backend/siteconfig.py` is the one place that recovers the real visitor
+address, the browser's scheme, and the public URL. Never go back to
+`request.client.host` / `request.base_url`; see `ARCHITECTURE.md` → "The app is
+behind two proxies".
 
 Read `ARCHITECTURE.md` before touching the parser or segmentation — the
 subject model (bare logger-name = their PET) and the possessive rules are
 verified against a real raid log and covered by tests.
 
 ```bash
-.venv/bin/python -m pytest backend/tests/ -q   # 79 tests; golden = bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # 198 tests; golden = bobby.txt
 ```
 
-Phase 2 (accounts) is BUILT: open sign-up (first account = admin), cookie
-sessions, characters CRUD with claim-of-unowned, per-character device tokens
-(QR pairing), and per-user isolation on every session/encounter/upload route.
-**The sign-up model is NOT settled — Lindsay wants to discuss it before it goes
-further.** Don't extend registration/login until that discussion happens (open
-questions listed in the plan md → "OPEN: sign-up model").
+Phase 2 (accounts) is SUPERSEDED by phase 12 below — the sign-up model is now
+settled. Device tokens (QR pairing) and the cookie session are unchanged.
 The approved build plan (phases 5-6: coach engine, hardening)
 lives at `~/.claude/plans/swirling-discovering-pixel.md`.
 
@@ -192,8 +206,212 @@ its row can only carry DmgTaken and reads as a parse fragment. **Read caches**:
 `peek()` so a fight you have opened repaints without a "Loading…" flash. See
 `ARCHITECTURE.md` -> "The fight rail" / "Read caches" / "Raid Report".
 
+Phase 11 (raids-only filter + the roster) is BUILT 2026-08-03: the Home page
+defaults to **raids only** (a `.switch` in the pagehead, remembered in
+`localStorage`), a raid being a run with >= 7 raiders — one more than a full
+group. That made `raider_count` load-bearing, and it was wrong: it counted
+distinct `player` entities in the run's busiest fight, and an encounter is a
+TIME SLICE holding everyone the log overheard. `_raider_count`
+(`pipeline/zoneruns.py`) is now a ROSTER, keyed by NAME (runs span files):
+player (not mobs, not the pooled `Unknown`), acted (not `damage_taken`-only),
+and present in >= 25% of the run's fights (min 2; under 4 fights anyone
+counts). Emerald Halls 26 -> 24, Lord Vyemm 32 -> 26, Halls of Fate 7 -> 6
+(correctly no longer a raid); real raids unchanged (FTH 25, Ascent 12). A
+cooperation graph (support edges + shared-enemy edges, keep the logger's
+component) was built and **REJECTED** — it moved 0 of 49 real runs, because a
+passing group hits the same mobs you do; don't rebuild it without a log where
+presence demonstrably fails. See `ARCHITECTURE.md` -> "The roster, and what
+counts as a raid".
+
+Phase 12 (accounts, groups, sharing) is BUILT 2026-08-03 — this replaces the
+phase-2 placeholder and settles the sign-up model. **Login is username +
+password; there is NO email anywhere.** The only self-service recovery is a
+security question picked at sign-up (six of them, answers case- and
+whitespace-insensitive; a reset kills every live cookie). Failure counting on
+login/reset/join-code lives in `backend/ratelimit.py`.
+**Admin is operational, not omniscient**: `role='admin'` grants the admin
+console (users, storage, quotas, job health, audit log) and is absent from
+every visibility decision in `security.py` — an admin 404s on a stranger's run,
+agg, timeline, deaths, coach and Census. Support = ask them to share the raid.
+**Character claims are not exclusive** (`UNIQUE(user_id, name, world_id)`): two
+people can each claim Bobby, and `sessions.upload_sha256` lost its global UNIQUE
+so both can upload the same night (one shared content-addressed gzip).
+Invite links: `/join/<code>` carries the same 6-digit code (one credential to
+rotate), works signed out via the thin unauthenticated
+`GET /api/groups/preview/{code}`, and joins as soon as the visitor finishes
+sign-up. The create form shows the code and link as you type the name
+(`GET /groups/new-code`, claimed by `POST /groups`). Rotating the code keeps
+every current member and kills the old code plus its links; removing a member
+revokes their access on the next request. **Sharing is per zone run, via groups** — `groups.py` owns the one visibility
+predicate (own / shared with a group you're in / character auto-share minus a
+per-run `hide` / published), evaluated at READ time so it survives every
+`rebuild_zone_runs` and revokes the moment you leave a group. Seeing never
+implies changing (`owned_zone_run`), and authorization moved from session to
+ENCOUNTER (`visible_encounters`) so a shared raid can't expose the other fights
+in the same uploaded file. **Published raids** (admin-only, own raids only) are
+readable with NO ACCOUNT — read routes take `optional_user` and the SPA renders
+signed out. **Upload cap + parse-only** (`upload_max_bytes`/`storage_max_bytes`,
+0 = unlimited and shipped that way): the cap is counted as the file streams and
+the 413 offers `retain_raw=0`, which parses the log and drops the bytes — those
+sessions can never be reparsed, and both reparse paths enforce it.
+Schema v9 rebuilds `users`, `characters` and `sessions` (guarded by table SHAPE,
+not user_version); verified on a copy of the real 344 MB DB. See
+`ARCHITECTURE.md` -> "Accounts, groups and sharing".
+
+Phase 13 (the public front door) is BUILT 2026-08-03, no schema change:
+`backend/siteconfig.py` owns the three request facts a reverse proxy falsifies.
+**The brute-force counter was the urgent one** — behind Zoraxy every request
+carried the same client address, so `ratelimit`'s per-address bucket was one
+counter for the entire internet and five wrong passwords by anyone locked
+*everybody* out of login for fifteen minutes. `client_ip` reads
+`CF-Connecting-IP` / `X-Forwarded-For`, but ONLY from a trusted peer
+(`TRUSTED_PROXIES`, default `10.1.1.4` + loopback), so a direct LAN client
+can't invent an address; a forged header buys a fresh address bucket and
+nothing more, because the per-username bucket is what actually guards a
+password. `/auth/password` and `/auth/security-question` are now counted too
+(both are password oracles). `is_secure` restores the `Secure` flag on the
+session cookie, which edge TLS had been silently dropping. `public_base_url()`
+(env `PUBLIC_BASE_URL`, default the live hostname) is what group **invite
+links** (`GET /api/groups` → `invite_base`) and the device **pair payload**
+are built from, instead of the browser's origin and `request.base_url` — both
+of those handed out `10.1.1.15:8450` links that mean nothing to the recipient.
+
+Phase 14 (rezzes, revives, intercepts, adjusted delay) is BUILT 2026-08-03,
+schema v10 + PARSE_VERSION 13 (the startup sweep reparses everything):
+**every rez family counts** — `rez` matched only the cleric line ("petitions
+the divinities of resurrection"), so the 73 druid/shaman casts ("calls forth
+primeval/primal forces") of 142 were invisible and Ramms/Squigs showed zero
+rezzes on a night they cast 41. **Revives are parsed for everyone** ("X is
+revived!" / "is resurrected!"), which fills `time_dead_s` — a column that
+existed and was never written, so the aggregate reported a confident 0; the
+roller and the raid report now share one death->{revive|acted|fight end} rule
+and a test pins them equal. **Intercepts** are a new event + actor column: the
+log carries NO amount and names the victim only from the logger's seat, and
+the "for you"/"for your target" pair is one event printed twice (1270 of 1442
+seconds carry both), so `_dedupe_repeats` keys on (type, who, second).
+**"AvgDelay adj"** is ACT's Avg Delay over ACTIVATIONS instead of landings:
+same-second hits collapse (AoE), a hit within a tick period of the previous
+hit on the same target continues a chain (DoT), autoattack and catalog procs
+are not presses. Tick period = Census `dmg_period_s` where known (~60 base
+names), else inferred by MODAL DOMINANCE — real logs settle it (Bloodcoil 3s
+75%, Grave Decay 1s 86%, vs Lifetap's nuke gaps spread 8-14s with none over
+15%). On Zylphax, ACT's delay reads 0.14-0.39s for the top parsers; adjusted
+reads 1.2-1.65s and separates them. Class inference was rebuilt in the same
+pass: evidence pools across sessions keyed by NAME (and is written back to
+every session's rows), shared spells vote in fractions, and a margin rule sits
+beside the share rule — 131 -> 147 names resolved on the real DB, nothing
+changed or lost, and the 19 players who had two different classes in one list
+now have one. The remaining gap is DATA, not voting: 433 of 919 log ability
+names have no Census row (AAs, gear procs, item effects), and 38 of the
+unresolved "players" are named pets. See `ARCHITECTURE.md` -> "Rezzes,
+revives, intercepts and the adjusted delay" / "Class inference".
+The Raids home groups its rows by night (`SortableTable groupBy`, headings
+only while sorted by night); Defense carries Intercepts, Damage carries
+AvgDelay adj, and the drilldown carries it per ability.
+
+Phase 15 (raid page, reader's layout) is BUILT 2026-08-04, frontend only:
+**Overview is gone** — the run page opens on Damage (`?tab=overview` still
+resolves there), and the metric block above the table stayed but is now retuned
+per tab (Damage: raid damage/DPS/raiders; Healing: healed/HPS/overheal/cures;
+Defense: taken/deaths/time dead/dmg lost/self-inflicted). The Pets and NPCs
+switches moved to Defense with the rows they reveal — a pet row carries nothing
+but DamageTaken. **Columns are the reader's**: drag a header to reorder, hide
+any of them from the Columns menu, remembered per tab in localStorage
+(`SortableTable prefsKey`, `eq2adv:cols:<key>`; a `fixed` column — Name — never
+moves or hides, and stored order is by KEY so a column added later keeps its
+natural place). Class and Casts/min columns are gone (ActorName already carries
+the class chip); Dmg lost dead now follows Deaths and Time dead, the order the
+cost actually reads in.
+**Rank coloring is continuous** (`stats.js rankScale`/`rankColor`, applied via
+the new `cellStyle` hook): distance from the peer MEDIAN as a fraction of it,
+mixed into the text with `color-mix`, instead of hard red/green terciles. A
+tercile called the bottom third of the raid red even when the whole field was
+within a point of each other — which is exactly what crit becomes in later
+expansions. Under four peers, or inside the noise floor, nothing is colored.
+**Self-inflicted damage is marked, not hidden**: the Bloodthirsty Choker's
+Vampiric Requiem was already excluded from Damage and DamageTaken (ACT parity,
+`statsroll` self_hit — verified on the real DB: Sorzi 1,010,709 total incoming,
+1,007,048 of it choker, 3,661 stored), so DmgTaken now prints a `*` with the
+excluded amount on hover and the Defense block carries the raid total.
+**Timeline follows its metric**: with nothing checked it plots the top five for
+the metric you are on (healing shows healers, not the top five parsers who heal
+nothing), and a `+ damage taken` overlay draws raid-wide incoming damage as a
+filled backdrop on its own scale, so a spike on the tank and the heals that
+answered it line up in the same second.
+
+Phase 16 (the AoE tab) is BUILT 2026-08-04, no schema change: a fifth tab on
+the run page answering "what hit the raid, how often did it REALLY land, and
+who was covered". `pipeline/aoes.py` + `GET /api/encounters/aoes?ids=` +
+`components/AoePanel.jsx`, 17 tests in `test_aoes.py`.
+A **cast** is a second in which one enemy ability touched >= 5 players; ticks
+and second waves inside `max(6s, 0.4 x reported)` ride along with it.
+**Reported** is ACT's spell-timer list, extracted to
+`backend/refdata/act_spell_timers.json` (446 entries, `<SpellTimers>` only — not
+the chat triggers) and joined by ability NAME. **Observed** is the shortest
+interval between two casts that repeats, measured inside one fight: an AoE
+that misses a group is a cast we never see, and a missed cast can only make a
+gap LONGER, so the mean and the median both drift up while the shortest
+repeating gap does not. `observed_agree` prints the confidence.
+Verified against the real DB: Blanket of Eternal Night 60.2 vs 60 reported,
+Ydalian Bolt 47.7 vs 49, War Stomp 47.4 vs 45 with 48.8% of its targets
+covered; Furious Storm reads 52 vs a reported 45 from three separate casters
+— the reported timer is wrong for this expansion, which is the whole point of
+printing both. Coverage = avoids (Bladedance) + zero-damage hits (Tortoise
+Shell) minus anyone the same cast also hit. GOTCHA: entities are keyed by
+NAME, so several trash mobs sharing one look like a single fast caster —
+`instances_hint` says so rather than calling the ACT list wrong. See
+`ARCHITECTURE.md` -> "GET /api/encounters/aoes".
+
+Phase 17 (sharing from the ACT plugin) is BUILT 2026-08-04, **schema v11**. The
+uploader picks who sees a raid BEFORE the raid, in ACT. Two controls:
+`share_groups` on each batch -> `session_shares` (this raid only), and
+`PUT /api/ingest/shares` -> `character_shares` (every raid, back catalogue
+included). Both are read at query time by the ONE predicate in `groups.py`,
+which grew a fourth branch; `VISIBLE_RUN_IDS` is now derived from
+`PERSONAL_RUN_IDS` instead of repeating it, so a branch can't be added to one
+and forgotten in the other.
+**GOTCHA that shipped and was caught by the new test**: `set_run_shares` writes
+a `hide` for groups reaching a run through a STANDING decision, and it only knew
+about `character_shares` — so unticking a plugin-shared raid on the site looked
+like it worked and revoked nothing. It now counts `session_shares` too. Any
+future read-time share branch must be added there as well.
+Scope is `device_tokens.can_share`, fixed at mint (0 for every pre-v11 token,
+checkbox on the Characters page); without it the sharing routes 403 but
+`GET /api/ingest/shares` still answers read-only. **Omitting `share_groups`
+means "don't touch"** — never send `[]` to mean "no change".
+The plugin itself is `/home/lindsay/eq2advanced-act` (improvmasta/eq2advanced-act),
+which now builds on the Linux dev host. `tests/test_ingest_sharing.py`, 9 tests.
+See `ARCHITECTURE.md` -> "Sharing from the ACT plugin".
+
+## The domain (2026-08-04)
+
+The site is **https://eq2advanced.com**, with `www.eq2advanced.com` routed to
+the same app. Both are CNAMEs to `jupiterns.org` (flattened at the apex to
+216.193.154.21) in their OWN Cloudflare zone, **DNS-only** — the proxy still
+caps a request body at 100 MB and still breaks HTTP-01 renewal, so it stays
+grey-clouded for the same reasons it did on the old hostname.
+
+`eq2advanced.jupiterns.org` is **retired** — DNS record and Zoraxy route both
+deleted 2026-08-04. Anything that carried the old base URL stopped working
+that day: outstanding group invite links, and any device paired with the ACT
+DLL (the pair payload embeds `public_base_url()`). Those devices need
+re-pairing against the new domain.
+
+`siteconfig.DEFAULT_PUBLIC_BASE_URL` is the code default and is now the new
+domain; `PUBLIC_BASE_URL` in the environment still overrides it, and the
+container should set it explicitly rather than lean on the default.
+
+Both hostnames were created with `provision-app.sh route`, which grew two
+things to make this possible — the Cloudflare zone is now resolved FROM THE
+HOSTNAME (longest matching zone on the account, falling back to
+`CLOUDFLARE_ZONE_ID`), and a new `unroute` action deletes a hostname's DNS
+record and Zoraxy route while leaving the app, repo and containers alone.
+`disable` stops the app and keeps the name; `delete` takes the repo with it;
+neither is what retiring an address means.
+
 ## Ship log
 
+- 2026-08-04 (claude): Phase 17: sharing from the ACT plugin (schema v11) — session_shares, token can_share scope, share_groups on ingest batches; also carries phases 11-16, which were still uncommitted
 - 2026-08-03 (claude): Phase 9+10: editable raid list, import hub, fight rail rebuild, engagement v3, read caches
 - 2026-08-03 (claude): Fix Insights crash (coach.character is an object, render its name) + error boundaries at route and panel level
 - 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)

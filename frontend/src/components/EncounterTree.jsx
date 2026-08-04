@@ -123,7 +123,7 @@ export default function EncounterTree({
   const fightRow = (e, indent) => row(String(e.id), {
     label: (
       <>
-        {e.success === 0 && <i className="wipedot" title="Wipe — the raid lost this pull" />}
+        {e.success === 0 && <i className="wipedot" title="Wipe" />}
         {e.name}
       </>
     ),
@@ -153,7 +153,7 @@ export default function EncounterTree({
             <button
               className="chip"
               onClick={() => onSelectMany(namedIds)}
-              title="Every named pull, trash left out"
+              title="Named pulls only"
             >Nameds</button>
           )}
           {wipeCount > 0 && onWipes && (
@@ -162,7 +162,7 @@ export default function EncounterTree({
                them off is a deliberate act you can see the state of. */
             <label
               className={`switch ${wipesShown ? 'on' : ''}`}
-              title="Wipes are counted like any other pull. Off leaves them in the list but out of every total."
+              title="On: wipes count in every total. Off: listed, but excluded."
             >
               <input
                 type="checkbox"

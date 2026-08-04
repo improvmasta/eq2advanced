@@ -7,23 +7,15 @@ import time
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
+import groups as groupsmod
 import memo
 from db import get_db, row_to_dict, rows_to_dicts
+from groups import PERSONAL_RUN_IDS, SHARED_RUN_IDS, VISIBLE_RUN_IDS
 from pipeline.zoneruns import encounter_fp, rebuild_zone_runs
-from security import is_admin, require_user
+from security import (optional_user, owned_zone_run, require_admin, require_user,
+                      visible_zone_run)
 
 router = APIRouter(tags=["zone-runs"])
-
-
-def visible_zone_run(conn, user, run_id: int):
-    """Zone-run row (with character_name) if the user may see it, else 404."""
-    run = conn.execute(
-        "SELECT z.*, c.name AS character_name, c.user_id AS owner_id "
-        "FROM zone_runs z JOIN characters c ON c.id = z.character_id WHERE z.id=?",
-        (run_id,)).fetchone()
-    if run is None or (not is_admin(user) and run["owner_id"] != user["id"]):
-        raise HTTPException(404, "no such zone run")
-    return run
 
 
 def _spark(conn, run_ids: list[int]) -> dict[int, list[int]]:
@@ -49,22 +41,49 @@ def _spark(conn, run_ids: list[int]) -> dict[int, list[int]]:
 
 
 @router.get("/zone-runs")
-def list_zone_runs(user=Depends(require_user)):
+def list_zone_runs(scope: str = "all", user=Depends(optional_user)):
+    """The raid list. `scope` is mine | shared | all (default). Signed out, the
+    only runs that exist are the published ones."""
     conn = get_db()
-    where, params = ("", ()) if is_admin(user) else ("WHERE c.user_id = ?", (user["id"],))
+    uid = user["id"] if user else None
+    if scope not in ("mine", "shared", "all"):
+        raise HTTPException(422, "scope is mine, shared or all")
+    if scope == "mine":
+        where = "WHERE c.user_id = :uid"
+    elif scope == "shared":
+        where = f"WHERE z.id IN ({SHARED_RUN_IDS})"
+    else:
+        where = f"WHERE z.id IN ({VISIBLE_RUN_IDS})"
     rows = conn.execute(
-        "SELECT z.*, c.name AS character_name "
+        "SELECT z.*, c.name AS character_name, c.user_id AS owner_id, "
+        "u.username AS owner_username "
         "FROM zone_runs z JOIN characters c ON c.id = z.character_id "
-        f"{where} ORDER BY z.started_ts DESC", params).fetchall()
+        "JOIN users u ON u.id = c.user_id "
+        f"{where} ORDER BY z.started_ts DESC", {"uid": uid}).fetchall()
     runs = rows_to_dicts(rows)
-    spark = _spark(conn, [r["id"] for r in runs])
-    joined = _merged_runs(conn, {r["character_id"] for r in runs})
+    run_ids = [r["id"] for r in runs]
+    spark = _spark(conn, run_ids)
+    mine_ids = {r["id"] for r in runs if r["owner_id"] == uid} if uid else set()
+    joined = _merged_runs(conn, {r["character_id"] for r in runs if r["id"] in mine_ids})
+    shares = groupsmod.shares_for_runs(conn, sorted(mine_ids))
+    public = {r["zone_run_id"] for r in conn.execute(
+        "SELECT zone_run_id FROM public_runs")}
+    # runs reaching you through a group or your own account, ignoring publishing:
+    # `via_public` therefore means "the ONLY reason you can see this is that
+    # somebody published it", which is exactly what the list's switch filters
+    personal = {r["id"] for r in conn.execute(PERSONAL_RUN_IDS, {"uid": uid})} if uid else set()
     for r in runs:
         r["spark"] = spark.get(r["id"], [])
+        r["mine"] = r["id"] in mine_ids
+        r["public"] = r["id"] in public
+        r["via_public"] = r["id"] in public and r["id"] not in personal
+        # sharing state is the owner's business; a viewer is told nothing about
+        # who else can see it
+        r["shared_with"] = shares.get(r["id"], []) if r["mine"] else []
         # "this run only looks like one visit because you merged it" — the list
         # offers Unmerge exactly here
         r["merged"] = r["id"] in joined
-    return {"zone_runs": runs}
+    return {"zone_runs": runs, "scope": scope, "signed_in": user is not None}
 
 
 def _merged_runs(conn, character_ids: set[int]) -> set[int]:
@@ -105,15 +124,110 @@ def _run_encounters(conn, run) -> list:
 
 
 @router.get("/zone-runs/{run_id}")
-def zone_run_detail(run_id: int, user=Depends(require_user)):
+def zone_run_detail(run_id: int, user=Depends(optional_user)):
     conn = get_db()
     run = visible_zone_run(conn, user, run_id)
-    return {"zone_run": row_to_dict(run),
+    payload = row_to_dict(run)
+    mine = user is not None and run["owner_id"] == user["id"]
+    payload["mine"] = mine        # the page hides every edit control without it
+    payload["public"] = conn.execute(
+        "SELECT 1 FROM public_runs WHERE zone_run_id=?", (run_id,)).fetchone() is not None
+    payload["shared_with"] = (
+        groupsmod.shares_for_runs(conn, [run_id]).get(run_id, []) if mine else [])
+    return {"zone_run": payload,
             "encounters": rows_to_dicts(_run_encounters(conn, run))}
 
 
+# ---------- sharing ----------
+
+@router.get("/zone-runs/{run_id}/shares")
+def get_run_shares(run_id: int, user=Depends(require_user)):
+    """Which of MY groups this raid goes to. Every group I'm in is listed, with
+    the ones it currently reaches marked, so the control is one list.
+
+    `auto` means the share is not a decision about this raid; `source` says
+    which standing decision it came from ('character' auto-share, 'session' —
+    the ACT plugin's "share tonight" — or 'run' when it was set right here).
+    Unticking writes a `hide` either way, so the control behaves identically;
+    the origin is worth naming only so the owner knows what else it covers."""
+    conn = get_db()
+    owned_zone_run(conn, user, run_id)
+    current = {s["group_id"]: s for s in
+               groupsmod.shares_for_runs(conn, [run_id]).get(run_id, [])}
+    out = []
+    for g in groupsmod.my_groups(conn, user["id"]):
+        s = current.get(g["id"])
+        out.append({"group_id": g["id"], "name": g["name"],
+                    "shared": s is not None, "auto": bool(s and s["auto"]),
+                    "source": s["source"] if s else None})
+    return {"groups": out, "public": conn.execute(
+        "SELECT 1 FROM public_runs WHERE zone_run_id=?", (run_id,)).fetchone() is not None}
+
+
+@router.put("/zone-runs/{run_id}/shares")
+def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_user)):
+    """Set the exact set of groups this raid reaches. A group that reaches this
+    raid through a STANDING decision is turned off with a `hide` row rather than
+    by revoking that decision, so the rest of the raids it covers keep flowing.
+
+    There are two such decisions and both must be counted: the character's
+    auto-share, and the ACT plugin's "share tonight" on the session this run
+    came out of. Missing either one means unticking the box appears to work and
+    revokes nothing — the deletion below only removes explicit `share` rows, and
+    a read-time branch it never wrote survives it."""
+    conn = get_db()
+    owned_zone_run(conn, user, run_id)
+    wanted = {int(g) for g in payload.get("group_ids") or []}
+    mine = {g["id"] for g in groupsmod.my_groups(conn, user["id"])}
+    if wanted - mine:
+        raise HTTPException(404, "no such group")
+    auto = {r["group_id"] for r in conn.execute(
+        "SELECT cs.group_id FROM character_shares cs JOIN zone_runs z "
+        "ON z.character_id = cs.character_id WHERE z.id=?", (run_id,))}
+    auto |= {r["group_id"] for r in conn.execute(
+        "SELECT DISTINCT ss.group_id FROM session_shares ss JOIN encounters e "
+        "ON e.session_id = ss.session_id WHERE e.zone_run_id=?", (run_id,))}
+    now = int(time.time())
+    with conn:
+        # only my own groups are rewritten: a run can also carry shares to groups
+        # I have since left, and this call knows nothing about those
+        if mine:
+            ph = ",".join("?" * len(mine))
+            conn.execute(f"DELETE FROM run_shares WHERE zone_run_id=? AND group_id IN ({ph})",
+                         (run_id, *sorted(mine)))
+        for gid in sorted(wanted - auto):
+            conn.execute("INSERT INTO run_shares (zone_run_id, group_id, mode, created_ts) "
+                         "VALUES (?,?,'share',?)", (run_id, gid, now))
+        for gid in sorted(auto - wanted):
+            conn.execute("INSERT INTO run_shares (zone_run_id, group_id, mode, created_ts) "
+                         "VALUES (?,?,'hide',?)", (run_id, gid, now))
+    return get_run_shares(run_id, user)
+
+
+@router.put("/zone-runs/{run_id}/public")
+def set_run_public(run_id: int, payload: dict = Body(...), user=Depends(require_admin)):
+    """Publish a raid to everyone, signed in or not — the demo/testing switch.
+
+    Admin-only, and only for the admin's OWN raids: publishing is the one action
+    that removes a privacy boundary, so it must never be reachable for data that
+    merely got shared with them."""
+    conn = get_db()
+    run = owned_zone_run(conn, user, run_id)
+    public = bool(payload.get("public"))
+    with conn:
+        if public:
+            conn.execute(
+                "INSERT OR IGNORE INTO public_runs (zone_run_id, published_by, created_ts) "
+                "VALUES (?,?,?)", (run_id, user["id"], int(time.time())))
+        else:
+            conn.execute("DELETE FROM public_runs WHERE zone_run_id=?", (run_id,))
+        groupsmod.audit(conn, user["id"], "publish" if public else "unpublish",
+                        f"zone_run:{run_id}", run["zone"])
+    return {"zone_run_id": run_id, "public": public}
+
+
 @router.get("/zone-runs/{run_id}/report")
-def zone_run_report(run_id: int, user=Depends(require_user)):
+def zone_run_report(run_id: int, user=Depends(optional_user)):
     from coach.raidreport import build_for_encounters
 
     conn = get_db()
@@ -181,7 +295,7 @@ def _own_encounters(conn, user, enc_ids: list[int]) -> tuple[int, list[str]]:
     chars = {r["character_id"] for r in rows}
     if len(chars) != 1:
         raise HTTPException(422, "encounters span more than one character")
-    if not is_admin(user) and any(r["user_id"] != user["id"] for r in rows):
+    if any(r["user_id"] != user["id"] for r in rows):
         raise HTTPException(404, "no such encounter")
     return chars.pop(), sorted({encounter_fp(r) for r in rows})
 
@@ -206,7 +320,7 @@ def restore_encounters(payload: dict = Body(...), user=Depends(require_user)):
     fps = [str(x) for x in payload.get("fingerprints") or []]
     character_id = int(payload.get("character_id") or 0)
     row = conn.execute("SELECT user_id FROM characters WHERE id=?", (character_id,)).fetchone()
-    if row is None or (not is_admin(user) and row["user_id"] != user["id"]):
+    if row is None or row["user_id"] != user["id"]:
         raise HTTPException(404, "no such character")
     _apply(conn, character_id, [], [(fp, "delete") for fp in fps])
     return {"restored": len(fps)}
@@ -216,7 +330,7 @@ def restore_encounters(payload: dict = Body(...), user=Depends(require_user)):
 def delete_zone_run(run_id: int, user=Depends(require_user)):
     """Delete a whole night: every fight in it, in one edit."""
     conn = get_db()
-    run = visible_zone_run(conn, user, run_id)
+    run = owned_zone_run(conn, user, run_id)
     ids = [r["id"] for r in conn.execute(
         "SELECT id FROM encounters WHERE zone_run_id=?", (run_id,))]
     character_id, fps = _own_encounters(conn, user, ids)
@@ -235,7 +349,7 @@ def merge_zone_runs(payload: dict = Body(...), user=Depends(require_user)):
     ids = [int(x) for x in payload.get("ids") or []]
     if len(ids) < 2:
         raise HTTPException(422, "merge needs at least two runs")
-    runs = sorted((visible_zone_run(conn, user, i) for i in ids),
+    runs = sorted((owned_zone_run(conn, user, i) for i in ids),
                   key=lambda r: r["started_ts"])
     if len({r["character_id"] for r in runs}) != 1:
         raise HTTPException(422, "runs belong to different characters")
@@ -259,7 +373,7 @@ def unmerge_zone_run(run_id: int, user=Depends(require_user)):
     """Undo every merge inside this run — it falls back to whatever the
     segmenter would have made of the same fights."""
     conn = get_db()
-    run = visible_zone_run(conn, user, run_id)
+    run = owned_zone_run(conn, user, run_id)
     fps = {encounter_fp(r) for r in conn.execute(
         "SELECT started_ts, zone, name FROM encounters WHERE zone_run_id=?", (run_id,))}
     _apply(conn, run["character_id"], [], [(fp, "join") for fp in fps])
@@ -270,7 +384,7 @@ def unmerge_zone_run(run_id: int, user=Depends(require_user)):
 def split_zone_run(run_id: int, payload: dict = Body(...), user=Depends(require_user)):
     """Unmerge: the named fight starts a run of its own from here on."""
     conn = get_db()
-    run = visible_zone_run(conn, user, run_id)
+    run = owned_zone_run(conn, user, run_id)
     enc = conn.execute(
         "SELECT started_ts, zone, name FROM encounters WHERE id=? AND zone_run_id=?",
         (int(payload.get("encounter_id") or 0), run_id)).fetchone()

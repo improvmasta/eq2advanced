@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ActorPanel from '../components/ActorPanel.jsx'
+import AoePanel from '../components/AoePanel.jsx'
 import ComparePanel from '../components/ComparePanel.jsx'
 import DeathRecap from '../components/DeathRecap.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
+import ShareDialog from '../components/ShareDialog.jsx'
 import ErrorBoundary from '../components/ErrorBoundary.jsx'
 import { ActorName } from '../components/Identity.jsx'
 import SelectionBar from '../components/SelectionBar.jsx'
@@ -13,18 +15,22 @@ import TimelineChart from '../components/TimelineChart.jsx'
 import { api, fmt, peek, url } from '../lib/api.js'
 import { CHART_COLORS, ROLES, ROLE_LABEL, classLabel, roleOf } from '../lib/classes.js'
 import {
-  autoPct, castsPerMin, consistency, critPct, damageDerived, deathRows, decompose,
-  procPct, rankClass, reportRollup,
+  autoPct, consistency, critPct, damageDerived, deathRows, decompose,
+  procPct, rankColor, rankScale, reportRollup,
 } from '../lib/stats.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
 const PET_KINDS = new Set(['own_pet', 'swarm_pet', 'named_pet'])
 
+/* Damage first: it is the tab everyone opens the page for, and an Overview
+   that repeated four columns from each of the others was a stop on the way to
+   the one you wanted. The metric block above the table carries what the
+   Overview was actually read for, retuned per tab. */
 const TABS = [
-  { key: 'overview', label: 'Overview' },
   { key: 'damage', label: 'Damage' },
   { key: 'healing', label: 'Healing' },
   { key: 'defense', label: 'Defense' },
+  { key: 'aoes', label: 'AoEs' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'insights', label: 'Insights' },
 ]
@@ -216,7 +222,7 @@ function Insights({
             })}
           </select>
         </div>
-        {!selected && <p className="muted">Any raider in the log — deaths, engagement, overheal, cures, fight by fight.</p>}
+        {!selected && <p className="muted">Pick a raider.</p>}
         {selected && (
           <>
             <div className="metrics">
@@ -245,8 +251,8 @@ function Insights({
             </div>
             {selected.engage_low > 0 && (
               <p className="note">
-                {selected.engage_low} engage sample{selected.engage_low > 1 ? 's' : ''} flagged
-                low-confidence (possible pre-pull buff proc).
+                {selected.engage_low} engage sample{selected.engage_low > 1 ? 's' : ''}{' '}
+                low-confidence (possible pre-pull proc).
               </p>
             )}
             {perFight.length > 0 && (
@@ -268,7 +274,7 @@ function Insights({
                         <td title={p.engage_anchor
                           ? `first ${ANCHOR_LABEL[p.engage_anchor] || p.engage_anchor}`
                             + (p.engage_confidence === 'low'
-                              ? ' — inside the opening 2s, could be a proc or a HoT tick' : '')
+                              ? ' (inside the opening 2s — could be a proc)' : '')
                           : undefined}
                         >{p.engage_delay_s != null ? `${p.engage_delay_s}s` : ''}</td>
                         <td>{p.deaths || ''}</td>
@@ -281,11 +287,8 @@ function Insights({
             )}
             {spread && (
               <p className="note" style={{ marginTop: 8 }}>
-                Share of raid damage swings between {spread.min.toFixed(1)}% and{' '}
-                {spread.max.toFixed(1)}% across {spread.n} fights
-                {spread.cv != null && spread.cv > 0.35
-                  ? ' — uneven enough that execution, not gear, is the likely gap.'
-                  : ' — steady fight to fight.'}
+                Damage share {spread.min.toFixed(1)}%–{spread.max.toFixed(1)}% across{' '}
+                {spread.n} fights{spread.cv != null && spread.cv > 0.35 ? ' (uneven)' : ''}.
               </p>
             )}
           </>
@@ -295,13 +298,11 @@ function Insights({
       {decomp?.worst && (
         <div className="card">
           <div className="drillhead">
-            <h2>Why {selected.name}&apos;s damage lands where it does</h2>
+            <h2>Damage breakdown</h2>
             <span className="muted">vs the best of {peerLabel}</span>
           </div>
           <p className="note">
-            DPS is activity times hit size times crit rate, minus the time you spend dead.
-            Comparing the parts says which one to work on — the biggest gap is{' '}
-            <strong>{decomp.worst.label.toLowerCase()}</strong>.
+            Biggest gap: <strong>{decomp.worst.label.toLowerCase()}</strong>.
           </p>
           <div className="tablewrap">
             <table className="data">
@@ -352,9 +353,9 @@ function CoachCard({ coach, coachErr, busy, onGenerate }) {
   if (coach == null) {
     return (
       <div className="card">
-        <h2>Coach (this log's character)</h2>
+        <h2>Coach</h2>
         {coachErr && <p className="err">{coachErr}</p>}
-        <p className="muted">Census-backed coaching — stat priorities and tier upgrades.</p>
+        <p className="muted">Stat priorities and tier upgrades, from Census data.</p>
         <button disabled={busy} onClick={onGenerate}>{busy ? 'Generating…' : 'Generate coach report'}</button>
       </div>
     )
@@ -403,12 +404,8 @@ function CoachCard({ coach, coachErr, busy, onGenerate }) {
       )}
       {coach.tier_upgrades?.length > 0 && (
         <>
-          <h3 style={{ marginTop: 12 }}>Spell upgrades worth buying</h3>
-          <p className="note">
-            Scribing a higher tier of these raises the base damage the fit already
-            measured on your own hits — ordered by what it would have been worth
-            in this log.
-          </p>
+          <h3 style={{ marginTop: 12 }}>Spell upgrades</h3>
+          <p className="note">Ordered by what the higher tier was worth in this log.</p>
           <div className="tablewrap">
             <table className="data">
               <thead>
@@ -433,9 +430,8 @@ function CoachCard({ coach, coachErr, busy, onGenerate }) {
       )}
       {coach.debuff_uplift?.length > 0 && (
         <p className="note" style={{ marginTop: 10 }}>
-          Raid debuff uplift by damage school:{' '}
-          {coach.debuff_uplift.map((d) => `${d.dtype} ×${d.uplift}`).join(' · ')} — how
-          much harder your hits landed in the raid than against a dummy.
+          Raid debuff uplift vs dummy, by damage school:{' '}
+          {coach.debuff_uplift.map((d) => `${d.dtype} ×${d.uplift}`).join(' · ')}
         </p>
       )}
       <CoachFit fit={coach.fit} />
@@ -487,8 +483,9 @@ function CoachFit({ fit }) {
   )
 }
 
-export default function ZoneRun() {
+export default function ZoneRun({ user }) {
   const { id } = useParams()
+  const [sharing, setSharing] = useState(false)
   const [run, setRun] = useState(null)
   const [encounters, setEncounters] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -501,7 +498,9 @@ export default function ZoneRun() {
   const [stale, setStale] = useState(false)
   const [sel, setSel] = useQueryState('sel', 'all')
   const [actorQ, setActorQ] = useQueryState('actor')
-  const [tab, setTab] = useQueryState('tab', 'overview')
+  const [tabQ, setTab] = useQueryState('tab', 'damage')
+  // ?tab=overview is a real bookmark someone still has; land it on Damage
+  const tab = TABS.some((t) => t.key === tabQ) ? tabQ : 'damage'
   const [cmpQ, setCmpQ] = useQueryState('cmp')
   const [playerQ, setPlayerQ] = useQueryState('player')
   const [q, setQ] = useQueryState('q')
@@ -513,6 +512,8 @@ export default function ZoneRun() {
   const [metric, setMetric] = useState('damage')
   const [timeline, setTimeline] = useState(null)
   const [timelineErr, setTimelineErr] = useState(null)
+  const [aoeData, setAoeData] = useState(null)
+  const [aoeErr, setAoeErr] = useState(null)
   const [recaps, setRecaps] = useState(null)
   const [recapIdx, setRecapIdx] = useState(null)
 
@@ -619,6 +620,19 @@ export default function ZoneRun() {
   }, [tab, selIds && selIds.join(',')])
 
   useEffect(() => {
+    if (tab !== 'aoes' || !selIds?.length) return
+    let gone = false
+    const hit = peek(url.aoes(selIds))
+    setAoeData(hit)
+    setAoeErr(null)
+    if (hit) return
+    api.encountersAoes(selIds)
+      .then((d) => { if (!gone) setAoeData(d) })
+      .catch((e) => { if (!gone) setAoeErr(e.message) })
+    return () => { gone = true }
+  }, [tab, selIds && selIds.join(',')])
+
+  useEffect(() => {
     if (tab !== 'defense' || !selIds?.length) return
     let gone = false
     // clear both: the deaths request is slower than /agg, so keeping the old
@@ -647,6 +661,20 @@ export default function ZoneRun() {
 
   const repRows = useMemo(() => reportRollup(report, selIds), [report, selIds && selIds.join(',')])
   const derived = useMemo(() => damageDerived(detail?.abilities), [detail])
+  /* Self-inflicted damage (the Bloodthirsty Choker's Vampiric Requiem, and
+     every other cost-you-HP effect) is NOT damage taken — ACT excludes it from
+     both Damage and DamageTaken and so does the roller. It is still real HP a
+     healer had to cover, so the DmgTaken column marks it with a * and hands
+     over the number on hover rather than pretending it never happened. */
+  const selfDamage = useMemo(() => {
+    const by = {}
+    for (const r of detail?.abilities || []) {
+      if (r.kind !== 'self') continue
+      const k = r.rollup_key || r.source_key
+      if (k) by[k] = (by[k] || 0) + (r.total || 0)
+    }
+    return by
+  }, [detail])
   const deaths = useMemo(() => deathRows(report, selIds), [report, selIds && selIds.join(',')])
 
   const actors = detail?.actors ?? []
@@ -678,13 +706,21 @@ export default function ZoneRun() {
   const comparing = checkedActors.length >= 2
   const actorsByKey = useMemo(
     () => Object.fromEntries(actors.map((a) => [a.key, a])), [actors])
-  // the chart plots what you checked; with nothing checked it opens on the top
-  // few by damage so the tab is never an empty box
+  /* The chart plots what you checked; with nothing checked it opens on the top
+     few for the METRIC you are looking at — switching to Healing and being
+     shown the top five damage dealers (who heal nothing) was an empty chart
+     with lines in it. */
   const timelineKeys = useMemo(() => {
     if (cmpList.length) return cmpList.slice(0, CHART_COLORS.length)
+    const field = ['heals', 'taken'].includes(metric) ? metric : 'damage'
     return (timeline?.series || [])
-      .filter((s) => s.kind === 'player').slice(0, 5).map((s) => s.key)
-  }, [cmpList, timeline])
+      .filter((s) => s.kind === 'player')
+      .map((s) => ({ key: s.key, v: (s[field] || []).reduce((a, b) => a + b, 0) }))
+      .filter((s) => s.v > 0)
+      .sort((a, b) => b.v - a.v)
+      .slice(0, 5)
+      .map((s) => s.key)
+  }, [cmpList, timeline, metric])
 
   /* The summing calculator: whatever is checked, added up. Selecting the three
      mages answers "are they carrying their share together?" without exporting
@@ -743,31 +779,34 @@ export default function ZoneRun() {
      defensive number is real, it just isn't a raider. Mobs and environment
      rows are the same kind of clutter behind their own switch. */
   const tabRows = {
-    overview: applyFilters(visibleActors.filter((a) => {
-      if (a.kind === 'player') return true
-      if (PET_KINDS.has(a.kind)) return showPets
-      return showNpcs
-    })),
     damage: applyFilters(players.filter((a) => (a.damage || 0) > 0)),
     healing: applyFilters(players.filter((a) =>
       healedOf(a) > 0 || (a.cure_count || 0) > 0
       || (a.power_fed || 0) > 0 || (a.rez_casts || 0) > 0)),
-    defense: applyFilters(players.filter((a) =>
-      (a.damage_taken || 0) > 0 || (a.deaths || 0) > 0)),
+    // pets and mobs took real damage, so their switches live here — the only
+    // tab where a row carrying nothing but DmgTaken is the point
+    defense: applyFilters(visibleActors.filter((a) => {
+      if (a.kind === 'player') return (a.damage_taken || 0) > 0 || (a.deaths || 0) > 0
+      if (PET_KINDS.has(a.kind)) return showPets && (a.damage_taken || 0) > 0
+      return showNpcs && (a.damage_taken || 0) > 0
+    })),
   }
-  const currentRows = tabRows[tab] || tabRows.overview
+  const currentRows = tabRows[tab] || tabRows.damage
 
   /* ---------- shared cell helpers (tooltips live here) ---------- */
 
   /* A number alone says nothing — "34% crit" is good or bad only next to the
      people it should be compared against. Peers are the same-role raiders on
-     screen, so the coloring answers to the current filter. */
+     screen, so the coloring answers to the current filter. The tint is
+     continuous (see rankScale): a raid where everyone crits within a point of
+     each other gets no color at all, which is the honest answer. */
   const rankAgainst = (get, opts) => (a) => {
-    if (a.kind !== 'player') return ''
+    if (a.kind !== 'player') return undefined
     const role = roleOf(a)
     const pool = role ? currentRows.filter((p) => roleOf(p) === role) : []
     const peers = pool.length >= 4 ? pool : currentRows.filter((p) => p.kind === 'player')
-    return rankClass(get(a), peers.map(get), opts)
+    const color = rankColor(rankScale(get(a), peers.map(get), opts))
+    return color ? { color } : undefined
   }
 
   const damageTitle = (a) => {
@@ -776,9 +815,13 @@ export default function ZoneRun() {
     if (d?.hits) parts.push(`crit ${Math.round(critPct(d))}%`)
     const ap = autoPct(d)
     if (ap != null) parts.push(`autoattack ${Math.round(ap)}%`)
-    const cpm = castsPerMin(d, duration)
-    if (cpm != null) parts.push(`${cpm.toFixed(1)} casts/min`)
     return parts.join(' · ') || undefined
+  }
+  const takenTitle = (a) => {
+    const self = selfDamage[a.key]
+    const parts = [`${fmt.num(a.damage_taken || 0)} taken from enemies`]
+    if (self) parts.push(`${fmt.num(self)} self-inflicted (choker and the like) — not counted`)
+    return parts.join(' · ')
   }
   const healedTitle = (a) => {
     const n = repRows?.[a.name]
@@ -808,15 +851,12 @@ export default function ZoneRun() {
       + `${mix ? `: ${mix}` : ''}${low}`
   }
 
+  /* Fixed: the name is what every other cell is about, so it never moves and
+     never hides. Everything else is the reader's to arrange. */
   const nameCol = {
-    key: 'name', label: 'Name', align: 'l',
+    key: 'name', label: 'Name', align: 'l', fixed: true,
     render: (a) => <ActorName actor={a} badge={kindBadge(a.kind)} />,
     sortValue: (a) => a.name,
-  }
-  const classCol = {
-    key: 'class', label: 'Class', align: 'l',
-    render: (a) => (a.class ? classLabel(a.class) : ''),
-    sortValue: (a) => (a.class ? `${roleOf(a)} ${a.class}` : null),
   }
   const shareCol = {
     key: 'share', label: 'Dmg %',
@@ -845,7 +885,7 @@ export default function ZoneRun() {
     render: (a) => <span title={damageTitle(a)}>{fmt.num(a.damage)}</span>,
   }
   const healedCol = {
-    key: 'healed',
+    key: 'healed', menuLabel: 'Healed',
     label: (
       <span>
         Healed{' '}
@@ -874,6 +914,18 @@ export default function ZoneRun() {
      and neither cost is visible from a Deaths count alone. */
   const timeDeadCol = rep('time_dead', 'Time dead', (n) => n.time_dead_s, (v) => fmt.dur(v))
   const rezCol = { key: 'rez_casts', label: 'Rezzes', render: (a) => a.rez_casts || '' }
+  /* "X intercepted some of the damage intended for you!" — a hit somebody
+     else was supposed to take. The log never says how much, so this is a
+     count and the tooltip has to say why there is no number next to it. */
+  const interceptCol = {
+    key: 'intercepts', label: 'Intercepts',
+    render: (a) => (a.intercepts
+      ? <span title="Hits taken for someone else. The log does not say how much damage was moved.">
+          {a.intercepts}
+        </span>
+      : ''),
+    sortValue: (a) => a.intercepts || 0,
+  }
 
   const dpsOf = (a) => (a.damage || 0) / duration
   const dpsCol = {
@@ -887,45 +939,26 @@ export default function ZoneRun() {
     sortValue: (a) => healedOf(a) / duration,
   }
 
-  /* Rate first, everywhere. DPS is the number the tables get read for, so it
-     sits where the eye lands after the name instead of behind the totals it
-     summarizes; the healing tab leads with its own rate for the same reason. */
-  const overviewCols = [
-    nameCol,
-    dpsCol,
-    damageCol,
-    shareCol,
-    healedCol,
-    ...healedBreakdown,
-    hpsCol,
-    { key: 'cure_count', label: 'Cures', render: (a) => a.cure_count || '' },
-    { key: 'power_fed', label: 'PowerRepl', render: (a) => (a.power_fed ? fmt.num(a.power_fed) : '') },
-    {
-      key: 'damage_taken', label: 'DmgTaken',
-      render: (a) => (a.damage_taken ? fmt.num(a.damage_taken) : ''),
-    },
-    deathsCol,
-    timeDeadCol,
-    rezCol,
-    engageCol,
-  ]
-
   const overhealPct = (a) => {
     const n = repRows?.[a.name]
     const healed = (a.heals || 0) + (n?.overheal_est || 0)
     return healed && n?.overheal_est ? (100 * n.overheal_est) / healed : null
   }
+  /* Rate first, everywhere. DPS is the number the tables get read for, so it
+     sits where the eye lands after the name instead of behind the totals it
+     summarizes; the healing tab leads with its own rate for the same reason.
+     Class is gone as a column — ActorName already carries the class chip, so
+     it was the same fact printed twice across the widest table on the page. */
   const damageCols = [
     nameCol,
-    classCol,
-    { ...dpsCol, cellClass: rankAgainst(dpsOf) },
+    { ...dpsCol, cellStyle: rankAgainst(dpsOf) },
     damageCol,
     shareCol,
     {
       key: 'crit', label: 'Crit %',
       render: (a) => { const v = critPct(derived[a.key]); return v != null ? `${Math.round(v)}%` : '' },
       sortValue: (a) => critPct(derived[a.key]),
-      cellClass: rankAgainst((a) => critPct(derived[a.key])),
+      cellStyle: rankAgainst((a) => critPct(derived[a.key])),
     },
     {
       key: 'auto', label: 'Auto %',
@@ -938,25 +971,33 @@ export default function ZoneRun() {
       sortValue: (a) => procPct(derived[a.key]),
     },
     {
-      key: 'cpm', label: 'Casts/min',
-      render: (a) => { const v = castsPerMin(derived[a.key], duration); return v != null ? v.toFixed(1) : '' },
-      sortValue: (a) => castsPerMin(derived[a.key], duration),
-      cellClass: rankAgainst((a) => castsPerMin(derived[a.key], duration)),
-    },
-    {
       key: 'avg_delay', label: 'AvgDelay',
       render: (a) => (a.avg_delay_s != null ? a.avg_delay_s.toFixed(2) : ''),
       sortValue: (a) => a.avg_delay_s ?? null,
     },
-    rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
+    /* ACT's AvgDelay is the gap between things LANDING, so a DoT ticking six
+       times and an AoE hitting six mobs read as six actions. This one counts
+       activations instead — the gap between button presses. */
+    {
+      key: 'avg_delay_adj', label: 'AvgDelay adj',
+      render: (a) => (
+        a.avg_delay_adj_s != null
+          ? <span title={`${a.presses} activations — DoT ticks and extra AoE targets folded in`}>
+              {a.avg_delay_adj_s.toFixed(2)}
+            </span>
+          : ''),
+      sortValue: (a) => a.avg_delay_adj_s ?? null,
+    },
+    /* The cost of dying reads in that order: it happened, it lasted this long,
+       and this is what it took off the parse. */
     deathsCol,
     timeDeadCol,
+    rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
     engageCol,
   ]
 
   const healingCols = [
     nameCol,
-    classCol,
     hpsCol,
     healedCol,
     ...healedBreakdown,
@@ -972,7 +1013,7 @@ export default function ZoneRun() {
         return healed && n?.overheal_est ? `${Math.round((100 * n.overheal_est) / healed)}%` : ''
       },
       sortValue: overhealPct,
-      cellClass: rankAgainst(overhealPct, { worse: true }),
+      cellStyle: rankAgainst(overhealPct, { worse: true }),
     },
     { key: 'ward_bleedthrough', label: 'Bleedthrough', render: (a) => (a.ward_bleedthrough ? fmt.num(a.ward_bleedthrough) : '') },
     { key: 'cure_count', label: 'Cures', render: (a) => a.cure_count || '' },
@@ -982,35 +1023,108 @@ export default function ZoneRun() {
   ]
 
   const takenCol = {
-    key: 'damage_taken', label: 'DmgTaken', format: fmt.num,
-    cellClass: rankAgainst((a) => a.damage_taken || 0, { worse: true }),
+    key: 'damage_taken', label: 'DmgTaken',
+    render: (a) => (
+      <span title={takenTitle(a)}>
+        {a.damage_taken ? fmt.num(a.damage_taken) : ''}
+        {selfDamage[a.key] ? <span className="selfmark">*</span> : null}
+      </span>
+    ),
+    sortValue: (a) => a.damage_taken || 0,
+    cellStyle: rankAgainst((a) => a.damage_taken || 0, { worse: true }),
   }
   const defenseCols = [
     nameCol,
-    classCol,
     takenCol,
     deathsCol,
     timeDeadCol,
     rep('dead_loss', 'Dmg lost dead', (n) => n.death_dps_lost),
     rezCol,
+    interceptCol,
     { key: 'power_drain', label: 'PowerDrain', render: (a) => (a.power_drain ? fmt.num(a.power_drain) : '') },
   ]
 
-  const tabCols = {
-    overview: overviewCols, damage: damageCols, healing: healingCols, defense: defenseCols,
-  }
+  const tabCols = { damage: damageCols, healing: healingCols, defense: defenseCols }
   /* With a drilldown open the raid table is a picker, not a report: it keeps
      the name and the one number the tab is sorted by, and hands the width to
      the player you actually opened. Every column comes back when you close it. */
-  const leadCol = { overview: dpsCol, damage: dpsCol, healing: hpsCol, defense: takenCol }
+  const leadCol = { damage: dpsCol, healing: hpsCol, defense: takenCol }
   const tabSort = {
-    overview: { key: 'dps', dir: 'desc' },
     damage: { key: 'dps', dir: 'desc' },
     healing: { key: 'hps', dir: 'desc' },
     defense: { key: 'damage_taken', dir: 'desc' },
   }
 
   const panelOpen = comparing || selectedActor
+
+  /* The header block stays — it is the one place the raid is a single number
+     instead of a table — but what it counts follows the tab you are on. */
+  const sumRep = (get) => Object.values(repRows || {})
+    .reduce((s, n) => s + (get(n) || 0), 0)
+  const raidHealed = players.reduce((s, a) => s + healedOf(a), 0)
+  const raidHeals = players.reduce((s, a) => s + (a.heals || 0), 0)
+  const raidOverheal = sumRep((n) => n.overheal_est)
+  const raidTaken = players.reduce((s, a) => s + (a.damage_taken || 0), 0)
+  const raidSelf = players.reduce((s, a) => s + (selfDamage[a.key] || 0), 0)
+  const raidCures = players.reduce((s, a) => s + (a.cure_count || 0), 0)
+  const totalDeaths = players.reduce((s, a) => s + (a.deaths || 0), 0)
+  const combatTiles = [
+    { k: 'Combat', v: fmt.dur(duration) },
+    ...(run.named_count > 0 && sel === 'all'
+      ? [{ k: 'Named', v: `${run.success_count}/${run.named_count}` }] : []),
+    ...(selIds.length > 1 ? [{ k: 'Fights', v: selIds.length }] : []),
+  ]
+  const damageTiles = [
+    { k: 'Combat', v: fmt.dur(duration) },
+    { k: 'Raid damage', v: fmt.num(raidDamage) },
+    { k: 'Raid DPS', v: fmt.num(raidDamage / duration) },
+    { k: 'Raiders', v: players.filter((p) => p.damage > 0 || p.heals > 0).length },
+    ...combatTiles.slice(1),
+  ]
+  const aoeRows = aoeData?.aoes || []
+  const aoeCasts = aoeRows.reduce((s, a) => s + a.casts, 0)
+  const aoeTargets = aoeRows.reduce(
+    (s, a) => s + a.cast_list.reduce((t, c) => t + c.targets, 0), 0)
+  const aoeBlocked = aoeRows.reduce((s, a) => s + a.blocked, 0)
+  const headTiles = {
+    damage: damageTiles,
+    timeline: damageTiles,
+    aoes: [
+      { k: 'Combat', v: fmt.dur(duration) },
+      { k: 'AoEs', v: aoeRows.length },
+      { k: 'Casts', v: aoeCasts },
+      { k: 'AoE damage', v: fmt.num(aoeRows.reduce((s, a) => s + a.damage, 0)) },
+      {
+        k: 'Covered', title: 'Share of AoE hits avoided or absorbed',
+        v: aoeTargets ? `${Math.round((100 * aoeBlocked) / aoeTargets)}%` : '—',
+      },
+      ...combatTiles.slice(1),
+    ],
+    healing: [
+      { k: 'Combat', v: fmt.dur(duration) },
+      { k: 'Raid healed', v: fmt.num(raidHealed), title: 'Heals plus wards absorbed' },
+      { k: 'Raid HPS', v: fmt.num(raidHealed / duration) },
+      {
+        k: 'Overheal', title: 'Estimated from HP-deficit reconstruction',
+        v: raidHeals + raidOverheal
+          ? `${Math.round((100 * raidOverheal) / (raidHeals + raidOverheal))}%` : '—',
+      },
+      { k: 'Cures', v: raidCures },
+      ...combatTiles.slice(1),
+    ],
+    defense: [
+      { k: 'Combat', v: fmt.dur(duration) },
+      { k: 'Damage taken', v: fmt.num(raidTaken) },
+      { k: 'Deaths', v: totalDeaths },
+      { k: 'Time dead', v: fmt.dur(sumRep((n) => n.time_dead_s)) },
+      { k: 'Dmg lost dead', v: fmt.num(sumRep((n) => n.death_dps_lost)) },
+      ...(raidSelf ? [{
+        k: 'Self-inflicted', v: fmt.num(raidSelf),
+        title: 'Chokers and other costs you pay yourself — not counted as damage taken',
+      }] : []),
+      ...combatTiles.slice(1),
+    ],
+  }
 
   /* The totals for what is checked — the head of the comparison column, and
      only that. One checked raider has nothing to add up, so it stays away
@@ -1053,6 +1167,11 @@ export default function ZoneRun() {
         hideZones
       />
       <div className={`wsmain ${stale && detail ? 'stale' : ''}`}>
+        {sharing && (
+          <ShareDialog runId={id} isAdmin={user?.role === 'admin'}
+                       onClose={() => setSharing(false)}
+                       onChanged={() => api.zoneRun(id).then((d) => setRun(d.zone_run)).catch(() => {})} />
+        )}
         <div className="pagehead" style={{ marginTop: 0 }}>
           <h1>{title}</h1>
           <span className="sub">
@@ -1060,37 +1179,52 @@ export default function ZoneRun() {
             {` · ${fmt.timeRange(enc?.started_ts ?? run.started_ts, enc?.ended_ts ?? run.ended_ts)}`}
             {` · ${run.character_name}`}
             {report?.partial ? ' · partial (pruned)' : ''}
+            {/* whose raid this is, and who else can see it — a shared night is
+                somebody's own parse and reads as theirs */}
+            {/* the character is already named a few words back, so the badge
+                only has to say this is someone else's parse */}
+            {run.mine === false && (
+              <span className="badge" title="Someone else's raid — read only">shared</span>
+            )}
+            {run.public && <span className="badge named" title="Readable without an account">public</span>}
+            {run.shared_with?.map((g) => (
+              <span key={g.group_id} className="badge">{g.name}</span>
+            ))}
           </span>
+          {run.mine && user && (
+            <button className="chip" style={{ marginLeft: 8 }} onClick={() => setSharing(true)}>
+              Share
+            </button>
+          )}
           {!includeWipes && wipeIds.size > 0 && (
             <button
               className="chip toggle"
               style={{ marginLeft: 'auto' }}
               onClick={() => setShowWipes(null)}
-              title="Put the wipes back into every total on this page"
+              title="Count wipes in every total on this page"
             >
               {wipeIds.size} wipe{wipeIds.size === 1 ? '' : 's'} left out
             </button>
           )}
         </div>
-        <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'overview' ? null : k)} />
+        <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'damage' ? null : k)} />
         {detailErr && <p className="err">{detailErr}</p>}
-        {!detail && !detailErr && tab !== 'insights' && <p className="muted">Loading…</p>}
+        {!detail && !detailErr && tab !== 'insights' && tab !== 'aoes' && (
+          <p className="muted">Loading…</p>
+        )}
         {stale && detail && <div className="stalebar" aria-live="polite">Updating…</div>}
 
-        {detail && tab === 'overview' && (
+        {detail && headTiles[tab] && (
           <div className="metrics">
-            <div className="metric"><div className="v">{fmt.dur(enc.duration_s)}</div><div className="k">Combat</div></div>
-            <div className="metric"><div className="v">{fmt.num(raidDamage)}</div><div className="k">Raid damage</div></div>
-            <div className="metric"><div className="v">{fmt.num(raidDamage / duration)}</div><div className="k">Raid DPS</div></div>
-            <div className="metric"><div className="v">{players.filter((p) => p.damage > 0 || p.heals > 0).length}</div><div className="k">Raiders</div></div>
-            {run.named_count > 0 && sel === 'all' && (
-              <div className="metric"><div className="v">{run.success_count}/{run.named_count}</div><div className="k">Named</div></div>
-            )}
-            {selIds.length > 1 && <div className="metric"><div className="v">{selIds.length}</div><div className="k">Fights</div></div>}
+            {headTiles[tab].map((t) => (
+              <div className="metric" key={t.k} title={t.title}>
+                <div className="v">{t.v}</div><div className="k">{t.k}</div>
+              </div>
+            ))}
           </div>
         )}
 
-        {detail && tab !== 'insights' && tab !== 'timeline' && (
+        {detail && tabCols[tab] && (
           <div className="card">
             <div className="filterbar">
               <input
@@ -1111,11 +1245,11 @@ export default function ZoneRun() {
               {(roleSet.size > 0 || q) && (
                 <button className="chip" onClick={() => { setRolesQ(null); setQ(null) }}>Reset</button>
               )}
-              {tab === 'overview' && (
+              {tab === 'defense' && (
                 <>
                   <label
                     className="chip toggle spacer"
-                    title="Summoned pets get a row for what they TOOK — their damage is already counted under their owner"
+                    title="Pet rows show damage taken; their damage is counted under the owner"
                   >
                     <input
                       type="checkbox"
@@ -1136,9 +1270,12 @@ export default function ZoneRun() {
             <SortableTable
               columns={panelOpen
                 ? [nameCol, leadCol[tab] || dpsCol]
-                : (tabCols[tab] || overviewCols)}
+                : (tabCols[tab] || damageCols)}
+              /* layout is per tab, and the condensed picker beside an open
+                 drilldown is not a layout anyone wants remembered */
+              prefsKey={panelOpen ? undefined : `zonerun:${tab}`}
               rows={currentRows}
-              defaultSort={tabSort[tab] || tabSort.overview}
+              defaultSort={tabSort[tab] || tabSort.damage}
               rowKey={(a) => a.key}
               selectedKey={selectedActor}
               wrapClass={currentRows.length > 14 ? 'sticky' : ''}
@@ -1153,6 +1290,13 @@ export default function ZoneRun() {
           </div>
         )}
 
+        {detail && tab === 'aoes' && (
+          <ErrorBoundary resetKey={`aoes:${sel}`}>
+            <AoePanel data={aoeData} err={aoeErr}
+                      base={enc?.started_ts ?? run.started_ts} />
+          </ErrorBoundary>
+        )}
+
         {detail && tab === 'timeline' && (
           <div className="card">
             <div className="drillhead">
@@ -1160,15 +1304,16 @@ export default function ZoneRun() {
               <span className="muted">
                 {checkedActors.length
                   ? `${checkedActors.length} checked`
-                  : 'top raiders by damage — check rows on another tab to choose'}
+                  : `top 5 by ${{ heals: 'healing', taken: 'damage taken' }[metric] || 'damage'}`
+                    + ' — check rows on another tab to choose'}
               </span>
             </div>
             {timelineErr && <p className="err">{timelineErr}</p>}
             {!timeline && !timelineErr && <p className="muted">Loading…</p>}
             {timeline?.pruned && (
               <p className="muted">
-                Timeline unavailable — this run&apos;s raw events were pruned. The totals
-                in the other tabs come from frozen rollups and are unaffected.
+                No timeline — this run&apos;s raw events were pruned. The other tabs
+                read from frozen rollups and are unaffected.
               </p>
             )}
             {timeline && !timeline.pruned && (
@@ -1194,10 +1339,7 @@ export default function ZoneRun() {
         {detail && tab === 'defense' && recaps?.deaths?.length > 0 && (
           <div className="card">
             <h2>Every death</h2>
-            <p className="note">
-              Pick one to see the last {recaps.window_s} seconds before it — what was
-              landing, and what was healing.
-            </p>
+            <p className="note">Pick one for the {recaps.window_s}s before it.</p>
             <div className="tablewrap">
               <table className="data">
                 <thead>
@@ -1225,8 +1367,8 @@ export default function ZoneRun() {
             </div>
             {recaps.pruned_encounters > 0 && (
               <p className="note">
-                {recaps.pruned_encounters} fight(s) had their events pruned — deaths in
-                those are counted in the table above but have no recap.
+                {recaps.pruned_encounters} fight(s) had their events pruned — those
+                deaths are counted above but have no recap.
               </p>
             )}
           </div>

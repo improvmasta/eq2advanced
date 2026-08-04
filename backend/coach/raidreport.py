@@ -66,6 +66,7 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
 
     first: dict[int, dict] = {}          # player -> first-action record
     deaths: dict[int, list[int]] = defaultdict(list)
+    revives: dict[int, list[int]] = defaultdict(list)  # player -> "is revived!" ts
     actions: dict[int, list[int]] = defaultdict(list)  # player -> sourced-event ts
     cures: dict[int, int] = defaultdict(int)
     rez_delays: dict[int, list[int]] = defaultdict(list)
@@ -142,13 +143,22 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
             if tgt_roll is not None:
                 deaths[tgt_roll].append(r["ts"])
                 all_death_ts.append(r["ts"])
+        if r["type"] == "revive":
+            tgt_roll = _rollup(ents, r["tgt_entity"])
+            if tgt_roll is not None:
+                revives[tgt_roll].append(r["ts"])
 
     duration = max(enc["duration_s"], 1)
     players = []
     for pid, st in stats.items():
         time_dead = 0
         for d in deaths.get(pid, []):
-            nxt = next((t for t in actions.get(pid, []) if t > d), enc["ended_ts"])
+            # the revive line is the truth when the log has one; acting again
+            # is only a ceiling on it (rezzed players stand around), and the
+            # fight ending is the last resort
+            up = next((t for t in revives.get(pid, []) if t > d), None)
+            acted = next((t for t in actions.get(pid, []) if t > d), None)
+            nxt = min([t for t in (up, acted, enc["ended_ts"]) if t is not None])
             time_dead += max(min(nxt, enc["ended_ts"]) - d, 0)
         alive_s = max(duration - time_dead, 1)
         dps_alive = st["damage"] / alive_s

@@ -38,7 +38,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         r = c.post("/api/auth/register",
-                   json={"email": "ingest@test.local", "password": "hunter2hunter2"})
+                   json={"username": "ingest", "password": "hunter2hunter2"})
         assert r.status_code == 200, r.text
         yield c
     mp.undo()

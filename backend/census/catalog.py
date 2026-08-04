@@ -139,6 +139,22 @@ def proc_ability_names(conn) -> set[str]:
         "SELECT ability_name FROM ability_catalog WHERE proc=1")}
 
 
+def press_inputs(conn) -> tuple[dict[str, float], frozenset[str]]:
+    """What the rollup needs to tell a button press from a tick: (ability name
+    -> tick period in seconds, ability names that fire themselves).
+
+    Census records the period per spell TIER; the log only ever prints the
+    numeral-stripped base name, so the tiers are collapsed on `base_name` and
+    the shortest period wins — an upgrade that ticks faster would otherwise
+    have its extra ticks read as extra presses."""
+    periods: dict[str, float] = {}
+    for name, period in conn.execute(
+            "SELECT base_name, MIN(dmg_period_s) FROM census_spells "
+            "WHERE dmg_period_s IS NOT NULL AND dmg_period_s > 0 GROUP BY base_name"):
+        periods[name] = float(period)
+    return periods, frozenset(proc_ability_names(conn))
+
+
 def scribed_classes(conn) -> dict[str, str]:
     """ability name -> the classes that scribe it, for rows where `class`
     actually means that. Everything else is a proc's owning class."""

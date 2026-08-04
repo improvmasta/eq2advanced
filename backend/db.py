@@ -4,6 +4,7 @@ append a migration step — never edit an existing step."""
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from pathlib import Path
@@ -15,33 +16,43 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
+  username TEXT NOT NULL,                 -- stored lowercase; see idx_users_username
   pw_hash BLOB NOT NULL,
   salt BLOB NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user',      -- admin|user
+  role TEXT NOT NULL DEFAULT 'user',      -- admin|user (OPERATIONAL only, see security.py)
+  sq_id INTEGER,                          -- security question (auth.RESET_QUESTIONS)
+  sq_hash BLOB,
+  sq_salt BLOB,
+  disabled_ts INTEGER,
+  upload_max_bytes INTEGER,               -- NULL = the global setting
+  storage_max_bytes INTEGER,
+  last_login_ts INTEGER,
   created_ts INTEGER NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
   created_ts INTEGER NOT NULL,
   expires_ts INTEGER NOT NULL
 );
+-- A claim is per USER, not per name: anyone may claim "Bobby" and it stops
+-- nobody else claiming it too. Each claim is its own row with its own logs.
 CREATE TABLE IF NOT EXISTS characters (
   id INTEGER PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
   name TEXT NOT NULL,
   world_id INTEGER NOT NULL DEFAULT 618,
   class TEXT,
   level INTEGER,
   census_character_id INTEGER,
   last_census_ts INTEGER,
-  UNIQUE(name, world_id)
+  UNIQUE(user_id, name, world_id)
 );
 CREATE TABLE IF NOT EXISTS device_tokens (
   id INTEGER PRIMARY KEY,
@@ -50,7 +61,12 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   label TEXT,
   created_ts INTEGER NOT NULL,
   last_seen_ts INTEGER,
-  revoked_ts INTEGER
+  revoked_ts INTEGER,
+  -- v11: may this token CHANGE sharing, or only send logs? The plugin's
+  -- sharing panel is read-only without it. Off by default: a token lives in a
+  -- config file on a raiding PC, and "send my logs" must not silently mean
+  -- "publish my back catalogue to every group I'm in".
+  can_share INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY,
@@ -60,16 +76,24 @@ CREATE TABLE IF NOT EXISTS sessions (
   ended_ts INTEGER,
   status TEXT NOT NULL DEFAULT 'receiving',  -- receiving|parsing|ready|error
   error TEXT,
-  upload_sha256 TEXT UNIQUE,
+  upload_sha256 TEXT,                     -- content address; UNIQUE per character,
+                                          -- not globally — two people may upload
+                                          -- the same raid log (idx_sessions_upload)
   upload_name TEXT,
   line_count INTEGER,
   pinned INTEGER NOT NULL DEFAULT 0,
   pruned INTEGER NOT NULL DEFAULT 0,       -- events deleted; raid report frozen
   calibration INTEGER NOT NULL DEFAULT 0,  -- dummy-parse ground truth for the coach fit
   calib_stats_json TEXT,                   -- stat vector captured when flagged
+  retain_raw INTEGER NOT NULL DEFAULT 1,   -- 0 = parse it, then drop the log
+  raw_deleted_ts INTEGER,                  -- set when a retain_raw=0 log is dropped
+  src_bytes INTEGER,                       -- uncompressed upload size (quotas)
+  raw_bytes INTEGER,                       -- stored gzip size
   created_ts INTEGER NOT NULL,
   last_ingest_ts INTEGER
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_upload
+  ON sessions(upload_sha256, character_id) WHERE upload_sha256 IS NOT NULL;
 CREATE TABLE IF NOT EXISTS ingest_batches (
   token_id INTEGER NOT NULL,
   batch_id TEXT NOT NULL,
@@ -193,13 +217,16 @@ CREATE TABLE IF NOT EXISTS encounter_actor_stats (
   power_drain INTEGER NOT NULL DEFAULT 0,
   damage_taken INTEGER NOT NULL DEFAULT 0,
   deaths INTEGER NOT NULL DEFAULT 0,
-  time_dead_s INTEGER NOT NULL DEFAULT 0,
+  time_dead_s INTEGER NOT NULL DEFAULT 0, -- death -> revive, clamped to the fight
   rez_casts INTEGER NOT NULL DEFAULT 0,
+  intercepts INTEGER NOT NULL DEFAULT 0,  -- hits taken for someone else (count only)
   cure_count INTEGER NOT NULL DEFAULT 0,
   cure_latency_ms_avg INTEGER,
   active_s INTEGER NOT NULL DEFAULT 0,
   atk_swings INTEGER NOT NULL DEFAULT 0,  -- offensive swings incl. avoided
   atk_span_s INTEGER NOT NULL DEFAULT 0,  -- first->last swing; avg delay = span/(swings-1)
+  presses INTEGER NOT NULL DEFAULT 0,     -- activations: AoE collapsed, DoT ticks dropped
+  press_span_s INTEGER NOT NULL DEFAULT 0,-- first->last press; adjusted delay = span/(presses-1)
   PRIMARY KEY (encounter_id, entity_id)
 );
 CREATE TABLE IF NOT EXISTS encounter_ability_stats (
@@ -222,7 +249,9 @@ CREATE TABLE IF NOT EXISTS encounter_ability_stats (
   min INTEGER,
   max INTEGER,
   median REAL,
-  avg_delay_s REAL,
+  avg_delay_s REAL,                       -- ACT's: span/(hits-1), ticks and AoE included
+  presses INTEGER NOT NULL DEFAULT 0,     -- activations (see pipeline/statsroll)
+  press_delay_s REAL,                     -- span/(presses-1): time between button presses
   dtypes TEXT,                            -- JSON {dtype: amount}, dual-type split
   uptime_s INTEGER,
   PRIMARY KEY (encounter_id, entity_id, ability_id, kind)
@@ -287,6 +316,76 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+-- ---- groups + sharing (phase 12) ----
+-- A group is who you raid with. Sharing is evaluated at READ time from these
+-- tables (see groups.py) — never copied onto a run, so it survives every
+-- zone-run rebuild and leaving a group revokes access immediately.
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  owner_user_id INTEGER NOT NULL REFERENCES users(id),
+  join_code TEXT UNIQUE,                  -- 6 digits; NULL = code joining is off
+  join_code_ts INTEGER,
+  join_code_expires_ts INTEGER,           -- NULL = no expiry
+  created_ts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_members (
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  role TEXT NOT NULL DEFAULT 'member',    -- owner|admin|member
+  joined_ts INTEGER NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+CREATE TABLE IF NOT EXISTS group_invites (
+  id INTEGER PRIMARY KEY,
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  invited_by INTEGER NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'pending', -- pending|accepted|declined
+  created_ts INTEGER NOT NULL,
+  UNIQUE(group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS character_shares (
+  character_id INTEGER NOT NULL REFERENCES characters(id),
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY (character_id, group_id)
+);
+-- v11: "share THIS raid", decided by the uploader before the raid rather than
+-- afterwards on the site. Scoped to one session because that is the only thing
+-- that exists while the log is still being written — zone runs are derived at
+-- parse time and re-derived on every reparse, so an intent recorded against a
+-- run id would not survive the night. Read at query time exactly like
+-- character_shares, and beaten by a `hide` on the run the same way.
+CREATE TABLE IF NOT EXISTS session_shares (
+  session_id INTEGER NOT NULL REFERENCES sessions(id),
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY (session_id, group_id)
+);
+CREATE TABLE IF NOT EXISTS run_shares (
+  zone_run_id INTEGER NOT NULL REFERENCES zone_runs(id),
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  mode TEXT NOT NULL,                     -- share | hide (hide beats an auto-share)
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY (zone_run_id, group_id)
+);
+CREATE TABLE IF NOT EXISTS public_runs (
+  zone_run_id INTEGER PRIMARY KEY REFERENCES zone_runs(id),
+  published_by INTEGER NOT NULL REFERENCES users(id),
+  created_ts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  actor_user_id INTEGER,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
 """
 
 
@@ -310,14 +409,159 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+def _username_from_email(email: str, user_id: int, taken: set[str]) -> str:
+    """v9: logins moved from email to username. Derive one from the old address
+    (local part, lowercased, [a-z0-9_] only); anything unusable or already taken
+    becomes `user{id}`, which is always free."""
+    local = re.sub(r"[^a-z0-9_]", "", (email or "").split("@")[0].lower())[:20]
+    if len(local) < 3 or local in taken:
+        local = f"user{user_id}"
+    return local
+
+
+def _rebuild_users(conn: sqlite3.Connection) -> None:
+    """v9 migration: `users.email UNIQUE NOT NULL` -> `users.username` + security
+    question columns. SQLite can't drop a constraint, so the table is rebuilt.
+    Idempotent by shape (the `email` column is the trigger), not by user_version —
+    the dev reloader can stamp the version mid-edit."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    if "email" not in cols:
+        return
+    rows = conn.execute("SELECT * FROM users ORDER BY id").fetchall()
+    taken: set[str] = set()
+    migrated = []
+    for r in rows:
+        name = _username_from_email(r["email"], r["id"], taken)
+        taken.add(name)
+        migrated.append((r["id"], name, r["pw_hash"], r["salt"], r["role"], r["created_ts"]))
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with conn:
+            conn.execute("""
+              CREATE TABLE users_new (
+                id INTEGER PRIMARY KEY, username TEXT NOT NULL,
+                pw_hash BLOB NOT NULL, salt BLOB NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                sq_id INTEGER, sq_hash BLOB, sq_salt BLOB,
+                disabled_ts INTEGER, upload_max_bytes INTEGER,
+                storage_max_bytes INTEGER, last_login_ts INTEGER,
+                created_ts INTEGER NOT NULL)""")
+            conn.executemany(
+                "INSERT INTO users_new (id, username, pw_hash, salt, role, created_ts) "
+                "VALUES (?,?,?,?,?,?)", migrated)
+            conn.execute("DROP TABLE users")
+            conn.execute("ALTER TABLE users_new RENAME TO users")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+            bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if bad:
+                raise RuntimeError(f"users rebuild broke referential integrity: {bad[:5]}")
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _table_sql(conn, name: str) -> str:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                       (name,)).fetchone()
+    return row["sql"] if row else ""
+
+
+def _rebuild(conn, name: str, create_sql: str, after: tuple[str, ...] = (),
+             fixups: tuple[str, ...] = ()) -> None:
+    """Copy a table into a new definition, keeping ids and every column both
+    definitions share. Used for the v9 constraint changes SQLite can't ALTER.
+
+    `fixups` run against the OLD table before the copy (data must satisfy the new
+    constraints); `after` runs against the new one."""
+    old_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({name})")]
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with conn:
+            for sql in fixups:
+                conn.execute(sql)
+            conn.execute(create_sql.replace(f"TABLE {name}", f"TABLE {name}_new", 1))
+            new_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({name}_new)")]
+            shared = ", ".join(c for c in new_cols if c in old_cols)
+            conn.execute(f"INSERT INTO {name}_new ({shared}) SELECT {shared} FROM {name}")
+            conn.execute(f"DROP TABLE {name}")
+            conn.execute(f"ALTER TABLE {name}_new RENAME TO {name}")
+            for sql in after:
+                conn.execute(sql)
+            bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if bad:
+                raise RuntimeError(f"{name} rebuild broke referential integrity: {bad[:5]}")
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
+def _rebuild_characters(conn) -> None:
+    """v9: a character claim stops being exclusive. `UNIQUE(name, world_id)` +
+    nullable owner become `UNIQUE(user_id, name, world_id)` + NOT NULL owner, so
+    two people can each claim Bobby and keep their own logs. Ids are preserved —
+    sessions, zone_runs, device_tokens, coach_reports, census snapshots and
+    run_edits all hang off `characters.id`.
+
+    Pre-accounts rows (`user_id IS NULL`, phase-1 uploads) go to the bootstrap
+    admin, which is the account that uploaded them."""
+    sql = _table_sql(conn, "characters")
+    if not sql or "UNIQUE(user_id, name, world_id)" in sql:
+        return   # fresh database, or already rebuilt
+    owner = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    if owner is None:
+        conn.execute("DELETE FROM characters WHERE user_id IS NULL")
+    _rebuild(conn, "characters", """
+      CREATE TABLE characters (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL, world_id INTEGER NOT NULL DEFAULT 618,
+        class TEXT, level INTEGER,
+        census_character_id INTEGER, last_census_ts INTEGER,
+        UNIQUE(user_id, name, world_id))""",
+             fixups=((f"UPDATE characters SET user_id={owner['id']} WHERE user_id IS NULL",)
+                     if owner else ()))
+
+
+def _rebuild_sessions(conn) -> None:
+    """v9: `upload_sha256 TEXT UNIQUE` was global, so the second person to upload
+    a raid log hit a constraint on someone else's row. Uniqueness moves to
+    (sha, character) via `idx_sessions_upload`; the gzip on disk stays
+    content-addressed and shared."""
+    if "upload_sha256 TEXT UNIQUE" not in _table_sql(conn, "sessions"):
+        return   # fresh database, or already rebuilt
+    _rebuild(conn, "sessions", """
+      CREATE TABLE sessions (
+        id INTEGER PRIMARY KEY,
+        character_id INTEGER NOT NULL REFERENCES characters(id),
+        source TEXT NOT NULL, started_ts INTEGER, ended_ts INTEGER,
+        status TEXT NOT NULL DEFAULT 'receiving', error TEXT,
+        upload_sha256 TEXT, upload_name TEXT, line_count INTEGER,
+        pinned INTEGER NOT NULL DEFAULT 0, pruned INTEGER NOT NULL DEFAULT 0,
+        calibration INTEGER NOT NULL DEFAULT 0, calib_stats_json TEXT,
+        parse_version INTEGER, retain_raw INTEGER NOT NULL DEFAULT 1,
+        raw_deleted_ts INTEGER, src_bytes INTEGER, raw_bytes INTEGER,
+        created_ts INTEGER NOT NULL, last_ingest_ts INTEGER)""",
+             after=("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_upload "
+                    "ON sessions(upload_sha256, character_id) "
+                    "WHERE upload_sha256 IS NOT NULL",))
+
+
 def init_db() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     conn = get_db()
+    _rebuild_users(conn)
+    _rebuild_characters(conn)
+    _rebuild_sessions(conn)
     with conn:
         conn.executescript(SCHEMA)
         # v2: checked unconditionally, not version-gated — the dev reloader can
         # restart mid-edit and stamp the version before a migration block lands
+        user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+        for col, typ in (("sq_id", "INTEGER"), ("sq_hash", "BLOB"), ("sq_salt", "BLOB"),
+                         ("disabled_ts", "INTEGER"), ("upload_max_bytes", "INTEGER"),
+                         ("storage_max_bytes", "INTEGER"), ("last_login_ts", "INTEGER")):
+            if col not in user_cols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
         if "last_ingest_ts" not in cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN last_ingest_ts INTEGER")
@@ -331,6 +575,12 @@ def init_db() -> None:
         if "pruned" not in cols:
             conn.execute(
                 "ALTER TABLE sessions ADD COLUMN pruned INTEGER NOT NULL DEFAULT 0")
+        if "retain_raw" not in cols:
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN retain_raw INTEGER NOT NULL DEFAULT 1")
+        for col in ("raw_deleted_ts", "src_bytes", "raw_bytes"):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER")
         enc_cols = {r[1] for r in conn.execute("PRAGMA table_info(encounters)")}
         if "zone_run_id" not in enc_cols:
             conn.execute("ALTER TABLE encounters ADD COLUMN zone_run_id INTEGER")
@@ -383,10 +633,53 @@ def init_db() -> None:
         if "scribed" not in cat_cols:
             conn.execute("ALTER TABLE ability_catalog ADD COLUMN "
                          "scribed INTEGER NOT NULL DEFAULT 0")
+        # v10: intercepts + the press ("adjusted delay") columns. Added by
+        # shape like the rest — the rows themselves are rebuilt by the
+        # PARSE_VERSION sweep, so the defaults only live until the reparse.
+        actor_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(encounter_actor_stats)")}
+        for col in ("intercepts", "presses", "press_span_s"):
+            if col not in actor_cols:
+                conn.execute(f"ALTER TABLE encounter_actor_stats ADD COLUMN "
+                             f"{col} INTEGER NOT NULL DEFAULT 0")
+        abil_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(encounter_ability_stats)")}
+        if "presses" not in abil_cols:
+            conn.execute("ALTER TABLE encounter_ability_stats ADD COLUMN "
+                         "presses INTEGER NOT NULL DEFAULT 0")
+        if "press_delay_s" not in abil_cols:
+            conn.execute(
+                "ALTER TABLE encounter_ability_stats ADD COLUMN press_delay_s REAL")
+        # v11: the ACT plugin's sharing panel. `session_shares` arrives with the
+        # schema (CREATE TABLE IF NOT EXISTS); only the column needs a shape
+        # guard. Existing tokens get can_share=0 — they were minted before the
+        # capability existed and nobody consented to it, so the site has to
+        # re-issue for a device that wants it.
+        token_cols = {r[1] for r in conn.execute("PRAGMA table_info(device_tokens)")}
+        if "can_share" not in token_cols:
+            conn.execute("ALTER TABLE device_tokens ADD COLUMN "
+                         "can_share INTEGER NOT NULL DEFAULT 0")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def get_setting(conn, key: str, default: str | None = None) -> str | None:
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return default if row is None or row["value"] is None else row["value"]
+
+
+def get_int_setting(conn, key: str, default: int = 0) -> int:
+    try:
+        return int(get_setting(conn, key) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def set_setting(conn, key: str, value) -> None:
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
+                 (key, None if value is None else str(value)))
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:

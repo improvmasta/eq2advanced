@@ -68,8 +68,7 @@ export default function Import() {
     <>
       <div className="pagehead">
         <h1>Import</h1>
-        <span className="sub">Three ways in — live from the game, log files, or an ACT export</span>
-        <span className="actions"><Link className="btnlink" to="/">Back to raids</Link></span>
+        <span className="actions"><Link className="btnlink" to="/">Back to parses</Link></span>
       </div>
       {error && <p className="err">{error}</p>}
 
@@ -77,8 +76,7 @@ export default function Import() {
         <Method
           title="Live link"
           state={receiving.length ? 'live' : paired.length ? 'paired' : null}
-          blurb="The uploader reads your log as you play and streams it here, so fights
-                 land seconds after the kill. Pair once per PC with a device token."
+          blurb="Streams your log as you play. Pair once per PC with a device token."
         >
           {receiving.length > 0 ? (
             <p>
@@ -100,8 +98,7 @@ export default function Import() {
 
         <Method
           title="Log files"
-          blurb="Drop one or more eq2log_*.txt files. Overlap between files is deduped,
-                 so backfilling a whole folder is safe."
+          blurb="Drop one or more eq2log_*.txt files. Overlap between files is deduped."
         >
           <UploadDrop compact onUploaded={refresh} />
         </Method>
@@ -110,18 +107,14 @@ export default function Import() {
           title="ACT export"
           state="soon"
           blurb="For parses that only exist inside ACT. The XML history export is the
-                 target — it carries per-combatant and per-ability rows, which is what
-                 the tables here need."
+                 target — it carries per-combatant and per-ability rows."
         >
           <ul className="fineprint">
-            <li><b>XML export</b> — the one to send; readable, and it names its columns.</li>
-            <li><b>.act file</b> — compressed binary, so it may not be readable at all.</li>
-            <li><b>SQL / ODBC export</b> — workable fallback if the XML is thin.</li>
+            <li><b>XML export</b> — the one to send.</li>
+            <li><b>.act file</b> — compressed binary, may not be readable.</li>
+            <li><b>SQL / ODBC export</b> — fallback if the XML is thin.</li>
           </ul>
-          <p className="muted">
-            Nothing to press yet — send an XML export from a night you care about and
-            this turns on.
-          </p>
+          <p className="muted">Not built yet.</p>
         </Method>
       </div>
 
@@ -134,9 +127,8 @@ export default function Import() {
           </span>
         </div>
         <p className="note">
-          Raw files, kept so a parser fix can be replayed. Fights live on{' '}
-          <Link to="/">Raids</Link>; deleting a file here removes everything it
-          contributed.
+          Raw files, kept so a parser fix can be replayed. Deleting one removes
+          every fight it contributed.
         </p>
         {sessions === null && <p className="muted">Loading…</p>}
         {sessions?.length === 0 && <p className="muted">Nothing imported yet.</p>}

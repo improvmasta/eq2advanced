@@ -1,0 +1,1789 @@
+{
+ "source": "ACT SpellTimers (Lindsay's raid config)",
+ "spells": {
+  "\"You have vexed me for the last time priest!\"": {
+   "category": "The Direvine Matron",
+   "timer_s": 64
+  },
+  "Acidic Blast": {
+   "category": "Rise of Kunark",
+   "timer_s": 37
+  },
+  "Acidic Mist": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Acrid Aura": {
+   "category": "Munzok the Corruptor",
+   "timer_s": 43
+  },
+  "Add Port": {
+   "category": "K'zan",
+   "timer_s": 35
+  },
+  "Adorntimer": {
+   "category": "General",
+   "timer_s": 1800
+  },
+  "Aereon": {
+   "category": "Aereon",
+   "timer_s": 60
+  },
+  "AmalgamonAdd": {
+   "category": "Amalgamon",
+   "timer_s": 60
+  },
+  "Ancient Devastation": {
+   "category": "Farozth Ssravizh",
+   "timer_s": 20
+  },
+  "Ancient Winds": {
+   "category": "Toxxulia",
+   "timer_s": 89
+  },
+  "Anvil": {
+   "category": "Furnace of Ages",
+   "timer_s": 15
+  },
+  "Aphyxiating Emissions": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Arcane Add": {
+   "category": "Avatar of Conquest",
+   "timer_s": 60
+  },
+  "Arcane Maelstrom": {
+   "category": "Trakanon",
+   "timer_s": 45
+  },
+  "Arcane Reckoning": {
+   "category": "Waansu",
+   "timer_s": 52
+  },
+  "Arching Feedback": {
+   "category": "Gen'ra",
+   "timer_s": 24
+  },
+  "Aura of Silence": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Baleful Malaise": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Barrage": {
+   "category": "General",
+   "timer_s": 65
+  },
+  "Bastion Blur": {
+   "category": "Bastion",
+   "timer_s": 60
+  },
+  "Bastion Blur HM": {
+   "category": "Bastion the Immovable",
+   "timer_s": 30
+  },
+  "Bastion Move": {
+   "category": "Bastion the Immovable",
+   "timer_s": 30
+  },
+  "Bastion's Pummeling": {
+   "category": "Bastion",
+   "timer_s": 28
+  },
+  "BastionWipe": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Berik Add": {
+   "category": "Berik Bloodfist",
+   "timer_s": 60
+  },
+  "Binding Flames of Rage": {
+   "category": "Avatar of Flame",
+   "timer_s": 40
+  },
+  "Blanket of Eternal Night": {
+   "category": "Mayong Mistmoore",
+   "timer_s": 60
+  },
+  "Blinding Steam": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Bloodfist": {
+   "category": "Berik Bloodfist",
+   "timer_s": 45
+  },
+  "Bloodthirsty Ramage": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Bone Rot": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Breath of Fire": {
+   "category": "Talendor",
+   "timer_s": 45
+  },
+  "Breath of Unrestrained Growth": {
+   "category": "Woushi",
+   "timer_s": 68
+  },
+  "Brigand Add": {
+   "category": "Tagrin Maldric",
+   "timer_s": 60
+  },
+  "Brutal Bash": {
+   "category": "General",
+   "timer_s": 29
+  },
+  "Buffeting Winds": {
+   "category": "General",
+   "timer_s": 35
+  },
+  "Burden of the Wyrmkin": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Burning Moon": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Burning Vortex": {
+   "category": "Imperator Kolskeggr",
+   "timer_s": 31
+  },
+  "Byzola's Ancient Scorn": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Call of Battle": {
+   "category": "Statue of Rallos Zek",
+   "timer_s": 30
+  },
+  "Call to Arm": {
+   "category": "Avatar of Conquest",
+   "timer_s": 30
+  },
+  "Catabatic Heatwave": {
+   "category": "Perah'Celsis",
+   "timer_s": 38
+  },
+  "Caustic Fog": {
+   "category": "Energized Taehric Construct",
+   "timer_s": 40
+  },
+  "Chains of Rancor": {
+   "category": "General",
+   "timer_s": 23
+  },
+  "Chilling Mist": {
+   "category": "Dinree",
+   "timer_s": 52
+  },
+  "Choking Mist": {
+   "category": "Doomcoil",
+   "timer_s": 40
+  },
+  "Clone": {
+   "category": "Prexus",
+   "timer_s": 60
+  },
+  "Cloud of Deceit": {
+   "category": "Tagrin Maldric",
+   "timer_s": 26
+  },
+  "Cloud of Torpor": {
+   "category": "Chel'Drak the Ancient Lord",
+   "timer_s": 50
+  },
+  "Cloudburst": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Coalfired Cloud": {
+   "category": "General",
+   "timer_s": 73
+  },
+  "Cold Chill of Death": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Colossal Whirl": {
+   "category": "Primus Pilus Gunnr",
+   "timer_s": 29
+  },
+  "ColumnPop": {
+   "category": "Avatar of Flame",
+   "timer_s": 50
+  },
+  "Concussion of Elements": {
+   "category": "Captain Grush",
+   "timer_s": 44
+  },
+  "Concussive Strike": {
+   "category": "Field General Uktap",
+   "timer_s": 40
+  },
+  "Consume Vitae": {
+   "category": "Entrancer Lisha",
+   "timer_s": 15
+  },
+  "Contempt of Court": {
+   "category": "Derig Cinderaxe",
+   "timer_s": 45
+  },
+  "Corrosive Spores": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Crushing Claw": {
+   "category": "Dagarn the Decimator",
+   "timer_s": 45
+  },
+  "Crushing Fog": {
+   "category": "Miragul",
+   "timer_s": 41
+  },
+  "Crushing Judgment": {
+   "category": "Supreme Imperium Valdemar",
+   "timer_s": 30
+  },
+  "Crushing Mists": {
+   "category": "Kendis Parmare",
+   "timer_s": 44
+  },
+  "Crushing Torment": {
+   "category": "Thazuruz the Limbcrusher",
+   "timer_s": 54
+  },
+  "Crushing Torrent": {
+   "category": "Arkatanthis the Destroyer",
+   "timer_s": 41
+  },
+  "Crushing Void Energy": {
+   "category": "Tyrannus",
+   "timer_s": 35
+  },
+  "Cryptic Wind": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Crystal": {
+   "category": "General",
+   "timer_s": 90
+  },
+  "Curse of Destruction": {
+   "category": "Arkatanthis the Destroyer",
+   "timer_s": 32
+  },
+  "Curse of Devestation": {
+   "category": "Maalus Imbued",
+   "timer_s": 26
+  },
+  "Cyclone of War": {
+   "category": "General Utehk",
+   "timer_s": 28
+  },
+  "Cyclonic Freeze": {
+   "category": "Arch-Magistor Modrfrost",
+   "timer_s": 41
+  },
+  "Dagarn": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Dark Energy Flow": {
+   "category": "General",
+   "timer_s": 48
+  },
+  "Dark Flames of the Void": {
+   "category": "General",
+   "timer_s": 48
+  },
+  "Dark Visage": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Deafening Slam": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "DeathsDoor": {
+   "category": "General",
+   "timer_s": 66
+  },
+  "Deathswipe": {
+   "category": "Hragdold the Frenzied",
+   "timer_s": 24
+  },
+  "Deathtouch": {
+   "category": "Lichlord Skulldugger",
+   "timer_s": 36
+  },
+  "Deluge of War": {
+   "category": "General Aakita",
+   "timer_s": 28
+  },
+  "Demoralizing Gale": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Despoiling Mists": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Di'Zok's Concussive Blast": {
+   "category": "Ruins of Kunark",
+   "timer_s": 45
+  },
+  "Di`Zok's Concussive Blast": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Discombobulation": {
+   "category": "Fitzpitzle",
+   "timer_s": 50
+  },
+  "Discordant Muse": {
+   "category": "General",
+   "timer_s": 32
+  },
+  "Diseased Slam": {
+   "category": "Sevalor Gorescale",
+   "timer_s": 30
+  },
+  "Dissolution of Breath": {
+   "category": "Avatar of Death",
+   "timer_s": 30
+  },
+  "Divine Blast": {
+   "category": "Supreme Imperium Valdemar",
+   "timer_s": 25
+  },
+  "Divine Maelstrom": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Dooming Mist": {
+   "category": "General",
+   "timer_s": 37
+  },
+  "Draconic Torrent": {
+   "category": "Tavekalem",
+   "timer_s": 40
+  },
+  "Drain Life": {
+   "category": "The Pumpkin Headed Horseman",
+   "timer_s": 30
+  },
+  "Drinal Frontal Red": {
+   "category": "Drinal",
+   "timer_s": 35
+  },
+  "Drozen Shardstorm": {
+   "category": "General",
+   "timer_s": 48
+  },
+  "Dursella Sucks": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Dusts of Disintegration": {
+   "category": "Gynok Moltor",
+   "timer_s": 40
+  },
+  "Ear Wax": {
+   "category": "Siren Grotto",
+   "timer_s": 100
+  },
+  "Electrical Siphon": {
+   "category": "General",
+   "timer_s": 34
+  },
+  "Electrical Storm": {
+   "category": "General",
+   "timer_s": 69
+  },
+  "Elemental Arrowstorm": {
+   "category": "Tallon Zek",
+   "timer_s": 36
+  },
+  "Elemental Barrage": {
+   "category": "Mynzak",
+   "timer_s": 34
+  },
+  "Elemental Fury": {
+   "category": "Arch-Magistor Modrfrost",
+   "timer_s": 42
+  },
+  "Elemental Onslaught": {
+   "category": "Mynzak",
+   "timer_s": 32
+  },
+  "Elemental Strike": {
+   "category": "a Sullonite umbrant",
+   "timer_s": 44
+  },
+  "Elemental Vortex": {
+   "category": "Miragul",
+   "timer_s": 41
+  },
+  "Endothermic Mists": {
+   "category": "Tyrannus",
+   "timer_s": 24
+  },
+  "Energy Inferno": {
+   "category": "Avatar of Flame",
+   "timer_s": 55
+  },
+  "Energy Maelstrom": {
+   "category": "General",
+   "timer_s": 36
+  },
+  "Energy Vortex": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Enthralling Flames": {
+   "category": "Switchmaster Zaxlyz",
+   "timer_s": 26
+  },
+  "Eriak Add": {
+   "category": "Eriak the Fetid",
+   "timer_s": 72
+  },
+  "Eriak Adds": {
+   "category": "Eriak the Fetid",
+   "timer_s": 70
+  },
+  "Eriak Red Text": {
+   "category": "Eriak the Fetid",
+   "timer_s": 50
+  },
+  "Evil Incantation": {
+   "category": "General",
+   "timer_s": 37
+  },
+  "Exhaustion": {
+   "category": "Drinal",
+   "timer_s": 32
+  },
+  "Exhaustive Souldrain": {
+   "category": "Drinal",
+   "timer_s": 32
+  },
+  "Exothermic Explosion": {
+   "category": "Switchmaster Zaxlyz",
+   "timer_s": 28
+  },
+  "Faith Strike": {
+   "category": "The Vision of Vox",
+   "timer_s": 20
+  },
+  "Fearful Flames": {
+   "category": "Druushk",
+   "timer_s": 42
+  },
+  "Fearsome Gaze": {
+   "category": "General",
+   "timer_s": 24
+  },
+  "Fearsome Visage": {
+   "category": "General",
+   "timer_s": 18
+  },
+  "Fetid Cloud": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Fetid Torrent": {
+   "category": "Toxxulia",
+   "timer_s": 89
+  },
+  "Fiery Breath": {
+   "category": "Milas the Ancient",
+   "timer_s": 32
+  },
+  "Fiery Vortex": {
+   "category": "General",
+   "timer_s": 48
+  },
+  "Fire Nova": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Fire Timer": {
+   "category": "Horraastaas",
+   "timer_s": 60
+  },
+  "Fist of Rallos": {
+   "category": "General Teku",
+   "timer_s": 30
+  },
+  "Flame Claw": {
+   "category": "General",
+   "timer_s": 22
+  },
+  "Flame of Ages": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Flame of the Sun": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Flames of Lore": {
+   "category": "Penda Parmare",
+   "timer_s": 42
+  },
+  "Flames of Silence": {
+   "category": "Xaalax",
+   "timer_s": 35
+  },
+  "Flaming Swipe": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Flurry of Punches": {
+   "category": "Legatus Prime Mikill",
+   "timer_s": 40
+  },
+  "Fog of War": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Force of Atrebe": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Force of Darkness": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Force of Hatred": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Force of Web": {
+   "category": "General",
+   "timer_s": 70
+  },
+  "Force of the Web": {
+   "category": "General",
+   "timer_s": 70
+  },
+  "Freezing Rain": {
+   "category": "Waansu",
+   "timer_s": 50
+  },
+  "Frenzied Slice": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Frenzied Swipe": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Frenzied Whirl": {
+   "category": "Field General Uktap",
+   "timer_s": 30
+  },
+  "Frost Storm": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Frozen Rain": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Frozen Shardstorm": {
+   "category": "Glaciactus",
+   "timer_s": 44
+  },
+  "Furious Melee": {
+   "category": "Yzlak",
+   "timer_s": 38
+  },
+  "Furious Storm": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Furnance Add": {
+   "category": "Furnance of Ages",
+   "timer_s": 40
+  },
+  "Fury of Valor": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Gale of the Warden": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Gargantuan Slam": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Giant Swipe": {
+   "category": "Legatus Prime Mikill",
+   "timer_s": 35
+  },
+  "Glokus Red Text": {
+   "category": "Glokus Windhelm",
+   "timer_s": 50
+  },
+  "Gnillaw's Fear Strike": {
+   "category": "General",
+   "timer_s": 26
+  },
+  "Goreslaughter Red Text": {
+   "category": "Commander Goreslaughter",
+   "timer_s": 60
+  },
+  "Great Cleave": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Greater Curse of Devastation": {
+   "category": "Maalus Imbued",
+   "timer_s": 26
+  },
+  "Greater Fire Swarm": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Green Mists of Fear": {
+   "category": "Avatar of Fear",
+   "timer_s": 41
+  },
+  "Hammer": {
+   "category": "Furnace of Ages",
+   "timer_s": 15
+  },
+  "Hammerarc": {
+   "category": "Brendegor Bitelimb",
+   "timer_s": 39
+  },
+  "Harm Touch": {
+   "category": "Nexona",
+   "timer_s": 895
+  },
+  "Harrowing Fissure": {
+   "category": "Eriak the Fetid",
+   "timer_s": 35
+  },
+  "Hate's Blinding": {
+   "category": "General",
+   "timer_s": 53
+  },
+  "Haze of Thule": {
+   "category": "Adkar Vyx",
+   "timer_s": 45
+  },
+  "Hellish Flame": {
+   "category": "Waansu",
+   "timer_s": 50
+  },
+  "Hempin": {
+   "category": "MageBurn",
+   "timer_s": 13
+  },
+  "Hope Crusher": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Hurling Earth": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Hurricane Winds": {
+   "category": "Hurricanus the Patriarch",
+   "timer_s": 54
+  },
+  "ICBladedance": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICChamber1": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICChamber2": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICChamber3": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICChamber4": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICEthereal": {
+   "category": "Inner Circle",
+   "timer_s": 36
+  },
+  "ICGot Your Back": {
+   "category": "Inner Circle",
+   "timer_s": 15
+  },
+  "ICHoly Shield": {
+   "category": "Inner Circle",
+   "timer_s": 40
+  },
+  "ICSever Hate": {
+   "category": "Inner Circle",
+   "timer_s": 10
+  },
+  "ICSpirits": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICTortoise": {
+   "category": "Inner Circle",
+   "timer_s": 30
+  },
+  "ICTurnstrike": {
+   "category": "Inner Circle",
+   "timer_s": 10
+  },
+  "Icelash Boys": {
+   "category": "General",
+   "timer_s": 24
+  },
+  "Icy Avalanche": {
+   "category": "Vuulan",
+   "timer_s": 51
+  },
+  "Icy Tempest": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Icy Torrent": {
+   "category": "Haladan Moonrunner",
+   "timer_s": 50
+  },
+  "Icy Winds": {
+   "category": "Waansu",
+   "timer_s": 50
+  },
+  "Impending Boot": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Imperator's Touch": {
+   "category": "Imperator Kolskeggr",
+   "timer_s": 50
+  },
+  "Incandescent Blaze": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Incindiary Destruction": {
+   "category": "Dagarn the Decimator",
+   "timer_s": 90
+  },
+  "Increased": {
+   "category": "K'zan",
+   "timer_s": 270
+  },
+  "Inferno of War": {
+   "category": "General Zevitus",
+   "timer_s": 28
+  },
+  "Invalidation": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Inverted Arctic Blast": {
+   "category": "Eirreen the Broken",
+   "timer_s": 63
+  },
+  "Invisible Force": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Iron Vortex": {
+   "category": "Uzdrak the Invincible",
+   "timer_s": 30
+  },
+  "Jaundice": {
+   "category": "Jardin the Conqueror",
+   "timer_s": 100
+  },
+  "Judgement of the Faceless": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Judgment of the Faceless": {
+   "category": "Zykluk Vyx",
+   "timer_s": 45
+  },
+  "Karmic Backlash": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Light of the Moon": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Lightning Breath": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Madness": {
+   "category": "Berserker",
+   "timer_s": 8
+  },
+  "Mage Add": {
+   "category": "Amalgamon",
+   "timer_s": 120
+  },
+  "Magical Tempest": {
+   "category": "Penda Parmare",
+   "timer_s": 43
+  },
+  "Mammoth Slam": {
+   "category": "Tuskers",
+   "timer_s": 31
+  },
+  "Mana Sacrifice": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Mask of Horror": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Massive Smash": {
+   "category": "General",
+   "timer_s": 49
+  },
+  "Mauler's Touch": {
+   "category": "Commander Corpsemaul",
+   "timer_s": 45
+  },
+  "Mauling Vapors": {
+   "category": "Commander Corpsemaul",
+   "timer_s": 30
+  },
+  "Mayong's Touch": {
+   "category": "Mayong Mistmoore",
+   "timer_s": 37
+  },
+  "Metal": {
+   "category": "Furnace of Ages",
+   "timer_s": 15
+  },
+  "Metallic Tailswipe": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Meteor Shower": {
+   "category": "Mynzak",
+   "timer_s": 46
+  },
+  "Mighty Roar": {
+   "category": "General",
+   "timer_s": 26
+  },
+  "Milas Red Text": {
+   "category": "Milas the Ancient",
+   "timer_s": 65
+  },
+  "Miner's Curse": {
+   "category": "General",
+   "timer_s": 48
+  },
+  "Minion": {
+   "category": "Vallon Zek",
+   "timer_s": 65
+  },
+  "Mirror": {
+   "category": "Sullon's Spire",
+   "timer_s": 120
+  },
+  "Mists of Despair": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Mists of Discord": {
+   "category": "General",
+   "timer_s": 33
+  },
+  "Mucigenic Storm": {
+   "category": "The Leviathan",
+   "timer_s": 18
+  },
+  "Music Box": {
+   "category": "Glokus Windhelm",
+   "timer_s": 45
+  },
+  "Mutagenic Cloud": {
+   "category": "The Mutagenic Outcast",
+   "timer_s": 30
+  },
+  "Natural Dislocation": {
+   "category": "Woushi",
+   "timer_s": 30
+  },
+  "Nature's Fury": {
+   "category": "General",
+   "timer_s": 58
+  },
+  "Nature's Rage": {
+   "category": "Avatar of Growth",
+   "timer_s": 42
+  },
+  "Nature's Wrath": {
+   "category": "Avatar of Growth",
+   "timer_s": 58
+  },
+  "Necromunger": {
+   "category": "Nox Incessit",
+   "timer_s": 60
+  },
+  "Necrotic Erosion": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Necrotic Rot": {
+   "category": "Sevalor Gorescale",
+   "timer_s": 30
+  },
+  "Nether Cloud": {
+   "category": "General",
+   "timer_s": 42
+  },
+  "No Quarter": {
+   "category": "Grethah the Frenzied",
+   "timer_s": 30
+  },
+  "Noxious Flame": {
+   "category": "Imperator Kolskeggr",
+   "timer_s": 29
+  },
+  "Noxious Fog": {
+   "category": "Tyrannus",
+   "timer_s": 24
+  },
+  "Noxious Mist": {
+   "category": "General",
+   "timer_s": 49
+  },
+  "Noxious Rot": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Noxious Stench": {
+   "category": "The Enraged War Boar",
+   "timer_s": 30
+  },
+  "Op Xigal": {
+   "category": "General",
+   "timer_s": 29
+  },
+  "Oppressive Hatred": {
+   "category": "Shard of Hate",
+   "timer_s": 60
+  },
+  "Overking's Inferno": {
+   "category": "Selrach Di'Zok",
+   "timer_s": 44
+  },
+  "Overwhelming Intimidation": {
+   "category": "Xebnok the Wretched",
+   "timer_s": 39
+  },
+  "PK Port": {
+   "category": "Dreadcutter x4",
+   "timer_s": 45
+  },
+  "Painful Lesson": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Pall of Dread": {
+   "category": "Avatar of Fear",
+   "timer_s": 30
+  },
+  "Perah'Celsis curses": {
+   "category": "Perah'Celsis",
+   "timer_s": 60
+  },
+  "Pestilential Breath": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Piercing Pestilence": {
+   "category": "Toxxulia",
+   "timer_s": 89
+  },
+  "Plague of the Destroyer": {
+   "category": "Arkatanthis the Destroyer",
+   "timer_s": 41
+  },
+  "Planar Tap": {
+   "category": "Tagrin Maldric",
+   "timer_s": 45
+  },
+  "Poison Cloud": {
+   "category": "General",
+   "timer_s": 36
+  },
+  "Poisonous Spores": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Poisonous Vapors": {
+   "category": "a greater swamp shambler",
+   "timer_s": 36
+  },
+  "Poisonous Wave": {
+   "category": "Vaclaz",
+   "timer_s": 40
+  },
+  "Pommel Strike": {
+   "category": "Zordakalicus Ragefire",
+   "timer_s": 32
+  },
+  "Porcupine": {
+   "category": "Fury",
+   "timer_s": 36
+  },
+  "Potion": {
+   "category": "General",
+   "timer_s": 900
+  },
+  "Power Over Death II": {
+   "category": "Drinal",
+   "timer_s": 13
+  },
+  "Power Over Death III": {
+   "category": "Drinal",
+   "timer_s": 13
+  },
+  "Power Over Death IV": {
+   "category": "Drinal",
+   "timer_s": 13
+  },
+  "Preserver": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Primal Fear": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Prismatic Breath": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Prismatic Spray": {
+   "category": "General",
+   "timer_s": 42
+  },
+  "Prone to Corruption": {
+   "category": "General",
+   "timer_s": 20
+  },
+  "Protector's Strike": {
+   "category": "Accursed Custodian",
+   "timer_s": 30
+  },
+  "Putrid Breath": {
+   "category": "Putretor the Rotting",
+   "timer_s": 29
+  },
+  "Rage of the Djinn": {
+   "category": "The Djinn Master",
+   "timer_s": 31
+  },
+  "Ragecloud": {
+   "category": "Ragebourne Gregor Haldane",
+   "timer_s": 34
+  },
+  "Rageforce": {
+   "category": "Sullon Zek",
+   "timer_s": 35
+  },
+  "Rain of Leaves": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Rain of Thistles": {
+   "category": "The Direvine Matron",
+   "timer_s": 50
+  },
+  "Rakish Swath": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Rampage": {
+   "category": "General",
+   "timer_s": 22
+  },
+  "Reaching Rot": {
+   "category": "General",
+   "timer_s": 34
+  },
+  "Reflect": {
+   "category": "Halls of Legends",
+   "timer_s": 9
+  },
+  "Regal Backlash": {
+   "category": "General",
+   "timer_s": 55
+  },
+  "Repeat": {
+   "category": "MageBurn",
+   "timer_s": 75
+  },
+  "Revenge's Rock Throw": {
+   "category": "General",
+   "timer_s": 55
+  },
+  "Revenge's Sebilisian Torrent": {
+   "category": "Imzok",
+   "timer_s": 42
+  },
+  "Riftwave": {
+   "category": "Accursed Custodian",
+   "timer_s": 35
+  },
+  "Rumbling of Earth": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Runic Shatterstorm": {
+   "category": "Adherent Custodian",
+   "timer_s": 30
+  },
+  "SHINEY": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Scourge": {
+   "category": "General",
+   "timer_s": 6
+  },
+  "Scout Add": {
+   "category": "Amalgamon",
+   "timer_s": 120
+  },
+  "Scream of Chaos": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Screams of Battle": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Searing Ice": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Searing Moon": {
+   "category": "The Direvine Matron",
+   "timer_s": 40
+  },
+  "Searing Rot": {
+   "category": "General",
+   "timer_s": 20
+  },
+  "Sebilisian Sporecloud": {
+   "category": "General",
+   "timer_s": 20
+  },
+  "Sebilisian Torrent": {
+   "category": "General",
+   "timer_s": 43
+  },
+  "Seething Strike": {
+   "category": "Ragebourne Gregor Haldane",
+   "timer_s": 32
+  },
+  "Seething Zephyr": {
+   "category": "Kradon the Drake Lord",
+   "timer_s": 38
+  },
+  "Sentinel's Fury": {
+   "category": "a yellow vallonite sentinel",
+   "timer_s": 28
+  },
+  "Sentinel's Touch": {
+   "category": "a yellow vallonite sentinel",
+   "timer_s": 60
+  },
+  "Serene Symbol": {
+   "category": "General",
+   "timer_s": 6
+  },
+  "SevAdd": {
+   "category": "Sevalak of Storms",
+   "timer_s": 60
+  },
+  "Sevalak Red Text": {
+   "category": "Sevalak of Storms",
+   "timer_s": 50
+  },
+  "Short Armed Flurry": {
+   "category": "Fitzpitzle",
+   "timer_s": 32
+  },
+  "Shrapnel": {
+   "category": "Kraytoc",
+   "timer_s": 91
+  },
+  "Shred Confidence": {
+   "category": "Etet the Skull",
+   "timer_s": 19
+  },
+  "Slashing Rage": {
+   "category": "Ragebourne Gregor Haldane",
+   "timer_s": 32
+  },
+  "Slaughtering Cloud": {
+   "category": "Commander Goreslaughter",
+   "timer_s": 30
+  },
+  "Slicing Barrage": {
+   "category": "Vallon Zek",
+   "timer_s": 35
+  },
+  "SnakesBoom": {
+   "category": "Inner Circle",
+   "timer_s": 39
+  },
+  "Sonic Burst": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Soul Burn": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Soul Disruption": {
+   "category": "Tarinax the Destroyer",
+   "timer_s": 70
+  },
+  "Soul Paralysis": {
+   "category": "Mayong Mistmoore",
+   "timer_s": 37
+  },
+  "Sparkling Dust of Despair": {
+   "category": "Senior Loyalist Tilas",
+   "timer_s": 39
+  },
+  "Spew Bile": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Spinning Fervor": {
+   "category": "Zaashka Bradagan",
+   "timer_s": 53
+  },
+  "Spinning Fury": {
+   "category": "Xebnok the Wretched",
+   "timer_s": 38
+  },
+  "Spinning Slash": {
+   "category": "General",
+   "timer_s": 18
+  },
+  "Spiritual Mindmeld": {
+   "category": "Drinal",
+   "timer_s": 36
+  },
+  "Squall of Darkness": {
+   "category": "Zarrakon",
+   "timer_s": 41
+  },
+  "Start": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Static Cloud": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Static Repulsion": {
+   "category": "Trakanon",
+   "timer_s": 46
+  },
+  "Static Storm": {
+   "category": "Sevalak of Storms",
+   "timer_s": 30
+  },
+  "Static Tempest": {
+   "category": "King Tormax",
+   "timer_s": 40
+  },
+  "Statue Click": {
+   "category": "Druushk",
+   "timer_s": 60
+  },
+  "Statue's Force of Atrebe": {
+   "category": "Atrebe",
+   "timer_s": 45
+  },
+  "Statue's Rock Throw": {
+   "category": "General",
+   "timer_s": 61
+  },
+  "Statue's Sebilisian Sporecloud": {
+   "category": "Atrebe",
+   "timer_s": 62
+  },
+  "Stench of Death": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Stomp of Ages": {
+   "category": "Gen'ra",
+   "timer_s": 24
+  },
+  "Storm Touch": {
+   "category": "Vyskudra the Ancient",
+   "timer_s": 45
+  },
+  "Strategic Incantation": {
+   "category": "Prime Inquisitor Lazon",
+   "timer_s": 35
+  },
+  "Strike of the First": {
+   "category": "Tavekalem",
+   "timer_s": 40
+  },
+  "Strike of the Massive": {
+   "category": "Imzok's Revenge",
+   "timer_s": 28
+  },
+  "Stunning Blaze": {
+   "category": "Pentaclypse",
+   "timer_s": 26
+  },
+  "Stunning Blooms": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Stunning Shards": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Sullon Red Text": {
+   "category": "Sullon Zek",
+   "timer_s": 60
+  },
+  "Summon Fire Blast": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Surging Blows": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Swampburst": {
+   "category": "Kroakus the Stout",
+   "timer_s": 46
+  },
+  "Sweeping Cobra": {
+   "category": "General",
+   "timer_s": 65
+  },
+  "Swirling Cloud of Blood": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Systemic Shock": {
+   "category": "The Mutagenic Outcast",
+   "timer_s": 45
+  },
+  "TW1": {
+   "category": "MageBurn",
+   "timer_s": 10
+  },
+  "Tagrin Red Text": {
+   "category": "Tagrin Maldric",
+   "timer_s": 50
+  },
+  "Tail Lash": {
+   "category": "Trakanon",
+   "timer_s": 26
+  },
+  "Tainted Blood": {
+   "category": "Berik Bloodfist",
+   "timer_s": 38
+  },
+  "Tap Veins": {
+   "category": "Tuzerk",
+   "timer_s": 45
+  },
+  "Taskmaster Out": {
+   "category": "Taskmaster",
+   "timer_s": 45
+  },
+  "Tectonic Barrage": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Teku Red Text": {
+   "category": "General Teku",
+   "timer_s": 60
+  },
+  "Teku's Deathfist": {
+   "category": "General Teku",
+   "timer_s": 60
+  },
+  "Tempest of Fire": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Tempest of Heat": {
+   "category": "General",
+   "timer_s": 27
+  },
+  "Tentacle Ink": {
+   "category": "Karith'Ta",
+   "timer_s": 30
+  },
+  "The gigantic dragon has swallowed": {
+   "category": "Toxxulia",
+   "timer_s": 60
+  },
+  "Thulian Crush": {
+   "category": "Baelon of Thule",
+   "timer_s": 103
+  },
+  "Thunderous Fist": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Tidal Deluge": {
+   "category": "Yaalax",
+   "timer_s": 50
+  },
+  "Time Warp": {
+   "category": "Time Warp",
+   "timer_s": 80
+  },
+  "Timewarp": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Titanic Stomp": {
+   "category": "Primus Pilus Gunnr",
+   "timer_s": 35
+  },
+  "Tombstone": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Tone of Rancor": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Tormax's Flurry": {
+   "category": "King Tormax",
+   "timer_s": 40
+  },
+  "Touch of Darkness": {
+   "category": "General",
+   "timer_s": 42
+  },
+  "Touch of Death": {
+   "category": "General",
+   "timer_s": 37
+  },
+  "Touch of Despair": {
+   "category": "General",
+   "timer_s": 42
+  },
+  "Touch of Stone": {
+   "category": "Ambassador Grindstone",
+   "timer_s": 56
+  },
+  "Touch of Tormax": {
+   "category": "King Tormax",
+   "timer_s": 50
+  },
+  "Touch of Tyrax": {
+   "category": "Tyrax Terrolus",
+   "timer_s": 60
+  },
+  "Touch of the Deceptor": {
+   "category": "Tagrin Maldric",
+   "timer_s": 45
+  },
+  "Touch of the Faceless": {
+   "category": "Iztapa Vyx",
+   "timer_s": 42
+  },
+  "Toxic Blood": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Toxic Chill": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Toxic Force": {
+   "category": "Energized Taehric Construct",
+   "timer_s": 40
+  },
+  "Toxic Infusion": {
+   "category": "Trakanon",
+   "timer_s": 38
+  },
+  "Toxic Tempest": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Toxic Tornado": {
+   "category": "Xilaxis The Explorer",
+   "timer_s": 40
+  },
+  "Toxic Torrent": {
+   "category": "Vaclaz",
+   "timer_s": 40
+  },
+  "Tranquil Emanations": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Transform and serve me WORM!": {
+   "category": "Munzok",
+   "timer_s": 60
+  },
+  "Traumatic Arch": {
+   "category": "Gen'ra",
+   "timer_s": 24
+  },
+  "Tremendous Stomp": {
+   "category": "Avatar of Fear",
+   "timer_s": 45
+  },
+  "Tremerous Stomp": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Tremorous Slam": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Trunk Sweep": {
+   "category": "Tuskers",
+   "timer_s": 27
+  },
+  "Truth's Resplendence": {
+   "category": "Avatar of Valor",
+   "timer_s": 45
+  },
+  "Tsunami of Pestilence": {
+   "category": "Arkatanthis the Destroyer",
+   "timer_s": 40
+  },
+  "Tuatog Add": {
+   "category": "Abyssal Aquaduct",
+   "timer_s": 45
+  },
+  "Tuatog Kick": {
+   "category": "Abyssal Aquaduct",
+   "timer_s": 40
+  },
+  "Twirling Doom": {
+   "category": "Energized Taehric Construct",
+   "timer_s": 40
+  },
+  "Typhoon": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Unbearable Force": {
+   "category": "K'zan",
+   "timer_s": 35
+  },
+  "Uncaged Stomp": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Vampiric Mist": {
+   "category": "Zarrakon",
+   "timer_s": 48
+  },
+  "Vaporous Disease": {
+   "category": "General",
+   "timer_s": 32
+  },
+  "Venemous Claw": {
+   "category": "Ikatiar the Virulent",
+   "timer_s": 45
+  },
+  "Venemous Cloud": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Venemous Mists of Thule": {
+   "category": "General",
+   "timer_s": 49
+  },
+  "Venomous Cloud": {
+   "category": "Terrorantula",
+   "timer_s": 47
+  },
+  "Venomous Creepers": {
+   "category": "Kendis Parmare",
+   "timer_s": 42
+  },
+  "Venomous Mists of Thule": {
+   "category": "Avatar of Fear",
+   "timer_s": 50
+  },
+  "Virulent Eruption": {
+   "category": "Ikatiar the Ancient",
+   "timer_s": 34
+  },
+  "Vitae Swap": {
+   "category": "Bobby",
+   "timer_s": 180
+  },
+  "Void Inferno": {
+   "category": "Munzok the Corruptor",
+   "timer_s": 43
+  },
+  "Voidslide": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "Vortex of Darkness": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Vortex of Venom": {
+   "category": "General",
+   "timer_s": 30
+  },
+  "War Stomp": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Wave of Destruction": {
+   "category": "General",
+   "timer_s": 40
+  },
+  "Wave of Disdain": {
+   "category": "General",
+   "timer_s": 49
+  },
+  "Wave of Paralysis": {
+   "category": "General",
+   "timer_s": 35
+  },
+  "Wave of Sophistry": {
+   "category": "Avatar of Mischief",
+   "timer_s": 45
+  },
+  "Whimsical Oscillation": {
+   "category": "Avatar of Mischief",
+   "timer_s": 50
+  },
+  "Whirling Attack": {
+   "category": "General",
+   "timer_s": 38
+  },
+  "Whirling Blade of Valor": {
+   "category": "Avatar of Valor",
+   "timer_s": 42
+  },
+  "Whirling Blades": {
+   "category": "Ykesha",
+   "timer_s": 50
+  },
+  "Whirling Bladestorm": {
+   "category": "Avatar of Mischief",
+   "timer_s": 50
+  },
+  "Whirling Claw": {
+   "category": "General",
+   "timer_s": 26
+  },
+  "Whirling Disarm": {
+   "category": "Ione the Lifebringer",
+   "timer_s": 54
+  },
+  "Whirling Doom": {
+   "category": "General",
+   "timer_s": 36
+  },
+  "Whirling Talons": {
+   "category": "General",
+   "timer_s": 28
+  },
+  "Wild Rampage": {
+   "category": "General",
+   "timer_s": 26
+  },
+  "Windhelm's Fury": {
+   "category": "Glokus Windhelm",
+   "timer_s": 25
+  },
+  "Winds of Asyphyxia": {
+   "category": "Xebnok the Wretched",
+   "timer_s": 42
+  },
+  "Winds of Chaos": {
+   "category": "General",
+   "timer_s": 35
+  },
+  "Winds of the Ancient": {
+   "category": "General",
+   "timer_s": 25
+  },
+  "Wing Beat": {
+   "category": "Silverwing",
+   "timer_s": 50
+  },
+  "Wing Buffet": {
+   "category": "Zarrakon",
+   "timer_s": 28
+  },
+  "Wonderous Flame": {
+   "category": "General",
+   "timer_s": 45
+  },
+  "Wrath of Fury": {
+   "category": "General",
+   "timer_s": 60
+  },
+  "Wrath of Harla Dar": {
+   "category": "General",
+   "timer_s": 50
+  },
+  "Xilaxis Joust": {
+   "category": "Xilaxis The Explorer",
+   "timer_s": 60
+  },
+  "Xythian Storm": {
+   "category": "Xythus Aransta",
+   "timer_s": 45
+  },
+  "Ydalian Bolt": {
+   "category": "General",
+   "timer_s": 49
+  },
+  "Ykesha's Touch": {
+   "category": "Ykesha",
+   "timer_s": 30
+  },
+  "elite diaku": {
+   "category": "Commander Goreslaughter",
+   "timer_s": 90
+  }
+ }
+}

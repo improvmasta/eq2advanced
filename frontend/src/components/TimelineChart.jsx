@@ -33,6 +33,11 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
   const width = useWidth(wrapRef)
   const [hover, setHover] = useState(null)   // bucket index
   const [showTable, setShowTable] = useState(false)
+  /* Healing on its own is a shape with no cause. The raid's incoming damage
+     behind it is the cause: a spike on the tank and the heals that answered it
+     (or didn't) line up in the same second, on their own scale so a 400k hit
+     doesn't flatten the healers into the axis. */
+  const [overlay, setOverlay] = useState(false)
 
   const series = useMemo(() => {
     const byKey = new Map((data?.series || []).map((s) => [s.key, s]))
@@ -47,6 +52,20 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
   const n = data?.bucket_count || 0
   const vals = (s) => s[metric] || []
   const peak = useMemo(() => Math.max(1, ...series.flatMap((s) => vals(s))) / bucketS, [series, metric, bucketS])
+
+  // raid-wide incoming damage per bucket, for the overlay
+  const taken = useMemo(() => {
+    if (!data?.bucket_count) return null
+    const out = new Array(data.bucket_count).fill(0)
+    for (const s of data.series || []) {
+      const t = s.taken || []
+      for (let i = 0; i < out.length; i += 1) out[i] += t[i] || 0
+    }
+    return out
+  }, [data])
+  const takenPeak = useMemo(
+    () => Math.max(1, ...(taken || [0])) / bucketS, [taken, bucketS])
+  const showOverlay = overlay && metric !== 'taken' && !!taken?.some((v) => v > 0)
 
   if (!data || !n) return <p className="muted">No timeline for this selection.</p>
   if (!series.length) {
@@ -66,6 +85,13 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
       return `M${(x(0) - 8).toFixed(1)},${py.toFixed(1)}L${(x(0) + 8).toFixed(1)},${py.toFixed(1)}`
     }
     return pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v / bucketS).toFixed(1)}`).join('')
+  }
+
+  const yTaken = (v) => PAD.t + ih - (v / takenPeak) * ih
+  const takenArea = () => {
+    const pts = taken.map((v, i) => `${x(i).toFixed(1)},${yTaken(v / bucketS).toFixed(1)}`)
+    return `M${x(0).toFixed(1)},${(PAD.t + ih).toFixed(1)}L${pts.join('L')}`
+      + `L${x(n - 1).toFixed(1)},${(PAD.t + ih).toFixed(1)}Z`
   }
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => peak * f)
@@ -91,6 +117,12 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
             <button key={k} className={`chip ${metric === k ? 'on' : ''}`} onClick={() => onMetric(k)}>{l}</button>
           ))}
         </div>
+        {metric !== 'taken' && (
+          <label className="chip toggle" title="Raid-wide incoming damage behind the lines, on its own scale">
+            <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
+            {' '}+ damage taken
+          </label>
+        )}
         <span className="muted">{bucketS}s buckets</span>
         <button className="chip" style={{ marginLeft: 'auto' }} onClick={() => setShowTable((v) => !v)}>
           {showTable ? 'Hide table' : 'Table view'}
@@ -98,6 +130,15 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
       </div>
 
       <div className="chartlegend">
+        {showOverlay && (
+          <span className="lg">
+            <svg width="18" height="8" aria-hidden="true">
+              <rect x="0" y="1" width="18" height="6" className="takenswatch" />
+            </svg>
+            Raid damage taken
+            <span className="muted"> peak {fmt.num(takenPeak)}/s</span>
+          </span>
+        )}
         {series.map((s) => (
           <span key={s.key} className="lg">
             <svg width="18" height="8" aria-hidden="true">
@@ -120,6 +161,9 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
             <text x={PAD.l - 6} y={y(t) + 3} className="axis" textAnchor="end">{fmt.num(t)}</text>
           </g>
         ))}
+
+        {/* behind the grid lines and every series: context, not a reading */}
+        {showOverlay && n > 1 && <path d={takenArea()} className="takenarea" />}
 
         {(data.segments || []).slice(1).map((seg) => (
           <line key={seg.encounter_id} className="segline"
@@ -163,7 +207,8 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
         })}
       </svg>
 
-      {hover != null && hoverRows.some((r) => r.v > 0) && (
+      {hover != null && (hoverRows.some((r) => r.v > 0)
+        || (showOverlay && taken[hover] > 0)) && (
         <div className="charttip" style={{ left: Math.min(Math.max(x(hover), 60), width - 150) }}>
           <div className="tt">{clock(hover * bucketS)}</div>
           {hoverRows.filter((r) => r.v > 0).map(({ s, v }) => (
@@ -171,6 +216,12 @@ export default function TimelineChart({ data, keys, actorsByKey, metric, onMetri
               <i style={{ background: s.color }} />{s.name}<b>{fmt.num(v)}</b>
             </div>
           ))}
+          {showOverlay && (
+            <div className="tr">
+              <i className="takenswatch" />Raid taken
+              <b>{fmt.num((taken[hover] || 0) / bucketS)}</b>
+            </div>
+          )}
         </div>
       )}
 

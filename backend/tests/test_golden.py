@@ -106,8 +106,22 @@ def test_prepare_count(parsed):
 
 def test_deaths_and_revives(parsed):
     events, _ = parsed
-    assert sum(1 for e in events if e.type == "revive") == 3
+    # every rez that LANDS prints, for everyone in range — "X is revived!",
+    # "X is resurrected!", and the logger's own "You regain consciousness!"
+    # (which pairs with "You are revived!" in the same second and dedupes)
+    assert sum(1 for e in events if e.type == "revive") == 10
     assert sum(1 for e in events if e.type == "death") >= 5
+
+
+def test_rez_families(parsed):
+    """Clerics petition, druids call forth primeval forces, shamans primal
+    ones. Counting only the first family credited no druid with a rez."""
+    events, _ = parsed
+    rez = [e for e in events if e.type == "rez"]
+    flavors = {(e.extra or {}).get("flavor") for e in rez}
+    assert "calls forth primeval forces of resurrection" in flavors
+    assert "petitions the divinities of resurrection" in flavors
+    assert all(e.src is not None for e in rez if not (e.extra or {}).get("anon"))
 
 
 def test_act_parity_zylphax(parsed):
@@ -125,7 +139,7 @@ def test_act_parity_zylphax(parsed):
     conn = _sqlite3.connect(":memory:")
     conn.row_factory = _sqlite3.Row
     conn.executescript(SCHEMA)
-    conn.execute("INSERT INTO characters (id, name, world_id) VALUES (1, 'Bobby', 618)")
+    conn.execute("INSERT INTO characters (id, user_id, name, world_id) VALUES (1, 1, 'Bobby', 618)")
     conn.execute(
         "INSERT INTO sessions (id, character_id, source, status, created_ts) "
         "VALUES (1, 1, 'upload', 'ready', 0)")
@@ -167,7 +181,7 @@ def test_stats_v2_drilldown_golden(parsed):
     conn = _sqlite3.connect(":memory:")
     conn.row_factory = _sqlite3.Row
     conn.executescript(SCHEMA)
-    conn.execute("INSERT INTO characters (id, name, world_id) VALUES (1, 'Bobby', 618)")
+    conn.execute("INSERT INTO characters (id, user_id, name, world_id) VALUES (1, 1, 'Bobby', 618)")
     conn.execute(
         "INSERT INTO sessions (id, character_id, source, status, created_ts) "
         "VALUES (1, 1, 'upload', 'ready', 0)")

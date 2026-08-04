@@ -8,8 +8,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from db import get_db, init_db
-from routers import (auth_api, census_api, characters_api, coach_api, encounters_api,
-                     ingest_api, sessions_api, tokens_api, uploads_api, zoneruns_api)
+from routers import (admin_api, auth_api, census_api, characters_api, coach_api,
+                     encounters_api, groups_api, ingest_api, sessions_api, tokens_api,
+                     uploads_api, zoneruns_api)
 from spa import mount_spa
 
 CENSUS_REFRESH_INTERVAL_S = 3600  # check hourly; each character syncs when >24h stale
@@ -60,8 +61,11 @@ def _reparse_stale():
         log.exception("zone-run relink failed")
     # 'parsing' at startup is always an orphan — parse threads die with the
     # process (incl. dev hot reloads), leaving the flag behind
+    # `raw_deleted_ts` sessions were uploaded as parse-only: their stats are all
+    # there is, and no parser improvement can ever reach them
     rows = conn.execute(
         "SELECT id FROM sessions WHERE status IN ('ready','parsing') AND pruned=0 "
+        "AND raw_deleted_ts IS NULL "
         "AND (parse_version IS NULL OR parse_version < ?) ORDER BY id",
         (PARSE_VERSION,)).fetchall()
     if not rows:
@@ -114,5 +118,7 @@ app.include_router(encounters_api.router, prefix="/api")
 app.include_router(zoneruns_api.router, prefix="/api")
 app.include_router(census_api.router, prefix="/api")
 app.include_router(coach_api.router, prefix="/api")
+app.include_router(groups_api.router, prefix="/api")
+app.include_router(admin_api.router, prefix="/api")
 
 mount_spa(app)

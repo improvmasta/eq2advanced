@@ -30,9 +30,11 @@ backfill as it did when you clicked it. Three kinds:
   join   — never start a new run at this fight (merge with the one before)
 """
 
+import math
 import sqlite3
 import time
 
+import groups
 import memo
 
 # Split a same-zone encounter stream when combat pauses this long. Observed
@@ -100,16 +102,55 @@ def _segment(canonical: list[sqlite3.Row],
     return runs
 
 
+# The roster: who was in this raid, judged over the whole run instead of the
+# one fight that happened to be busiest. An encounter is a time slice
+# (pipeline/encounters.py), so it contains everyone the log heard from while
+# you were fighting — the group killing something else nearby included. Three
+# rules, each removing a different kind of non-raider seen in real logs:
+#
+#   player   — mobs and the pooled `Unknown` source are not people. A
+#              single-token capitalized mob name is indistinguishable from a
+#              player until pipeline/refine.py proves otherwise, and the ones
+#              it misses land in this table looking like raiders.
+#   acted    — a row that only ever TOOK damage is a bystander caught in an AE.
+#              Being hit near the raid is not being in it.
+#   presence — the real discriminator. A raid is with you all night: on the
+#              logs here the core sits at 45-100% of a run's fights while
+#              passers-by sit at 3-15%. Castle Mistmoore is the shape of it —
+#              four regulars across 12-18 of 23 fights, and another whole group
+#              that shows up in exactly 2 as they fight past you.
+#
+# Counted by NAME: a run can span two log files, entities are session-scoped,
+# and the same person is a different row in each.
+ROSTER_PRESENCE = 0.25      # share of the run's fights a raider turns up in
+MIN_ROSTER_FIGHTS = 2       # ...and never fewer than this
+SHORT_RUN_FIGHTS = 4        # below this there is no attendance to read
+POOLED_UNKNOWN = "Unknown"  # sourceless damage, pooled by the resolver
+
+_CONTRIBUTED = ("eas.damage > 0 OR eas.heals > 0 OR eas.wards_absorbed > 0 "
+                "OR eas.cure_count > 0 OR eas.power_fed > 0 "
+                "OR eas.rez_casts > 0 OR eas.atk_swings > 0")
+
+
+def roster_min_fights(fight_count: int) -> int:
+    if fight_count < SHORT_RUN_FIGHTS:
+        return 1
+    return max(MIN_ROSTER_FIGHTS, math.ceil(fight_count * ROSTER_PRESENCE))
+
+
 def _raider_count(conn: sqlite3.Connection, enc_ids: list[int]) -> int | None:
     if not enc_ids:
         return None
     ph = ",".join("?" * len(enc_ids))
-    row = conn.execute(
-        f"SELECT MAX(c) FROM (SELECT COUNT(*) AS c FROM encounter_actor_stats eas "
+    rows = conn.execute(
+        f"SELECT en.name, COUNT(DISTINCT eas.encounter_id) AS fights "
+        f"FROM encounter_actor_stats eas "
         f"JOIN entities en ON en.id = eas.entity_id "
-        f"WHERE eas.encounter_id IN ({ph}) AND en.kind='player' "
-        f"GROUP BY eas.encounter_id)", enc_ids).fetchone()
-    return row[0]
+        f"WHERE eas.encounter_id IN ({ph}) AND en.kind = 'player' "
+        f"AND en.name <> ? AND ({_CONTRIBUTED}) "
+        f"GROUP BY en.name", (*enc_ids, POOLED_UNKNOWN)).fetchall()
+    need = roster_min_fights(len(enc_ids))
+    return sum(1 for r in rows if r["fights"] >= need)
 
 
 def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
@@ -178,8 +219,20 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
 
     stale = [ex["id"] for ex in existing if ex["id"] not in consumed]
     if stale:
+        # a run that stopped existing usually didn't vanish — its fights joined
+        # a neighbour (a merge edit, or a re-segmentation after a reparse). Hand
+        # its shares to whichever run took the fights, or sharing would quietly
+        # switch itself off behind the owner's back.
+        gone = set(stale)
+        successor: dict[int, int] = {}
+        for e in all_encs:
+            old, new = e["zone_run_id"], run_id_of_enc.get(e["id"])
+            if old in gone and new is not None and old != new:
+                successor.setdefault(old, new)
+        groups.carry_shares(conn, successor)
         ph = ",".join("?" * len(stale))
         conn.execute(f"DELETE FROM zone_runs WHERE id IN ({ph})", stale)
+        groups.drop_orphan_shares(conn)
 
     # deleted rows fall out of every run (run_id_of_enc/dup_of never name them)
     for e in all_encs:

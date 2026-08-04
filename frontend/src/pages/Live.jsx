@@ -66,10 +66,8 @@ export default function Live() {
         <div className="card">
           <p>No live session is receiving right now.</p>
           <p className="note" style={{ marginTop: 6, marginBottom: 0 }}>
-            Pair an uploader on the <Link to="/characters">Characters</Link> page (mint a
-            device token), then start the ACT uploader — or replay a log with{' '}
-            <code>backend/tools/simulate_live.py</code>. Fights will appear here seconds
-            after each kill.
+            Mint a device token on the <Link to="/characters">Characters</Link> page,
+            then start the uploader.
           </p>
         </div>
       </>

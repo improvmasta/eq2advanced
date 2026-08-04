@@ -228,7 +228,7 @@ export default function Character() {
               {lowTiers > 0 && (
                 <p className="note">
                   {lowTiers} spell{lowTiers === 1 ? ' is' : 's are'} still at Apprentice or
-                  Journeyman — the cheapest upgrades on the list.
+                  Journeyman.
                 </p>
               )}
               <div className="tablewrap">
@@ -261,7 +261,7 @@ export default function Character() {
             <div className="card">
               <h2>Snapshot history</h2>
               <p className="note">
-                One entry per time Census saw the character change. Expand to see what moved.
+                One entry per Census change. Expand to see what moved.
               </p>
               {snapshots.length === 0 && <p className="muted">No snapshots yet.</p>}
               {snapshots.map((s, i) => (

@@ -29,7 +29,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "runs@x.test", "password": "hunter2hunter2"})
+               json={"username": "runs", "password": "hunter2hunter2"})
         c.post("/api/characters", json={"name": "Bobby"})
         yield c
     mp.undo()
@@ -160,7 +160,7 @@ def test_visibility_other_user(client, uploaded):
     runs = client.get("/api/zone-runs").json()["zone_runs"]
     c2 = TestClient(client.app)
     c2.post("/api/auth/register",
-            json={"email": "other@x.test", "password": "hunter2hunter2"})
+            json={"username": "other", "password": "hunter2hunter2"})
     assert c2.get("/api/zone-runs").json()["zone_runs"] == []
     assert c2.get(f"/api/zone-runs/{runs[0]['id']}").status_code == 404
     assert c2.get(f"/api/zone-runs/{runs[0]['id']}/report").status_code == 404

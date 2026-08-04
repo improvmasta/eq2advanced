@@ -29,8 +29,21 @@ RE_ZONE = re.compile(r"^You have entered\s+(.+)\.$")
 RE_KILL_YOU = re.compile(r"^You have killed (.+)\.$")
 RE_KILL = re.compile(r"^(.+?) has killed (.+)\.$")
 RE_ALAS = re.compile(r"^Alas, (.+) has died from pain and suffering\.$")
-RE_REZ = re.compile(r"^(.+?) petitions the divinities of resurrection\.$")
+# Every healer archetype has its own rez flavor — clerics "petition the
+# divinities of resurrection", druids "call forth primeval forces of
+# resurrection", shamans "primal forces". Matching only the first family
+# counted half the rezzes in a raid night and credited none to the druids, so
+# the verb is open-ended and the trailing "…resurrection." is what identifies
+# the line. The flavor text is kept so an unseen family shows up as data.
+RE_REZ = re.compile(
+    r"^(?P<subj>.+?) (?P<flavor>(?:petitions|calls forth|beseeches|invokes|"
+    r"implores|summons)\b[^.]*\bresurrection)\.$")
+RE_REZ_ANON = re.compile(r"^A resurrection spell is cast on (?P<tgt>.+)\.$")
+# the landing side, printed for everyone in range ("Sorengail is resurrected!",
+# "Aros is revived!"); the logger gets their own "You regain consciousness!"
+RE_REVIVED = re.compile(r"^(?P<tgt>.+?) (?:is|are) (?:revived|resurrected)!$")
 RE_REVIVE = re.compile(r"^You regain consciousness!$")
+RE_KO = re.compile(r"^You lose consciousness!$")
 RE_DAMAGE = re.compile(
     rf"^(?P<subj>.+?) (?P<verb>hits|hit|multi attacks|multi attack|aoe attacks|aoe attack|flurries|flurry) (?P<tgt>.+?) "
     rf"for (?P<crit>a critical of )?(?P<amt>[\d,.]+K?) (?P<dtype>{DTYPES})"
@@ -85,6 +98,14 @@ RE_EXPIRE_EFFECTS = re.compile(r"^(?P<effect>.+?) no longer effects (?P<tgt>.+)\
 RE_EXPIRE_FADES = re.compile(r"^(?P<effect>.+?) fades away\.$")
 RE_EXPIRE_OVER = re.compile(r"^(?P<effect>.+?) is over\.$")
 RE_INTERRUPT = re.compile(r"^(?P<tgt>.+?) was interrupted!$")
+# "Bobby intercepted some of the damage intended for you!" — a fighter (or a
+# pet with the same job) eating a hit aimed at someone else. The log never says
+# how much, and the victim is only ever named from the logger's seat, so an
+# intercept is a COUNT, not an amount. The two variants are the same event seen
+# twice (see _dedupe_repeats).
+RE_INTERCEPT = re.compile(
+    r"^(?P<subj>.+?) intercepted some of the damage intended for "
+    r"(?P<who>you|your target)!$")
 RE_ANON_HEAL = re.compile(r"^A healing spell is cast on (?P<tgt>.+)\.$")
 RE_PREPARE = re.compile(r"^You prepare (?P<what>.+?)\.?$")
 
@@ -146,9 +167,21 @@ def classify_body(ts: int, body: str, logger: str,
             return ParsedEvent(ts, "pet_death", src=Subject(owner, "unknown"), tgt=pet)
         return ParsedEvent(ts, "death", tgt=who)
     if m := RE_REZ.match(body):
-        return ParsedEvent(ts, "rez", src=Subject(m.group(1), "unknown"))
+        subj, ability = dec(m.group("subj"))
+        return ParsedEvent(ts, "rez", src=subj, ability=ability,
+                           extra={"flavor": m.group("flavor")})
+    if m := RE_REZ_ANON.match(body):
+        # no caster named — the rez still happened to somebody
+        return ParsedEvent(ts, "rez", tgt=m.group("tgt"), extra={"anon": True})
     if RE_REVIVE.match(body):
         return ParsedEvent(ts, "revive", tgt="YOU")
+    if RE_KO.match(body):
+        # the logger's own death when nothing gets the kill credit (falling,
+        # an unattributed AoE); deduped against "<Killer> has killed you."
+        return ParsedEvent(ts, "death", tgt="YOU")
+    if m := RE_REVIVED.match(body):
+        tgt = m.group("tgt")
+        return ParsedEvent(ts, "revive", tgt="YOU" if tgt == "You" else tgt)
 
     if m := RE_HIT_BY.match(body):
         # named sourceless effect ("Moklok is hit by Stench of Death for …") —
@@ -332,6 +365,14 @@ def classify_body(ts: int, body: str, logger: str,
     if m := RE_INTERRUPT.match(body):
         return ParsedEvent(ts, "interrupt", tgt=m.group("tgt"))
 
+    if m := RE_INTERCEPT.match(body):
+        subj, ability = dec(m.group("subj"))
+        who = m.group("who")
+        return ParsedEvent(
+            ts, "intercept", src=subj, ability=ability,
+            tgt="YOU" if who == "you" else None, extra={"for": who},
+        )
+
     if m := RE_ANON_HEAL.match(body):
         # no caster, no amount — never counts toward HPS
         return ParsedEvent(ts, "anon_heal", tgt=m.group("tgt"))
@@ -395,6 +436,36 @@ def _pair_wards(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
         yield ev
 
 
+_REPEATABLE = ("revive", "intercept", "death")
+
+
+def _dedupe_repeats(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
+    """Collapse the several lines EQ2 prints for one event, SAME SECOND only.
+
+    - a rez lands as both "You regain consciousness!" and "You are revived!";
+    - an intercept prints "…intended for you!" AND "…intended for your target!"
+      (1270 of the 1442 intercept seconds in the raid logs carry both);
+    - the logger's own death prints "<Killer> has killed you." and sometimes
+      also "You lose consciousness!" (6 of 13).
+    The window is the second, not a span: a tank intercepts again 2s later and
+    that is a second intercept, not an echo. Two intercepts inside one second
+    are indistinguishable in the log, so one is the honest floor."""
+    seen: set[tuple] = set()
+    seen_ts: int | None = None
+
+    for ev in events:
+        if ev.ts != seen_ts:
+            seen.clear()
+            seen_ts = ev.ts
+        if ev.type in _REPEATABLE:
+            who = (ev.src.name if ev.type == "intercept" and ev.src else ev.tgt)
+            key = (ev.type, who)
+            if key in seen:
+                continue
+            seen.add(key)
+        yield ev
+
+
 def parse_lines(lines: Iterable[str], logger: str,
                 pet_names: frozenset[str] = frozenset()) -> Iterator[ParsedEvent]:
     """Parse raw log lines (with prefixes) into events. Shared by bulk uploads
@@ -419,4 +490,4 @@ def parse_lines(lines: Iterable[str], logger: str,
                 last_flavor = key
             yield ev
 
-    yield from _pair_wards(raw())
+    yield from _dedupe_repeats(_pair_wards(raw()))

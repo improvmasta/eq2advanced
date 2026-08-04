@@ -44,23 +44,37 @@ export const autoPct = (d) => (d && d.total ? (100 * d.auto) / d.total : null)
 export const procPct = (d) => (d && d.total ? (100 * d.proc) / d.total : null)
 export const castsPerMin = (d, duration) => (d && d.casts && duration ? d.casts / (duration / 60) : null)
 
-/* Where a value sits among its peers: the top/bottom third of everyone the
-   comparison is fair against. Returns a class name for the cell, or ''.
+/* How far a value sits from its peers, as a signed strength in [-1, 1]:
+   positive is good, negative is bad, 0 is "nothing worth saying".
 
-   Two ways to say nothing, both deliberate. Under six peers the terciles
-   overlap and every cell gets colored, which distinguishes nobody; and when
-   the spread is flat there is no top or bottom to point at. Coloring
-   everything is the same as coloring nothing, only more confident. */
-export function rankClass(value, peers, { worse = false } = {}) {
-  if (value == null) return ''
+   Measured against the MEDIAN as a fraction of it, not as a tercile rank. A
+   rank says someone is in the bottom third even when the whole field is
+   within a point of each other — which is exactly what crit becomes in later
+   expansions, where everyone caps and the worst crit in the raid is 98% of
+   the best. Distance-from-median keeps that field uncolored, and still pulls
+   a real outlier to full strength. `full` is the fraction off the median that
+   earns the strongest tint (25% by default). */
+export function rankScale(value, peers, { worse = false, full = 0.25 } = {}) {
+  if (value == null) return 0
   const xs = peers.filter((v) => v != null).sort((a, b) => a - b)
-  if (xs.length < 6) return ''
-  const lo = xs[Math.floor(xs.length / 3)]
-  const hi = xs[Math.floor((2 * xs.length) / 3)]
-  if (lo === hi) return ''
-  if (value >= hi) return worse ? 'rank-low' : 'rank-top'
-  if (value <= lo) return worse ? 'rank-top' : 'rank-low'
-  return ''
+  if (xs.length < 4) return 0
+  const h = xs.length / 2
+  const mid = xs.length % 2 ? xs[Math.floor(h)] : (xs[h - 1] + xs[h]) / 2
+  // a median of zero (time dead, deaths) has no scale of its own — fall back
+  // to the top of the field so the spread still means something
+  const denom = Math.abs(mid) || Math.abs(xs[xs.length - 1]) || 0
+  if (!denom) return 0
+  const t = Math.max(-1, Math.min(1, (value - mid) / denom / full))
+  return worse ? -t : t
+}
+
+/* Strength -> cell color: one hue each way, mixed into the body text so the
+   tint grows with the gap instead of flipping on at a threshold. Below the
+   noise floor nothing is claimed at all. */
+export function rankColor(t) {
+  const m = Math.round(Math.abs(t || 0) * 85)
+  if (m < 12) return undefined
+  return `color-mix(in oklab, var(${t > 0 ? '--success' : '--danger'}) ${m}%, var(--text))`
 }
 
 /* "Why is my DPS low?" — DPS is uptime x activity x hit size x crit rate, so
@@ -75,11 +89,11 @@ export function decompose(actor, peers, derived, duration, deadSecondsOf = () =>
   const of = (a) => derived[a.key]
   const factors = [
     {
-      key: 'dps', label: 'DPS', why: 'the bottom line the others feed',
+      key: 'dps', label: 'DPS', why: 'overall rate',
       get: (a) => (a.damage || 0) / duration, fmt: (v) => Math.round(v).toLocaleString(),
     },
     {
-      key: 'cpm', label: 'Casts/min', why: 'activity — how often you press something',
+      key: 'cpm', label: 'Casts/min', why: 'activity',
       get: (a) => (of(a)?.casts ? of(a).casts / (duration / 60) : null), fmt: (v) => v.toFixed(1),
     },
     {
@@ -87,11 +101,11 @@ export function decompose(actor, peers, derived, duration, deadSecondsOf = () =>
       get: (a) => (of(a)?.hits ? of(a).total / of(a).hits : null), fmt: (v) => Math.round(v).toLocaleString(),
     },
     {
-      key: 'crit', label: 'Crit %', why: 'crit chance from stats and adornments',
+      key: 'crit', label: 'Crit %', why: 'crit chance',
       get: (a) => (of(a)?.hits ? (100 * of(a).crits) / of(a).hits : null), fmt: (v) => `${Math.round(v)}%`,
     },
     {
-      key: 'uptime', label: 'Alive %', why: 'time spent dead is damage never dealt',
+      key: 'uptime', label: 'Alive %', why: 'time alive',
       get: (a) => 100 * (1 - Math.min(1, (deadSecondsOf(a) || 0) / duration)),
       fmt: (v) => `${Math.round(v)}%`,
     },

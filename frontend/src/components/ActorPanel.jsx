@@ -29,6 +29,11 @@ const EXTRA_KINDS = new Set(['damage', 'heal', 'ward', 'power'])
 const PET_KINDS = new Set(['own_pet', 'swarm_pet', 'named_pet'])
 const AVOID_COLS = ['misses', 'parries', 'ripostes', 'dodges', 'blocks', 'resists']
 
+/* A row that neither landed anything nor moved a number is a cast the parse
+   can't say anything about (summons, stances, the buff half of an ability).
+   Fully-absorbed rows still land (hits > 0, total 0) and stay. */
+const didSomething = (r) => (r.total || 0) !== 0 || (r.hits || 0) !== 0
+
 /* Set-in-stone pet kits (the game hasn't changed): each pet ability belongs to
    one summoned-pet archetype, so the bare-name own pet — whose identity the
    log never states — is attributed by what it casts. Pet autoattack carries no
@@ -76,7 +81,7 @@ function petGroupLabel(r) {
 }
 
 function addInto(g, r) {
-  for (const c of ['casts', 'hits', 'crits', 'zero_hits', 'total', 'swings', 'reflects', ...AVOID_COLS]) {
+  for (const c of ['casts', 'hits', 'crits', 'zero_hits', 'total', 'swings', 'presses', 'reflects', ...AVOID_COLS]) {
     g[c] = (g[c] || 0) + (r[c] || 0)
   }
   g.min = r.min != null ? (g.min != null ? Math.min(g.min, r.min) : r.min) : g.min
@@ -105,6 +110,7 @@ function groupPets(rows) {
         ability: label, gkey: key, members: [],
         casts: 0, hits: 0, crits: 0, zero_hits: 0, total: 0,
         min: null, max: null, median: null, avg_delay_s: null,
+        presses: 0, press_delay_s: null,
         dtypes: null, swings: 0, to_hit_pct: null,
       }
       for (const c of AVOID_COLS.concat('reflects')) g[c] = 0
@@ -139,7 +145,7 @@ export default function ActorPanel({ name, abilities, actorKey, duration, onClos
   const filter = KIND_FILTERS.find((k) => k.key === kindFilter) || KIND_FILTERS[0]
 
   const rows = useMemo(() => {
-    const inTab = actorRows.filter((r) => filter.kinds.includes(r.kind))
+    const inTab = actorRows.filter((r) => filter.kinds.includes(r.kind) && didSomething(r))
     const grouped = combinePets ? groupPets(inTab) : inTab.slice()
     // off-kind components of the same ability (lifetap heals under a damage
     // row and vice versa) ride along as expandable sub-rows
@@ -147,7 +153,7 @@ export default function ActorPanel({ name, abilities, actorKey, duration, onClos
       if (r.members) continue
       const extras = actorRows.filter((x) =>
         x.ability === r.ability && x.source_key === r.source_key
-        && !filter.kinds.includes(x.kind) && EXTRA_KINDS.has(x.kind))
+        && !filter.kinds.includes(x.kind) && EXTRA_KINDS.has(x.kind) && didSomething(x))
       if (extras.length) {
         r.extras = extras.map((x) => ({ ...x, __sub: true }))
           .sort((a, b) => (b.total || 0) - (a.total || 0))
@@ -252,16 +258,13 @@ export default function ActorPanel({ name, abilities, actorKey, duration, onClos
       render: (r) => (r.total ? fmt.num2(r.total / duration) : '—'),
       sortValue: (r) => (r.total || 0) / duration,
     },
-    { key: 'total', label: 'Total', format: fmt.num },
     {
       key: 'share', label: 'Share',
       render: (r) => (!r.__sub && r.total && tabTotal
         ? `${((r.total / tabTotal) * 100).toFixed(1)}%` : ''),
       sortValue: (r) => r.total || 0,
     },
-    { key: 'casts', label: 'Casts', render: (r) => r.casts || '' },
     { key: 'hits', label: 'Hits' },
-    { key: 'swings', label: 'Swings' },
     {
       key: 'to_hit_pct', label: 'ToHit',
       render: (r) => (r.to_hit_pct != null ? `${r.to_hit_pct.toFixed(1)}%` : '—'),
@@ -276,21 +279,22 @@ export default function ActorPanel({ name, abilities, actorKey, duration, onClos
       render: (r) => (r.hits ? fmt.num(r.total / r.hits) : '—'),
       sortValue: (r) => (r.hits ? r.total / r.hits : null),
     },
-    { key: 'median', label: 'Median', format: fmt.num },
-    { key: 'min', label: 'MinHit', format: fmt.num },
     { key: 'max', label: 'MaxHit', format: fmt.num },
     {
       key: 'avg_delay_s', label: 'AvgDelay',
       render: (r) => (r.avg_delay_s != null ? r.avg_delay_s.toFixed(2) : '—'),
     },
+    /* Between LANDINGS (AvgDelay) vs between ACTIVATIONS: for a DoT the first
+       is its tick rate and the second is how often it was recast, which is
+       the number you can actually do something about. */
     {
-      key: 'dtype', label: 'Type(s)', align: 'l',
-      render: (r) => (r.dtypes
-        ? Object.entries(r.dtypes).sort((a, b) => b[1] - a[1]).map(([t]) => t).join('/')
-        : ''),
-      sortValue: (r) => (r.dtypes ? Object.keys(r.dtypes).sort().join('/') : null),
+      key: 'press_delay_s', label: 'AvgDelay adj',
+      render: (r) => (r.press_delay_s != null
+        ? <span title={`${r.presses} activation${r.presses === 1 ? '' : 's'} of ${r.hits} landings`}>
+            {r.press_delay_s.toFixed(2)}
+          </span>
+        : '—'),
     },
-    { key: 'resists', label: 'Resist', render: (r) => r.resists || '' },
   ]
 
   return (
@@ -305,7 +309,7 @@ export default function ActorPanel({ name, abilities, actorKey, duration, onClos
         onChange={setKindFilter}
       />
       <div className="filterbar">
-        <label className="chip toggle" title="Fold every pet row into one line per pet kit">
+        <label className="chip toggle" title="One line per pet kit">
           <input
             type="checkbox"
             checked={combinePets}

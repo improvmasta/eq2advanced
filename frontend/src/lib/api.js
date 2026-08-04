@@ -5,6 +5,9 @@ async function req(path, opts) {
     try { detail = (await res.json()).detail ?? detail } catch { /* not json */ }
     const err = new Error(detail)
     err.status = res.status
+    // Only OUR 413 offers a way through it. A 413 from the proxy in front is an
+    // HTML page with no header, and nothing the app does can satisfy it.
+    err.parseOnlyAllowed = res.headers.get('x-parse-only-allowed') === '1'
     throw err
   }
   return res.json()
@@ -52,21 +55,31 @@ export const url = {
   agg: (ids) => `/api/encounters/agg?ids=${ids.join(',')}`,
   timeline: (ids, bucket) => `/api/encounters/timeline?ids=${ids.join(',')}${bucket ? `&bucket=${bucket}` : ''}`,
   deaths: (ids, windowS) => `/api/encounters/deaths?ids=${ids.join(',')}${windowS ? `&window=${windowS}` : ''}`,
+  aoes: (ids) => `/api/encounters/aoes?ids=${ids.join(',')}`,
   zoneRun: (id) => `/api/zone-runs/${id}`,
   zoneRunReport: (id) => `/api/zone-runs/${id}/report`,
 }
 
 export const api = {
   me: () => req('/api/auth/me'),
-  register: (email, password) => req('/api/auth/register', json({ email, password })),
-  login: (email, password) => req('/api/auth/login', json({ email, password })),
+  register: (username, password, sqId, answer) => req(
+    '/api/auth/register', json({ username, password, sq_id: sqId, answer })),
+  login: (username, password) => req('/api/auth/login', json({ username, password })),
   logout: () => req('/api/auth/logout', { method: 'POST' }),
   changePassword: (current, next) => req('/api/auth/password', json({ current, new: next })),
+  // no email exists, so the security question is the whole recovery story
+  securityQuestions: () => req('/api/auth/questions'),
+  setSecurityQuestion: (password, sqId, answer) => req(
+    '/api/auth/security-question', json({ password, sq_id: sqId, answer })),
+  resetStart: (username) => req('/api/auth/reset/start', json({ username })),
+  resetComplete: (username, answer, newPassword) => req(
+    '/api/auth/reset/complete', json({ username, answer, new_password: newPassword })),
   characters: () => req('/api/characters'),
   addCharacter: (name) => req('/api/characters', json({ name })),
   deleteCharacter: (id) => req(`/api/characters/${id}`, { method: 'DELETE' }),
   tokens: (charId) => req(`/api/characters/${charId}/tokens`),
-  mintToken: (charId, label) => req(`/api/characters/${charId}/tokens`, json({ label })),
+  mintToken: (charId, label, canShare = false) =>
+    req(`/api/characters/${charId}/tokens`, json({ label, can_share: canShare })),
   revokeToken: (id) => req(`/api/tokens/${id}/revoke`, { method: 'POST' }),
   census: (charId) => req(`/api/characters/${charId}/census`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
@@ -75,7 +88,7 @@ export const api = {
   spell: (id) => req(`/api/spells/${id}`),
   sessions: () => req('/api/sessions'),
   session: (id) => req(`/api/sessions/${id}`),
-  zoneRuns: () => req('/api/zone-runs'),
+  zoneRuns: (scope) => req(`/api/zone-runs${scope ? `?scope=${scope}` : ''}`),
   zoneRun: (id) => cachedGet(url.zoneRun(id)),
   zoneRunReport: (id) => cachedGet(url.zoneRunReport(id)),
   // raid-list editing: every edit is remembered by fight, so it survives the
@@ -95,14 +108,54 @@ export const api = {
   encountersAgg: (ids) => cachedGet(url.agg(ids)),
   encountersTimeline: (ids, bucket) => cachedGet(url.timeline(ids, bucket)),
   encountersDeaths: (ids, windowS) => cachedGet(url.deaths(ids, windowS)),
+  encountersAoes: (ids) => cachedGet(url.aoes(ids)),
   raidReport: (id) => req(`/api/sessions/${id}/raid-report`),
   setCalibration: (id, calibration) => req(`/api/sessions/${id}/calibration`, json({ calibration })),
-  upload: (file, characterName) => {
+  upload: (file, characterName, retainRaw = true) => {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('character_name', characterName)
+    fd.append('retain_raw', retainRaw ? '1' : '0')
     return mutate(req('/api/uploads', { method: 'POST', body: fd }))
   },
+  uploadLimits: () => req('/api/uploads/limits'),
+
+  // groups + sharing
+  groups: () => req('/api/groups'),
+  group: (id) => req(`/api/groups/${id}`),
+  createGroup: (name, description, joinCode) => req(
+    '/api/groups', json({ name, description, join_code: joinCode })),
+  // a free code to show alongside the name being typed; claimed at create time
+  newJoinCode: () => req('/api/groups/new-code'),
+  updateGroup: (id, body) => req(`/api/groups/${id}`, { ...json(body), method: 'PATCH' }),
+  deleteGroup: (id) => req(`/api/groups/${id}`, { method: 'DELETE' }),
+  joinGroup: (code) => mutate(req('/api/groups/join', json({ code }))),
+  // what an invite link resolves to before the visitor has an account
+  previewInvite: (code) => req(`/api/groups/preview/${encodeURIComponent(code)}`),
+  rotateJoinCode: (id, body) => req(`/api/groups/${id}/code/rotate`, json(body || {})),
+  inviteToGroup: (id, username) => req(`/api/groups/${id}/invites`, json({ username })),
+  answerInvite: (id, decision) => req(`/api/invites/${id}/${decision}`, { method: 'POST' }),
+  leaveGroup: (id) => mutate(req(`/api/groups/${id}/leave`, { method: 'POST' })),
+  removeMember: (id, userId) => req(`/api/groups/${id}/members/${userId}`, { method: 'DELETE' }),
+  setMemberRole: (id, userId, role) => req(`/api/groups/${id}/members/${userId}/role`, json({ role })),
+  runShares: (runId) => req(`/api/zone-runs/${runId}/shares`),
+  setRunShares: (runId, groupIds) => mutate(req(
+    `/api/zone-runs/${runId}/shares`, { ...json({ group_ids: groupIds }), method: 'PUT' })),
+  setRunPublic: (runId, isPublic) => mutate(req(
+    `/api/zone-runs/${runId}/public`, { ...json({ public: isPublic }), method: 'PUT' })),
+  characterShares: (charId) => req(`/api/characters/${charId}/shares`),
+  setCharacterShares: (charId, groupIds) => mutate(req(
+    `/api/characters/${charId}/shares`, { ...json({ group_ids: groupIds }), method: 'PUT' })),
+
+  // admin console — metadata only, by design (backend/routers/admin_api.py)
+  adminOverview: () => req('/api/admin/overview'),
+  adminUsers: () => req('/api/admin/users'),
+  adminSetDisabled: (id, disabled) => req(`/api/admin/users/${id}/disabled`, json({ disabled })),
+  adminResetPassword: (id, password) => req(`/api/admin/users/${id}/password`, json({ password })),
+  adminSetLimits: (id, body) => req(`/api/admin/users/${id}/limits`, json(body)),
+  adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
+  adminAudit: () => req('/api/admin/audit'),
+  adminPublicRuns: () => req('/api/admin/public-runs'),
 }
 
 export const fmt = {

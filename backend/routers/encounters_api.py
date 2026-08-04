@@ -6,9 +6,9 @@ pet rows kept visible under their owner.
 detail with counters summed and DPS recomputed over the summed duration — it
 powers the workspace tree's All / zone / collapsed-trash nodes.
 
-`GET /encounters/timeline?ids=…` and `GET /encounters/deaths?ids=…` read the
-stored EVENTS for the same selection (a pruned session contributes nothing —
-its events are gone — and says so).
+`GET /encounters/timeline?ids=…`, `GET /encounters/deaths?ids=…` and
+`GET /encounters/aoes?ids=…` read the stored EVENTS for the same selection (a
+pruned session contributes nothing — its events are gone — and says so).
 
 Everything here takes the same `ids` list and the same visibility rule: every
 session touched must be visible to the caller, unknown ids 404, junk 422."""
@@ -24,10 +24,10 @@ import memo
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
 from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
+from pipeline import aoes
 from pipeline.classguess import backfill_session, parse_class_guess
 from pipeline.statsroll import _melee_bucket
-from routers.sessions_api import visible_session
-from security import require_user
+from security import optional_user, visible_encounters
 
 router = APIRouter(tags=["encounters"])
 
@@ -49,7 +49,7 @@ _ABILITY_SELECT = (
     "ent.kind AS source_kind, ent.rollup_to, ab.name AS ability, s.kind, "
     "s.casts, s.hits, s.crits, s.misses, s.resists, s.parries, s.ripostes, "
     "s.dodges, s.blocks, s.reflects, s.zero_hits, s.total, s.min, s.max, "
-    "s.median, s.avg_delay_s, s.dtypes "
+    "s.median, s.avg_delay_s, s.presses, s.press_delay_s, s.dtypes "
     "FROM encounter_ability_stats s "
     "JOIN entities ent ON ent.id = s.entity_id "
     "JOIN abilities ab ON ab.id = s.ability_id ")
@@ -110,6 +110,15 @@ def _avg_delay(a: dict) -> float | None:
     exactly across encounters (sum of spans / sum of gaps)."""
     swings, span = a.get("atk_swings") or 0, a.get("atk_span_s") or 0
     return round(span / (swings - 1), 2) if swings >= 2 and span else None
+
+
+def _avg_delay_adj(a: dict) -> float | None:
+    """The same shape over PRESSES instead of swings — a DoT's ticks and an
+    AoE's extra targets are one activation each, so this reads as "how often
+    did they press something" rather than "how often did something land".
+    See pipeline/statsroll for how an activation is decided."""
+    presses, span = a.get("presses") or 0, a.get("press_span_s") or 0
+    return round(span / (presses - 1), 2) if presses >= 2 and span else None
 
 
 def _ent_key(name: str, kind: str) -> str:
@@ -185,7 +194,11 @@ def _finish_ability_row(row: dict, pet_abilities: set[str],
 
 def _selection(conn, user, ids: str):
     """Shared front door for every ?ids= endpoint: parse, load, authorize.
-    -> (enc_ids, encounter rows in started_ts order, session_ids, sess_of)."""
+    -> (enc_ids, encounter rows in started_ts order, session_ids, sess_of).
+
+    Authorization is per ENCOUNTER, not per session (`security.visible_encounters`):
+    a raid shared with a group must expose that raid's fights and nothing else
+    out of the same uploaded file."""
     try:
         enc_ids = sorted({int(x) for x in ids.split(",") if x.strip()})
     except ValueError:
@@ -198,8 +211,8 @@ def _selection(conn, user, ids: str):
         enc_ids).fetchall()
     if len(encs) != len(enc_ids):
         raise HTTPException(404, "no such encounter")
-    session_ids = sorted({e["session_id"] for e in encs})
-    sess_of = {sid: visible_session(conn, user, sid) for sid in session_ids}
+    sess_of = visible_encounters(conn, user, encs)
+    session_ids = sorted(sess_of)
     for sid, sess in sess_of.items():
         # existing parses light up without a reparse; one indexed lookup when
         # there is nothing to do, and nothing at all once a session is done
@@ -208,7 +221,7 @@ def _selection(conn, user, ids: str):
 
 
 @router.get("/encounters/agg")
-def encounters_agg(ids: str = Query(...), user=Depends(require_user)):
+def encounters_agg(ids: str = Query(...), user=Depends(optional_user)):
     """Aggregate N encounters into a single detail payload. Encounters may span
     sessions (zone runs are cross-file): actors merge by name+kind — entity ids
     are session-scoped — and every session must be visible to the user.
@@ -257,12 +270,14 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
             a["entity_ids"].append(r["entity_id"])
         for k in ("damage", "heals", "overheal_est", "save_count", "wards_absorbed",
                   "ward_bleedthrough", "power_fed", "power_drain", "damage_taken",
-                  "deaths", "time_dead_s", "rez_casts", "cure_count", "active_s",
-                  "atk_swings", "atk_span_s"):
+                  "deaths", "time_dead_s", "rez_casts", "intercepts",
+                  "cure_count", "active_s", "atk_swings", "atk_span_s",
+                  "presses", "press_span_s"):
             a[k] = (a[k] or 0) + (r[k] or 0)
     for key, a in actor_sum.items():
         a["dps"] = round((a["damage"] or 0) / duration, 1)
         a["avg_delay_s"] = _avg_delay(a)
+        a["avg_delay_adj_s"] = _avg_delay_adj(a)
         a.update(_class_fields(best_guess.get(key)))
     actors = sorted(actor_sum.values(), key=lambda a: -(a["damage"] or 0))
     # the proc flag is answered per actor: an ability in their own spellbook
@@ -277,6 +292,7 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
     proc_why = _proc_evidence(conn)
     abil_sum: dict[tuple, dict] = {}
     weighted_delay: dict[tuple, list] = {}
+    weighted_press: dict[tuple, list] = {}
     for r in conn.execute(_ABILITY_SELECT + f"WHERE s.encounter_id IN ({ph})", enc_ids):
         src_key = _ent_key(r["source_name"], r["source_kind"])
         key = (src_key, r["ability"], r["kind"])
@@ -291,9 +307,12 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
             row["dtypes"] = json.loads(row["dtypes"]) if row["dtypes"] else None
             row["median"] = None            # recomputed from events below
             weighted_delay[key] = [(r["avg_delay_s"], r["hits"])] if r["avg_delay_s"] else []
+            weighted_press[key] = (
+                [(r["press_delay_s"], r["presses"])] if r["press_delay_s"] else [])
             continue
         for k in ("casts", "hits", "crits", "misses", "resists", "parries",
-                  "ripostes", "dodges", "blocks", "reflects", "zero_hits", "total"):
+                  "ripostes", "dodges", "blocks", "reflects", "zero_hits",
+                  "total", "presses"):
             row[k] = (row[k] or 0) + (r[k] or 0)
         row["min"] = min(x for x in (row["min"], r["min"]) if x is not None) \
             if (row["min"] is not None or r["min"] is not None) else None
@@ -306,6 +325,8 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
             row["dtypes"] = merged
         if r["avg_delay_s"]:
             weighted_delay[key].append((r["avg_delay_s"], r["hits"]))
+        if r["press_delay_s"]:
+            weighted_press[key].append((r["press_delay_s"], r["presses"]))
 
     # true medians need the raw amounts; cheap via the encounter index unless
     # a session is pruned (events deleted) — those encounters' amounts are gone
@@ -337,6 +358,10 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
         pairs = weighted_delay.get(key) or []
         n = sum(h for _, h in pairs)
         row["avg_delay_s"] = round(sum(d * h for d, h in pairs) / n, 2) if n else None
+        ppairs = weighted_press.get(key) or []
+        pn = sum(p for _, p in ppairs)
+        row["press_delay_s"] = (
+            round(sum(d * p for d, p in ppairs) / pn, 2) if pn else None)
         swings = row["hits"] + sum(row[c] or 0 for c in _SWING_COLS)
         row["swings"] = swings
         row["to_hit_pct"] = round(100 * row["hits"] / swings, 2) if swings else None
@@ -417,7 +442,7 @@ def _pick_bucket(bucket: str, duration_s: int) -> int:
 
 @router.get("/encounters/timeline")
 def encounters_timeline(ids: str = Query(...), bucket: str = Query("auto"),
-                        user=Depends(require_user)):
+                        user=Depends(optional_user)):
     """Per-actor damage/heal/taken series over a CONCATENATED clock: the
     selected encounters are laid end to end in `started_ts` order with the
     between-fight gaps removed, so a multi-fight selection reads as continuous
@@ -563,7 +588,7 @@ def _window_slice(entries: list[dict], stamps: list[int], death_ts: int,
 
 @router.get("/encounters/deaths")
 def encounters_deaths(ids: str = Query(...), window: int = Query(DEATH_WINDOW_S),
-                      user=Depends(require_user)):
+                      user=Depends(optional_user)):
     """Death recap: what hit each player, and who was healing them, in the
     `window` seconds before they died."""
     conn = get_db()
@@ -659,6 +684,57 @@ def encounters_deaths(ids: str = Query(...), window: int = Query(DEATH_WINDOW_S)
             "pruned_encounters": pruned_encounters}
 
 
+# -------------------------------------------------------------------- aoes ---
+
+@router.get("/encounters/aoes")
+def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
+    """Enemy AoEs in the selection: how often each one really landed, next to
+    the timer ACT reports for it, and how much of the raid was covered when it
+    did. Reads raw events, so a pruned session contributes nothing."""
+    conn = get_db()
+    enc_ids, encs, session_ids, sess_of = _selection(conn, user, ids)
+
+    live, pruned_encounters = [], 0
+    named_sources = set()
+    for e in encs:
+        if sess_of[e["session_id"]]["pruned"]:
+            pruned_encounters += 1
+        else:
+            live.append(e["id"])
+        if e["is_named"] and e["name"]:
+            named_sources.add(e["name"])
+    if not live:
+        return {"aoes": [], "min_targets": aoes.MIN_TARGETS,
+                "pruned_encounters": pruned_encounters,
+                "pruned": pruned_encounters == len(enc_ids)}
+
+    meta = _entity_meta(conn, session_ids)
+    lph = ",".join("?" * len(live))
+    rows = []
+    for r in conn.execute(
+            f"SELECT e.encounter_id, e.ts, e.type, e.src_entity, e.tgt_entity, "
+            f"e.amount, e.flags, ab.name AS ability FROM events e "
+            f"LEFT JOIN abilities ab ON ab.id = e.ability_id "
+            f"WHERE e.encounter_id IN ({lph}) AND e.type IN ('damage','avoid') "
+            f"ORDER BY e.ts, e.seq", live):
+        src, tgt = meta.get(r["src_entity"]), meta.get(r["tgt_entity"])
+        if src is None or tgt is None:
+            continue
+        rows.append({
+            "encounter_id": r["encounter_id"],
+            "ts": r["ts"], "type": r["type"], "ability": r["ability"],
+            "src_name": src["name"], "src_kind": src["kind"],
+            "tgt_key": _ent_key(tgt["name"], tgt["kind"]), "tgt_kind": tgt["kind"],
+            "amount": r["amount"], "flags": r["flags"],
+        })
+    return {
+        "aoes": aoes.detect(rows, named_sources),
+        "min_targets": aoes.MIN_TARGETS,
+        "pruned_encounters": pruned_encounters,
+        "pruned": False,
+    }
+
+
 def _detail(conn, enc) -> dict:
     ent_key_of = _entity_keys(conn, [enc["session_id"]])
     actors = []
@@ -671,6 +747,7 @@ def _detail(conn, enc) -> dict:
         a["key"] = _ent_key(a["name"], a["kind"])
         a["entity_ids"] = [a["entity_id"]]
         a["avg_delay_s"] = _avg_delay(a)
+        a["avg_delay_adj_s"] = _avg_delay_adj(a)
         a.update(_class_fields(parse_class_guess(a.pop("class_guess", None))))
         actors.append(a)
     pet_abilities = _pet_ability_names(conn)
@@ -701,11 +778,11 @@ def _detail(conn, enc) -> dict:
 
 
 @router.get("/encounters/{encounter_id}")
-def encounter_detail(encounter_id: int, user=Depends(require_user)):
+def encounter_detail(encounter_id: int, user=Depends(optional_user)):
     conn = get_db()
     enc = conn.execute("SELECT * FROM encounters WHERE id=?", (encounter_id,)).fetchone()
     if enc is None:
         raise HTTPException(404, "no such encounter")
-    sess = visible_session(conn, user, enc["session_id"])
+    sess = visible_encounters(conn, user, [enc])[enc["session_id"]]
     backfill_session(conn, enc["session_id"], cache=(sess["status"] == "ready"))
     return _detail(conn, enc)

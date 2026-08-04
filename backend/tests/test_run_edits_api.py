@@ -32,7 +32,7 @@ def client(tmp_path_factory):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "edits@x.test", "password": "hunter2hunter2"})
+               json={"username": "edits", "password": "hunter2hunter2"})
         c.post("/api/characters", json={"name": "Bobby"})
         yield c
     mp.undo()
@@ -181,7 +181,7 @@ def test_edits_are_per_owner(client, session_id):
     assert [r["encounter_count"] for r in sorted(runs, key=lambda x: x["started_ts"])] == [2, 1]
     c2 = TestClient(client.app)
     c2.post("/api/auth/register",
-            json={"email": "nosy@x.test", "password": "hunter2hunter2"})
+            json={"username": "nosy", "password": "hunter2hunter2"})
     assert c2.delete(f"/api/zone-runs/{runs[0]['id']}").status_code == 404
     assert c2.delete(f"/api/sessions/{sid}").status_code == 404
     encs = client.get(f"/api/zone-runs/{runs[0]['id']}").json()["encounters"]

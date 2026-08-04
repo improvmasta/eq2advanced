@@ -6,6 +6,7 @@ import { api, fmt } from '../lib/api.js'
 function TokenPanel({ char }) {
   const [tokens, setTokens] = useState(null)
   const [label, setLabel] = useState('')
+  const [canShare, setCanShare] = useState(false)
   const [minted, setMinted] = useState(null) // {id, token, pair_payload, qr}
   const [error, setError] = useState(null)
 
@@ -18,10 +19,11 @@ function TokenPanel({ char }) {
   async function mint() {
     setError(null)
     try {
-      const d = await api.mintToken(char.id, label.trim() || null)
+      const d = await api.mintToken(char.id, label.trim() || null, canShare)
       const qr = await QRCode.toDataURL(d.pair_payload, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
       setMinted({ ...d, qr })
       setLabel('')
+      setCanShare(false)
       refresh()
     } catch (e) { setError(e.message) }
   }
@@ -41,8 +43,8 @@ function TokenPanel({ char }) {
     <div className="tokenpanel">
       <h2>Device tokens</h2>
       <p className="note">
-        A token pairs one uploader (the ACT plugin, when it lands) to {char.name}. Mint one
-        per device — it is shown once, and you can revoke it any time.
+        A token pairs one uploader to {char.name}. Mint one per device — it is
+        shown once and can be revoked any time.
       </p>
       <div className="mintrow">
         <input
@@ -51,6 +53,20 @@ function TokenPanel({ char }) {
         />
         <button onClick={mint}>Mint token</button>
       </div>
+      {/* Scope is fixed at mint: there is no route that raises it later, because
+          the token lives in a config file on a gaming PC and this answer has to
+          come from someone signed in here. Widening means a new token. */}
+      <label className="checkrow">
+        <input type="checkbox" checked={canShare}
+               onChange={(e) => setCanShare(e.target.checked)} />
+        <span>
+          Let this device choose who sees the raids it sends
+          <span className="note">
+            {' '}— the ACT plugin can then tick groups for tonight's raid, and change
+            {' '}{char.name}'s standing auto-share. Leave off and it can only send logs.
+          </span>
+        </span>
+      </label>
       {minted && (
         <div className="minted">
           <p><b>Copy this now — it won't be shown again.</b></p>
@@ -67,11 +83,12 @@ function TokenPanel({ char }) {
       {active.length > 0 && (
         <div className="tablewrap">
           <table className="data">
-            <thead><tr><th>Label</th><th>Created</th><th>Last seen</th><th /></tr></thead>
+            <thead><tr><th>Label</th><th>Can do</th><th>Created</th><th>Last seen</th><th /></tr></thead>
             <tbody>
               {active.map((t) => (
                 <tr key={t.id}>
                   <td className="name">{t.label || '—'}</td>
+                  <td>{t.can_share ? 'Send logs + set sharing' : 'Send logs'}</td>
                   <td>{fmt.date(t.created_ts)}</td>
                   <td>{t.last_seen_ts ? `${fmt.date(t.last_seen_ts)} ${fmt.time(t.last_seen_ts)}` : 'never'}</td>
                   <td><button className="danger" onClick={() => revoke(t.id)}>Revoke</button></td>
@@ -86,6 +103,47 @@ function TokenPanel({ char }) {
       )}
       {error && <p className="err">{error}</p>}
     </div>
+  )
+}
+
+/* Auto-share: a standing instruction that every raid this character records
+   goes to these groups, back catalogue included. It is evaluated when a raid is
+   read, not copied onto it, so unticking a group closes the old nights too — and
+   a single raid can still be pulled back out from its own Share control. */
+function AutoShare({ char }) {
+  const [groups, setGroups] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    api.characterShares(char.id).then((d) => setGroups(d.groups)).catch((e) => setError(e.message))
+  }, [char.id])
+
+  async function toggle(gid) {
+    const next = groups.map((g) => (g.group_id === gid ? { ...g, shared: !g.shared } : g))
+    setGroups(next); setBusy(true); setError(null)
+    try {
+      const d = await api.setCharacterShares(
+        char.id, next.filter((g) => g.shared).map((g) => g.group_id))
+      setGroups(d.groups)
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  if (groups === null) return null
+  if (!groups.length) {
+    return <span className="muted">No groups yet — <Link to="/groups">make one</Link>.</span>
+  }
+  return (
+    <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <span className="muted">Auto-share every raid with:</span>
+      {groups.map((g) => (
+        <button key={g.group_id} className={`chip ${g.shared ? 'on' : ''}`} disabled={busy}
+                onClick={() => toggle(g.group_id)}>
+          {g.name}
+        </button>
+      ))}
+      {error && <span className="err">{error}</span>}
+    </span>
   )
 }
 
@@ -121,7 +179,7 @@ export default function Characters() {
     <>
       <div className="pagehead">
         <h1>Characters</h1>
-        <span className="sub">Uploads and live ingest attach to a character</span>
+        <span className="sub">Uploads and live ingest attach to a character.</span>
         <div className="actions">
           <form onSubmit={add} style={{ display: 'flex', gap: 8 }}>
             <input
@@ -157,6 +215,7 @@ export default function Characters() {
               )}
             </div>
           </div>
+          <div style={{ marginTop: 8 }}><AutoShare char={c} /></div>
           {open === c.id && <TokenPanel char={c} />}
         </div>
       ))}

@@ -70,7 +70,7 @@ def client(tmp_path_factory, fake):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "a@x.test", "password": "hunter2hunter2"})
+               json={"username": "censusa", "password": "hunter2hunter2"})
         yield c
     mp.undo()
 
@@ -222,7 +222,7 @@ def test_census_isolation(client, fake):
     cid = add_bobby(client)
     client.cookies.clear()
     client.post("/api/auth/register",
-                json={"email": "b@x.test", "password": "hunter2hunter2"})
+                json={"username": "censusb", "password": "hunter2hunter2"})
     for path in (f"/api/characters/{cid}/census",
                  f"/api/characters/{cid}/census/refresh",
                  f"/api/characters/{cid}/census/snapshots"):
@@ -230,7 +230,7 @@ def test_census_isolation(client, fake):
         assert method(path).status_code == 404
     client.cookies.clear()
     client.post("/api/auth/login",
-                json={"email": "a@x.test", "password": "hunter2hunter2"})
+                json={"username": "censusa", "password": "hunter2hunter2"})
 
 
 # ---- bulk spell ingest (phase 7 groundwork) ----

@@ -55,7 +55,7 @@ def client(tmp_path_factory, fake):
     from main import app
     with TestClient(app) as c:
         c.post("/api/auth/register",
-               json={"email": "coach@x.test", "password": "hunter2hunter2"})
+               json={"username": "coach", "password": "hunter2hunter2"})
         cid = c.post("/api/characters", json={"name": "Bobby"}).json()["id"]
         assert c.post(f"/api/characters/{cid}/census/refresh").status_code == 200
         yield c
@@ -409,11 +409,11 @@ def test_prune_freezes_raid_report(client):
 def test_coach_isolation(client, session_id):
     client.cookies.clear()
     client.post("/api/auth/register",
-                json={"email": "other@x.test", "password": "hunter2hunter2"})
+                json={"username": "other", "password": "hunter2hunter2"})
     for path, method in ((f"/api/sessions/{session_id}/coach", client.get),
                          (f"/api/sessions/{session_id}/coach", client.post),
                          (f"/api/sessions/{session_id}/raid-report", client.get)):
         assert method(path).status_code == 404
     client.cookies.clear()
     client.post("/api/auth/login",
-                json={"email": "coach@x.test", "password": "hunter2hunter2"})
+                json={"username": "coach", "password": "hunter2hunter2"})

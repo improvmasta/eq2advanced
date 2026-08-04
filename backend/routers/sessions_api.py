@@ -1,7 +1,12 @@
 """Session listing + detail (zones -> encounters with the logger's headline).
-Scoped to the signed-in user's characters; admin sees all. The /stream endpoint
-is SSE for the Live page: it polls the DB and pushes fight cards as the live
-ingest path finalizes encounters."""
+
+A session is an uploaded FILE, and files are private — strictly owner-only, with
+no group-share and no admin path. Sharing operates on zone runs (the raids you
+were in), so a shared night exposes those fights' derived stats and never the
+log, the other fights in the same file, or its parse plumbing.
+
+The /stream endpoint is SSE for the Live page: it polls the DB and pushes fight
+cards as the live ingest path finalizes encounters."""
 
 import asyncio
 import json
@@ -11,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from db import get_db, row_to_dict, rows_to_dicts
-from security import is_admin, require_user
+from security import owned_session, require_user
 
 router = APIRouter(tags=["sessions"])
 
@@ -19,22 +24,14 @@ STREAM_POLL_S = 1.5
 ONLINE_S = 60          # device token seen this recently = uploader online
 
 
-def visible_session(conn, user, session_id: int):
-    """Session row (with character_name) if the user may see it, else 404."""
-    sess = conn.execute(
-        "SELECT s.*, c.name AS character_name, c.user_id AS owner_id FROM sessions s "
-        "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
-        (session_id,),
-    ).fetchone()
-    if sess is None or (not is_admin(user) and sess["owner_id"] != user["id"]):
-        raise HTTPException(404, "no such session")
-    return sess
+# kept as a name because half the app imports it; ownership IS the rule now
+visible_session = owned_session
 
 
 @router.get("/sessions")
 def list_sessions(user=Depends(require_user)):
     conn = get_db()
-    where, params = ("", ()) if is_admin(user) else ("WHERE c.user_id = ?", (user["id"],))
+    where, params = "WHERE c.user_id = ?", (user["id"],)
     rows = conn.execute(
         "SELECT s.id, s.source, s.status, s.error, s.started_ts, s.ended_ts, s.line_count, "
         "s.upload_name, s.created_ts, s.calibration, s.pinned, s.pruned, "
@@ -85,6 +82,9 @@ def reparse_session(session_id: int, user=Depends(require_user)):
         raise HTTPException(409, "session is pruned; its report is frozen")
     if sess["status"] not in ("ready", "error"):
         raise HTTPException(409, f"session is {sess['status']}")
+    if sess["raw_deleted_ts"]:
+        raise HTTPException(409, "this log was parsed without being kept — there is "
+                                 "nothing left to reparse")
     paths = session_raw_paths(conn, session_id)
     if not paths:
         raise HTTPException(409, "no stored raw log for this session")
@@ -119,7 +119,7 @@ def delete_session(session_id: int, user=Depends(require_user)):
     with conn:
         clear_derived(conn, session_id)
         for table in ("ingest_lines", "ingest_batches", "raw_chunks",
-                      "raid_reports", "coach_reports"):
+                      "raid_reports", "coach_reports", "session_shares"):
             conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         survivors = {encounter_fp(r) for r in conn.execute(

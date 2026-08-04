@@ -6,11 +6,70 @@ actually did; coaching lives in the gap.*
 
 ## Runtime
 
-1. Cloudflare DNS for `eq2advanced.jupiterns.org`
+1. Cloudflare DNS for `eq2advanced.com`, **DNS-only** (grey cloud).
+   It was proxied for part of 2026-08-03; the 100 MB body cap below is why it
+   is not anymore
 2. Zoraxy on `10.1.1.4:8000`
-3. **Live** target: Docker container on `10.1.1.5:8450` (Lindsay deploys it —
+3. **Currently** the public hostname points at the **dev** box,
+   `10.1.1.15:8450` (`restart.sh`) — a deliberate, temporary state
+4. Container target: `10.1.1.5:8450` (Lindsay deploys it —
    `ghcr.io/improvmasta/eq2advanced:main`, built on push to main)
-4. **Dev** site: this box, `http://10.1.1.15:8450` via `restart.sh`
+
+Where the hostname lands is one command, and it flips back the same way:
+
+```bash
+/home/lindsay/scripts/provision-app.sh route eq2advanced 8450 --target-host 10.1.1.15   # dev (now)
+/home/lindsay/scripts/provision-app.sh route eq2advanced 8450 --deploy-server media     # container
+```
+
+With no `--cloudflare-*` flag `route` leaves the proxy setting alone; it only
+moves the route.
+
+### Consequences of the Cloudflare proxy (why it is off)
+
+- **Uploads are capped at 100 MB by Cloudflare**, before the app's own
+  `upload_max_bytes` is consulted. A log over that gets a Cloudflare 413 the
+  API never sees — no request line in the uvicorn log, nothing on disk. The
+  app's cap ships as 0 (unlimited), so while the proxy was on Cloudflare was
+  the *only* upload limit, and it turned a remote raider's backfill away with
+  an HTML error page. That is what took the proxy back off on 2026-08-03.
+  `siteconfig.edge_max_bytes(request)` is what the app can still do about it:
+  a request carrying `CF-Ray` (from a trusted peer) is told the ceiling in
+  `GET /api/uploads/limits`, and `UploadDrop` refuses an oversized file with a
+  sentence instead of spending the upload to learn it. Off the proxy it
+  reports 0 and the dropzone says nothing. **A 413 is only ours when it
+  carries `X-Parse-Only-Allowed`** — that header is the parse-only offer, and
+  the client must not take an edge 413 as a reason to stop keeping raw logs.
+- **ACME HTTP-01 renewal through Zoraxy will fail** while the record is
+  proxied (Cloudflare answers the challenge path). `provision-app.sh --cert`
+  refuses the combination for this reason. Edge TLS keeps working regardless;
+  it is the origin certificate that stops renewing.
+- SSE (`/api/sessions/{id}/stream`) is fine: it emits a `status` heartbeat
+  every `STREAM_POLL_S` (1.5s), far inside any idle timeout.
+
+### The app is behind two proxies, and knows it (`siteconfig.py`)
+
+Every public request now reaches uvicorn from Zoraxy over plain HTTP, which
+makes three request attributes lie. `backend/siteconfig.py` is the one place
+that corrects them, and each correction is load-bearing:
+
+- `client_ip(request)` — `request.client.host` is `10.1.1.4` for the entire
+  internet, so `ratelimit`'s per-address bucket held ONE counter for everyone:
+  five wrong passwords by anybody locked every user out of login for fifteen
+  minutes. The safety net was a one-line denial of service. Forwarding headers
+  (`CF-Connecting-IP`, then `X-Forwarded-For`) are read **only** when the peer
+  is a trusted proxy (`TRUSTED_PROXIES`, default Zoraxy + loopback) so a direct
+  LAN client cannot invent an address for itself.
+- `is_secure(request)` — TLS ends at the edge, so `request.url.scheme` is
+  `http` and the session cookie was never marked `Secure`. Decided from
+  `X-Forwarded-Proto`, again only from a trusted peer.
+- `public_base_url()` — `request.base_url` is the internal `host:port`, which
+  is not a URL anyone else can open. Anything we hand to a third party comes
+  from here instead: the group **invite link** (`GET /api/groups` returns
+  `invite_base`) and the device-token **pair payload** (`eq2advanced://pair`).
+  `PUBLIC_BASE_URL` overrides it; the default is the live hostname. It is
+  deliberately independent of wherever the route points today — the hostname is
+  the product, the box behind it is an implementation detail that moves.
 
 ## Stack
 
@@ -40,27 +99,221 @@ actually did; coaching lives in the gap.*
   resolution, events + rollups in one transaction, session status),
   `prune.py` (events retention, see "Pruning").
 - `routers/` — `uploads_api` (multipart → sha256-deduped gzip → background
-  parse thread), `sessions_api`, `encounters_api`, `auth_api` (open sign-up +
-  cookie login; the FIRST registered account becomes admin), `characters_api`
-  (CRUD; creating a name that exists unowned from phase-1 uploads CLAIMS it),
-  `tokens_api` (per-character device tokens: mint shown-once, QR pair payload,
-  revoke; the ACT plugin authenticates with these in phase 3).
-- `auth.py` (PBKDF2 password + hashed session/device tokens) and `security.py`
-  (`require_user`/`require_admin` deps + `owned_character`). Isolation rule:
-  every session/encounter query is scoped through `characters.user_id`; admin
-  sees everything; foreign ids 404 (not 403) so existence doesn't leak.
+  parse thread), `sessions_api`, `encounters_api`, `auth_api` (username +
+  password sign-up, cookie login, security-question reset; the FIRST registered
+  account becomes admin), `characters_api` (CRUD + auto-share; claims are not
+  exclusive), `groups_api`, `admin_api`, `tokens_api` (per-character device
+  tokens: mint shown-once, QR pair payload, revoke; the ACT plugin
+  authenticates with these).
+- `auth.py` (PBKDF2 password + security answer + hashed session/device tokens),
+  `groups.py` (membership + the one visibility predicate) and `security.py`
+  (deps + ownership/visibility helpers). See "Accounts, groups and sharing".
 - `pipeline/live.py` + `routers/ingest_api.py` — live ingest (see below).
 - `census/` + `routers/census_api.py` — Census sync (see below);
   `census/catalog.py` populates `ability_catalog` (see "Ability catalog").
 - `coach/` + `routers/coach_api.py` — coach engine + raid report (see below).
 
+## Accounts, groups and sharing (phase 12 — 2026-08-03)
+
+Phase 2's accounts were a placeholder: email login, one global owner per
+character name, and `is_admin()` short-circuiting every visibility check. All
+three are gone.
+
+### Identity (schema v9)
+
+Login is `username` + password; **there is no email anywhere**. The only
+self-service recovery is a security question chosen at sign-up (one of
+`auth.RESET_QUESTIONS`, answer normalized by `auth.normalize_answer` — strip,
+collapse whitespace, casefold — then PBKDF2'd like a password). A reset deletes
+every `auth_sessions` row for that user, because a reset exists precisely when
+someone else may hold the password. Accounts predating v9 have no question and
+are told so on the Account page; only an admin reset recovers them.
+
+`ratelimit.py` counts failures per identity AND per client address on login,
+both reset routes, the two routes that re-check a password before changing a
+credential (`/auth/password`, `/auth/security-question` — a live cookie proves
+you signed in once, not that you know the password now, so a borrowed browser
+is exactly where someone would sit and guess it), and the group-join code —
+with no email loop and no 2FA that counter is the only thing between a weak
+password and a script. The address half only means anything because
+`siteconfig.client_ip` resolves the real visitor behind the proxies (see
+"The app is behind two proxies"); keyed on the raw peer it was worse than
+nothing. In-process, so it resets on restart; that's stated in the docstring
+and is not a substitute for fail2ban at the edge.
+
+Registration is deliberately NOT failure-counted: nothing about it is guessable,
+and the lever for sign-up abuse is the `registration_open` setting.
+
+Migrations are guarded by SHAPE, not `user_version` (the dev reloader can stamp
+the version mid-edit), and each rebuilds a table SQLite can't ALTER:
+`_rebuild_users` (email → username + sq columns; username = the old local part,
+collisions → `user{id}`), `_rebuild_characters`, `_rebuild_sessions`. All three
+preserve ids, run with `foreign_keys=OFF` and assert `foreign_key_check`.
+Verified against a copy of the real 344 MB database: 2.7M events, 159 runs,
+pinned/calibration/parse_version flags all intact, idempotent on a second run.
+
+### Claims are not exclusive
+
+`characters` is `UNIQUE(user_id, name, world_id)` with a NOT NULL owner. Anyone
+may claim "Bobby"; each claim is that user's own row with its own logs, and
+nothing about it is visible to the other claimants. `sessions.upload_sha256`
+lost its global UNIQUE for the same reason — two raiders who were both there
+upload the same bytes and get one content-addressed gzip with a session each
+(`idx_sessions_upload` is (sha, character)). The file is unlinked only by the
+last session pointing at it, which `delete_session` and `drop_raw_if_unwanted`
+both check. Known duplication, not yet solved: two claimants of one name each
+drive their own Census sync of the same world character.
+
+### Admin runs the site, it does not read the site
+
+`role='admin'` is OPERATIONAL. It is absent from every visibility decision in
+`security.py` — an admin gets 404 on a stranger's run, `/encounters/agg`,
+`/timeline`, `/deaths`, coach report and Census snapshot, and `test_auth.py`
+pins each one. `admin_api.py` serves only counts, sizes, statuses and settings;
+there is no route from it into a parse, and every mutation writes `audit_log`,
+which the console shows back. Support is "ask them to share the raid".
+
+### The visibility rule (`groups.py`)
+
+A zone run is visible to you if you own it, OR it is explicitly shared with a
+group you're in, OR its character auto-shares with a group you're in and this
+run isn't hidden from that group, OR **a session it came out of was shared with
+a group you're in** and this run isn't hidden from that group, OR it has been
+published. That is one SQL SELECT (`VISIBLE_RUN_IDS`, parameterised by `:uid`)
+and nothing else composes it. `PERSONAL_RUN_IDS` is the same thing minus the
+published branch, and `VISIBLE_RUN_IDS` is now *derived from it* rather than
+repeated — a branch added to one and forgotten in the other is either a silent
+leak or a silent hiding, and there is no longer a second copy to forget.
+
+- **Nothing is materialised.** `rebuild_zone_runs` re-derives run membership on
+  every upload, reparse and hand edit, so a share copied onto a run would
+  evaporate; evaluating at read time is also what makes leaving a group take
+  effect on the next request. When runs collapse into one id the survivor
+  inherits the union (`groups.carry_shares`, called from the rebuild before the
+  stale rows are deleted) — otherwise a merge would silently unshare a night.
+- **`hide` beats every standing share, an explicit `share` beats everything.**
+  Auto-share and the plugin's "share tonight" are useful defaults; one wipe can
+  still be pulled back out. `set_run_shares` must count BOTH as standing when it
+  decides where to write a `hide` — it deletes only explicit `share` rows, so a
+  read-time branch it doesn't know about survives the delete and the untick
+  silently revokes nothing. That bug shipped for exactly as long as it took the
+  v11 test to catch it.
+- **Seeing is not changing.** `owned_zone_run` guards delete/merge/split/edits,
+  so a shared raid is read-only to everyone including admins, and cannot be
+  re-shared onward into the viewer's own groups.
+- **Authorization is per ENCOUNTER, not per session** (`visible_encounters`).
+  This is the leak-shaped part: `/encounters/agg|timeline|deaths` used to
+  authorize through the session, so a viewer cleared for one shared run would
+  have been cleared for every other fight in the same uploaded FILE. Sessions
+  themselves stay strictly owner-only — a shared night is derived stats, never
+  the log, the sibling fights, or the parse plumbing.
+- `memo.py` needs no key change: authorization runs before the memo and the
+  payload is a pure function of the already-authorized id set. Do not memoize
+  an authorization decision here.
+
+### Sharing from the ACT plugin (phase 17 — schema v11, 2026-08-04)
+
+The uploader (`improvmasta/eq2advanced-act`) decides who sees a raid *before*
+the raid, in ACT, rather than on the site afterwards. Two controls, and the
+difference between them is the design:
+
+| Control | Covers | Table |
+|---|---|---|
+| ticked groups | the raid being uploaded **now** | `session_shares` |
+| + "keep these for every raid" | every raid the character records, back catalogue included | `character_shares` |
+
+- **Why the session, not the run.** While the log is still being written the
+  only thing that exists is the session. Zone runs are derived at parse time and
+  re-derived on every reparse, so an intent recorded against a run id would not
+  survive the night. `session_shares` is read at query time exactly like
+  `character_shares`, so it inherits `hide`, leave-a-group, and
+  nothing-is-materialised for free.
+- **Why it rides on the batch.** `share_groups` is an optional field on
+  `POST /api/ingest/batch`, not its own route: the session it applies to does
+  not exist until the first batch opens it, and a raid must never stream into a
+  session whose audience was set by a request that might not have landed. It is
+  authoritative on every batch, so unticking a group mid-raid takes the night
+  back on the next one. **Omitting the field means "don't touch"** — a plugin
+  without the scope sends nothing, and sending `[]` instead would read as "share
+  with nobody" and silently undo what was set on the site.
+- **Scope is fixed at mint.** `device_tokens.can_share` (default 0, and 0 for
+  every token that predates v11) gates both writes; without it `GET
+  /api/ingest/shares` still answers, read-only, because "who can see this" is
+  the question the raider actually has. There is deliberately no route that
+  raises the scope: the token sits in a config file on a gaming PC, so widening
+  it has to be done by someone signed in to the site. `POST
+  /characters/{id}/tokens` takes `can_share`, and the Characters page has the
+  checkbox next to the label field.
+- Unknown or not-mine group ids are **404, not dropped**. A plugin that shared
+  with fewer people than its checkboxes show would be lying about the one thing
+  here that matters.
+- `shares_for_runs` now returns `source` ('run' | 'character' | 'session') and
+  `GET /zone-runs/{id}/shares` passes it through, so the owner's control can say
+  where a share came from — and therefore what else unticking it affects.
+
+Covered end to end by `tests/test_ingest_sharing.py`.
+
+Groups: `groups` / `group_members` / `group_invites`. Three ways in, all the
+same credential — an invite addressed to a username, the 6-digit join code read
+aloud in voice, or an invite **link** (`/join/<code>`, which carries that same
+code so there is one thing to rotate). A million codes is small, so
+`ratelimit` is the actual security, on joining AND on
+`GET /api/groups/preview/{code}` — the unauthenticated route the landing page
+uses to name the group before the visitor has an account. Preview is
+deliberately thin (name, description, headcount, "are you already in it") and
+never the roster. The link works signed out: `pages/JoinGroup.jsx` shows the
+invitation with sign-up underneath and joins the moment the account exists,
+rather than bouncing to a login page and losing the invitation.
+
+Note both rate-limit call sites dedupe their keys: an anonymous caller's
+identity *is* their address, and counting one failure twice would silently
+halve the budget.
+
+`GET /groups/new-code` hands the create form a free code so the code AND its
+invite link can be shown while the group name is still being typed; `POST
+/groups` claims it (re-minting only if it was taken in between, and saying which
+code the group actually got). Nothing is reserved, so an abandoned form burns
+nothing.
+
+Membership is all that is stored; roles are owner/admin/member. The two levers
+that matter after a code gets out: **rotate** (`/code/rotate`, optionally
+`enabled: false` to switch code-joining off) mints a new code and kills the old
+one and every link built from it, while every current member stays in; and
+**remove** (`DELETE /groups/{id}/members/{uid}`, owner or a group admin, never
+the owner themselves) drops that person's access on their next request. Leaving
+or being removed also drops that user's auto-shares into the group, so rejoining
+doesn't silently reopen everything they had pointed at it.
+
+**Published runs** (`public_runs`, admin-only, own raids only) are readable
+**without an account** — read routes take `security.optional_user`, and a caller
+of None makes every ownership/membership clause compare against NULL, leaving
+exactly the published set. Publishing is the one action that removes a privacy
+boundary, so it is admin-gated, refused on data merely shared with them, and
+audited. The SPA renders signed-out with only the routes that touch your own
+data redirecting to `/login`.
+
+### Log size and retention
+
+`settings.upload_max_bytes` / `storage_max_bytes` (0 = unlimited, **shipped as
+0**) with per-user overrides on `users`. The cap is counted as the upload
+streams, so an oversized file never finishes landing on disk; the 413 carries
+`X-Parse-Only-Allowed` so the UI can offer the deal instead of a refusal.
+`retain_raw=0` parses the log and then drops the bytes
+(`ingest_writer.drop_raw_if_unwanted`, only when no other session shares that
+content address). The cost is real and enforced, not hoped for: those sessions
+are skipped by `POST /sessions/{id}/reparse` and by the startup
+`_reparse_stale` sweep, so no future parser improvement can ever reach them.
+
 ## Live ingest (phase 3 — the frozen ACT-DLL contract)
 
-`GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`;
-auth is `Authorization: Bearer <device_token>` only. A batch is gzip (or plain)
-JSON `{batch_id, mode: live|backfill, lines: [verbatim lines]}` → `{accepted,
-duplicates, session_id}`. `backend/tools/simulate_live.py` is the reference
-client the DLL mirrors (and feeds the equivalence test's batch cutter).
+`GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`,
+and (v11) `GET`/`PUT /api/ingest/shares`; auth is
+`Authorization: Bearer <device_token>` only. A batch is gzip (or plain) JSON
+`{batch_id, mode: live|backfill, lines: [verbatim lines], share_groups?: [ids]}`
+→ `{accepted, duplicates, session_id}`. `backend/tools/simulate_live.py` is the
+reference client (and feeds the equivalence test's batch cutter);
+`improvmasta/eq2advanced-act` is the ACT plugin that implements it for real, and
+the two must stay in step.
 
 Design points, in the order they bit:
 
@@ -362,6 +615,8 @@ encounter rows by `pipeline/zoneruns.py`:
 - **Id stability**: the upsert matches recomputed runs to existing rows by
   zone + overlapping time window, so `/zones/:id` URLs survive reparses and
   backfills; rollup columns recompute every rebuild.
+- **Roster** (`raider_count`): see below — the count that decides what the
+  Home page calls a raid.
 - **Hooks**: end of `parse_session`, live `_flush` (when fights land), and a
   startup relink sweep in `main.py` before AND after `_reparse_stale` — the
   sweep is also the migration for pre-zone_runs databases (schema v6:
@@ -384,6 +639,40 @@ Frontend: `/` = `Home.jsx` (one sortable table of runs), `/zones/:id` =
 grouped bars from `lib/stats.js`). `/import` = the import hub (live link,
 log files, ACT export) and file management, with `/uploads` redirecting to it;
 `/sessions/:id` (Workspace) survives as the per-file debug view.
+
+### The roster, and what counts as a raid (2026-08-03)
+
+An encounter is a time slice, not a guest list: it holds every combat line the
+log heard while you were fighting. `raider_count` used to be "distinct
+`player` entities in the run's busiest fight", which counted all of them, and
+the Home page's raids-only filter (>= 7 people, one more than a full group)
+turned that into a wrong answer — a six-man Halls of Fate night read as a raid
+off two strangers.
+
+`_raider_count` in `pipeline/zoneruns.py` is now the run's ROSTER, three rules
+deep, keyed by entity NAME (a run spans files, entities are session-scoped):
+
+- **player** — mobs and the pooled `Unknown` source are not people. A
+  single-token capitalized mob name is a player as far as `classify_entity_kind`
+  can tell, and the ones `pipeline/refine.py` doesn't catch land in this table
+  looking like raiders (`Ishi-Kurrat`, `Axxyk'Tuur`).
+- **acted** — damage, heals, wards, cures, power, rezzes or swings. A row with
+  nothing but `damage_taken` is a bystander who got clipped by an AE.
+- **presence** — they turn up in >= `ROSTER_PRESENCE` (25%) of the run's
+  fights, minimum 2; under `SHORT_RUN_FIGHTS` (4) there is no attendance to
+  read and one is enough. This is the rule that does the work. Measured over
+  Lindsay's 49 runs, a raid sits at 45-100% of its fights and passers-by at
+  3-15%, with nothing in between: Castle Mistmoore is four regulars across
+  12-18 of 23 fights plus another group that appears in exactly 2.
+
+A cooperation graph (link players by support flowing between them or by damage
+into a shared enemy, keep the logger's component) was built and **rejected**:
+it changed 0 of 49 runs, because a passing group does hit the mobs you are
+hitting. Don't rebuild it without a log where presence demonstrably fails.
+
+Net effect on the real corpus: Emerald Halls 26 -> 24 (the raid was 24), Lord
+Vyemm 32 -> 26, Halls of Fate 7 -> 6 (no longer a "raid"), Freethinker Hideout
+25 -> 25 and Ascent of the Awakened 12 -> 12 (real raids, untouched).
 
 ### The fight rail (2026-08-03)
 
@@ -475,15 +764,42 @@ Four backend additions and the UI built on them.
 ### Class inference (`pipeline/classguess.py`)
 
 The log never states anyone's class, but it states what they cast, and
-`ability_catalog.class` knows who can cast what. Per player entity: take the
-distinct ability names it used, drop the autoattack buckets (class-blind),
-pet-kit names, and **procs** (gear fires those — they say nothing about the
-caster), then let each remaining name vote for its class. A name that several
-classes can scribe identifies nobody and is discarded (`_single_class`). The
-winner needs ≥ 3 distinct abilities and ≥ 40% of the votes; otherwise the
-class stays NULL, because a blank is more honest than a guess. A `characters`
-row with a Census class overrides the vote outright (`source: "census"`,
-confidence 1.0).
+`ability_catalog.class` knows who can cast what. Per player: take the distinct
+ability names they used, drop the autoattack buckets (class-blind), pet-kit
+names, and **procs** (gear fires those — they say nothing about the caster),
+then let each remaining name vote for its class. A `characters` row with a
+Census class overrides the vote outright (`source: "census"`, confidence 1.0).
+
+**Rebuilt 2026-08-03** — the old version answered per FILE, with whole votes
+only, and got 198 of 981 player rows named. Three changes:
+
+- **Evidence pools across sessions, keyed by NAME** (`_evidence`, one 0.1s
+  query over the whole database). Guessing per file gave the same person a
+  class in one raid and nothing in the next, and for 19 players two different
+  answers in the same list (Zooey: defiler here, mystic there). The answer is
+  written back to EVERY entity row with that name, so it applies to older
+  raids without reparsing them.
+- **Shared spells vote in fractions.** "conjuror,necromancer" used to be
+  discarded; it is now half a vote each — it cannot pick between the two, but
+  it is real evidence against the other twenty-two.
+- **A margin rule beside the share rule.** A winner needs whole-vote evidence
+  (`MIN_STRONG`, 2 single-class spells), `MIN_SCORE` of weight, and either a
+  majority of the weight cast or double the runner-up. The margin is what
+  names a player whose gear procs are not all flagged: Shaly scores 14.5
+  coercer against 7 bruiser and 4 each of three more — 39% of the weight, and
+  obviously a coercer.
+
+Measured on the real database: 131 → 147 names resolved, no answer changed,
+none lost, and the per-session disagreements gone.
+
+**What it still cannot do, and why it looks worse than it is.** Roughly half
+the ability names in a real raid log — 433 of 919 — have no Census row at all:
+AAs, gear procs and item effects are not in the spell books, and the bulk
+ingest only pulled ~130 spell names per class. Of the 230 names with any
+ability evidence, 38 are named pets misfiled as players (Reaper, Viber and
+Zarann cast nothing but `Grim *` necro pet spells), and the rest are players
+whose visible kit is entirely uncatalogued. Fixing coverage is a Census
+ingest job (the `alternateadvancement` collection), not a voting change.
 
 Stored as JSON in the long-dormant `entities.class_guess` column —
 `{"class","confidence","matches","source"}`, read back by
@@ -549,6 +865,53 @@ the `window` seconds before it (`t` relative and negative, far edge
 inclusive, clamped 3–60s, capped at 40 entries per list with a `_truncated`
 flag). Deaths use the same death/kill rules as `statsroll`, including the
 logger's bare-name pet.
+
+### `GET /api/encounters/aoes?ids=…`
+
+Incoming raid AoEs for the selection (`pipeline/aoes.py`), one row per
+(enemy source, ability) with every detected cast attached.
+
+The log never says "this was an AoE", so the definition is behavioural: a
+second in which ONE enemy ability touched at least `MIN_TARGETS` (5) players
+is a **cast**. Everything that ability does for the next few seconds — DoT
+ticks, a second wave on a second group — belongs to that same cast; the merge
+threshold is `max(6s, 0.4 x the reported timer)`, because a 60s AoE does not
+land twice in 24 seconds. Both damage and *ability-named* avoids count: "The
+Corsolander tries to crush Brandomar with War Stomp, but Brandomar resists" is
+the AoE, while a bare "tries to crush X, but X parries" is a melee swing and
+carries no ability, so it never enters.
+
+Two timers sit side by side and the gap between them is the point:
+
+- **reported** — ACT's spell-timer list, shipped as `backend/refdata/
+  act_spell_timers.json` (446 entries extracted from Lindsay's ACT config;
+  only `<SpellTimers>` name/duration/category, not the chat triggers). Joined
+  by ability NAME, which works because ACT keys off the same log string.
+- **observed** — the shortest interval between two casts that REPEATS, within
+  one fight (the wait between two pulls is a raid taking a break, not a
+  cooldown).
+
+Shortest-repeating rather than mean or median because of how the measurement
+fails: an AoE that never reached five people is a cast we cannot see, and a
+missed cast makes one gap look like two — it can only ever make a gap LONGER.
+So the smallest gap that happens more than once is the closest thing to the
+real timer, `observed_agree` says how many intervals agreed (two is a guess,
+twenty is a measurement), and `missed_hint` counts the gaps that look like
+multiples. On the real DB: Blanket of Eternal Night 60.2s observed vs 60
+reported (22 agreeing), Ydalian Bolt 47.7 vs 49, War Stomp 47.4 vs 45 —
+and Furious Storm reads 52 against a reported 45 from three different
+casters, which is the reported timer being wrong for this expansion.
+
+**Coverage** is who was not hit: `avoided` (Bladedance and friends, an avoid
+event) plus `absorbed` (Tortoise Shell and friends, a zero-damage hit with
+`F_ZERO`), minus anyone the same cast also hit — a second wave landing on
+someone who parried the first is a hit, not a block.
+
+GOTCHA: entities are keyed by NAME, so six "a maven of wisdom" pulling the
+same AoE read as one mob casting it six times as often. `instances_hint`
+flags the giveaway — an observed timer that is a clean fraction of the
+reported one, from a source that is not a named — instead of reporting the
+ACT list as wrong. Named bosses, the case that matters, are unique.
 
 ### Frontend
 
@@ -640,6 +1003,87 @@ Still open, in residual-size order:
   ACT keeps idle-window heals/power in the encounter; don't re-add it.
 - Emericant's ±6,307: ACT files manastone/potion self-power as PowerDrain.
 
+## Rezzes, revives, intercepts and the adjusted delay (2026-08-03, schema v10)
+
+Four things the log says that the parser was not listening for, plus one stat
+ACT cannot express. `PARSE_VERSION` 13; the startup sweep rebuilds everything.
+
+### Every rez family counts (`RE_REZ`)
+
+`rez` matched exactly one line — `X petitions the divinities of resurrection.`
+That is the CLERIC flavor. Druids "call forth primeval forces of
+resurrection", shamans "primal forces", and those 73 casts (of 142 in the raid
+logs) were invisible: Ramms and Squigs showed **zero** rezzes on a night they
+cast 41 between them. The regex now takes an open verb (`petitions|calls
+forth|beseeches|invokes|implores|summons`) and identifies the line by its
+trailing `…resurrection.`, keeping the flavor text in `extra` so an unseen
+family shows up as data rather than as a gap. `A resurrection spell is cast on
+X.` parses as a rez with a target and no caster.
+
+### Revives, and Time dead stops being a permanent zero
+
+The landing side prints for everyone in range — `X is revived!`, `X is
+resurrected!`, `You are revived!` — and only the logger's `You regain
+consciousness!` was parsed. With all of them, `encounter_actor_stats.
+time_dead_s` (a column that existed and was never written, so the aggregate
+reported a confident 0) is filled: death → the first of {revive, acting
+again, end of fight}, clamped to the encounter. The raid report uses the same
+three-way rule, and `test_agg_time_dead_matches_the_report` pins them
+together — two places printing different death times for one fight is worse
+than either being slightly wrong.
+
+`You lose consciousness!` is the logger's own death when nothing takes kill
+credit. It coincides with `<Killer> has killed you.` every time in the raid
+logs, so `_dedupe_repeats` collapses it — ACT death parity is unchanged (141
+death events before and after).
+
+### Intercepts (`RE_INTERCEPT`, `encounter_actor_stats.intercepts`)
+
+`Bobby intercepted some of the damage intended for you!` — someone eating a
+hit meant for someone else. Three limits are structural, not bugs to fix
+later: the log carries **no amount** (so this is a count, and the UI tooltip
+says so), the victim is only ever named from the logger's seat (`you` / `your
+target`), and the two variants are the same event printed twice — 1270 of the
+1442 intercept seconds carry both, so `_dedupe_repeats` keys on (type, who,
+second). Two intercepts inside one second are indistinguishable in the log;
+one is the honest floor. Credit goes through `decompose`, so the logger's
+bare name resolves to their pet exactly as everywhere else.
+
+This is also the suspected residual behind ACT-parity damage-taken running
+1-3% light (see above): ACT cannot see the moved damage either.
+
+### "AvgDelay adj" — the gap between button PRESSES (`_activations`)
+
+ACT's Avg Delay is swing span ÷ swings, so a DoT ticking six times and an AoE
+hitting five mobs read as eleven actions. Asked what it is really wanted for —
+"how often did they press something" — the answer needs ACTIVATIONS:
+
+- hits of one ability in the same second are one press (AoE across targets);
+- a hit within one tick period of the previous hit **on the same target**
+  continues a chain (DoT tick, multi-hit) instead of starting a press;
+- autoattack is not a button and `kind='self'` rows are a cost, not an action;
+- catalog procs fire themselves, so they are out of the per-actor total.
+
+The tick period comes from Census `dmg_period_s` (via `catalog.press_inputs`,
+collapsed onto `base_name`) when it is known — only ~60 base names — and is
+otherwise inferred from the ability's own hits. **The discriminator is modal
+dominance, not average regularity**, which the real logs settle: Bloodcoil's
+same-target gaps are 3s 75% of the time and Grave Decay's are 1s 86% of the
+time (EQ2 ticks these every second), while Lifetap, a nuke, spreads across
+8-14s with no single gap over 15% and Dynamism's most common gap is 17% of
+its gaps. So the modal gap must carry half the chain and appear at least four
+times before anything is folded away — a rotation's jitter never clears that
+bar, which is the failure that matters (folding real presses away would
+understate a player).
+
+Stored per ability (`presses`, `press_delay_s`) and per actor (`presses`,
+`press_span_s`, with the per-actor set deduped by second — two abilities in
+one second is one moment of activity). `_avg_delay_adj` divides span by
+gaps, so it sums across encounters the same way ACT's does. On the Zylphax
+fight ACT's AvgDelay reads 0.14-0.39s for the top parsers — a number nobody
+can act on — while the adjusted delay reads 1.2-1.65s and separates them:
+Spades 1.21s against Bobby 1.65s.
+
 ## Phase 7b — attribution overhaul + stats engine v2 + workspace UX (2026-08-02)
 
 **Pet knowledge base** (`parser/petnames.py`, global `pet_names` table): named
@@ -723,7 +1167,7 @@ Chain-pull labels cap at 4 nameds (`A + B + C +N more`).
 ## Verification
 
 ```bash
-.venv/bin/python -m pytest backend/tests/ -q     # 85 tests incl. golden fixture
+.venv/bin/python -m pytest backend/tests/ -q     # 188 tests incl. golden fixture
 bash restart.sh && curl -s localhost:8450/api/sessions
 curl -F "file=@/home/lindsay/bobby.txt" -F "character_name=Bobby" localhost:8450/api/uploads
 ```

@@ -1,6 +1,6 @@
 # eq2advanced
 
-Starter app for https://eq2advanced.jupiterns.org.
+Starter app for https://eq2advanced.com.
 
 ## Local
 

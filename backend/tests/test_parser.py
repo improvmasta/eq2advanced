@@ -327,3 +327,75 @@ def test_anonymous_heal_ignored_kind():
 def test_dispel():
     e = ev("a shrouded horror's Soul Strip dispels Transcendence from YOU.")
     assert e.type == "dispel" and e.ability == "Soul Strip" and e.extra["effect"] == "Transcendence"
+
+
+# ---- rezzes, revives, intercepts (every line verbatim from the raid logs) ----
+
+def test_rez_families_all_count():
+    """Three healer archetypes, three flavors, one event type. Matching only
+    the cleric line credited no druid or shaman with a rez."""
+    for body, who in (
+        ("Kashale petitions the divinities of resurrection.", "Kashale"),
+        ("Ramms calls forth primeval forces of resurrection.", "Ramms"),
+        ("Ariya calls forth primal forces of resurrection.", "Ariya"),
+    ):
+        e = ev(body)
+        assert e.type == "rez" and e.src.name == who
+
+
+def test_rez_anonymous_names_the_target_not_the_caster():
+    e = ev("A resurrection spell is cast on Zooey.")
+    assert e.type == "rez" and e.src is None and e.tgt == "Zooey"
+
+
+def test_revive_grammar():
+    assert ev("Aros is revived!").tgt == "Aros"
+    assert ev("Sorengail is resurrected!").tgt == "Sorengail"
+    assert ev("You regain consciousness!").tgt == "YOU"
+    assert ev("You are revived!").tgt == "YOU"
+    assert all(ev(b).type == "revive" for b in (
+        "Aros is revived!", "Sorengail is resurrected!",
+        "You regain consciousness!", "You are revived!"))
+
+
+def test_revive_pair_in_one_second_is_one_revive():
+    from parser import parse_lines
+    lines = [
+        "(1785632908)[Sat Aug  1 21:08:28 2026] You regain consciousness!\r\n",
+        "(1785632908)[Sat Aug  1 21:08:28 2026] You are revived!\r\n",
+        # a later rez of the same player is a second revive, not an echo
+        "(1785632930)[Sat Aug  1 21:08:50 2026] You regain consciousness!\r\n",
+    ]
+    evs = [e for e in parse_lines(lines, "Bobby") if e.type == "revive"]
+    assert [e.ts for e in evs] == [1785632908, 1785632930]
+
+
+def test_intercept_is_credited_to_the_interceptor():
+    e = ev("Buls intercepted some of the damage intended for you!")
+    assert e.type == "intercept" and e.src.name == "Buls" and e.tgt == "YOU"
+    # the logger's bare name is their pet, the same rule as everywhere else
+    e = ev("Bobby intercepted some of the damage intended for you!")
+    assert e.src.unit == "own_pet"
+
+
+def test_intercept_both_variants_in_one_second_count_once():
+    from parser import parse_lines
+    lines = [
+        "(1785630967)[Sat Aug  1 20:36:07 2026] Bobby intercepted some of the damage intended for you!\r\n",
+        "(1785630967)[Sat Aug  1 20:36:07 2026] Bobby intercepted some of the damage intended for your target!\r\n",
+        # two seconds later the tank steps in front of something else
+        "(1785630969)[Sat Aug  1 20:36:09 2026] Bobby intercepted some of the damage intended for you!\r\n",
+    ]
+    evs = [e for e in parse_lines(lines, "Bobby") if e.type == "intercept"]
+    assert [e.ts for e in evs] == [1785630967, 1785630969]
+
+
+def test_lose_consciousness_is_a_death_and_dedupes_with_the_kill_line():
+    from parser import parse_lines
+    assert ev("You lose consciousness!").type == "death"
+    lines = [
+        "(1784856094)[Thu Jul 23 21:21:34 2026] Nizari'ishi vindicae has killed you.\r\n",
+        "(1784856094)[Thu Jul 23 21:21:34 2026] You lose consciousness!\r\n",
+    ]
+    evs = [e for e in parse_lines(lines, "Bobby") if e.type in ("death", "kill")]
+    assert len(evs) == 1

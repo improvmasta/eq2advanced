@@ -1,23 +1,45 @@
 """Account + credential primitives (stdlib only).
 
-Two credential kinds, both stored hashed:
+Three credential kinds, all stored hashed:
+  * password — PBKDF2, per-user salt. Login is `username` + password; there is no
+    email anywhere in the system (phase 12 decision).
+  * security question — the ONLY self-service password recovery. One of
+    `RESET_QUESTIONS`, chosen at sign-up; the answer is normalized (see
+    `normalize_answer`) then hashed exactly like a password.
   * auth session — browser cookie minted at login, rows in `auth_sessions`.
   * device token — per-(character, device) ingest credential in `device_tokens`,
     minted on the Characters page, shown once, revocable. The ACT plugin sends it
-    as `Authorization: Bearer <token>` (ingest itself lands in phase 3).
+    as `Authorization: Bearer <token>`.
 
-Open registration; the FIRST account becomes admin (bootstrap), everyone after
-is a plain user.
+Open registration (gated by the `registration_open` setting); the FIRST account
+becomes admin (bootstrap), everyone after is a plain user. Admin is an
+OPERATIONAL role only — it grants no access to anyone's parse data, see
+`security.py`.
 """
 
 import hashlib
 import hmac
+import re
 import secrets
 import time
 
 ITERATIONS = 200_000
 SESSION_DAYS = 30
 COOKIE = "eq2_sess"
+
+USERNAME_RE = re.compile(r"^[a-z0-9_]{3,20}$")
+RESERVED_USERNAMES = {"admin", "root", "system", "api", "support", "eq2advanced"}
+
+# Fixed ids — never renumber, a user's `sq_id` points in here.
+RESET_QUESTIONS = [
+    (1, "What was the name of your first pet?"),
+    (2, "What street did you grow up on?"),
+    (3, "What was the name of your first EverQuest character?"),
+    (4, "What was your first video game console?"),
+    (5, "What is your oldest cousin's first name?"),
+    (6, "What was the make of your first car?"),
+]
+QUESTION_TEXT = dict(RESET_QUESTIONS)
 
 
 def _pw_hash(password: str, salt: bytes) -> bytes:
@@ -28,24 +50,37 @@ def _sha(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def normalize_answer(answer: str) -> str:
+    """Security-question answers are compared case- and whitespace-insensitively —
+    'Mr. Fluffy ' and 'mr.  fluffy' are the same answer."""
+    return re.sub(r"\s+", " ", (answer or "").strip()).casefold()
+
+
 # ---- users ----
 
-def create_user(conn, email: str, password: str) -> int:
+def create_user(conn, username: str, password: str,
+                sq_id: int | None = None, answer: str | None = None) -> int:
     salt = secrets.token_bytes(16)
     first = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone() is None
-    return conn.execute(
-        "INSERT INTO users (email, pw_hash, salt, role, created_ts) VALUES (?,?,?,?,?)",
-        (email, _pw_hash(password, salt), salt, "admin" if first else "user",
+    user_id = conn.execute(
+        "INSERT INTO users (username, pw_hash, salt, role, created_ts) VALUES (?,?,?,?,?)",
+        (username, _pw_hash(password, salt), salt, "admin" if first else "user",
          int(time.time())),
     ).lastrowid
+    if sq_id and answer:
+        set_security_question(conn, user_id, sq_id, answer)
+    return user_id
 
 
-def verify_password(conn, email: str, password: str):
-    """Return the user row on success, None otherwise (constant-time compare)."""
-    row = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+def verify_password(conn, username: str, password: str):
+    """Return the user row on success, None otherwise (constant-time compare).
+    A disabled account never verifies."""
+    row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if row is None:
-        # burn a hash anyway so a missing email times like a wrong password
+        # burn a hash anyway so a missing username times like a wrong password
         _pw_hash(password, b"\x00" * 16)
+        return None
+    if row["disabled_ts"] is not None:
         return None
     return row if hmac.compare_digest(_pw_hash(password, row["salt"]), row["pw_hash"]) else None
 
@@ -54,6 +89,30 @@ def set_password(conn, user_id: int, password: str) -> None:
     salt = secrets.token_bytes(16)
     conn.execute("UPDATE users SET pw_hash=?, salt=? WHERE id=?",
                  (_pw_hash(password, salt), salt, user_id))
+
+
+# ---- security question (password recovery) ----
+
+def set_security_question(conn, user_id: int, sq_id: int, answer: str) -> None:
+    if sq_id not in QUESTION_TEXT:
+        raise ValueError("unknown security question")
+    salt = secrets.token_bytes(16)
+    conn.execute("UPDATE users SET sq_id=?, sq_hash=?, sq_salt=? WHERE id=?",
+                 (sq_id, _pw_hash(normalize_answer(answer), salt), salt, user_id))
+
+
+def verify_answer(conn, user_row, answer: str) -> bool:
+    if user_row is None or user_row["sq_hash"] is None:
+        _pw_hash(normalize_answer(answer), b"\x00" * 16)
+        return False
+    return hmac.compare_digest(
+        _pw_hash(normalize_answer(answer), user_row["sq_salt"]), user_row["sq_hash"])
+
+
+def clear_sessions(conn, user_id: int) -> None:
+    """Every browser session for a user — a password reset must not leave a
+    hijacked cookie alive."""
+    conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
 
 
 # ---- auth sessions (browser cookie) ----
@@ -69,12 +128,13 @@ def create_session(conn, user_id: int, days: int = SESSION_DAYS) -> str:
 
 
 def session_user(conn, token: str | None):
-    """User row for a live session token, else None."""
+    """User row for a live session token, else None. A disabled account is signed
+    out everywhere the moment it is disabled."""
     if not token:
         return None
     return conn.execute(
         "SELECT u.* FROM auth_sessions s JOIN users u ON u.id = s.user_id "
-        "WHERE s.token_hash=? AND s.expires_ts > ?",
+        "WHERE s.token_hash=? AND s.expires_ts > ? AND u.disabled_ts IS NULL",
         (_sha(token), int(time.time()))).fetchone()
 
 
@@ -85,23 +145,34 @@ def delete_session(conn, token: str | None) -> None:
 
 # ---- device tokens (per character+device; ingest scope) ----
 
-def mint_device_token(conn, character_id: int, label: str | None) -> tuple[int, str]:
+def mint_device_token(conn, character_id: int, label: str | None,
+                      can_share: bool = False) -> tuple[int, str]:
     """Create a token for one (character, device). Returns (row id, plaintext) —
-    the plaintext is shown once and never stored."""
+    the plaintext is shown once and never stored.
+
+    `can_share` is opt-in at mint and cannot be raised afterwards: the answer to
+    "should this PC be allowed to change who sees my raids?" is given once, in
+    the browser, by someone who has signed in. Widening it would otherwise be
+    reachable from the token itself."""
     token = secrets.token_urlsafe(32)
     row_id = conn.execute(
-        "INSERT INTO device_tokens (character_id, token_hash, label, created_ts) VALUES (?,?,?,?)",
-        (character_id, _sha(token), label, int(time.time()))).lastrowid
+        "INSERT INTO device_tokens (character_id, token_hash, label, created_ts, can_share) "
+        "VALUES (?,?,?,?,?)",
+        (character_id, _sha(token), label, int(time.time()), int(bool(can_share)))).lastrowid
     return row_id, token
 
 
 def device_token_character(conn, token: str | None):
     """Character row for a live (un-revoked) device token, else None. Touches
-    last_seen_ts — the Characters page's 'uploader online' badge reads it."""
+    last_seen_ts — the Characters page's 'uploader online' badge reads it.
+
+    Carries `token_id` and `can_share` (the token's scope) alongside the
+    character columns; `owner_user_id` is the account the groups hang off."""
     if not token:
         return None
     row = conn.execute(
-        "SELECT c.*, t.id AS token_id FROM device_tokens t "
+        "SELECT c.*, t.id AS token_id, t.can_share, c.user_id AS owner_user_id "
+        "FROM device_tokens t "
         "JOIN characters c ON c.id = t.character_id "
         "WHERE t.token_hash=? AND t.revoked_ts IS NULL",
         (_sha(token),)).fetchone()
