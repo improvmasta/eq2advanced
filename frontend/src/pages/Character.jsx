@@ -179,14 +179,16 @@ export default function Character() {
 
       {data.synced && (
         <>
+          {/* `tab`/`tab on` is the one tab vocabulary — this page was still on
+              a second one (`.tabs button.active`) that nothing else used */}
           <div className="tabs">
-            <button className={tab === 'gear' ? 'active' : ''} onClick={() => setTab('gear')}>
+            <button className={`tab ${tab === 'gear' ? 'on' : ''}`} onClick={() => setTab('gear')}>
               Equipment &amp; Stats
             </button>
-            <button className={tab === 'spells' ? 'active' : ''} onClick={() => setTab('spells')}>
+            <button className={`tab ${tab === 'spells' ? 'on' : ''}`} onClick={() => setTab('spells')}>
               Spells
             </button>
-            <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+            <button className={`tab ${tab === 'history' ? 'on' : ''}`} onClick={() => setTab('history')}>
               History{snapshots.length ? ` (${snapshots.length})` : ''}
             </button>
           </div>

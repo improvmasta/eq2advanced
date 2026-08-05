@@ -42,13 +42,16 @@ export const CLASS_FAMILY = {
 export const ROLES = ['tank', 'healer', 'dps', 'utility']
 export const ROLE_LABEL = { tank: 'Tanks', healer: 'Healers', dps: 'DPS', utility: 'Utility' }
 export const CLASS_ROLE = {
+  // All six FIGHTERS are tanks — brawlers (monk/bruiser) included. See the
+  // note on ARCHETYPES in backend/coach/descriptive.py.
   guardian: 'tank', berserker: 'tank', paladin: 'tank', shadowknight: 'tank',
+  monk: 'tank', bruiser: 'tank',
   templar: 'healer', inquisitor: 'healer', warden: 'healer', fury: 'healer',
   mystic: 'healer', defiler: 'healer', channeler: 'healer',
   dirge: 'utility', troubador: 'utility', coercer: 'utility', illusionist: 'utility',
   assassin: 'dps', ranger: 'dps', swashbuckler: 'dps', brigand: 'dps',
   wizard: 'dps', warlock: 'dps', necromancer: 'dps', conjuror: 'dps',
-  beastlord: 'dps', bruiser: 'dps', monk: 'dps',
+  beastlord: 'dps',
 }
 
 /* EQ2's archetype colors, per theme (tokens.css) — the load-bearing identity

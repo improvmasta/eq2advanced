@@ -70,6 +70,16 @@ def _is_named_mob(victim: str, logger: str,
 
 
 _ALLY_KINDS = frozenset(("player", "own_pet", "swarm_pet", "named_pet"))
+# What counts as the RAID engaging: a swarm pet is a proc, not a decision.
+# Tragedy's unswerving hammer wandering into Wuoshi and being one-shot is not
+# an attempt on Wuoshi, and ACT agrees — it titles those stubs "Encounter",
+# while it titles the segments where the boss AoEs the raid after the boss.
+_ENGAGE_KINDS = frozenset(("player", "own_pet", "named_pet"))
+
+
+def _ally_died(seg_events: list[dict]) -> bool:
+    return any(r["type"] in ("kill", "death") and r["tgt_kind"] == "player"
+               for r in seg_events)
 
 
 def encounter_label(seg_events: list[dict], name_of, logger: str,
@@ -89,22 +99,44 @@ def encounter_label(seg_events: list[dict], name_of, logger: str,
     reproduces ACT's titles on Lindsay's Emerald Halls night (including the
     cases where the raid's damage went mostly into an add: ACT calls the Treah
     Greenroot wipe "a knotted guardian", and so do we). `success` is then real:
-    1 if that enemy died, 0 if the raid engaged it and it did not."""
+    1 if that enemy died, 0 if the raid engaged it and it did not.
+
+    A segment is only a FIGHT if the raid engaged (`_ENGAGE_KINDS` damage into
+    a mob). The segmenter cuts on combat silence, so a raid night also produces
+    stubs that are not fights at all: a DoT from the last pull ticking on three
+    people 13s before the next one, a proc pet touching the boss and dying.
+    Those are `is_named` False and `success` None — 2026-08-04's Emerald Halls
+    read 11 named pulls where there were 8, and the three extras were these.
+
+    The exception, and the reason `success` cannot simply be None whenever the
+    raid dealt no damage: a wipe where the boss AoEs everyone down before a
+    single hit lands IS an attempt, and the most emphatic kind of failure. That
+    night had two (24 and 17 dead, zero damage dealt), and both rendered as
+    clean fights because the UI only marks `success == 0`. Ally deaths decide
+    it: dead raiders mean the raid was there and lost."""
     dmg: dict[int, int] = {}
+    engaged = False
     for r in seg_events:
         if r["type"] != "damage" or r["tgt_kind"] != "mob" or r["tgt_entity"] is None:
             continue
         dmg[r["tgt_entity"]] = dmg.get(r["tgt_entity"], 0) + abs(r["amount"] or 0)
-    if not dmg:
-        # Nobody hit an enemy. If one was hitting US it still has a name, and
-        # ACT uses it: its export of the corpse-tick stub after the Freeport
-        # pull is titled "Velna T`Kril", not "trash".
+        if r["src_kind"] in _ENGAGE_KINDS:
+            engaged = True
+    if not engaged:
+        # Nobody the raid controls hit an enemy. If one was hitting US it still
+        # has a name, and ACT uses it: its export of the corpse-tick stub after
+        # the Freeport pull is titled "Velna T`Kril", not "trash".
+        wiped = _ally_died(seg_events)
         for r in seg_events:
             if (r["type"] == "damage" and r["src_kind"] == "mob"
                     and r["src_entity"] is not None):
                 name = name_of(r["src_entity"])
                 if name:
-                    return name, _is_named_mob(name, logger, known_mobs), None
+                    named = wiped and _is_named_mob(name, logger, known_mobs)
+                    return name, named, (0 if wiped else None)
+        if dmg:            # a swarm-pet tap and nothing else: name it, don't count it
+            top = max(dmg, key=lambda eid: (dmg[eid], -eid))
+            return (name_of(top) or "trash"), False, None
         # a stray segment (self-damage, an expiry) — nothing to name it after
         return "trash", False, None
     top = max(dmg, key=lambda eid: (dmg[eid], -eid))

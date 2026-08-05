@@ -14,7 +14,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
    childrenOf(row) may return sub-rows rendered right under their parent
    (sorting only orders the top level); rowClass(row) adds a per-row class, and
    a column's cellClass(row) / cellStyle(row) add a per-cell class or style
-   (rank coloring lives there).
+   (rank coloring lives there), and cellTitle(row) is its tooltip — a tinted
+   cell has to be able to answer "says who?", so the two travel together.
    wrapClass 'sticky' pins the header for long raid tables.
    groupBy: {key, of(row), label(row, rows)} draws a heading row whenever the
    group changes — only while the table is sorted by `key`, because a heading
@@ -29,6 +30,12 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 const PREFS_PREFIX = 'eq2adv:cols:'
 
+/* Comparison surfaces render several tables under ONE prefsKey — the whole
+   point is that the columns line up — so a layout change in any of them has
+   to reach the others in the same frame, not on the next mount. localStorage
+   only notifies other tabs; this covers this one. */
+const prefsListeners = new Map()   // prefsKey -> Set<callback>
+
 function loadPrefs(key) {
   if (!key || typeof localStorage === 'undefined') return {}
   try {
@@ -41,7 +48,10 @@ function loadPrefs(key) {
 function savePrefs(key, prefs) {
   if (!key || typeof localStorage === 'undefined') return
   try {
-    if (!prefs.order?.length && !prefs.hidden?.length) {
+    /* Only Reset (write({})) clears the entry. An explicit empty hidden list
+       must survive as itself: on tables with default-hidden columns it means
+       "show me everything", which is not the same as "never touched". */
+    if (!Object.keys(prefs).length) {
       localStorage.removeItem(PREFS_PREFIX + key)
     } else {
       localStorage.setItem(PREFS_PREFIX + key, JSON.stringify(prefs))
@@ -49,11 +59,52 @@ function savePrefs(key, prefs) {
   } catch { /* private mode / full quota — the layout just doesn't persist */ }
 }
 
+/* Keep a scroll box's bottom edge on screen: its height is whatever is left
+   between where the box starts and the foot of the window. That is the only
+   way the horizontal scrollbar stays reachable — a fixed `100vh - Npx` cap
+   cannot know how much page sits above the box, and a 60-ability necromancer
+   parse then runs its bar clean off the bottom of the monitor.
+
+   Measured rather than sticky-positioned: `position: sticky` is clipped here
+   by an ancestor, which is why the floating bar only ever appeared at the
+   very bottom of the page. Clamping the top at 0 keeps the box from growing
+   as you scroll past it, which would extend the page under its own feet. */
+function useFitViewport(enabled) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!enabled || !el) return
+    let raf = 0
+    const apply = () => {
+      raf = 0
+      const top = el.getBoundingClientRect().top
+      const h = Math.max(220, window.innerHeight - Math.max(top, 0) - 24)
+      const next = `${Math.round(h)}px`
+      if (el.style.maxHeight !== next) el.style.maxHeight = next
+    }
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(apply) }
+    apply()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    // the head wrapping to two lines moves the box down; so does a column
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null
+    if (ro && el.parentElement) ro.observe(el.parentElement)
+    return () => {
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      ro?.disconnect()
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [enabled])
+  return ref
+}
+
 export default function SortableTable({
   columns, rows, defaultSort, rowKey, onRowClick, selectedKey, className = '',
   checkable, checkedKeys, onCheck, childrenOf, rowClass, wrapClass = '', groupBy,
-  prefsKey,
+  prefsKey, topRows, defaultHidden, onRowHover, fitViewport, tools,
 }) {
+  const wrapRef = useFitViewport(fitViewport)
   const [sort, setSort] = useState(defaultSort || null) // {key, dir: 'asc'|'desc'}
   const [prefs, setPrefs] = useState(() => loadPrefs(prefsKey))
   const [menuOpen, setMenuOpen] = useState(false)
@@ -63,6 +114,16 @@ export default function SortableTable({
   // each tab keeps its own layout, so switching tabs loads that tab's
   useEffect(() => { setPrefs(loadPrefs(prefsKey)); setMenuOpen(false) }, [prefsKey])
 
+  // sibling tables on the same prefsKey follow this one's layout changes
+  useEffect(() => {
+    if (!prefsKey) return
+    const onChange = () => setPrefs(loadPrefs(prefsKey))
+    let set = prefsListeners.get(prefsKey)
+    if (!set) prefsListeners.set(prefsKey, set = new Set())
+    set.add(onChange)
+    return () => { set.delete(onChange); if (!set.size) prefsListeners.delete(prefsKey) }
+  }, [prefsKey])
+
   useEffect(() => {
     if (!menuOpen) return
     const away = (e) => { if (!toolsRef.current?.contains(e.target)) setMenuOpen(false) }
@@ -70,7 +131,11 @@ export default function SortableTable({
     return () => document.removeEventListener('mousedown', away)
   }, [menuOpen])
 
-  const write = (next) => { setPrefs(next); savePrefs(prefsKey, next) }
+  const write = (next) => {
+    setPrefs(next)
+    savePrefs(prefsKey, next)
+    for (const fn of prefsListeners.get(prefsKey) || []) fn()
+  }
 
   /* Stored order is a list of keys, not indexes: a column the caller adds
      later (or one that only exists on some tabs) has no entry and keeps its
@@ -84,7 +149,11 @@ export default function SortableTable({
       .map((x) => x.c)
   }, [columns, prefs.order])
 
-  const hidden = useMemo(() => new Set(prefs.hidden || []), [prefs.hidden])
+  /* defaultHidden is the caller's starting layout (a comparison table hiding
+     Share and ToHit); any stored prefs — even an empty list — override it. */
+  const hidden = useMemo(
+    () => new Set(prefs.hidden ?? defaultHidden ?? []),
+    [prefs.hidden, defaultHidden])
   const shown = useMemo(
     () => [...columns.filter((c) => c.fixed), ...movable.filter((c) => !hidden.has(c.key))],
     [columns, movable, hidden])
@@ -128,8 +197,11 @@ export default function SortableTable({
     })
   }, [rows, active, cols])
 
+  /* topRows are pinned above the sorted body (the ACT "All" line): sorting
+     never moves them and grouping never claims them. */
   const expanded = useMemo(
-    () => sorted.flatMap((r) => [r, ...(childrenOf?.(r) || [])]), [sorted, childrenOf])
+    () => [...(topRows || []), ...sorted.flatMap((r) => [r, ...(childrenOf?.(r) || [])])],
+    [sorted, childrenOf, topRows])
 
   /* A heading only means something while the table is ordered by the thing it
      groups on; sorted by DPS, the same date would head half the rows. */
@@ -155,8 +227,14 @@ export default function SortableTable({
 
   return (
     <>
-      {prefsKey && (
+      {(prefsKey || tools) && (
+        /* The table's own line: whatever the caller puts in front of the table
+           (filters, switches) shares it with Columns rather than spending a
+           row of its own above it. */
         <div className="tabletools" ref={toolsRef}>
+          {tools}
+          {prefsKey && (
+          <>
           <button
             className={`chip ${menuOpen ? 'on' : ''}`}
             onClick={() => setMenuOpen((v) => !v)}
@@ -172,7 +250,7 @@ export default function SortableTable({
                 <button
                   className="chip"
                   onClick={() => write({})}
-                  disabled={!prefs.order?.length && !prefs.hidden?.length}
+                  disabled={!Object.keys(prefs).length}
                 >Reset</button>
               </div>
               {movable.map((c) => (
@@ -187,9 +265,11 @@ export default function SortableTable({
               ))}
             </div>
           )}
+          </>
+          )}
         </div>
       )}
-      <div className={`tablewrap ${wrapClass}`}>
+      <div className={`tablewrap ${wrapClass}`} ref={wrapRef}>
       <table className={`data ${className}`}>
         <thead>
           <tr>
@@ -238,6 +318,8 @@ export default function SortableTable({
                 <tr
                   className={`${onRowClick ? 'clickable' : ''} ${k === selectedKey ? 'selected' : ''} ${rowClass?.(r) || ''}`}
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
+                  onMouseEnter={onRowHover ? () => onRowHover(r) : undefined}
+                  onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
                 >
                   {checkable && (
                     <td className="checkcol" onClick={(e) => e.stopPropagation()}>
@@ -256,6 +338,7 @@ export default function SortableTable({
                       key={c.key}
                       className={`${c.align === 'l' ? 'l ' : c.align === 'c' ? 'c ' : ''}${(!r.__sub && c.cellClass?.(r)) || ''}`}
                       style={(!r.__sub && c.cellStyle?.(r)) || undefined}
+                      title={(!r.__sub && c.cellTitle?.(r)) || undefined}
                     >
                       {c.render ? c.render(r) : c.format ? c.format(r[c.key]) : r[c.key]}
                     </td>

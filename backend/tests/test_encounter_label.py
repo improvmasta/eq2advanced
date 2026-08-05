@@ -62,6 +62,23 @@ def log() -> str:
         swing(606, "Treah Greenroot", 400),
         line(610, "a knotted guardian has killed Bobby."),
     ]
+    # 5. a proc pet wanders into the boss and is one-shot. Nobody pulled
+    #    anything: ACT titles this stub "Encounter", not the boss
+    out += [
+        line(800, "Tragedy's unswerving hammer hits Farstride Unicorn "
+                  "for 582 crushing damage."),
+        line(802, "Farstride Unicorn hits Tragedy's unswerving hammer "
+                  "for 36368 magic damage."),
+    ]
+    # 6. the last pull's DoT still ticking on people before the next one
+    out += [line(1000, "Galiel Spirithoof hits Aros for 16320 disease damage.")]
+    # 7. the wipe with no swing in it: the boss AoEs the raid down first
+    out += [
+        line(1200, "Treah Greenroot hits Aros for 9000 disease damage."),
+        line(1200, "Treah Greenroot hits Tylendel for 9400 disease damage."),
+        line(1202, "Treah Greenroot has killed Aros."),
+        line(1202, "Treah Greenroot has killed Tylendel."),
+    ]
     return "".join(out)
 
 
@@ -112,6 +129,9 @@ def test_every_fight_is_named_after_its_enemy(encs):
         "Galiel Spirithoof",        # the kill
         "a living totem",
         "a knotted guardian",       # the add out-damaged Treah
+        "Farstride Unicorn",        # the proc-pet stub
+        "Galiel Spirithoof",        # the leftover DoT tick
+        "Treah Greenroot",          # the AoE wipe
     ]
 
 
@@ -131,9 +151,27 @@ def test_trash_carries_a_real_success_too(encs):
     assert guardian["success"] == 0       # the raid wiped on it
 
 
+def test_a_stub_is_not_a_fight(encs):
+    """The silence rule cuts segments the raid never fought. A proc pet dying to
+    the boss and a DoT ticking after the last pull are not attempts, and must
+    not read as clean ones: `success` NULL renders exactly like a kill, which is
+    how three non-fights sat in Lindsay's Emerald Halls list looking successful.
+    ACT titles both of these "Encounter"; we keep the name and drop the claim."""
+    pet_stub, dot_stub = encs["encounters"][4], encs["encounters"][5]
+    assert pet_stub["is_named"] == 0 and pet_stub["success"] is None
+    assert dot_stub["is_named"] == 0 and dot_stub["success"] is None
+
+
+def test_a_wipe_with_no_swing_in_it_is_still_a_wipe(encs):
+    """The exception to the rule above: the raid dealt no damage because it was
+    dead in two seconds. Dead raiders say they were there and lost."""
+    aoe = encs["encounters"][6]
+    assert aoe["is_named"] == 1 and aoe["success"] == 0
+
+
 def test_run_counts_attempts_not_just_kills(encs):
     """The tautology this replaces: named_count used to equal success_count by
     construction, so a run could only ever read N/N."""
     run = encs["run"]
-    assert run["named_count"] == 2        # two Galiel pulls
+    assert run["named_count"] == 3        # two Galiel pulls + the Treah wipe
     assert run["success_count"] == 1      # one of them died

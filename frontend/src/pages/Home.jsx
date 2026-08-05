@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import RaidCompare from '../components/RaidCompare.jsx'
-import RaidParseCompare from '../components/RaidParseCompare.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import SortableTable from '../components/SortableTable.jsx'
 import SourceFilter from '../components/SourceFilter.jsx'
 import Sparkline from '../components/Sparkline.jsx'
 import { api, fmt } from '../lib/api.js'
+import { RAID_MIN_RAIDERS, isRaid } from '../lib/raids.js'
 
 /* Landing page: every zone run as a row in one sortable table. Files are an
    ingest detail — the raid nights themselves are the navigation, and they read
@@ -20,16 +20,7 @@ import { api, fmt } from '../lib/api.js'
 
 const DAY_MS = 86_400_000
 
-/* A group is six, so seven raiders means the night was a raid, and two to six
-   is group content — a different kind of evening, not a worse one. `raider_count`
-   is the run's ROSTER, not everyone the log overheard — the backend
-   (pipeline/zoneruns.py) drops mobs, bystanders who only ever got hit, and the
-   group that fought past you, all of which used to push a six-man run over
-   this line. */
-const RAID_MIN_RAIDERS = 7
 const SIZE_KEY = 'eq2advanced-run-size'
-
-const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
 
 /* How much of a night a parse holds — the same order the backend ranks them in
    (`raidmatch._score`), so the row you land on is the one the site would have
@@ -92,7 +83,6 @@ export default function Home({ user }) {
      the true thing in both directions with nothing to cross-reference. */
   const [sources, setSources] = useState(() => new Set())
   const [myGroups, setMyGroups] = useState([])
-  const [parseCmp, setParseCmp] = useState(false) // the parse comparison modal
   /* Which parse of a shared night to show, per raid — {raid_key: run id}, and
      only where the reader has said. Everything else follows the precedence in
      `chooseParse`. */
@@ -236,12 +226,6 @@ export default function Home({ user }) {
   // read-only, so it never arms those buttons
   const editable = useMemo(() => pickedRuns.filter((r) => r.mine), [pickedRuns])
 
-  // unchecking down to one raid ends the comparison rather than leaving the
-  // modal armed to reappear the next time a second one is checked
-  useEffect(() => {
-    if (pickedRuns.length < 2) setParseCmp(false)
-  }, [pickedRuns.length])
-
   useEffect(() => {
     setPicked((s) => {
       const ids = new Set(visible.map((r) => r.id))
@@ -320,6 +304,11 @@ export default function Home({ user }) {
         <span className="runzone">
           {r.zone || 'Unknown zone'}
           {r.merged && <span className="badge" title="Merged by hand">merged</span>}
+          {r.guild && (
+            <span className="badge guild" title="Majority guild of the roster, from Census">
+              {r.guild}
+            </span>
+          )}
         </span>
       ),
       sortValue: (r) => r.zone || '',
@@ -436,7 +425,18 @@ export default function Home({ user }) {
     <>
       <div className="pagehead">
         <h1>Raid Parses</h1>
-        {!user && <span className="sub">Sign in to parse your own logs</span>}
+        {/* Signed out, the subtitle is the pitch: what signing in gets you, and
+            the three things people ask before they do it. */}
+        {!user && (
+          <span className="sub">
+            Sign in to parse your own logs
+            <span className="pitch">
+              All data private unless shared by owner. No Discord or email
+              address required for sign-up. ACT plugin available for automatic
+              uploads.
+            </span>
+          </span>
+        )}
         <span className="actions">
           {user
             ? <Link className="btnlink" to="/import">Import a log</Link>
@@ -602,10 +602,6 @@ export default function Home({ user }) {
         </p>
       )}
 
-      {parseCmp && pickedRuns.length >= 2 && (
-        <RaidParseCompare runs={pickedRuns} onClose={() => setParseCmp(false)} />
-      )}
-
       {/* Checking a second raid opens the head-to-head beside the list, the way
           checking a second raider does on the raid page — and the list gives up
           its softer columns to make room rather than scrolling sideways. */}
@@ -678,10 +674,13 @@ export default function Home({ user }) {
         {comparing && (
           // the column is only as wide as the raids in it — a two-raid table
           // has no business spanning half the screen
-          <div className="cmpcol" style={{ maxWidth: Math.min(180 + pickedRuns.length * 150, 620) }}>
+          <div className="panelcol" style={{ maxWidth: Math.min(180 + pickedRuns.length * 150, 620) }}>
             <RaidCompare
               runs={pickedRuns}
-              onCompareParses={() => setParseCmp(true)}
+              // the deep comparison is a page now, so it's shareable and can
+              // grow player columns — the checked raids seed its columns
+              onCompareParses={() => navigate(
+                `/compare?c=${pickedRuns.map((r) => `${r.id}:all:raid`).join(',')}`)}
               onRemove={(id) => setPicked((s) => {
                 const next = new Set(s)
                 next.delete(id)

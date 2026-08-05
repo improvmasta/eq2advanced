@@ -9,7 +9,16 @@ the whole privacy model of the site and it needs to be readable in one place:
       * its character auto-shares with a group you are in AND this run has not
         been hidden from that group AND, for a new-raids-only share, the run
         started after the share was enabled (`since_ts`), or
+      * its uploader connected the guild tag their character wears to a group
+        you are in, under the same window/size/hide conditions, or
       * an admin has published it to everyone (`public_runs`).
+
+The last two are the STANDING branches, and they are the same rule matched on
+two different things: one names a character, the other names a guild tag so a
+new alt is covered the day it is uploaded from. Both are the uploader's own
+decision about their own logs — a guild share is matched on the UPLOADER's
+character's Census guild, never on the run's majority-vote `guild` tag, and it
+is not a power a group's owner has over anybody's raids.
 
 Every one of these is decided ON THE SITE, by someone signed in. The ACT
 uploader deliberately has no say in it: a device token sends logs and nothing
@@ -61,16 +70,42 @@ def LIVE_GROUP(col: str) -> str:
     return f"EXISTS (SELECT 1 FROM groups lg WHERE lg.id = {col} AND lg.deleted_ts IS NULL)"
 
 
-# What an auto-share reaches: a live group, inside its since_ts window, of the
-# right size, and not pulled back out for this one run. Written once, used by
-# all four query sites — divergence here is a silent leak or a silent hiding.
-AUTO_SHARE_REACHES = f"""
-    {LIVE_GROUP('cs.group_id')}
-    AND (cs.since_ts IS NULL OR z.started_ts >= cs.since_ts)
-    AND (cs.raids_only = 0 OR COALESCE(z.raider_count, 0) >= {RAID_MIN_RAIDERS})
+# What a STANDING share reaches: a live group, inside its since_ts window, of
+# the right size, and not pulled back out for this one run. Written once and
+# aliased per branch, because the two standing branches (a character's
+# auto-share, a user's guild tag) differ only in what they match ON — letting
+# the reach conditions drift apart would make one of them leak or hide silently.
+# Used by all four query sites; see the module docstring for what those are.
+def _SHARE_REACHES(alias: str) -> str:
+    return f"""
+    {LIVE_GROUP(f'{alias}.group_id')}
+    AND ({alias}.since_ts IS NULL OR z.started_ts >= {alias}.since_ts)
+    AND ({alias}.raids_only = 0 OR COALESCE(z.raider_count, 0) >= {RAID_MIN_RAIDERS})
     AND NOT EXISTS (SELECT 1 FROM run_shares h WHERE h.zone_run_id = z.id
-                      AND h.group_id = cs.group_id AND h.mode = 'hide')
+                      AND h.group_id = {alias}.group_id AND h.mode = 'hide')
 """
+
+
+AUTO_SHARE_REACHES = _SHARE_REACHES("cs")
+GUILD_SHARE_REACHES = _SHARE_REACHES("gs")
+
+# What a guild share matches on: the UPLOADER's character, resolved by NAME in
+# the Census cache. Never the run's `guild` tag — that is a majority vote of the
+# whole roster, a derived property of the night, and sharing is a decision a
+# person makes about their OWN uploads. `guild_checked = 1` is the only state
+# that matches, for the same reason the raid tag only counts 1s: 0 means nobody
+# ever asked, and a share must not fire (or miss) on the strength of a backfill
+# that hasn't run yet.
+GUILD_SHARE_OWNER_MATCH = """
+    JOIN characters oc ON oc.id = z.character_id
+    JOIN guild_shares gs ON gs.user_id = oc.user_id
+    JOIN roster_classes rc ON rc.name_lower = lower(oc.name)
+         AND rc.world_id = oc.world_id AND rc.guild_checked = 1
+         AND rc.guild_name = gs.guild_name COLLATE NOCASE
+"""
+# The COLLATE NOCASE on the comparison is REQUIRED and not decoration: SQLite
+# takes the collation of the LEFT operand, `rc.guild_name` is BINARY, and the
+# NOCASE declared on the guild_shares column would never get a say.
 
 PERSONAL_RUN_IDS = f"""
     SELECT z.id FROM zone_runs z JOIN characters c ON c.id = z.character_id
@@ -84,6 +119,11 @@ PERSONAL_RUN_IDS = f"""
       JOIN character_shares cs ON cs.character_id = z.character_id
       JOIN group_members m ON m.group_id = cs.group_id AND m.user_id = :uid
       WHERE {AUTO_SHARE_REACHES}
+    UNION
+    SELECT z.id FROM zone_runs z
+      {GUILD_SHARE_OWNER_MATCH}
+      JOIN group_members m ON m.group_id = gs.group_id AND m.user_id = :uid
+      WHERE {GUILD_SHARE_REACHES}
 """
 
 # One SELECT of run ids: the whole predicate. Derived from PERSONAL_RUN_IDS
@@ -195,6 +235,8 @@ def deleted_groups(conn) -> list[dict]:
         "(SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS member_count, "
         "(SELECT COUNT(*) FROM character_shares cs WHERE cs.group_id = g.id) "
         "  AS auto_share_count, "
+        "(SELECT COUNT(*) FROM guild_shares gs WHERE gs.group_id = g.id) "
+        "  AS guild_share_count, "
         "(SELECT COUNT(*) FROM run_shares rs WHERE rs.group_id = g.id AND rs.mode='share') "
         "  AS run_share_count "
         "FROM groups g LEFT JOIN users u ON u.id = g.owner_user_id "
@@ -203,8 +245,15 @@ def deleted_groups(conn) -> list[dict]:
 
 def shares_for_runs(conn, run_ids: list[int]) -> dict[int, list[dict]]:
     """{run_id: [{group_id, name, mode, auto}]} — what each run is shared with,
-    for the owner's share control. `auto` marks a share that comes from the
-    character's auto-share rather than a decision about this run."""
+    for the owner's share control. `auto` marks a share that comes from a
+    STANDING rule (the character's auto-share, or a connected guild tag) rather
+    than a decision about this run.
+
+    Every standing branch has to be reported here, not just counted at read
+    time: ShareDialog seeds its save set from this GET, so a group that reaches
+    the run but goes unmentioned is dropped from the next save — and
+    `set_run_shares` then writes a `hide` for it, silently unsharing the run on
+    an edit about something else entirely."""
     if not run_ids:
         return {}
     ph = ",".join("?" * len(run_ids))
@@ -226,14 +275,24 @@ def shares_for_runs(conn, run_ids: list[int]) -> dict[int, list[dict]]:
         if (r["run_id"], r["group_id"]) not in seen:
             out[r["run_id"]].append({"group_id": r["group_id"], "name": r["name"],
                                      "mode": "share", "auto": True})
+            seen.add((r["run_id"], r["group_id"]))
+    for r in conn.execute(
+            f"SELECT z.id AS run_id, gs.group_id, g.name FROM zone_runs z "
+            f"{GUILD_SHARE_OWNER_MATCH} "
+            f"JOIN groups g ON g.id = gs.group_id "
+            f"WHERE z.id IN ({ph}) AND {GUILD_SHARE_REACHES}", run_ids):
+        if (r["run_id"], r["group_id"]) not in seen:
+            out[r["run_id"]].append({"group_id": r["group_id"], "name": r["name"],
+                                     "mode": "share", "auto": True})
+            seen.add((r["run_id"], r["group_id"]))
     return out
 
 
 def shared_via_for_runs(conn, user_id: int, run_ids: list[int]) -> dict[int, list[dict]]:
     """{run_id: [{group_id, name}]} — which of YOUR groups bring you somebody
-    else's raid. The viewer's mirror of `shares_for_runs`: same three-way rule
-    (run share, or standing auto-share inside its since_ts window and not
-    hidden), but answering "why can I see this" instead of "who can see mine".
+    else's raid. The viewer's mirror of `shares_for_runs`: the same rule (a run
+    share, or either standing share inside its since_ts window and not hidden),
+    but answering "why can I see this" instead of "who can see mine".
     Carries the id, not just the name, because the list filters by group."""
     if not user_id or not run_ids:
         return {}
@@ -250,8 +309,14 @@ def shared_via_for_runs(conn, user_id: int, run_ids: list[int]) -> dict[int, lis
             f"JOIN group_members m ON m.group_id = cs.group_id AND m.user_id = ? "
             f"JOIN groups g ON g.id = cs.group_id "
             f"WHERE z.id IN ({ph}) AND {AUTO_SHARE_REACHES} "
+            f"UNION "
+            f"SELECT z.id AS run_id, g.id AS group_id, g.name FROM zone_runs z "
+            f"{GUILD_SHARE_OWNER_MATCH} "
+            f"JOIN group_members m ON m.group_id = gs.group_id AND m.user_id = ? "
+            f"JOIN groups g ON g.id = gs.group_id "
+            f"WHERE z.id IN ({ph}) AND {GUILD_SHARE_REACHES} "
             f"ORDER BY 3",
-            [user_id, *run_ids, user_id, *run_ids]):
+            [user_id, *run_ids, user_id, *run_ids, user_id, *run_ids]):
         out.setdefault(r["run_id"], []).append(
             {"group_id": r["group_id"], "name": r["name"]})
     return out
@@ -298,6 +363,44 @@ def set_character_auto_shares(conn, character_id: int, owner_user_id: int,
             "INSERT INTO character_shares "
             "(character_id, group_id, created_ts, since_ts, raids_only) "
             "VALUES (?,?,?,?,?)", (character_id, gid, created, since, raids_only))
+
+
+def guild_shares_for_user(conn, user_id: int) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        "SELECT group_id, guild_name, created_ts, since_ts, raids_only "
+        "FROM guild_shares WHERE user_id=? ORDER BY guild_name", (user_id,))]
+
+
+def set_guild_shares(conn, user_id: int, group_id: int,
+                     shares: dict[str, dict]) -> None:
+    """Replace this user's guild-tag shares INTO ONE GROUP. `shares` maps a
+    guild name to {history, group_content}, read exactly as
+    `set_character_auto_shares` reads them.
+
+    Scoped to the one group on purpose: the editing surface is a group's page,
+    and rewriting every group from there would let a save about one guild drop a
+    rule the user set somewhere else.
+
+    `since_ts` is pinned to when this tag was FIRST connected here, and `prev`
+    is keyed by the LOWERCASED name so re-saving the tag as Census now spells it
+    keeps the pin instead of silently withholding the back catalogue again."""
+    now = int(time.time())
+    prev = {r["guild_name"].lower(): r for r in conn.execute(
+        "SELECT guild_name, created_ts, since_ts FROM guild_shares "
+        "WHERE user_id=? AND group_id=?", (user_id, group_id))}
+    conn.execute("DELETE FROM guild_shares WHERE user_id=? AND group_id=?",
+                 (user_id, group_id))
+    for name in sorted(shares):
+        old = prev.get(name.lower())
+        created = old["created_ts"] if old else now
+        opts = shares[name]
+        since = None if opts.get("history", True) else created
+        raids_only = 0 if opts.get("group_content") else 1
+        conn.execute(
+            "INSERT INTO guild_shares "
+            "(user_id, group_id, guild_name, created_ts, since_ts, raids_only) "
+            "VALUES (?,?,?,?,?,?)",
+            (user_id, group_id, name, created, since, raids_only))
 
 
 def carry_shares(conn, merged_into: dict[int, int]) -> None:

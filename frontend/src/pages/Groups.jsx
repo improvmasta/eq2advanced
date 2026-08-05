@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import AutoShare from '../components/AutoShare.jsx'
+import AutoShare, { GuildShare } from '../components/AutoShare.jsx'
 import { api, fmt } from '../lib/api.js'
 
 /* The Sharing page: who sees your raids, in two sections.
@@ -25,6 +25,11 @@ export default function Groups() {
   const wanted = Number(params.get('g')) || null
   const [data, setData] = useState(null)
   const [chars, setChars] = useState(null)
+  // the guild half of automatic sharing: which tags my characters wear, who
+  // wears them, and what I've already connected — one request answers all three
+  const [guilds, setGuilds] = useState(null)
+  const [gbusy, setGbusy] = useState(false)
+  const [gerror, setGerror] = useState(null)
   // fetched once, the first time a name is typed — not per keystroke
   const [pendingCode, setPendingCode] = useState(null)
   const [open, setOpen] = useState(null)        // group id showing in the detail pane
@@ -41,6 +46,9 @@ export default function Groups() {
 
   const refresh = useCallback(() => {
     api.characters().then((d) => setChars(d.characters)).catch(() => setChars([]))
+    // a failure here is an empty report, not a permanent "Loading…"
+    api.guildShares().then(setGuilds)
+       .catch(() => setGuilds({ guilds: [], characters: [], shares: [] }))
     // awaitable, so run() can hold `busy` until the new list is actually here
     return api.groups().then(setData).catch((e) => setError(e.message))
   }, [])
@@ -86,15 +94,35 @@ export default function Groups() {
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
+  /* A guild rule is stored per GROUP — the API takes the whole set of my tags
+     for one group — so editing one row rewrites that group's set and leaves my
+     rules for every other group alone. The response is the whole report, which
+     is what the section renders from. */
+  async function editGuildShares(groupId, updater) {
+    setGbusy(true); setGerror(null)
+    try {
+      const cur = (guilds?.shares || []).filter((s) => s.group_id === groupId)
+      const next = updater(cur).map((s) => ({ guild_name: s.guild_name,
+                                              history: !!s.history,
+                                              group_content: !!s.group_content }))
+      setGuilds(await api.setGroupGuildShares(groupId, next))
+    } catch (e) { setGerror(e.message) } finally { setGbusy(false) }
+  }
+
   const manage = detail && (detail.my_role === 'owner' || detail.my_role === 'admin')
   // changes exactly when the set of groups does, so the auto-share rows refetch
   const groupsKey = data?.groups?.map((g) => g.id).join(',') ?? ''
+  // characters Census hasn't been read for yet — not characters with no guild
+  const guildPending = guilds?.characters?.filter((c) => !c.guild_checked).length ?? 0
 
   return (
     <div className="manage">
       <div className="pagehead">
         <h1>Sharing</h1>
-        <span className="sub">Who sees your raids — set it once per character, or per raid from its Share control</span>
+        <span className="sub">
+          Create or join groups to share parses with. Uploads can be
+          automatically shared with groups by character or guild tag.
+        </span>
       </div>
 
       {error && <p className="err">{error}</p>}
@@ -120,29 +148,15 @@ export default function Groups() {
         </div>
       )}
 
-      <div className="card">
-        <h2>Automatic sharing</h2>
-        <p className="note">
-          Raids these characters record go to the switched-on groups.
-        </p>
-        {chars === null && <p className="muted">Loading…</p>}
-        {chars?.length === 0 && (
-          <p className="muted">No characters yet — they appear when you import a log.</p>
-        )}
-        {chars?.map((c) => (
-          <div key={c.id} className="autochar">
-            <div className="who">
-              <span className="cardtitle">{c.name}</span>
-              {c.class && <div className="muted">{c.class} {c.level ?? ''}</div>}
-            </div>
-            <AutoShare char={c} refreshKey={groupsKey} />
-          </div>
-        ))}
-      </div>
-
+      {/* Two decisions, side by side: which groups exist (left, the wider of
+          the two — it carries a master–detail) and what feeds them without
+          being asked (right). Stacked, the standing rules pushed the groups
+          they point at off the bottom of the screen. */}
+      <div className="sharegrid">
       <div className="card">
         <h2>Groups</h2>
 
+        <h3 className="cardsec">Create or join</h3>
         <div className="toolrow">
           <input type="text" placeholder="New group name" value={name}
                  onChange={(e) => setName(e.target.value)} />
@@ -174,7 +188,7 @@ export default function Groups() {
         {name.trim() && pendingCode && (
           <div className="inviterow">
             <span className="muted">Join code</span>
-            <span className="joincode">{pendingCode}</span>
+            <code className="joincode">{pendingCode}</code>
             <button className="chip" type="button"
                     onClick={() => {
                       navigator.clipboard?.writeText(inviteUrl(data?.invite_base, pendingCode))
@@ -221,12 +235,12 @@ export default function Groups() {
                   {detail.description && <p className="note">{detail.description}</p>}
 
                   <h3>Members</h3>
-                  <table className="data" style={{ maxWidth: 560 }}>
+                  <table className="data memberlist">
                     <thead>
                       <tr>
                         <th className="l">Name</th>
                         <th className="l">Role</th>
-                        <th>Joined</th>
+                        <th className="l">Joined</th>
                         <th />
                       </tr>
                     </thead>
@@ -235,7 +249,7 @@ export default function Groups() {
                         <tr key={m.user_id}>
                           <td className="name l">{m.username}</td>
                           <td className="l muted">{m.role}</td>
-                          <td>{fmt.date(m.joined_ts)}</td>
+                          <td className="l">{fmt.date(m.joined_ts)}</td>
                           <td className="rowactions">
                             {detail.my_role === 'owner' && m.user_id !== detail.owner_user_id && (
                               <button className="chip" disabled={busy}
@@ -263,59 +277,55 @@ export default function Groups() {
                         <tr key={`inv-${i.id}`}>
                           <td className="name l muted">{i.username}</td>
                           <td className="l muted">invited — waiting</td>
-                          <td className="muted">{fmt.date(i.created_ts)}</td>
+                          <td className="l muted">{fmt.date(i.created_ts)}</td>
                           <td />
                         </tr>
                       ))}
                     </tbody>
                   </table>
 
-                  {/* Inviting is one line: the code (for voice chat), the link
-                      (for Discord — same code, one thing to rotate, works for
-                      someone with no account yet), and the rarely-used code
-                      controls as quiet chips after it. */}
+                  {/* Inviting is a footnote to the member list, not a section
+                      beside it: one quiet strip under the table carrying the
+                      code (for voice chat, and the same code the link
+                      carries — one thing to rotate, works for someone with no
+                      account yet) and an invite addressed to a username. */}
                   {detail.join_code !== undefined && (
-                    <>
-                      <h3>Invite people</h3>
+                    <div className="invitebox">
+                      <span className="lbl">Invite people</span>
                       {detail.join_code ? (
-                        <div className="inviterow">
-                          <span className="muted">Join code</span>
-                          <span className="joincode">{detail.join_code}</span>
-                          <button className="chip" disabled={busy}
+                        <span className="inviteacts">
+                          <code className="joincode">{detail.join_code}</code>
+                          <button disabled={busy}
                                   onClick={() => {
                                     navigator.clipboard?.writeText(inviteUrl(data?.invite_base, detail.join_code))
                                     setMsg('Invite link copied.')
                                   }}>
-                            Copy invite link
+                            Copy link
                           </button>
-                          <span className="quietacts">
-                            <button className="linklike muted" disabled={busy}
-                                    onClick={() => run(() => api.rotateJoinCode(detail.id, { enabled: true }),
-                                                       'New code set — the old one no longer works.')}>
-                              new code
-                            </button>
-                            ·
-                            <button className="linklike muted" disabled={busy}
-                                    onClick={() => run(() => api.rotateJoinCode(detail.id, { enabled: false }),
-                                                       'Code joining is off.')}>
-                              turn off
-                            </button>
-                          </span>
-                        </div>
+                          <button disabled={busy}
+                                  onClick={() => run(() => api.rotateJoinCode(detail.id, { enabled: true }),
+                                                     'New code set — the old one no longer works.')}>
+                            New code
+                          </button>
+                          <button disabled={busy}
+                                  onClick={() => run(() => api.rotateJoinCode(detail.id, { enabled: false }),
+                                                     'Code joining is off.')}>
+                            Turn off
+                          </button>
+                        </span>
                       ) : (
-                        <div className="inviterow">
-                          <span className="muted">Code joining is off.</span>
-                          <button className="chip" disabled={busy}
+                        <span className="inviteacts">
+                          <span className="muted">Code joining is off</span>
+                          <button disabled={busy}
                                   onClick={() => run(() => api.rotateJoinCode(detail.id, { enabled: true }),
                                                      'Code joining is on.')}>
                             Turn on
                           </button>
-                        </div>
+                        </span>
                       )}
                       {manage && (
-                        <div className="inviterow">
-                          <span className="muted">or directly:</span>
-                          <input type="text" placeholder="Username" value={invitee} style={{ width: 160 }}
+                        <span className="inviteacts byname">
+                          <input type="text" placeholder="Username" value={invitee}
                                  autoCapitalize="none" onChange={(e) => setInvitee(e.target.value)} />
                           <button disabled={busy || !invitee.trim()}
                                   onClick={() => run(async () => {
@@ -324,12 +334,12 @@ export default function Groups() {
                                   }, 'Invitation sent.')}>
                             Invite
                           </button>
-                        </div>
+                        </span>
                       )}
-                    </>
+                    </div>
                   )}
 
-                  <div className="row" style={{ gap: 8, marginTop: 16 }}>
+                  <div className="row panefoot">
                     {detail.my_role === 'owner' ? (
                       /* Deleting takes every raid that reached this group away
                          from everyone in it, and the button sits under their
@@ -381,6 +391,75 @@ export default function Groups() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Two standing rules, one ruled table each: by the character that
+          recorded the raid, and by the guild tag that character wears. Same
+          rows, same two choices — the only difference is what the left column
+          names, so they are ruled alike rather than styled as two controls. */}
+      <div className="card">
+        <h2>Automatic sharing</h2>
+        <p className="note">Share parses automatically by character or guild tag.</p>
+
+        <section className="autosec">
+          <h3>Characters</h3>
+          {chars === null && <p className="muted">Loading…</p>}
+          {chars?.length === 0 && (
+            <p className="muted">No characters yet — they appear when you import a log.</p>
+          )}
+          {chars?.length > 0 && (
+            <div className="autotable">
+              <div className="autohead"><span>Character</span><span>Group</span></div>
+              {chars.map((c) => (
+                <div key={c.id} className="autochar">
+                  <div className="who">
+                    <span className="cardtitle">{c.name}</span>
+                    {c.class && <div className="muted">{c.class} {c.level ?? ''}</div>}
+                  </div>
+                  <AutoShare char={c} refreshKey={groupsKey} />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* A tag only appears once Census has been read for a character wearing
+            it: an unchecked character is not a guildless one, and offering a tag
+            we can't see would look broken rather than pending. */}
+        <section className="autosec">
+          <h3>Guilds</h3>
+          {guilds === null && <p className="muted">Loading…</p>}
+          {guilds?.guilds?.length === 0 && (
+            <p className="muted">
+              No guild tags yet — one appears here once a character of yours is
+              matched to a guild.
+              {guildPending > 0 && ` Still looking up ${guildPending} character${
+                guildPending === 1 ? '' : 's'}.`}
+            </p>
+          )}
+          {guilds?.guilds?.length > 0 && (
+            <div className="autotable">
+              <div className="autohead"><span>Guild tag</span><span>Group</span></div>
+              {guilds.guilds.map((name) => {
+                const worn = guilds.characters
+                  .filter((c) => c.guild_checked && c.guild_name === name)
+                  .map((c) => c.name)
+                return (
+                  <div key={name} className="autochar">
+                    <div className="who">
+                      <span className="cardtitle">{name}</span>
+                      <div className="muted">{worn.join(', ')}</div>
+                    </div>
+                    <GuildShare guildName={name} groups={data?.groups || []}
+                                shares={guilds.shares} busy={gbusy}
+                                onEdit={editGuildShares} error={gerror} />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
       </div>
     </div>
   )

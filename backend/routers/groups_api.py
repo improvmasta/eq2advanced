@@ -6,7 +6,8 @@ it gets read aloud in voice chat; a million codes is not much, so joining is
 failure-counted (`ratelimit`) and the owner can rotate it at any time.
 
 Membership is the only thing stored here. What each group can SEE is decided at
-read time from `character_shares` / `run_shares` — see `groups.py`.
+read time from `character_shares` / `guild_shares` / `run_shares` — see
+`groups.py`.
 """
 
 import time
@@ -284,6 +285,74 @@ def answer_invite(invite_id: int, decision: str, user=Depends(require_user)):
     return {"group_id": inv["group_id"], "status": decision}
 
 
+# ---- guild-tag sharing ----
+
+def _my_guild_characters(conn, user_id: int) -> list[dict]:
+    """The caller's characters with whatever Census knows of their guild.
+
+    `guild_checked` is carried through rather than flattened, because the UI has
+    to be able to say "we haven't asked yet" — a character Census has not been
+    read for is not a character with no guild, and connecting a tag it can't see
+    would look broken rather than pending."""
+    return [dict(r) for r in conn.execute(
+        "SELECT c.id, c.name, rc.guild_name, "
+        "COALESCE(rc.guild_checked, 0) AS guild_checked "
+        "FROM characters c "
+        "LEFT JOIN roster_classes rc ON rc.name_lower = lower(c.name) "
+        "     AND rc.world_id = c.world_id "
+        "WHERE c.user_id = ? ORDER BY c.name", (user_id,))]
+
+
+def _guild_share_report(conn, user_id: int) -> dict:
+    chars = _my_guild_characters(conn, user_id)
+    # only a checked row offers a tag: an unchecked one has nothing to offer,
+    # and the read-time predicate would not match it anyway
+    guilds = sorted({c["guild_name"] for c in chars
+                     if c["guild_checked"] and c["guild_name"]},
+                    key=str.lower)
+    shares = [{"group_id": s["group_id"], "guild_name": s["guild_name"],
+               "history": s["since_ts"] is None,
+               "group_content": not s["raids_only"]}
+              for s in g.guild_shares_for_user(conn, user_id)]
+    return {"guilds": guilds, "characters": chars, "shares": shares}
+
+
+@router.get("/guild-shares")
+def list_guild_shares(user=Depends(require_user)):
+    """Which guild tags I could connect, which characters wear them, and what I
+    have already connected — the whole picture in one request, because the
+    Sharing page draws all three together."""
+    return _guild_share_report(get_db(), user["id"])
+
+
+@router.put("/groups/{group_id}/guild-shares")
+def set_group_guild_shares(group_id: int, payload: dict = Body(...),
+                           user=Depends(require_user)):
+    """Connect my guild tags to this group. MEMBER-gated, not manage-gated: this
+    says "share MY uploads", the same trust level as a character's auto-share,
+    and it is never a power the group's owner holds over anyone else's raids.
+
+    A tag none of my resolved characters wear is a 422 rather than a stored
+    row — free text here would be a rule that silently never fires."""
+    conn = get_db()
+    _group(conn, group_id, user)
+    wanted = {}
+    for s in payload.get("shares") or []:
+        name = (s.get("guild_name") or "").strip()
+        if not name:
+            raise HTTPException(422, "guild_name is required")
+        wanted[name] = {"history": bool(s.get("history", True)),
+                        "group_content": bool(s.get("group_content"))}
+    mine = {c["guild_name"].lower() for c in _my_guild_characters(conn, user["id"])
+            if c["guild_checked"] and c["guild_name"]}
+    for name in wanted:
+        if name.lower() not in mine:
+            raise HTTPException(422, f"none of your characters are in {name}")
+    with conn:
+        g.set_guild_shares(conn, user["id"], group_id, wanted)
+    return _guild_share_report(conn, user["id"])
+
+
 # ---- leaving ----
 
 @router.post("/groups/{group_id}/leave")
@@ -297,11 +366,13 @@ def leave_group(group_id: int, user=Depends(require_user)):
     with conn:
         conn.execute("DELETE FROM group_members WHERE group_id=? AND user_id=?",
                      (group_id, user["id"]))
-        # my auto-shares into this group go too, or rejoining would silently
-        # reopen everything I had pointed at it
+        # my standing shares into this group go too — both kinds — or rejoining
+        # would silently reopen everything I had pointed at it
         conn.execute(
             "DELETE FROM character_shares WHERE group_id=? AND character_id IN "
             "(SELECT id FROM characters WHERE user_id=?)", (group_id, user["id"]))
+        conn.execute("DELETE FROM guild_shares WHERE group_id=? AND user_id=?",
+                     (group_id, user["id"]))
     return {"left": group_id}
 
 
@@ -320,6 +391,8 @@ def remove_member(group_id: int, member_id: int, user=Depends(require_user)):
         conn.execute(
             "DELETE FROM character_shares WHERE group_id=? AND character_id IN "
             "(SELECT id FROM characters WHERE user_id=?)", (group_id, member_id))
+        conn.execute("DELETE FROM guild_shares WHERE group_id=? AND user_id=?",
+                     (group_id, member_id))
     return {"removed": member_id}
 
 

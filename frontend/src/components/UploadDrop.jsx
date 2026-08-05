@@ -36,6 +36,7 @@ export default function UploadDrop({ onUploaded }) {
   function stage(files) {
     const list = Array.from(files || []).filter(Boolean)
     if (!list.length) return
+    setAskName('')   // a new batch is a new question; don't inherit the last answer
     setQueue(list.map((f) => ({
       file: f,
       name: f.name,
@@ -81,7 +82,12 @@ export default function UploadDrop({ onUploaded }) {
     setBusy(false)
   }
 
-  const needName = queue.some((q) => !q.character) && !askName.trim()
+  // Two separate questions. `asksName` is whether the prompt BELONGS on screen —
+  // it must not depend on what has been typed so far, or the input unmounts on
+  // the first keystroke and the name can never be longer than one letter.
+  // `needName` is only whether the answer is still missing.
+  const asksName = queue.some((q) => !q.character)
+  const needName = asksName && !askName.trim()
   const pending = queue.filter((q) => q.state === 'queued').length
   const done = queue.filter((q) => q.state === 'done').length
   const failed = queue.filter((q) => q.state === 'failed').length
@@ -106,7 +112,7 @@ export default function UploadDrop({ onUploaded }) {
           re-uploading a log you already sent is safe, only new lines are kept.
         </div>
         <input
-          ref={fileRef} type="file" accept=".txt,.log" multiple style={{ display: 'none' }}
+          ref={fileRef} type="file" accept=".txt,.log,.act" multiple style={{ display: 'none' }}
           onChange={(e) => { stage(e.target.files); e.target.value = '' }}
         />
       </div>
@@ -123,17 +129,18 @@ export default function UploadDrop({ onUploaded }) {
                 </button>
               )}
               {busy && <span className="muted">Uploading…</span>}
-              {!busy && <button className="chip" onClick={() => setQueue([])}>Clear</button>}
+              {!busy && <button className="chip" onClick={() => { setQueue([]); setAskName('') }}>Clear</button>}
             </span>
           </div>
 
-          {needName && (
+          {asksName && (
             <p className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
               <span className="muted">
                 Some files aren't named <code>eq2log_&lt;name&gt;.txt</code> — whose logs are they?
               </span>
-              <input type="text" placeholder="Character name" value={askName}
-                     onChange={(e) => setAskName(e.target.value)} />
+              <input type="text" placeholder="Character name" value={askName} autoFocus
+                     onChange={(e) => setAskName(e.target.value)}
+                     onKeyDown={(e) => { if (e.key === 'Enter' && !needName && !busy) send() }} />
             </p>
           )}
 

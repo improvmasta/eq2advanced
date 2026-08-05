@@ -21,11 +21,13 @@ from bisect import bisect_left
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import memo
+from census.roster import DEFAULT_WORLD
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
 from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
 from pipeline import aoes
-from pipeline.classguess import backfill_session, parse_class_guess
+from pipeline.classguess import (backfill_session, parse_class_guess, resolve_class,
+                                 strong_classes_here)
 from pipeline.statsroll import _melee_bucket
 from security import optional_user, visible_encounters
 
@@ -92,17 +94,89 @@ def _catalog_classes(conn) -> dict[str, str]:
         "SELECT ability_name, class FROM ability_catalog WHERE class IS NOT NULL")}
 
 
-def _class_fields(guess: dict | None) -> dict:
+def _class_fields(guess: dict | None, ts: int | None = None,
+                  strong_here: dict | None = None) -> dict:
     """The four class columns every actor row carries, from a parsed
     `entities.class_guess`. Archetype is NULL when the class is unknown —
     `archetype_for` defaults to "dps", which would read as a claim we never
-    made."""
+    made.
+
+    `ts` is when the fight happened, and it matters for the handful of names
+    that changed class: the row stores every era, and the raid gets the one
+    that was true on the night. Without it a six-week log would label its
+    Mistmoore's Inner Sanctum run with whichever class Zooey cast more of
+    across the whole file. `strong_here` is what THIS selection's abilities
+    say, which beats the clock when it is decisive — see `resolve_class`."""
+    guess = resolve_class(guess, ts, strong_here)
     if guess is None:
         return {"class": None, "class_confidence": None, "class_source": None,
                 "archetype": None}
-    cls = guess["class"]
+    cls = guess.get("class")
     return {"class": cls, "class_confidence": guess.get("confidence"),
-            "class_source": guess.get("source"), "archetype": archetype_for(cls)}
+            "class_source": guess.get("source"),
+            "archetype": archetype_for(cls) if cls else None}
+
+
+def _census_facts(conn, session_ids, names) -> dict:
+    """lowercase player name -> the rest of what Census already told us about
+    them: `level` and `guild`.
+
+    `census/roster.py` pays for a whole character doc to answer "what class",
+    and until now the class and the guild vote were the only things read back
+    out of it. The level is in the same cached row, so a raider in the
+    drilldown can read as a person — level 70 Paladin, Grit and Gelt — for one
+    indexed lookup and no request. Absent for anyone Census never resolved,
+    which is the honest answer rather than a zero.
+
+    The world comes from the sessions in the selection, so a name is answered
+    by the server the raid was on (`roster_classes` is keyed by both)."""
+    if not names:
+        return {}
+    sph = ",".join("?" * len(session_ids))
+    worlds = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT COALESCE(c.world_id, {DEFAULT_WORLD}) FROM sessions s "
+        f"LEFT JOIN characters c ON c.id = s.character_id WHERE s.id IN ({sph})",
+        list(session_ids))] or [DEFAULT_WORLD]
+    lowered = [n.lower() for n in names]
+    ph = ",".join("?" * len(lowered))
+    wph = ",".join("?" * len(worlds))
+    return {r["name_lower"]: {"level": r["level"], "guild": r["guild_name"]}
+            for r in conn.execute(
+                f"SELECT name_lower, level, guild_name FROM roster_classes "
+                f"WHERE found=1 AND world_id IN ({wph}) AND name_lower IN ({ph})",
+                worlds + lowered)}
+
+
+def _add_census_facts(conn, actors, session_ids) -> None:
+    """Hang `_census_facts` on the player rows, in place."""
+    players = [a["name"] for a in actors if a["kind"] == "player"]
+    facts = _census_facts(conn, session_ids, players)
+    for a in actors:
+        if a["kind"] != "player":
+            continue
+        f = facts.get(a["name"].lower()) or {}
+        a["level"] = f.get("level")
+        a["guild"] = f.get("guild")
+
+
+_STRONG_HERE_SQL = (
+    "SELECT DISTINCT e.name AS name, e.kind AS kind, ab.name AS ability "
+    "FROM encounter_ability_stats s "
+    "JOIN entities e ON e.id = s.entity_id "
+    "JOIN abilities ab ON ab.id = s.ability_id "
+    "WHERE e.kind='player' AND s.encounter_id IN ({ph})")
+
+
+def _strong_here(conn, enc_ids) -> dict:
+    """What the fights on screen prove about each raider's class, keyed the
+    same way the actor rows are. One extra indexed read per selection; it is
+    the difference between labelling a raid and labelling a career."""
+    from pipeline.classguess import _catalog
+    muted, cls_of = _catalog(conn)
+    ph = ",".join("?" * len(enc_ids))
+    rows = [(_ent_key(r["name"], r["kind"]), r["ability"])
+            for r in conn.execute(_STRONG_HERE_SQL.format(ph=ph), enc_ids)]
+    return strong_classes_here(rows, muted, cls_of)
 
 
 def _avg_delay(a: dict) -> float | None:
@@ -242,6 +316,10 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
         return _detail(conn, encs[0])
 
     duration = sum(max(e["duration_s"], 1) for e in encs)
+    # one clock for the whole selection's class lookup — a run is contiguous,
+    # so its first fight dates every row in it
+    when = min(e["started_ts"] for e in encs)
+    strong_here = _strong_here(conn, enc_ids)
     ent_key_of = _entity_keys(conn, session_ids)
 
     # ---- actors: sum counters by name+kind, recompute DPS over the summed clock ----
@@ -278,8 +356,9 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
         a["dps"] = round((a["damage"] or 0) / duration, 1)
         a["avg_delay_s"] = _avg_delay(a)
         a["avg_delay_adj_s"] = _avg_delay_adj(a)
-        a.update(_class_fields(best_guess.get(key)))
+        a.update(_class_fields(best_guess.get(key), when, strong_here.get(key)))
     actors = sorted(actor_sum.values(), key=lambda a: -(a["damage"] or 0))
+    _add_census_facts(conn, actors, session_ids)
     # the proc flag is answered per actor: an ability in their own spellbook
     # is theirs to press, whatever the catalog says about the name
     class_of = {a["key"]: a["class"] for a in actors}
@@ -737,6 +816,7 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
 
 def _detail(conn, enc) -> dict:
     ent_key_of = _entity_keys(conn, [enc["session_id"]])
+    strong_here = _strong_here(conn, [enc["id"]])
     actors = []
     for r in conn.execute(
             "SELECT a.*, e.name, e.kind, e.class_guess FROM encounter_actor_stats a "
@@ -748,8 +828,10 @@ def _detail(conn, enc) -> dict:
         a["entity_ids"] = [a["entity_id"]]
         a["avg_delay_s"] = _avg_delay(a)
         a["avg_delay_adj_s"] = _avg_delay_adj(a)
-        a.update(_class_fields(parse_class_guess(a.pop("class_guess", None))))
+        a.update(_class_fields(parse_class_guess(a.pop("class_guess", None)),
+                               enc["started_ts"], strong_here.get(a["key"])))
         actors.append(a)
+    _add_census_facts(conn, actors, [enc["session_id"]])
     pet_abilities = _pet_ability_names(conn)
     proc_abilities = _proc_ability_names(conn)
     ability_classes = _catalog_classes(conn)

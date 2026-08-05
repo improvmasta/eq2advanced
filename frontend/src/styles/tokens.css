@@ -53,8 +53,10 @@
   --fs-sm: 0.85rem;
   --fs-xs: 0.78rem;
   --fs-label: 0.66rem;    /* uppercase section heads + stat keys */
-  --fs-h1: 1.25rem;
-  --fs-h2: 0.72rem;
+  /* headings earn their place: the page title is a headline, section heads
+     read as labels but not squint-sized ones */
+  --fs-h1: 1.45rem;
+  --fs-h2: 0.78rem;
   --fs-figure: 1.05rem;   /* metric strip values */
 
   --radius-sm: 4px;

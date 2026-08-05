@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 21
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS zone_runs (
   combat_s INTEGER NOT NULL DEFAULT 0,
   raider_count INTEGER,                   -- the roster's size (pipeline/zoneruns)
   roster_json TEXT,                       -- the roster itself, sorted names
+  guild TEXT,                             -- majority guild of the roster, or NULL
+                                          -- when no majority holds (census/guilds.py)
   updated_ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_zone_runs_char ON zone_runs(character_id, started_ts);
@@ -190,6 +192,24 @@ CREATE TABLE IF NOT EXISTS pet_names (
   source TEXT NOT NULL,                   -- curated|observed
   owner_hint TEXT,                        -- an owner it was seen under
   first_seen_session INTEGER
+);
+-- Every raider's class, straight from Census, whether or not they have an
+-- account here. Inference reads a spellbook and guesses; this is the game
+-- answering. `found=0` is a real answer too — it is cached so a mob or a
+-- deleted name is not re-queried on every parse (census/roster.py).
+CREATE TABLE IF NOT EXISTS roster_classes (
+  name_lower TEXT NOT NULL,
+  world_id INTEGER NOT NULL,
+  name TEXT NOT NULL,                     -- as Census spells it
+  class TEXT,                             -- lowercase; NULL when not found
+  level INTEGER,
+  census_character_id INTEGER,
+  found INTEGER NOT NULL DEFAULT 0,
+  checked_ts INTEGER NOT NULL,
+  guild_name TEXT,                        -- NULL + guild_checked=1 means GUILDLESS
+  guild_id INTEGER,
+  guild_checked INTEGER NOT NULL DEFAULT 0,  -- 0 = never asked, so it abstains
+  PRIMARY KEY (name_lower, world_id)
 );
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY,
@@ -360,6 +380,19 @@ CREATE TABLE IF NOT EXISTS character_shares (
   since_ts INTEGER,       -- NULL = back catalogue included; else runs started >= this
   raids_only INTEGER NOT NULL DEFAULT 1,  -- 1 = raids (7+ raiders) only
   PRIMARY KEY (character_id, group_id)
+);
+-- A user's standing rule: uploads I own while this character-guild tag is on
+-- my uploader go to this group. Matched on the UPLOADER's character's guild
+-- (roster_classes, Census-derived), never the run's majority vote — sharing
+-- stays a per-user decision about their own uploads.
+CREATE TABLE IF NOT EXISTS guild_shares (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  group_id INTEGER NOT NULL REFERENCES groups(id),
+  guild_name TEXT NOT NULL COLLATE NOCASE,   -- as Census spells it
+  created_ts INTEGER NOT NULL,
+  since_ts INTEGER,       -- NULL = back catalogue included; else runs started >= this
+  raids_only INTEGER NOT NULL DEFAULT 1,  -- 1 = raids (7+ raiders) only
+  PRIMARY KEY (user_id, group_id, guild_name)
 );
 CREATE TABLE IF NOT EXISTS run_shares (
   zone_run_id INTEGER NOT NULL REFERENCES zone_runs(id),
@@ -730,6 +763,34 @@ def init_db() -> None:
         run_cols = {r[1] for r in conn.execute("PRAGMA table_info(zone_runs)")}
         if "roster_json" not in run_cols:
             conn.execute("ALTER TABLE zone_runs ADD COLUMN roster_json TEXT")
+        # v19: `roster_classes` — every raider's class from Census, not only the
+        # ones with an account here. Created by the CREATE TABLE IF NOT EXISTS
+        # above; it starts empty and fills in the background, and an empty
+        # table just means inference answers the way it did before.
+        # v20: a raid is tagged with the guild its roster mostly belongs to.
+        # `guild_checked` is the tri-state that keeps the vote honest: 0 means
+        # nobody ever asked (every pre-v20 row, and the backfill queue), 1 with
+        # a NULL `guild_name` means Census answered and the character is in no
+        # guild. Only a 1 gets a vote — treating "unknown" as "guildless" would
+        # put somebody else's guild on the raid, or strip a real one.
+        rc_cols = {r[1] for r in conn.execute("PRAGMA table_info(roster_classes)")}
+        for col, typ in (("guild_name", "TEXT"), ("guild_id", "INTEGER"),
+                         ("guild_checked", "INTEGER NOT NULL DEFAULT 0")):
+            if col not in rc_cols:
+                conn.execute(f"ALTER TABLE roster_classes ADD COLUMN {col} {typ}")
+        # and the tag itself. NULL means "no majority" as well as "not computed
+        # yet" — the two are the same to every reader, and retagging is pure SQL
+        # over cached rows, so every pass just recomputes the lot.
+        if "guild" not in run_cols:
+            conn.execute("ALTER TABLE zone_runs ADD COLUMN guild TEXT")
+        # v21: `guild_shares` — the second standing-share branch. A user connects
+        # one of their own guild tags to a group and their uploads carry it, so
+        # a new character needs no new rule. Created by the CREATE TABLE IF NOT
+        # EXISTS above and nothing else: it is a new table, not a column, and an
+        # empty one reads exactly like the pre-v21 behaviour. The match is on the
+        # UPLOADER's character's Census guild — never the run's majority-vote
+        # tag, which is a derived property of a raid and not a decision anybody
+        # made about their own logs.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

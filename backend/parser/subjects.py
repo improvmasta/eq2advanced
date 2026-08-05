@@ -111,10 +111,14 @@ def resolve_target(tgt: str, logger: str) -> str:
 
 
 def classify_entity_kind(name: str, unit: str, logger: str,
-                         known_mobs: frozenset[str] = frozenset()) -> str:
-    """Best-effort kind for an entity row. `known_mobs` carries the behavioral
-    refinement pass (pipeline.refine) — single-token capitalized names that
-    provably fought the raid ("Venekor") override the player default."""
+                         known_mobs: frozenset[str] = frozenset(),
+                         known_pets: frozenset[str] = frozenset()) -> str:
+    """Best-effort kind for an entity row. `known_mobs` and `known_pets` carry
+    the behavioral refinement passes (pipeline.refine) — single-token
+    capitalized names that provably fought the raid ("Venekor") or provably
+    cast a pet's kit ("Viber") override the player default. Both are needed
+    because that default is a guess EQ2's grammar forces: one capitalized token
+    is a raider, a boss or a dumbfire, and only behavior tells them apart."""
     if unit == "player":
         return "player"
     if unit in ("own_pet", "swarm_pet", "named_pet"):
@@ -123,6 +127,10 @@ def classify_entity_kind(name: str, unit: str, logger: str,
         return "mob"
     if name in known_mobs:
         return "mob"
+    # no owner possessive exists for these, so the row credits nobody — which
+    # is right: an unowned dumbfire is not a raider and not somebody's damage
+    if name in known_pets:
+        return "swarm_pet"
     if name == logger:
         return "own_pet"
     if " " in name:

@@ -47,7 +47,7 @@ export default function RaidCompare({ runs, onRemove, onCompareParses }) {
           hidden in a row of chips, so it leads — the summary below is what you
           read on the way to deciding you want the real numbers. */}
       <div className="cmpbar">
-        <button className="cmpparse" onClick={onCompareParses}
+        <button className="cmpparse solid" onClick={onCompareParses}
                 title="Damage, healing and deaths raider by raider, fight by fight">
           Compare parses
         </button>

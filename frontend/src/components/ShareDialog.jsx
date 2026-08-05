@@ -13,8 +13,10 @@ import { api } from '../lib/api.js'
    a mixed selection must not quietly share the raids that weren't shared, so
    only the boxes you actually clicked are applied to every raid.
 
-   A group ticked by the character's auto-share is labelled as such: unticking
-   it hides that raid without switching the standing share off. */
+   A group reached by a STANDING share — the character's auto-share, or a guild
+   tag its uploader connected — is labelled as such: unticking it hides that one
+   raid without switching the standing rule off. Which rule it was doesn't
+   change what the tick does, so the label doesn't try to say. */
 export default function ShareDialog({ runIds, isAdmin, onClose, onChanged }) {
   const ids = runIds
   // the effect keys on the CONTENT, not the array: a caller passing `[id]`
@@ -113,7 +115,12 @@ export default function ShareDialog({ runIds, isAdmin, onClose, onChanged }) {
                   onChange={() => toggle(g)}
                 />
                 <span className="gname">{g.name}</span>
-                {g.auto && <span className="badge" title="This character shares every raid with this group">auto</span>}
+                {g.auto && (
+                  <span className="badge"
+                        title="A standing rule on your Sharing page sends this group every raid like this one. Unticking hides this raid only.">
+                    standing share
+                  </span>
+                )}
                 {st === 'some' && (
                   <span className="muted" title="Shared on some of the selected raids">
                     some

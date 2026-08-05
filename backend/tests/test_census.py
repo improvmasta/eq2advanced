@@ -266,3 +266,84 @@ def test_bulk_ingest_and_backfill(client, fake):
     row = conn.execute(
         "SELECT cast_s, dmg_min FROM census_spells WHERE spell_id=575873413").fetchone()
     assert row["cast_s"] == 2.0 and row["dmg_min"] == 56
+
+
+# ---- roster lookups: class AND guild, from the one doc ----
+
+def char_doc(name, cls="mystic", guild=None, level=70):
+    """A trimmed character doc in the shape roster.resolve reads. `guild=None`
+    means the key is absent, which is how Census says 'in no guild'."""
+    doc = {"id": abs(hash(name)) % 10**8, "name": {"first": name},
+           "type": {"class": cls, "level": level}}
+    if guild:
+        doc["guild"] = {"name": guild, "guildid": 38, "rank": 3}
+    return doc
+
+
+class RosterFake:
+    """Answers by name; anything not listed is a miss (a mob, a pet, a typo)."""
+
+    def __init__(self, docs=None, boom=()):
+        self.docs = docs or {}
+        self.boom = set(boom)
+        self.asked = []
+
+    def character_by_name(self, name, world_id=618):
+        self.asked.append(name)
+        if name.lower() in self.boom:
+            raise RuntimeError("census is down")
+        return copy.deepcopy(self.docs.get(name.lower()))
+
+
+def test_resolve_captures_guild(client):
+    """The doc that answers 'what class' also carries the guild, so both are
+    cached from the one request — and 'no guild' is recorded as an ANSWER."""
+    from census import roster
+    conn = dbmod.get_db()
+    fake = RosterFake({"zooey": char_doc("Zooey", "mystic", "Freethinkers"),
+                       "solo": char_doc("Solo", "brigand")})
+    report = roster.resolve(conn, fake, ["Zooey", "Solo", "Enynti"], 618, now=1000)
+    assert (report["found"], report["missing"], report["failed"]) == (2, 1, 0)
+
+    rows = {r["name_lower"]: r for r in conn.execute(
+        "SELECT * FROM roster_classes WHERE world_id=618")}
+    assert rows["zooey"]["guild_name"] == "Freethinkers"
+    assert rows["zooey"]["guild_id"] == 38
+    assert rows["zooey"]["guild_checked"] == 1
+    # guildless: asked, answered, no guild — a fact, and it votes
+    assert rows["solo"]["guild_name"] is None and rows["solo"]["guild_checked"] == 1
+    # a name Census does not have has no guild fact at all, so it abstains
+    assert rows["enynti"]["found"] == 0 and rows["enynti"]["guild_checked"] == 0
+
+
+def test_resolve_force_refetches_fresh_rows(client):
+    """A row cached before guilds existed is not stale by any clock — it is
+    just missing a field, which is what `force` is for."""
+    from census import roster
+    conn = dbmod.get_db()
+    fake = RosterFake({"tarn": char_doc("Tarn", "templar", "Freethinkers")})
+    roster.resolve(conn, fake, ["Tarn"], 618, now=2000)
+    with conn:   # pretend it predates v20
+        conn.execute("UPDATE roster_classes SET guild_name=NULL, guild_checked=0 "
+                     "WHERE name_lower='tarn'")
+
+    fake.asked.clear()
+    assert roster.resolve(conn, fake, ["Tarn"], 618, now=2001)["asked"] == 0
+    assert fake.asked == []          # the TTL says it is fresh, and it is
+
+    assert roster.resolve(conn, fake, ["Tarn"], 618, now=2001, force=True)["found"] == 1
+    assert fake.asked == ["Tarn"]
+    row = conn.execute("SELECT * FROM roster_classes WHERE name_lower='tarn'").fetchone()
+    assert row["guild_name"] == "Freethinkers" and row["guild_checked"] == 1
+
+
+def test_resolve_network_failure_writes_nothing(client):
+    """An outage is not an answer — it must not cache a guildless row over a
+    real character."""
+    from census import roster
+    conn = dbmod.get_db()
+    fake = RosterFake(boom=["ghosty"])
+    report = roster.resolve(conn, fake, ["Ghosty"], 618, now=3000)
+    assert report["failed"] == 1
+    assert conn.execute("SELECT 1 FROM roster_classes WHERE name_lower='ghosty'"
+                        ).fetchone() is None

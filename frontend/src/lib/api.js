@@ -90,7 +90,10 @@ export const api = {
   spell: (id) => req(`/api/spells/${id}`),
   sessions: () => req('/api/sessions'),
   session: (id) => req(`/api/sessions/${id}`),
-  zoneRuns: (scope) => req(`/api/zone-runs${scope ? `?scope=${scope}` : ''}`),
+  // `roster` asks for each night's names too — the Compare picker facets on
+  // them in the browser instead of asking the server per keystroke
+  zoneRuns: (scope, { roster } = {}) => req(
+    `/api/zone-runs?scope=${scope || 'all'}${roster ? '&roster=1' : ''}`),
   zoneRun: (id) => cachedGet(url.zoneRun(id)),
   zoneRunReport: (id) => cachedGet(url.zoneRunReport(id)),
   // raid-list editing: every edit is remembered by fight, so it survives the
@@ -154,6 +157,12 @@ export const api = {
   // while the switch has been on, true includes the back catalogue
   setCharacterShares: (charId, shares) => mutate(req(
     `/api/characters/${charId}/shares`, { ...json({ shares }), method: 'PUT' })),
+  // the guild tags my characters wear, who wears them, and what I've connected
+  guildShares: () => req('/api/guild-shares'),
+  // shares: [{guild_name, history, group_content}] — the full set for THIS
+  // group; my rules for other groups are untouched
+  setGroupGuildShares: (groupId, shares) => mutate(req(
+    `/api/groups/${groupId}/guild-shares`, { ...json({ shares }), method: 'PUT' })),
 
   // admin console — metadata only, by design (backend/routers/admin_api.py)
   adminOverview: () => req('/api/admin/overview'),
@@ -179,6 +188,15 @@ export const fmt = {
     if (s == null) return '—'
     const m = Math.floor(s / 60), r = s % 60
     return m ? `${m}m ${r}s` : `${r}s`
+  },
+  /* The header clocks, in the units a raid night is actually thought about.
+     "132m 18s" is a number you have to divide before it means anything; the
+     seconds stay because the two clocks beside each other (raid time vs
+     combat) are read as a difference. */
+  durHMS: (s) => {
+    if (s == null) return '—'
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60
+    return h ? `${h}h ${m}m ${r}s` : m ? `${m}m ${r}s` : `${r}s`
   },
   // wall-clock spans: a raid night is "2h 23m", never "143m 34s"
   durH: (s) => {

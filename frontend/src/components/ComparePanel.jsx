@@ -1,133 +1,101 @@
-import { useMemo } from 'react'
-import { fmt } from '../lib/api.js'
-import { autoPct, castsPerMin, critPct, procPct } from '../lib/stats.js'
-import { ClassChip } from './Identity.jsx'
+import { useEffect, useMemo, useState } from 'react'
+import BreakdownTable, {
+  KIND_FILTERS, actorRowsOf, breakdownRows,
+} from './BreakdownTable.jsx'
+import Tabs from './Tabs.jsx'
+import { ActorFacts } from './Identity.jsx'
 
-/* Side-by-side comparison of checked combatants: metrics as rows, one column
-   per raider, best value per row highlighted. Numbers only — no bars: each cell
-   prints the value and, off the leader, the gap in percent, so "who is ahead"
-   and "by how much" both read straight off the table. Computed from the
-   already-loaded agg + report data, no extra requests. */
+/* Side-by-side comparison of checked combatants: each raider's ACTUAL parse —
+   the same ability breakdown the drilldown shows — lined up next to the
+   others, the way people screenshot two ACT windows. One kind tab rules every
+   column (comparing this one's damage to that one's heals isn't a
+   comparison), and Share/ToHit/totals start hidden — the Columns menu brings
+   them back. Computed from the already-loaded agg data, no extra requests.
 
-const healedOf = (a) => (a.heals || 0) + (a.wards_absorbed || 0)
+   Every control that describes the VIEW rather than one raider (the kind tab,
+   Combine pets, the column layout) is shared: flipping it on one parse flips
+   it on all of them, because a comparison whose halves are showing different
+   things isn't one. */
+export default function ComparePanel({
+  actors, keys, abilities, derived, duration, kind, onRemove,
+}) {
+  // the page tab in this panel's language, same as the single drilldown
+  const [kindFilter, setKindFilter] = useState(kind || 'damage')
+  useEffect(() => { if (kind) setKindFilter(kind) }, [kind])
+  const [combinePets, setCombinePets] = useState(false)
 
-export default function ComparePanel({ actors, keys, derived, repRows, duration, onRemove }) {
   const picked = useMemo(
     () => keys.map((k) => actors.find((a) => a.key === k)).filter(Boolean),
     [actors, keys])
 
-  const sections = useMemo(() => {
-    const rep = (a) => repRows?.[a.name]
-    const defs = [
-      ['Damage', [
-        // rates only — the totals are the same ranking with more digits
-        { label: 'DPS', get: (a) => (a.damage || 0) / duration, fmt: fmt.num2 },
-        { label: 'Crit %', get: (a) => critPct(derived[a.key]), fmt: (v) => `${Math.round(v)}%` },
-        { label: 'Autoattack %', get: (a) => autoPct(derived[a.key]), fmt: (v) => `${Math.round(v)}%`, neutral: true },
-        { label: 'Proc %', get: (a) => procPct(derived[a.key]), fmt: (v) => `${Math.round(v)}%`, neutral: true },
-        { label: 'Casts/min', get: (a) => castsPerMin(derived[a.key], duration), fmt: (v) => v.toFixed(1) },
-        { label: 'Avg delay', get: (a) => a.avg_delay_s, fmt: (v) => `${v.toFixed(2)}s`, worse: true },
-        { label: 'Engage delay', get: (a) => rep(a)?.avg_engage_delay_s, fmt: (v) => `${v}s`, worse: true },
-      ]],
-      ['Healing', [
-        // wards are healing here — one HPS line, not heals-vs-wards bookkeeping
-        { label: 'HPS', get: (a) => healedOf(a) / duration, fmt: fmt.num2 },
-        { label: 'Overheal', get: (a) => rep(a)?.overheal_est, fmt: fmt.num, worse: true },
-        { label: 'Cures', get: (a) => a.cure_count, fmt: (v) => v },
-        { label: 'Power repl', get: (a) => a.power_fed, fmt: fmt.num },
-      ]],
-      ['Survival', [
-        { label: 'Damage taken', get: (a) => a.damage_taken, fmt: fmt.num, worse: true },
-        { label: 'Deaths', get: (a) => a.deaths, fmt: (v) => v, worse: true },
-        { label: 'Time dead', get: (a) => rep(a)?.time_dead_s, fmt: fmt.dur, worse: true },
-        { label: 'Dmg lost dead', get: (a) => rep(a)?.death_dps_lost, fmt: fmt.num, worse: true },
-      ]],
-    ]
-    return defs
-      .map(([title, metrics]) => [title, metrics
-        .map((d) => ({ ...d, vals: picked.map((a) => d.get(a)) }))
-        .filter((d) => d.vals.some((v) => v != null && v !== 0))])
-      .filter(([, metrics]) => metrics.length)
-  }, [picked, derived, repRows, duration])
+  const filter = KIND_FILTERS.find((k) => k.key === kindFilter) || KIND_FILTERS[0]
 
   if (picked.length < 2) return null
 
-  const bestIdx = (m) => {
-    const nums = m.vals.map((v) => (v == null ? null : v))
-    const present = nums.filter((v) => v != null)
-    if (m.neutral || present.length < 2) return -1
-    const target = m.worse ? Math.min(...present) : Math.max(...present)
-    // no winner when everyone ties
-    if (present.every((v) => v === target)) return -1
-    return nums.indexOf(target)
-  }
-
   return (
     <aside className="actorpanel card comparepanel">
-      <div className="tablewrap">
-        <table className="data cmptable">
-          <colgroup>
-            <col className="cmplabelcol" />
-            {picked.map((a) => <col key={a.key} />)}
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="l">Head to head</th>
-              {picked.map((a) => (
-                <th key={a.key}>
-                  <button className="cmphead" title="Remove from comparison" onClick={() => onRemove(a.key)}>
-                    {a.name}
-                  </button>
-                  <div className="cls"><ClassChip actor={a} /></div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sections.map(([title, metrics]) => (
-              [
-                <tr key={title} className="cmpsection">
-                  <td className="l" colSpan={picked.length + 1}>{title}</td>
-                </tr>,
-                ...metrics.map((m) => {
-                  const best = bestIdx(m)
-                  const lead = best >= 0 ? m.vals[best] : null
-                  return (
-                    <tr key={`${title}:${m.label}`}>
-                      <td className="l lbl">{m.label}</td>
-                      {m.vals.map((v, i) => {
-                        // a real zero is an answer — "0 deaths" is the whole
-                        // point of the row, and printing "—" there made the
-                        // winning column look like missing data
-                        const has = v != null
-                        // gap to the row's leader, signed the way the metric
-                        // reads: for "lower is better" rows, over the leader
-                        // is the bad direction. No percentage off a zero base.
-                        const gap = has && lead && i !== best
-                          ? Math.round((100 * (v - lead)) / Math.abs(lead)) : null
-                        return (
-                          <td key={picked[i].key} className={i === best ? 'best' : ''}>
-                            <span className="cmpval">
-                              <span className="v">{has ? m.fmt(v) : '—'}</span>
-                              {/* the gutter says one thing per cell: the leader
-                                  is marked, everyone else carries their gap */}
-                              {i === best ? (
-                                <span className="d lead" title="Best in this row">▲</span>
-                              ) : gap != null && gap !== 0 ? (
-                                <span className="d">{gap > 0 ? '+' : ''}{gap}%</span>
-                              ) : null}
-                            </span>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                }),
-              ]
-            ))}
-          </tbody>
-        </table>
+      <Tabs
+        tabs={KIND_FILTERS.map((f) => ({ key: f.key, label: f.label }))}
+        value={kindFilter}
+        onChange={setKindFilter}
+      />
+      <div className="cmpraiders">
+        {picked.map((a) => (
+          <RaiderParse
+            key={a.key}
+            actor={a}
+            rows={breakdownRows(actorRowsOf(abilities, a.key), filter.kinds, combinePets)}
+            kinds={filter.kinds}
+            duration={duration}
+            combinePets={combinePets}
+            onCombinePets={setCombinePets}
+            onRemove={onRemove}
+          />
+        ))}
       </div>
     </aside>
+  )
+}
+
+/* One raider's box. The head is one line: who it is, then the two controls
+   that used to eat a line each — the Columns menu is placed there by CSS
+   (SortableTable renders it above the table). No stat strip: the pinned All
+   row under the header is the same numbers, in the same table. */
+function RaiderParse({
+  actor, rows, kinds, duration, combinePets, onCombinePets, onRemove,
+}) {
+  return (
+    <div className="cmpraider">
+      <div className="raiderhead">
+        <button className="cmphead" title="Remove from comparison" onClick={() => onRemove(actor.key)}>
+          {actor.name}
+        </button>
+        {/* compact: several raiders share this line, and a guild name each
+            would push the controls off it */}
+        <ActorFacts actor={actor} compact />
+        <label className={`chip toggle big ${combinePets ? 'on' : ''}`}
+               title="One line per pet kit, on every parse here">
+          <input
+            type="checkbox"
+            checked={combinePets}
+            onChange={(e) => onCombinePets(e.target.checked)}
+          /> Combine pets
+        </label>
+      </div>
+      {rows.length ? (
+        <BreakdownTable
+          rows={rows}
+          kinds={kinds}
+          duration={duration}
+          linkHover
+          wrapClass="parsewin"
+          fitViewport
+          prefsKey="compare"
+          defaultHidden={['total', 'share', 'to_hit_pct', 'median', 'min', 'press_delay_s']}
+        />
+      ) : (
+        <p className="muted">Nothing on this tab.</p>
+      )}
+    </div>
   )
 }

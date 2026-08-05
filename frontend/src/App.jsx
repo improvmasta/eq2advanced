@@ -4,6 +4,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import Home from './pages/Home.jsx'
 import Import from './pages/Import.jsx'
 import ZoneRun from './pages/ZoneRun.jsx'
+import Compare from './pages/Compare.jsx'
 import Live from './pages/Live.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
@@ -64,6 +65,8 @@ export default function App() {
         <Link to="/" className="brand">EQ2 Advanced</Link>
         <nav>
           <NavLink to="/">Raid Parses</NavLink>
+          {/* signed-out too: published runs compare like they read */}
+          <NavLink to="/compare">Compare</NavLink>
           {user && <>
             <NavLink to="/groups">Sharing</NavLink>
             <NavLink to="/import">Import</NavLink>
@@ -111,6 +114,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home user={user} />} />
             <Route path="/zones/:id" element={<ZoneRun user={user} />} />
+            <Route path="/compare" element={<Compare />} />
             <Route path="/encounters/:id" element={<EncounterRedirect />} />
             {/* an invite link works signed out — it offers sign-up and joins
                 the group as soon as the account exists */}

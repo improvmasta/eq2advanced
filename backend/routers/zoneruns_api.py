@@ -3,6 +3,7 @@
 powers the zone page's encounter rail, and /report is the raid report scoped
 to the run's canonical encounters (cross-session, deduped)."""
 
+import json
 import time
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -44,9 +45,15 @@ def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, in
 
 
 @router.get("/zone-runs")
-def list_zone_runs(scope: str = "all", user=Depends(optional_user)):
+def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_user)):
     """The raid list. `scope` is mine | shared | all (default). Signed out, the
-    only runs that exist are the published ones."""
+    only runs that exist are the published ones.
+
+    `roster=1` sends each night's roster with it, parsed — the Compare page's
+    picker facets on names client-side rather than asking the server per
+    keystroke. Same visibility predicate, so it reveals nothing a viewer could
+    not already read fight by fight; parsed here so the client never learns how
+    the roster is stored."""
     conn = get_db()
     uid = user["id"] if user else None
     if scope not in ("mine", "shared", "all"):
@@ -97,7 +104,9 @@ def list_zone_runs(scope: str = "all", user=Depends(optional_user)):
     # decision, because your own always wins and the payload is shared.
     raidmatch.annotate(runs)
     for r in runs:
-        r.pop("roster_json", None)
+        raw = r.pop("roster_json", None)
+        if roster:
+            r["roster"] = json.loads(raw) if raw else []
     return {"zone_runs": runs, "scope": scope, "signed_in": user is not None}
 
 
@@ -158,6 +167,51 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
             "encounters": rows_to_dicts(_run_encounters(conn, run))}
 
 
+# ---------- player search ----------
+# The Compare page's player-first picker: "every parse where Bobby appears".
+# roster_json stays out of the list payloads (weight); the server answers the
+# question instead, against the same visibility predicate as the list. Runs
+# below the roster threshold (roster_json NULL — json_each yields no rows for
+# them) are simply absent here; the raid-first picker still reaches them.
+# The Compare picker no longer calls these — it takes the whole list with
+# `?roster=1` once and facets in the browser, which is instant and cross-narrows.
+# They stay because "every parse where this name appears" is a real question a
+# client can ask cheaply, and because they carry the predicate's tests.
+
+@router.get("/players")
+def search_players(q: str, user=Depends(optional_user)):
+    q = q.strip()
+    if len(q) < 2:
+        raise HTTPException(422, "q must be at least 2 characters")
+    conn = get_db()
+    uid = user["id"] if user else None
+    rows = conn.execute(
+        "SELECT j.value AS name, COUNT(*) AS run_count, MAX(z.started_ts) AS last_ts "
+        "FROM zone_runs z, json_each(z.roster_json) j "
+        f"WHERE z.id IN ({VISIBLE_RUN_IDS}) AND j.value LIKE :pat "
+        "GROUP BY j.value ORDER BY run_count DESC, j.value LIMIT 20",
+        {"uid": uid, "pat": f"%{q}%"}).fetchall()
+    return {"players": rows_to_dicts(rows)}
+
+
+@router.get("/players/{name}/runs")
+def player_runs(name: str, user=Depends(optional_user)):
+    """Visible runs whose roster carries this exact name (it came from the
+    search above). Unknown name is an empty list, not a 404 — the visibility
+    filter already hides what must be hidden."""
+    conn = get_db()
+    uid = user["id"] if user else None
+    rows = conn.execute(
+        "SELECT z.id, z.zone, z.started_ts, z.encounter_count, z.named_count, "
+        "z.raider_count, c.name AS character_name "
+        "FROM zone_runs z JOIN characters c ON c.id = z.character_id, "
+        "json_each(z.roster_json) j "
+        f"WHERE z.id IN ({VISIBLE_RUN_IDS}) AND j.value = :name "
+        "ORDER BY z.started_ts DESC",
+        {"uid": uid, "name": name}).fetchall()
+    return {"runs": rows_to_dicts(rows)}
+
+
 # ---------- sharing ----------
 
 @router.get("/zone-runs/{run_id}/shares")
@@ -186,8 +240,9 @@ def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_
     Every group reaching this raid through a STANDING decision has to be counted
     in `auto` below: the delete only removes explicit `share` rows, so a
     read-time branch missing from that set would survive it and the untick would
-    silently revoke nothing. Today auto-share is the only such branch — if
-    another is ever added to `groups.py`, it belongs here too."""
+    silently revoke nothing. There are two such branches today — the character's
+    auto-share and the uploader's connected guild tag — and if a third is ever
+    added to `groups.py`, it belongs here too."""
     conn = get_db()
     owned_zone_run(conn, user, run_id)
     wanted = {int(g) for g in payload.get("group_ids") or []}
@@ -203,6 +258,9 @@ def set_run_shares(run_id: int, payload: dict = Body(...), user=Depends(require_
         "SELECT cs.group_id FROM character_shares cs JOIN zone_runs z "
         f"ON z.character_id = cs.character_id WHERE z.id=? "
         f"AND {groupsmod.AUTO_SHARE_REACHES}", (run_id,))}
+    auto |= {r["group_id"] for r in conn.execute(
+        f"SELECT gs.group_id FROM zone_runs z {groupsmod.GUILD_SHARE_OWNER_MATCH} "
+        f"WHERE z.id=? AND {groupsmod.GUILD_SHARE_REACHES}", (run_id,))}
     now = int(time.time())
     with conn:
         # only my own groups are rewritten: a run can also carry shares to groups

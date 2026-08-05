@@ -19,16 +19,53 @@ PRUNE_CHECK_INTERVAL_S = 6 * 3600  # PRUNE_DAYS env sets retention (0 disables)
 
 async def _census_refresh_loop():
     from census import client as census_client
+    from census.guilds import backfill_stale_guilds, retag_runs
     from census.sync import refresh_stale
+    log = logging.getLogger("census")
+
+    def _guild_pass():
+        conn = get_db()
+        # rows cached before guilds existed have a class and no guild; a slow
+        # paced trickle re-reads them without leaning on a free public API
+        report = backfill_stale_guilds(conn, census_client.shared_client())
+        with conn:
+            report["retagged"] = retag_runs(conn)
+        return report
+
     while True:
         await asyncio.sleep(CENSUS_REFRESH_INTERVAL_S)
         try:
             n = await asyncio.to_thread(
                 lambda: refresh_stale(get_db(), census_client.shared_client()))
             if n:
-                logging.getLogger("census").info("nightly refresh synced %d characters", n)
+                log.info("nightly refresh synced %d characters", n)
         except Exception:
-            logging.getLogger("census").exception("census refresh loop iteration failed")
+            log.exception("census refresh loop iteration failed")
+        try:
+            report = await asyncio.to_thread(_guild_pass)
+            if report["asked"] or report["retagged"]:
+                log.info("guild pass %s", report)
+        except Exception:
+            log.exception("guild backfill iteration failed")
+
+
+LIVE_REAP_INTERVAL_S = 5 * 60     # how often to look for a live session nobody is feeding
+
+
+async def _live_reap_loop():
+    """Close live sessions whose client went away. Without this a session only
+    closes when the SAME character's next batch arrives, so quitting EQ2 and ACT
+    leaves it 'receiving' forever — still badged Live, and never rebuilt from
+    raw, which also puts it out of reach of the PARSE_VERSION sweep."""
+    from pipeline.live import reap_idle_live_sessions
+    while True:
+        await asyncio.sleep(LIVE_REAP_INTERVAL_S)
+        try:
+            closed = await asyncio.to_thread(lambda: reap_idle_live_sessions(get_db()))
+            if closed:
+                logging.getLogger("live").info("closed idle live sessions: %s", closed)
+        except Exception:
+            logging.getLogger("live").exception("live reap loop iteration failed")
 
 
 async def _prune_loop(days: int):
@@ -85,6 +122,21 @@ def _reparse_stale():
     log.info("reparse sweep done")
 
 
+def _startup_worker():
+    """Reap first, then reparse. A live session abandoned across a restart is
+    still 'receiving', which the reparse sweep skips — closing it first rebuilds
+    it from raw at the current PARSE_VERSION in one pass instead of leaving it
+    stale until the next reap tick."""
+    from pipeline.live import reap_idle_live_sessions
+    try:
+        closed = reap_idle_live_sessions(get_db())
+        if closed:
+            logging.getLogger("live").info("closed idle live sessions at startup: %s", closed)
+    except Exception:
+        logging.getLogger("live").exception("startup live reap failed")
+    _reparse_stale()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -94,8 +146,8 @@ async def lifespan(app: FastAPI):
     backfill_scribed(get_db())
     petnames.seed_curated(get_db())
     import threading
-    threading.Thread(target=_reparse_stale, daemon=True).start()
-    tasks = []
+    threading.Thread(target=_startup_worker, daemon=True).start()
+    tasks = [asyncio.create_task(_live_reap_loop())]
     if os.environ.get("CENSUS_AUTO_REFRESH", "1") != "0":
         tasks.append(asyncio.create_task(_census_refresh_loop()))
     prune_days = int(os.environ.get("PRUNE_DAYS", "180"))

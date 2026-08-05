@@ -250,6 +250,13 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
             conn.execute("UPDATE encounters SET zone_run_id=?, dup_of=? WHERE id=?",
                          (want_run, want_dup, e["id"]))
 
+    # the guild tag was voted by a roster, so it has to follow the roster —
+    # a merge, a split or a delete rewrites who was there, and a stale tag
+    # would be a claim about a night that no longer exists. Pure SQL over
+    # cached Census answers; it asks nobody anything.
+    from census.guilds import retag_runs
+    retag_runs(conn, character_id)
+
     # this function is the funnel every write ends in — uploads, live closes,
     # reparses, deletes and hand edits — so it is where cached read payloads
     # are thrown away (see memo.py)

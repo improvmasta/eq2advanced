@@ -168,3 +168,64 @@ def test_visibility_other_user(client, uploaded):
     enc = client.get(f"/api/zone-runs/{runs[0]['id']}").json()["encounters"]
     ids = ",".join(str(e["id"]) for e in enc)
     assert c2.get(f"/api/encounters/agg?ids={ids}").status_code == 404
+
+
+def test_player_search(client, uploaded):
+    """Substring, case-insensitive, over visible rosters; run_count across
+    zones (Bobby raided Mistmoore AND Unrest)."""
+    players = {p["name"]: p for p in
+               client.get("/api/players?q=BO").json()["players"]}
+    assert players["Bobby"]["run_count"] == 2
+    assert "Aros" not in players
+    assert any(p["name"] == "Aros"
+               for p in client.get("/api/players?q=ro").json()["players"])
+    assert client.get("/api/players?q=b").status_code == 422
+
+
+def test_player_runs(client, uploaded):
+    runs = client.get("/api/players/Aros/runs").json()["runs"]
+    assert {r["zone"] for r in runs} == {"Castle Mistmoore", "The Estate of Unrest"}
+    assert all(r["character_name"] == "Bobby" for r in runs)
+    # names come from the search; an unknown one is empty, not 404
+    assert client.get("/api/players/Nobody/runs").json()["runs"] == []
+
+
+def test_player_search_visibility(client, uploaded):
+    """Signed out (and any non-owner), rosters exist only for published runs —
+    same predicate as the list."""
+    c2 = TestClient(client.app)
+    assert c2.get("/api/players?q=bo").json()["players"] == []
+    assert c2.get("/api/players/Aros/runs").json()["runs"] == []
+
+
+def test_guild_key_in_payloads(client, uploaded):
+    """The tag is a column, so it rides `z.*` into both payloads. Untagged is
+    NULL, and a picker that never sees the key cannot degrade gracefully."""
+    runs = client.get("/api/zone-runs").json()["zone_runs"]
+    assert all("guild" in r for r in runs)
+    detail = client.get(f"/api/zone-runs/{runs[0]['id']}").json()["zone_run"]
+    assert "guild" in detail
+    # nothing has been voted on here — no Census in tests
+    assert detail["guild"] is None
+
+
+def test_list_roster_opt_in(client, uploaded):
+    """`?roster=1` sends the names parsed; the default sends neither them nor
+    the column they are stored in."""
+    plain = client.get("/api/zone-runs").json()["zone_runs"]
+    assert all("roster" not in r and "roster_json" not in r for r in plain)
+
+    withr = client.get("/api/zone-runs?roster=1").json()["zone_runs"]
+    assert all("roster_json" not in r for r in withr)
+    rosters = {r["id"]: r["roster"] for r in withr}
+    assert all(isinstance(v, list) for v in rosters.values())
+    assert any("Aros" in v for v in rosters.values())
+
+
+def test_roster_opt_in_respects_visibility(client, uploaded):
+    """Same predicate as the list — asking for rosters is not a way around it."""
+    c2 = TestClient(client.app)
+    assert c2.get("/api/zone-runs?roster=1").json()["zone_runs"] == []
+    c2.post("/api/auth/register",
+            json={"username": "rosternosy", "password": "hunter2hunter2"})
+    assert c2.get("/api/zone-runs?roster=1").json()["zone_runs"] == []

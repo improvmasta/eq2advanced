@@ -102,9 +102,10 @@ that corrects them, and each correction is load-bearing:
   parse thread), `sessions_api`, `encounters_api`, `auth_api` (username +
   password sign-up, cookie login, security-question reset; the FIRST registered
   account becomes admin), `characters_api` (CRUD + auto-share; claims are not
-  exclusive), `groups_api`, `admin_api`, `tokens_api` (per-character device
-  tokens: mint shown-once, QR pair payload, revoke; the ACT plugin
-  authenticates with these).
+  exclusive), `groups_api`, `admin_api`, `tokens_api` (the account's ONE readable
+  API key — Sonarr-style: `token_plain` beside the hash, `GET` serves it back
+  to the owner, `refresh` revokes every live key and mints the replacement),
+  `plugin_api` (the committed DLL, served as a zip, unauthenticated).
 - `auth.py` (PBKDF2 password + security answer + hashed session/device tokens),
   `groups.py` (membership + the one visibility predicate) and `security.py`
   (deps + ownership/visibility helpers). See "Accounts, groups and sharing".
@@ -113,13 +114,9 @@ that corrects them, and each correction is load-bearing:
   `census/catalog.py` populates `ability_catalog` (see "Ability catalog").
 - `coach/` + `routers/coach_api.py` — coach engine + raid report (see below).
 
-## Accounts, groups and sharing (phase 12 — 2026-08-03)
+## Accounts, groups and sharing
 
-Phase 2's accounts were a placeholder: email login, one global owner per
-character name, and `is_admin()` short-circuiting every visibility check. All
-three are gone.
-
-### Identity (schema v9)
+### Identity
 
 Login is `username` + password; **there is no email anywhere**. The only
 self-service recovery is a security question chosen at sign-up (one of
@@ -144,13 +141,12 @@ and is not a substitute for fail2ban at the edge.
 Registration is deliberately NOT failure-counted: nothing about it is guessable,
 and the lever for sign-up abuse is the `registration_open` setting.
 
-Migrations are guarded by SHAPE, not `user_version` (the dev reloader can stamp
-the version mid-edit), and each rebuilds a table SQLite can't ALTER:
-`_rebuild_users` (email → username + sq columns; username = the old local part,
-collisions → `user{id}`), `_rebuild_characters`, `_rebuild_sessions`. All three
-preserve ids, run with `foreign_keys=OFF` and assert `foreign_key_check`.
-Verified against a copy of the real 344 MB database: 2.7M events, 159 runs,
-pinned/calibration/parse_version flags all intact, idempotent on a second run.
+Migrations are guarded by table SHAPE, not `user_version` (the dev reloader can
+stamp the version mid-edit). The ones that rebuild a table SQLite can't ALTER
+(`_rebuild_users`, `_rebuild_characters`, `_rebuild_sessions`,
+`_rebuild_device_tokens`) preserve ids, run with `foreign_keys=OFF` and assert
+`foreign_key_check`; each was verified against a copy of the real database
+before it shipped.
 
 ### Claims are not exclusive
 
@@ -177,8 +173,9 @@ which the console shows back. Support is "ask them to share the raid".
 
 A zone run is visible to you if you own it, OR it is explicitly shared with a
 group you're in, OR its character auto-shares with a group you're in and this
-run isn't hidden from that group, OR it has been published. That is one SQL
-SELECT (`VISIBLE_RUN_IDS`, parameterised by `:uid`)
+run isn't hidden from that group, OR its uploader connected the guild tag their
+character wears to a group you're in (same conditions), OR it has been
+published. That is one SQL SELECT (`VISIBLE_RUN_IDS`, parameterised by `:uid`)
 and nothing else composes it. `PERSONAL_RUN_IDS` is the same thing minus the
 published branch, and `VISIBLE_RUN_IDS` is now *derived from it* rather than
 repeated — a branch added to one and forgotten in the other is either a silent
@@ -194,8 +191,19 @@ leak or a silent hiding, and there is no longer a second copy to forget.
   useful default; one wipe can still be pulled back out. `set_run_shares` has to
   count EVERY standing branch when it decides where to write a `hide`: it
   deletes only explicit `share` rows, so a read-time branch missing from that
-  set survives the delete and the untick silently revokes nothing. Auto-share is
-  the only such branch today; a new one belongs there too.
+  set survives the delete and the untick silently revokes nothing. There are two
+  standing branches — the character's auto-share and the uploader's connected
+  guild tag — and a third would belong there too.
+- **A standing branch has FOUR query sites**, not one, and the comment above
+  `_SHARE_REACHES` lists them: `PERSONAL_RUN_IDS` (who can see it),
+  `shares_for_runs` (what the owner's Share control shows), `shared_via_for_runs`
+  (why the viewer can see it) and `set_run_shares`'s `auto` set. Missing the
+  first is a leak; missing the last revokes nothing. Missing `shares_for_runs`
+  looks cosmetic and is not: ShareDialog seeds its save set from that GET, so an
+  unreported group is dropped on the next save and the server writes it a `hide`
+  — a raid silently unshared by an edit about something else. The reach
+  condition itself is written ONCE and aliased per branch, so the four sites
+  cannot disagree about what "in window" means.
 - **Seeing is not changing.** `owned_zone_run` guards delete/merge/split/edits,
   so a shared raid is read-only to everyone including admins, and cannot be
   re-shared onward into the viewer's own groups.
@@ -209,58 +217,46 @@ leak or a silent hiding, and there is no longer a second copy to forget.
   payload is a pure function of the already-authorized id set. Do not memoize
   an authorization decision here.
 
-### Sharing is a decision for the account, not the uploader (v12, 2026-08-04)
+### Sharing is a decision for the account, not the uploader
 
 Every branch above is set on the site by someone signed in. The ACT uploader
 (`improvmasta/eq2advanced-act`) sends log lines and has no say in who sees the
 result: a device token cannot read a parse back and cannot change its audience.
 
-v11 built the opposite — a `session_shares` table so the plugin could share the
-raid it was recording, a `device_tokens.can_share` scope, `share_groups` on every
-ingest batch, and a sharing panel in ACT. v12 removed all of it (the migration
-drops the table and the column). It is written down because the design was
-tempting and the reason it went is not obvious from the code that remains: the
-token lives in a config file on a gaming PC, and "who can see my raids" should
-not be answerable from there. The two site controls already cover the ground —
-the character's standing auto-share for "always", and a raid's own Share control
-for one night.
-
-One bug from that round is worth keeping in mind, because the same shape will
-recur with any future read-time share branch: `set_run_shares` writes a `hide`
-for groups reaching a run through a standing decision, and it only knew about
-`character_shares`. A branch it did not know about survived the untick, so the
-control looked like it worked and revoked nothing.
+v11 built the opposite — a `session_shares` table, a `device_tokens.can_share`
+scope, `share_groups` on every ingest batch, a sharing panel in ACT — and v12
+dropped all of it. Written down because the design was tempting and the reason
+it went is not visible in the code that remains: the token lives in a config
+file on a gaming PC, and "who can see my raids" should not be answerable from
+there. The two site controls cover the ground — the character's standing
+auto-share for "always", a raid's own Share control for one night.
 
 Groups: `groups` / `group_members` / `group_invites`. Three ways in, all the
 same credential — an invite addressed to a username, the 6-digit join code read
-aloud in voice, or an invite **link** (`/join/<code>`, which carries that same
-code so there is one thing to rotate). A million codes is small, so
-`ratelimit` is the actual security, on joining AND on
-`GET /api/groups/preview/{code}` — the unauthenticated route the landing page
-uses to name the group before the visitor has an account. Preview is
-deliberately thin (name, description, headcount, "are you already in it") and
-never the roster. The link works signed out: `pages/JoinGroup.jsx` shows the
-invitation with sign-up underneath and joins the moment the account exists,
-rather than bouncing to a login page and losing the invitation.
-
-Note both rate-limit call sites dedupe their keys: an anonymous caller's
-identity *is* their address, and counting one failure twice would silently
-halve the budget.
+aloud in voice, or an invite **link** (`/join/<code>`, carrying that same code
+so there is one thing to rotate). A million codes is small, so `ratelimit` is
+the actual security: on joining, and on `GET /api/groups/preview/{code}`, the
+unauthenticated route the landing page uses to name the group before the
+visitor has an account (deliberately thin — name, description, headcount, "are
+you already in it" — and never the roster). The link works signed out:
+`pages/JoinGroup.jsx` shows the invitation with sign-up underneath and joins
+the moment the account exists. Both rate-limit call sites dedupe their keys —
+an anonymous caller's identity *is* their address, and counting one failure
+twice would silently halve the budget.
 
 `GET /groups/new-code` hands the create form a free code so the code AND its
-invite link can be shown while the group name is still being typed; `POST
-/groups` claims it (re-minting only if it was taken in between, and saying which
-code the group actually got). Nothing is reserved, so an abandoned form burns
-nothing.
+link can be shown while the name is still being typed; `POST /groups` claims it
+(re-minting only if it was taken in between, and saying which code it got).
+Nothing is reserved, so an abandoned form burns nothing.
 
 Membership is all that is stored; roles are owner/admin/member. The two levers
-that matter after a code gets out: **rotate** (`/code/rotate`, optionally
-`enabled: false` to switch code-joining off) mints a new code and kills the old
-one and every link built from it, while every current member stays in; and
-**remove** (`DELETE /groups/{id}/members/{uid}`, owner or a group admin, never
-the owner themselves) drops that person's access on their next request. Leaving
-or being removed also drops that user's auto-shares into the group, so rejoining
-doesn't silently reopen everything they had pointed at it.
+after a code gets out: **rotate** (`/code/rotate`, optionally `enabled: false`
+to switch code-joining off) mints a new code and kills the old one and every
+link built from it while every current member stays in; **remove**
+(`DELETE /groups/{id}/members/{uid}`, owner or group admin, never the owner
+themselves) drops that person's access on their next request. Leaving or being
+removed also drops that user's auto-shares into the group, so rejoining doesn't
+silently reopen everything they had pointed at it.
 
 **Published runs** (`public_runs`, admin-only, own raids only) are readable
 **without an account** — read routes take `security.optional_user`, and a caller
@@ -282,7 +278,7 @@ content address). The cost is real and enforced, not hoped for: those sessions
 are skipped by `POST /sessions/{id}/reparse` and by the startup
 `_reparse_stale` sweep, so no future parser improvement can ever reach them.
 
-## Live ingest (phase 3 — the frozen ACT-DLL contract)
+## Live ingest — the frozen ACT-DLL contract
 
 `GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`;
 auth is `Authorization: Bearer <device_token>` only. A batch is gzip (or plain)
@@ -314,13 +310,23 @@ Design points, in the order they bit:
   file (guarded by `test_golden_equivalence`: encounters, actor stats, ability
   stats all byte-equal on bobby.txt; encounter ids change at rebuild, which is
   why the Live page refetches on `status: ready`).
+- **Staleness needs a reaper, not just a check** (`live.reap_idle_live_sessions`,
+  driven from `main.lifespan` at startup and every 5 minutes). The 30-minute
+  rule used to be evaluated only inside `open_live_session` — i.e. when the
+  SAME character's NEXT batch arrived. Quit EQ2 and ACT and that never happens:
+  the session sits at `receiving` forever, the raid page keeps saying **Live**,
+  and because closing is what rebuilds it from raw, it is also out of reach of
+  the `PARSE_VERSION` sweep (which only looks at `ready`/`parsing`), so no
+  parser improvement can ever land on the night you just raided. The startup
+  pass runs BEFORE `_reparse_stale` so an abandoned session is closed and
+  reparsed once, at the current version, instead of twice.
 - **Restart-safe by construction**: the in-memory tail is disposable; raw
   chunks + `ingest_lines` survive, and the close-time rebuild reparses raw.
 - SSE: `GET /api/sessions/{id}/stream` (cookie auth) polls the DB ~1.5s and
   pushes `encounter` cards + `status` heartbeats (incl. uploader-online from
   `device_tokens.last_seen_ts`); closes at ready/error.
 
-## Census sync (phase 4)
+## Census sync
 
 `census/client.py` (HTTP, retrying — Census reads regularly stall; service id
 from `CENSUS_SERVICE_ID`, default `s:example`), `census/sync.py` (the sync +
@@ -343,12 +349,12 @@ spell detail). Query shapes verified live 2026-08-02 — see client.py docstring
 - **Damage numbers exist only in effect_list text** ("Inflicts 33 - 45 disease
   damage on target instantly and every second."). `effects.py` parses that
   grammar (damage/heal/ward/power/stat/proc, ranges, %-of-health, tick
-  period); anything unrecognized is kept verbatim as kind `other` so phase 5
-  can only under-use a spell, never misread it. Typed spell fields
+  period); anything unrecognized is kept verbatim as kind `other`, so the
+  coach can only under-use a spell, never misread it. Typed spell fields
   (`cast_secs_hundredths`, `recast_secs`, `duration.*_sec_tenths`) are
   reliable — EXCEPT `recovery_secs_tenths`, which stores HUNDREDTHS despite
   the name (every spell carries 50 = the universal 0.5s recovery; dividing by
-  10 gave 5s and clamped idle% to 0 — found on the real raid night, phase 6).
+  10 gave 5s and clamped idle% to 0 — found on a real raid night).
 - The character doc's typed stats carry everything coaching needs (verified on
   Bobby: `combat.abilitymod` 1442, `basemodifier` 68.1, `critchance` 53.5,
   `ability.spelltimereusepct`/`spelltimecastpct`) — no text parsing there.
@@ -356,7 +362,7 @@ spell detail). Query shapes verified live 2026-08-02 — see client.py docstring
   `tests/fixtures/census/` (trimmed real responses for Bobby) via a fake
   injected as `census.client._shared` — no live Census calls in CI.
 
-### Bulk spell ingest (phase 7 groundwork)
+### Bulk spell ingest
 
 Census spell records are BASE, pre-stat values per tier (App1–Celestial share a
 `crc`) — no wiki scrape or manual entry needed; in-game tooltips are these
@@ -387,7 +393,7 @@ writes the `spell_line:{crc}` completeness markers. The tool paces 30s/page on
 `.env` as `CENSUS_SERVICE_ID` removes the limit — start.sh and the ingest
 tool both load `.env`.
 
-## Coach engine (phase 5)
+## Coach engine
 
 `coach/` — `descriptive.py` (session currencies: DPS/crit/autoattack share,
 cast estimates, idle-GCD estimate, cure latency, rez responsiveness),
@@ -424,10 +430,7 @@ Pages: Coach, RaidReport, Calibration.
 - Report degrades gracefully with no Census snapshot (currencies + findings,
   `no_census` finding); a Census outage only costs the tier-upgrade section.
 
-### Coach correctness (phase 6, 2026-08-02) — what fixed the v1 debt
-
-Lindsay's v1 verdict was "good base, far from correct"; phase 6 attacked that
-list in dependency order. What changed:
+### Coach correctness — the five rules v1 was missing
 
 1. **Cast ground truth** (`parser/flavor/`): `You prepare` lines resolve to
    ability names — generic article-strip ("the Bloodcloud" → Bloodcloud) +
@@ -466,18 +469,17 @@ list in dependency order. What changed:
    coach findings. Logger-only debuff uptime (`descriptive._debuff_uptime`):
    real cast starts + Census durations vs burn windows (rolling 10s raid
    damage ≥1.5× encounter mean). All flagged as estimates in the UI.
-6. **Engagement classifier v2** (`raidreport`): catalog-proc abilities never
+6. **Engagement classifier** (`raidreport`): catalog-proc abilities never
    anchor; inside the opening 2s an ability that fires ≤1s after being hit is
    a reactive proc (skipped); the logger's own prepare line is an exact
-   high-confidence anchor (`anchor: cast`); remainder keeps the low-confidence
-   flag.
+   high-confidence anchor (`anchor: cast`); the remainder keeps the
+   low-confidence flag.
 
-Still open (smaller, unchanged from v1 item 7): rez/time-dead next-action
-proxies, DoT tier-upgrade tick tail, reuse marginal rotation displacement.
-The abmod marginal is only as good as the calibration points backing it —
-Lindsay still needs to RUN the two dummy parses.
+Still open: rez/time-dead next-action proxies, the DoT tier-upgrade tick tail,
+reuse-marginal rotation displacement — and the abmod marginal, which is only as
+good as its calibration points. Lindsay still needs to RUN the two dummy parses.
 
-## Raid Report (phase 5)
+## Raid Report
 
 `coach/raidreport.py`, computed on demand from stored events (no schema
 change). Per encounter + per night, all raiders in the log: damage/share/DPS,
@@ -542,7 +544,7 @@ lulls > 6s split the fight — Garanel's 21s lull yields two segments (the first
 labeled by its named add, Garanel's Shade), which is exactly what ACT shows
 for the same night.
 
-### Naming: the enemy fought, not the enemy that died (2026-08-03)
+### Naming: the enemy fought, not the enemy that died
 
 `pipeline.encounters.encounter_label` titles a segment after the **mob that
 took the most damage in it**, and sets `success` to whether that mob died.
@@ -565,6 +567,44 @@ needs resolved entities (which target is a mob), so it runs in the write path
 segmenter. `zone_runs.success_count` counts named kills specifically, since
 trash now carries a real success flag too.
 
+**The rule is only as good as the mob/player split feeding it.** On 2026-08-04
+every Wuoshi pull came out titled "Ancient Grovebeast" — the adds — because
+Wuoshi was classified a PLAYER and so was invisible to a rule that ranks mobs.
+It took 5–9× the adds' damage in all five pulls (72M vs 8M on the kill), so the
+title was never a naming question; see the self-heal veto below. Two other
+things went wrong with it, and they are the ones to check when a title looks
+off: the boss sat in the raider table at #17 damage, and `success` tracked the
+ADDS, so a night of four wipes and one kill recorded three kills and two wipes.
+
+### A segment is only a FIGHT if the raid engaged it
+
+`success` is 0/1/**NULL**, and the rail marks only `success === 0`, so NULL
+reads exactly like a kill. On 2026-08-04's Emerald Halls that put three
+non-fights and two wipes in the list wearing the same face as a boss kill, and
+the run header said 11 named pulls where there were 8.
+
+The segmenter cuts on silence, so a raid night also produces segments nobody
+fought: the last pull's DoT ticking on three people 13s before the next one, or
+a proc pet touching the boss and being one-shot. `encounter_label` now requires
+damage into a mob from `_ENGAGE_KINDS` (`player`, `own_pet`, `named_pet`) — a
+**swarm pet is a proc, not a decision**. Without it the segment keeps its name
+(ACT's stubs are titled `Encounter`; ours stay readable) but is `is_named`
+False, `success` NULL, and falls into the Trash group. This is the same set ACT
+drops to reach 61 encounters, noted below.
+
+The exception is why `success` cannot just be NULL whenever the raid dealt no
+damage: **a wipe where the boss AoEs everyone down before a single hit lands is
+an attempt**, and the most emphatic kind of failure. That night had two — 24
+and 17 dead to `Nature's Fury`, zero damage dealt — and both rendered clean.
+Ally deaths decide it: dead raiders mean the raid was there and lost.
+
+The rail says the outcome in the fight's own name — green killed, red lost,
+each with its own mark, because red/green is the one pair a colourblind reader
+loses. Trash stays muted whatever happened to it: fifteen green totem rows
+drown the two lines that matter. ACT's own colouring is NOT this rule (its
+Wuoshi kill and its Wuoshi wipes are the same colour); green-for-killed is
+ours, at Lindsay's ask.
+
 Known residual: ACT cut that night into 61 encounters and we make 60. ACT
 split Galiel's two pulls at a **5s** gap — the only gap ≥3s in our merged 499s
 segment — but no single threshold reproduces its set: at 5s we make 63 (two
@@ -574,7 +614,7 @@ The plugin itself does not decide this — `ACT_English_Parser.cs` only calls
 `SetEncounter(time, attacker, victim)` and its kill-ends-encounter branch is
 commented out, so the boundaries are ACT core's inactivity timer.
 
-## Zone runs (the navigation model — 2026-08-03)
+## Zone runs — the navigation model
 
 Files ("sessions") are the INGEST unit only; the UI navigates **zone runs** —
 one contiguous visit to one zone by one character, derived entirely from
@@ -610,15 +650,15 @@ merge by `name|kind` (`key` + `entity_ids[]` in the payload), abilities by
 source key, with `rollup_key` resolving pet credit (players self-credit —
 their DB `rollup_to` is NULL).
 
-Frontend: `/` = `Home.jsx` (one sortable table of runs), `/zones/:id` =
-`ZoneRun.jsx` (fight rail + tabs Overview/Damage/Healing/Defense/Insights;
+Frontend: `/` = `Home.jsx` (one sortable table of raids), `/zones/:id` =
+`ZoneRun.jsx` (fight rail + tabs Damage/Healing/Defense/AoEs/Timeline/Insights;
 `?sel`/`?actor`/`?tab`/`?cmp` all URL state), right-hand `ActorPanel`
 (per-actor drilldown) or `ComparePanel` (checkbox multi-select, per-metric
-grouped bars from `lib/stats.js`). `/import` = the import hub (live link,
-log files, ACT export) and file management, with `/uploads` redirecting to it;
-`/sessions/:id` (Workspace) survives as the per-file debug view.
+grouped bars from `lib/stats.js`). `/import` = the import hub (plugin, API key,
+uploader, imported logs), with `/uploads` redirecting to it; `/sessions/:id`
+(Workspace) survives as the per-file debug view.
 
-### The roster, and what counts as a raid (2026-08-03)
+### The roster, and what counts as a raid
 
 An encounter is a time slice, not a guest list: it holds every combat line the
 log heard while you were fighting. `raider_count` used to be "distinct
@@ -652,36 +692,95 @@ Net effect on the real corpus: Emerald Halls 26 -> 24 (the raid was 24), Lord
 Vyemm 32 -> 26, Halls of Fate 7 -> 6 (no longer a "raid"), Freethinker Hideout
 25 -> 25 and Ascent of the Awakened 12 -> 12 (real raids, untouched).
 
-### The fight rail (2026-08-03)
+### The fight rail
+
+**The rail's head is the raid page's title block, and the only one.** The page
+used to carry a `.pagehead` above the tables — zone name, date, time range,
+character, sharing badges, the parse picker, Share and Compare — while the rail
+printed the zone name again a few pixels to its left. Worse, that head was
+hidden the moment a drilldown or a comparison opened (`!panelOpen`), so the
+buttons on it came and went with the panel. The block that survives every view
+is the one that gets to be the title: `EncounterTree` takes `sub` (date · time
+range · character, one small line, ellipsised, with the long date on hover),
+`actions` (badges, parse picker, Share, Compare) and `titled` (render the zone
+name as the page's `h1` — `/sessions/:id` keeps its own head, so it passes
+`titled` off and the page still has exactly one `h1`). `.wsmain > :first-child`
+zeroes its top margin so the stat strip lines up with the rail beside it.
+
+The selected FIGHT no longer gets a title of its own. The rail's active row
+already says which one it is, and its footer says how many are counted.
+
+Two things share that head and are not the same kind of thing. The guild rides
+on the `sub` line, right of the character whose parse this is (`subTag`, which
+keeps its width while the caption ellipsises) — it describes the night. The
+`actions` row below carries the sharing badges and the parse picker, and ends
+with Compare pushed to the far right (`.endact`), because it is the one control
+there that DOES something. Compare also wears `.btn.solid` — a filled gold
+button — everywhere it appears (rail, drilldown, the raid list's head-to-head
+card): the default button is a gold outline with a gold wash, which is pixel for
+pixel what every *on* toggle in the app wears (`.chip.on`, `.chip.toggle.big.on`,
+`.listtools .chip.on`), so beside a row of badges it read as a switch somebody
+had already flipped.
+
+**The drilldown opens on the tab you were reading.** The page tabs and a parse's
+kind tabs are the same question at two scales, so `PANEL_KIND` (`ZoneRun.jsx`)
+translates Damage→Damage and Healing→Heals and hands it to `ActorPanel` /
+`ComparePanel` as their starting tab; clicking through six raiders on Healing
+used to cost a second click each. Only the page tabs with a per-ability view map
+— from Defense, Deaths, AoEs, Timeline or Insights the panel keeps whatever it
+is on — and the panel's own tabs still win until the page tab moves again.
 
 `components/EncounterTree.jsx` is the zone page's navigation AND its scope
-control, so the two gestures are kept distinct: **clicking** a fight (or All, a
-zone block, a `Trash ×N` group) makes it the only selection; **ticking** its
-checkbox adds or removes it from the current one, which is how several pulls
+control, so the two gestures are kept distinct: **clicking** a fight (or the
+root, a zone block, a `Trash ×N` group) makes it the only selection; **ticking**
+its checkbox adds or removes it from the current one, which is how several pulls
 merge into one set of combined stats. The boxes always show what is currently
-counted, so "All" visibly means all sixty fights. Selection stays in `?sel=`
-(an id list, or absent for all), so a merged set is a shareable URL; selecting
-everything collapses back to `all` rather than a 60-id query string.
+counted, so the root row visibly means all sixty fights. Selection stays in
+`?sel=` (an id list, or absent for all), so a merged set is a shareable URL;
+selecting everything collapses back to `all` rather than a 60-id query string.
 
 Rows are three fixed columns — checkbox, `9:35p` start, name — with the length
 right-aligned as `m:ss` in tabular figures. `Trash ×N` groups keep their
 twisty, and a group checkbox ticks the whole group (indeterminate when
 partial).
 
-**Wipes are counted by default** (2026-08-03, was excluded): ACT counts them,
+**It is a tree with one root, not a list whose first item is special.** The root
+is **Zonewide** on `/zones/:id` and `All fights` on `/sessions/:id` — a zone run
+is one zone by construction, a session file can span several, and the label may
+not claim more than it covers. Everything below hangs off it down an indented
+spine, and the root is sticky so the total stays on screen to read every row
+against. Two corollaries the layout depends on: the run's length is on the root
+row, in the same column every fight's length is read down (the head carries the
+count only), and the footer is always present once the rail is selectable —
+appearing on the first tick shoved the list up under the cursor.
+
+**One "on" for the whole panel.** Row checkboxes were the browser's default, the
+`All` chip was rarity-blue and the wipes switch was gold — three ways to say
+the same thing in a 40px strip. The checkbox is now drawn in the switch's own
+track colors, and the strip separates its two KINDS of control: presets on the
+left (what is selected), counting rules on the right of a hairline (what the
+numbers mean). The `All` chip is gone; it duplicated the root row.
+
+Repeated nameds carry an **attempt number** (`#3`) rendered outside the
+ellipsis. Seven pulls at one boss otherwise render as seven rows of
+`Vampire Lord Mayong Mist…` — the truncated part is the part that identifies
+them, and the number is the only thing on the row that survives.
+
+**Wipes are counted by default** — ACT counts them,
 and a night with two Galiel wipes IS a night with two Galiel wipes. The rail's
 switch (`?wipes=0`) takes them out of every total while leaving them listed and
 dimmed, and the page head then says how many were left out. Selecting a wipe on
 purpose always shows it — the filter can never empty the page.
 
-**Pet rows** are off by default on Overview. A pet's damage is credited to its
+**Pet rows** are off by default, and their switch lives on Defense with the
+rows it reveals. A pet's damage is credited to its
 owner (`statsroll.actor_key`, ACT does the same), so a pet actor row can only
 ever carry what the pet TOOK — `Tragedy's unswerving hammer` is a real paladin
 hammer pet with a real DmgTaken figure and nothing else, which reads as a
 parse fragment sitting among the raiders. The `Pets` switch brings the rows
 back; `NPCs` still governs mob/environment rows.
 
-### Read caches (2026-08-03)
+### Read caches
 
 Clicking a zone re-earned the same expensive answer every time: the run report
 replays every stored event (~1.5s on the 60-fight Emerald Halls night) and
@@ -702,7 +801,7 @@ replays every stored event (~1.5s on the 60-fight Emerald Halls night) and
   on screen dimmed (`.wsmain.stale`) rather than replacing the page with
   "Loading…".
 
-### Hand edits to the raid list (schema v8 — 2026-08-03)
+### Hand edits to the raid list (schema v8)
 
 Segmentation is a guess, so the list is editable: delete a raid or a fight,
 merge runs the game logged as two visits, unmerge them again. The hard part is
@@ -733,60 +832,49 @@ otherwise re-uploading the same log would come back with every deleted fight
 still hidden and nothing on screen to explain why. Home surfaces this as: all
 fights deleted -> "this log has nothing left in it, delete it too?"
 
-## The raid list as a list (phase 21 — 2026-08-04)
+## The raid list as a list
 
-Frontend, plus two fields on `GET /api/zone-runs`. The list had grown a header
-full of unrelated controls and answered questions nobody asks.
-
-- **`raid_dps`**: total player damage over the run's `combat_s`, computed in
-  the same grouped query that builds the sparkline (`_spark` returns both).
-  It replaces "Peak DPS", which ranked nights by their single best pull.
-  **Named is gone from the UI** — `named_count` is still written, but the
-  count is not trusted enough to print, so the column, the day heading and the
-  selection totals no longer show it.
+- **`raid_dps`**: player damage over the run's `combat_s`, from the same
+  grouped query that builds the sparkline (`_spark` returns both). It replaced
+  "Peak DPS", which ranked nights by their single best pull. **Named is gone
+  from the UI** — `named_count` is still written, but is not trusted enough to
+  print.
 - **`shared_via`** (`groups.shared_via_for_runs`): the VIEWER's mirror of
-  `shares_for_runs` — which of *your* groups reach somebody else's raid, by
-  the same three-way rule (run share, or a standing auto-share inside its
-  `since_ts` window with no `hide`). Both carry `group_id`, because the list
-  filters by group and a name is not a handle. A viewer still learns nothing
-  about who ELSE can see a raid: `shared_with` stays owner-only.
-- **Filtering is by group**, from the toolbar select or by clicking a group's
-  pill in the Shared column; `Manage <group>` appears beside it when your role
-  in that group is owner or admin and deep-links `/groups?g=<id>`.
-- **Grouping follows the sort**: `SortableTable groupBy` now takes an ARRAY of
-  defs and draws whichever one matches the active sort column — nights under a
-  date sort, zones under a zone sort, nothing otherwise.
-- **Selection lives on the toolbar line** (sticky, `.listtools`), not in a
-  card above the table and not in a bar pinned to the bottom. A selection with
+  `shares_for_runs` — which of *your* groups reach somebody else's raid, by the
+  same three-way rule. Both carry `group_id`, because the list filters by group
+  and a name is not a handle. A viewer still learns nothing about who ELSE can
+  see a raid: `shared_with` stays owner-only.
+- **Grouping follows the sort**: `SortableTable groupBy` takes an ARRAY of defs
+  and draws whichever matches the active sort column — nights under a date
+  sort, zones under a zone sort, nothing otherwise.
+- **Selection lives on the sticky toolbar line** (`.listtools`), not in a card
+  above the table and not in a bar pinned to the bottom. A selection with
   nothing you own says "shared with you — read only" rather than showing an
   empty row of buttons.
 - **Two comparisons**: `RaidCompare` (list-row numbers, opens beside the table
-  in `.cmpcol`, and the list drops Timeline/Combat/Raiders to make room) and
-  `RaidParseCompare` — a modal that pulls `/encounters/agg` per raid with a
-  per-column fight picker, so the same named boss on two different nights can
-  be read raider by raider. Rows match BY NAME across raids (entity ids are
-  session-scoped); the raid row sums its raiders, for rates as well as totals,
-  because every raider's rate is measured over the same fight clock.
-- The **Live pill** in the topnav is the parse-state light (streaming /
-  parsing / idle); the Home page no longer prints "Parsing…" under its title.
-- **The filters are two questions.** SIZE — `Raids` and `Group` as independent
-  toggles that partition the list, so a third "All" button was a synonym for
-  both on. And SOURCE — `components/SourceFilter.jsx`, one menu of ticks in
-  three sections (your characters, groups, published), OR'd, empty meaning
-  everything you can see. Keys are `char:<id>` / `group:<id>` / `public`; the
-  page always fetches `scope=all` and narrows in the browser, so flipping a
-  tick never refetches.
-  Three earlier attempts were worse and are worth not repeating. (1) All /
-  Mine / Shared-with-me chips — Mine was a filter that never filtered, since
-  your own raids are always listed. (2) A Shared-with-me switch beside a group
-  filter: two controls on ONE axis, and the switch silently changed what a
-  group pill MEANT, because a group says "I sent it here" on your own raid and
-  "it reached me through here" on somebody else's. (3) The same sources as a
-  row of always-visible pills — honest, but a toolbar of proper nouns competing
-  with the mode chips beside them. A menu keeps one meaning per row, states the
-  current answer on its button, and costs a click nobody makes often.
+  in `.cmpcol`; the list drops Timeline/Combat/Raiders to make room) answers
+  "which night was bigger" from what the list already knows; its "Compare
+  parses" button hands the checked raids to `/compare` (below), which is the
+  deep answer. A `RaidParseCompare` MODAL used to be that answer — raid columns
+  only, unshareable — and was folded into the page; don't rebuild it.
+- **The filters are two questions.** SIZE — `Raids` and `Solo/Group` as
+  independent toggles that PARTITION the list, so a third "All" button was a
+  synonym for both on. SOURCE — `components/SourceFilter.jsx`, one menu of
+  ticks in three sections (your characters, groups, published), OR'd, empty
+  meaning everything. Keys are `char:<id>` / `group:<id>` / `public`; the page
+  always fetches `scope=all` and narrows in the browser, so flipping a tick
+  never refetches.
 
-## Auto-share carries raids only (phase 22 — 2026-08-04, schema v16)
+  Three earlier attempts at SOURCE were worse and are worth not repeating.
+  (1) All / Mine / Shared-with-me chips — Mine was a filter that never
+  filtered, since your own raids are always listed. (2) A Shared-with-me switch
+  beside a group filter: two controls on ONE axis, and the switch silently
+  changed what a group pill MEANT, because a group says "I sent it here" on
+  your own raid and "it reached me through here" on somebody else's. (3) The
+  same sources as always-visible pills — honest, but a toolbar of proper nouns
+  competing with the mode chips beside them.
+
+## Auto-share carries raids only (schema v16)
 
 `character_shares.raids_only`. "Share my raids with the guild" is not a request
 to broadcast every six-man zone, and the two readings cost differently: opting
@@ -808,7 +896,55 @@ it stays a true legacy shim. Pinned by
 `test_auto_share_carries_raids_only_by_default`, which uploads a real eight-man
 roster and a solo zone in one log and checks that exactly one of them arrives.
 
-## Deleting a group is a soft delete (phase 23 — 2026-08-04, schema v17)
+## Sharing by guild tag (schema v21)
+
+`guild_shares`. The second standing branch, and the one that survives an alt:
+a user connects a guild tag one of their characters wears to a group they are
+in, and their uploads from any character wearing it flow there. Without it,
+every new character is a new rule to remember on a page nobody visits twice.
+
+It is a **per-USER** rule matched on the **uploader's character's** Census guild
+(`roster_classes`), and three things about that sentence are load-bearing:
+
+- **Not the run's `guild` tag.** That tag (schema v20) is a majority vote of the
+  whole roster — a derived property of the night, and often somebody else's
+  guild. Sharing is a decision a person makes about their own uploads, so it is
+  matched on who uploaded it, not on who showed up.
+- **Not a group-manager power.** `PUT /groups/{id}/guild-shares` is
+  member-gated, not manage-gated: it says "share MY uploads", the same trust
+  level as a character's auto-share. A group's owner never gains a say over
+  anybody's raids, and a viewer still cannot re-share (`owned_zone_run`).
+- **`guild_checked = 1` only.** The same tri-state abstention the raid tag
+  makes: 0 means nobody has asked Census yet, and a share that fired on it would
+  leak on the strength of a backfill that hasn't run — or go missing for as long
+  as the queue is long. `test_unchecked_guild_abstains` pins both directions.
+
+The reach condition is `AUTO_SHARE_REACHES` with a different alias
+(`_SHARE_REACHES('gs')`), so window/size/`hide` cannot drift between the two
+standing branches, and the branch is wired into all four query sites listed
+under "The visibility rule". The `COLLATE NOCASE` on
+`rc.guild_name = gs.guild_name` is required rather than decorative: SQLite takes
+the collation of the LEFT operand, `roster_classes.guild_name` is BINARY, and
+the NOCASE declared on the `guild_shares` column would never get a say.
+
+Two consequences, both accepted:
+
+- **A connected tag is inert until Census resolves the character.** Nothing
+  fires, and the Sharing page says "guild not resolved yet" rather than offering
+  a tag that isn't there.
+- **Census guilds are undated**, so leaving a guild retroactively unshares the
+  tag-shared back catalogue. That falls straight out of read-time evaluation —
+  nothing was ever materialised — and it is why `character_shares` stays the
+  "keep sharing regardless of what I do next" tool. The two controls sit side by
+  side in the group view for exactly that reason.
+
+`set_guild_shares` rewrites ONE group's rules, not the user's whole set: the
+editing surface is a group's page, and a save about one guild must not drop a
+rule pointed somewhere else. `since_ts` is pinned to first-connection and `prev`
+is keyed on the lowercased name, so re-saving a tag as Census now spells it
+keeps the pin instead of quietly withholding the back catalogue again.
+
+## Deleting a group is a soft delete (schema v17)
 
 `groups.deleted_ts`. Nothing is erased: members, invites, the join code, the
 auto-shares and the run shares all stay exactly where they were, and an admin
@@ -844,7 +980,7 @@ except `users` — characters, raids, groups and shares all point at the user id
 (`auth.USERNAME_RE`, lower case), because login, invites and password reset all
 look an account up by exactly that string.
 
-## The same raid, uploaded by several people (phase 24 — 2026-08-04, schema v18)
+## The same raid, uploaded by several people (schema v18)
 
 Everyone in a raid runs their own ACT. Share a night with a guild group and it
 arrives four times over, and the list called that four raids. Within ONE
@@ -899,11 +1035,101 @@ always allowed to open, it is not a directory of who else parsed the night.
 Clustering happens AFTER the source/size filters, so narrowing to one group
 narrows the menu with it rather than offering parses that are no longer listed.
 
-## Reading the raid, not just counting it (2026-08-03)
+## The Compare page — any parses, side by side
 
-The tables were complete but flat: every number was a per-fight total, nobody
-had a class, and "damage" was one bucket regardless of where it came from.
-Four backend additions and the UI built on them.
+`/compare` (`frontend/src/pages/Compare.jsx`) puts N parses side by side: a
+column is `(zone run, fight selection, subject)` where the subject is the
+whole raid or one player. Same player on two nights, two players on one boss,
+raid against raid — one surface. It absorbed the old `RaidParseCompare` modal
+(raid columns only, unshareable); `ComparePanel` on the raid page stays,
+because "these raiders, this run" is already loaded there and needs no picker
+— but it renders the same way this page does.
+
+**A column is the ACTUAL parse, not a metric rollup.** How people compare in
+practice is a screenshot of their ACT window lined up against somebody
+else's, so a player column is their ability breakdown and a raid column is
+the zone page's parse list (same columns, same rank coloring). A first
+version rendered metrics as rows (DPS, Crit %, … with a ▲ on the leader) and
+was replaced — nobody compares "Crit % rows", they compare parses. The
+breakdown itself is one component, `BreakdownTable.jsx`, extracted from
+`ActorPanel` and shared by the drilldown, the raid page's `ComparePanel` and
+this page, so a parse looks identical everywhere it appears; comparison
+surfaces pass `defaultHidden` (Share, ToHit, Median, MinHit) and the
+`SortableTable` Columns menu brings those back. Tables sharing a `prefsKey`
+sync layout changes live (an in-module listener set — localStorage's own
+event only fires cross-tab), which is what keeps side-by-side columns lined
+up while you rearrange them. One kind tab (Damage / Healing, `?k`) rules
+every column: comparing this column's damage to that one's heals isn't a
+comparison. Each column carries a `ParseStrip` — one compact line of
+headline numbers (Combat, DPS/HPS, total, crit, deaths) standing in for
+ACT's title bar.
+
+**The URL is the comparison.** One query param `c`, a CSV of
+`<runId>:<sel>:<subject>` tokens, where `sel` is `all` or fight ids joined by
+`.` — not `+`, which `URLSearchParams` reads as a space — and `subject` is
+`raid` or a player name (EQ2 names are single-word alphanumeric, so the
+delimiters can't collide). Malformed tokens are dropped, never crashed on.
+Everything on the page — add, remove, flip a fight or a subject — rewrites `c`
+(the kind tab rewrites `k`), so a pasted link reproduces the whole comparison.
+
+**Every number comes from `/encounters/agg`** — per-encounter authorized,
+memoized, client-cached — and never from the run report, whose rows are frozen
+whole-run and would silently mismatch a per-fight selection. Cross-parse
+identity is BY NAME (entity ids are session-scoped). A raid column sums its
+raiders — right for the rates too, every raider's rate runs over the same
+fight clock — and crit/auto/proc/casts aggregate by summing the per-player
+`damageDerived` rollups. Columns fetch and fail INDEPENDENTLY: a run the
+viewer can't see renders "not visible to you" in that column, and the rest of
+the comparison stands, which is what makes the links safe to share.
+
+**Getting there is one click from any parse**: a Compare chip in the raid
+page's title block — the fight rail's head (carrying the page's current fight
+selection) — and one in the
+player drilldown header (`ActorPanel compareTo`, players only — comparing a
+mob across nights isn't a thing). Both land with one column loaded and the
+add-a-parse card prominent.
+
+**The picker is one faceted live search, computed in the browser.** The first
+version was a flat `<select>` over every visible run plus a separate two-step
+player search — two controls that could not narrow each other, and a dropdown
+that grows to three hundred options is not a picker. It is now a search box over
+Zone / Date / Guild / Player dropdowns and a short result list: typing `freeth`
+surfaces *Freethinker Hideout* nights AND Freethinkers-guild nights, because
+zones and guilds match anywhere in the string (people type them from the middle)
+while roster names match from the front (people type those from the start).
+
+It is client-side because the page **already fetches the whole visible list**,
+one row per NIGHT with the same yours-then-primary rule as the raid list.
+`?roster=1` (`list_zone_runs`) adds each night's names, parsed server-side so the
+client never learns the storage format; ~300 nights × ~24 names is about 100 KB,
+smaller than one `/encounters/agg` answer the page will fetch anyway. That buys
+zero debounce, zero new endpoints, and instant cross-narrowing: **each dropdown's
+options are computed from the nights matching every OTHER facet**, so no
+combination of choices can strand you on an empty list. The Guild dropdown is not
+rendered at all when nothing visible carries a tag — a fresh backfill degrades by
+the control not existing yet, not by an empty select.
+
+**A raid click adds; a player click selects.** One click on a result row adds the
+whole raid, because the anchor column already said what kind of comparison this
+is, and the facets survive it — stacking three Freethinkers nights is
+click-click-click. When a player anchors the page (or the Player facet is set),
+the row click instead *selects* the night and fills the Zone/Date/Guild dropdowns
+from it, and a confirm strip offers that night's roster (defaulting to the
+anchored name) plus "Whole raid" — so the common case, "me on another night", is
+click-row, click-Add, and no mode is a dead end.
+
+**The picker card renders BEFORE the columns**, so it holds the left edge while
+parses stack up to its right. It used to trail them, which walked the one
+control you use repeatedly further right with every raid added — and off the
+screen by the third.
+
+`GET /api/players?q=` / `GET /api/players/{name}/runs` remain in `zoneruns_api.py`
+— a `json_each` scan of `zone_runs.roster_json` behind `VISIBLE_RUN_IDS`, the
+same predicate as the list — but the picker no longer calls them. `?roster=1`
+runs behind that identical predicate, so it reveals nothing a viewer could not
+already read fight by fight.
+
+## Reading the raid, not just counting it
 
 ### Class inference (`pipeline/classguess.py`)
 
@@ -914,27 +1140,166 @@ names, and **procs** (gear fires those — they say nothing about the caster),
 then let each remaining name vote for its class. A `characters` row with a
 Census class overrides the vote outright (`source: "census"`, confidence 1.0).
 
-**Rebuilt 2026-08-03** — the old version answered per FILE, with whole votes
-only, and got 198 of 981 player rows named. Three changes:
+Three rules, each answering a way the first version got it wrong (it voted per
+FILE with whole votes only, and named 198 of 981 player rows):
 
-- **Evidence pools across sessions, keyed by NAME** (`_evidence`, one 0.1s
-  query over the whole database). Guessing per file gave the same person a
+- **Evidence pools across sessions, keyed by NAME** (`_evidence`, one 0.4s
+  query over the whole database). Per-file guessing gave the same person a
   class in one raid and nothing in the next, and for 19 players two different
   answers in the same list (Zooey: defiler here, mystic there). The answer is
-  written back to EVERY entity row with that name, so it applies to older
-  raids without reparsing them.
+  written back to EVERY entity row with that name, so it reaches older raids
+  without a reparse.
 - **Shared spells vote in fractions.** "conjuror,necromancer" used to be
-  discarded; it is now half a vote each — it cannot pick between the two, but
-  it is real evidence against the other twenty-two.
+  discarded; it is half a vote each — it cannot pick between the two, but it is
+  real evidence against the other twenty-two.
 - **A margin rule beside the share rule.** A winner needs whole-vote evidence
   (`MIN_STRONG`, 2 single-class spells), `MIN_SCORE` of weight, and either a
-  majority of the weight cast or double the runner-up. The margin is what
-  names a player whose gear procs are not all flagged: Shaly scores 14.5
-  coercer against 7 bruiser and 4 each of three more — 39% of the weight, and
-  obviously a coercer.
+  majority of the weight cast or double the runner-up. The margin is what names
+  a player whose gear procs are not all flagged: Shaly scores 14.5 coercer
+  against 7 bruiser and 4 each of three more — 39% of the weight, and obviously
+  a coercer.
 
-Measured on the real database: 131 → 147 names resolved, no answer changed,
-none lost, and the per-session disagreements gone.
+**Census by NAME is the answer; the vote is the approximation**
+(`census/roster.py`, `roster_classes`, schema v19). `character/?name.first_lower=
+zooey&locationdata.worldid=618` returns `Mystic` — the game answering, in 0.12s,
+without caring that half a raid log's ability names have no Census spell row.
+`characters` already held this for the handful of people with an account here;
+`roster_classes` holds it for every name that has ever appeared in one of their
+raids. On Lindsay's database that took the 8+-raider runs from 20% of raiders
+resolved by inference alone to **80% from Census, 94% counting inference**, and
+it agreed with every inference it overlapped (Klebb Brigand, Thwart Coercer,
+Rorschach Assassin) while correcting the one that was wrong (Zooey: the vote
+said Defiler, Census says Mystic).
+
+A miss is an answer too and is cached the same way (`found=0`): `Enynti` is not
+a character. That is one of the two negatives `refine_bare_pets` needs.
+
+Census is authoritative about NOW, never about the night of the raid, so it is
+layered UNDER the timeline, not over it — a Census row written today must not
+relabel a raid from before a betrayal. Order of authority per fight, in
+`resolve_class`: **what the fights on screen prove > the era the fight falls in
+> Census > the pooled vote.** The local evidence chooses WHEN (which of the
+classes this name is known to have held was live that night), never WHAT — so a
+coercer whose charmed pet cast three Berserker abilities in one fight cannot be
+promoted to Berserker by that fight.
+
+Requests are budgeted (`ROSTER_LOOKUP_BUDGET`) and run OUTSIDE the parse's write
+transaction; a Census outage costs a retry, never a parse and never a `found=0`
+written over a real character. `backend/tools/sync_roster.py` does the bulk
+backfill. Needs a real `CENSUS_SERVICE_ID` — `s:example` throttles after about
+six requests, which will not get through one raid.
+
+## The raid's guild, voted by its roster (schema v20)
+
+Nothing in an EQ2 log says which guild a raid belongs to. The roster does, one
+name at a time — and the character doc that answers "what class" already carries
+"what guild", so `census/roster.py` captures both from the one request it was
+already paying for. `census/guilds.py` turns that into a tag: `zone_runs.guild`,
+a pill right of the zone name on the raid list and the raid page, and the Compare
+picker's Guild facet.
+
+**A wrong tag is a public claim about somebody else's guild**, so the vote
+abstains twice as readily as it commits:
+
+- **Abstain on thin evidence.** Fewer than half the roster resolved and there is
+  no answer here. About 18% of a real roster never resolves at all (pets, mobs,
+  names typed before the character existed), and a tag drawn from six of
+  twenty-four names is a guess wearing a fact's clothes.
+- **Tag only on a strict majority of what IS known, with the known-guildless
+  counting against.** Twelve Freethinkers and ten pick-ups is a Freethinkers
+  raid; three Freethinkers and eight unguilded friends is a pick-up group that
+  happens to carry three guildies. Ties fail the strict test for free.
+- Runs under `RAID_MIN_RAIDERS` are forced NULL — imported from `groups.py`,
+  because "what is a raid" is one line the whole app draws once.
+
+That needs three states, not two, which is what `roster_classes.guild_checked`
+is for. `guild_checked=1` with a `guild_name` is a guild; `1` with NULL is
+**known guildless**, and it votes; `0` is *never asked*, and it abstains.
+Collapsing the last two would let a backfill in progress strip real tags, or
+paint somebody's guild onto a night that was mostly strangers.
+
+The tag is derived, never authored, so it is **recomputed rather than
+maintained**. `retag_runs` is pure SQL over already-cached rows — zero Census
+calls — and every write path that can change a roster calls it afterwards:
+`pipeline/zoneruns.py` at the end of `rebuild_zone_runs` (the funnel every
+upload, live close, reparse, merge, split and delete ends in), `ingest_writer`
+once more after the parse-path lookups land, and the hourly loop in `main.py`.
+There is therefore no staleness column and no `PARSE_VERSION` bump: nothing
+about parser or rollup semantics changed, and NULL means "no majority holds"
+and "not computed yet" alike — to every reader they are the same thing.
+
+The ~1100 names cached before v20 have a class and no guild answer. They are not
+stale by any TTL, just missing a field, which is what `resolve(force=True)` is
+for; `backfill_stale_guilds` walks them oldest-first, 120 per hourly tick at
+0.75s pacing, and `sync_roster.py --guilds` is the same pass with no budget for
+when you want it now.
+
+### The rest of the character doc: level and guild on an actor row
+
+The same cached row carries a `level`, and until the drilldown asked for it
+nothing ever read it back. `_census_facts` / `_add_census_facts`
+(`routers/encounters_api.py`) hang `level` and `guild` on every PLAYER actor in
+`/encounters/agg` and `/encounters/{id}`, so opening someone's parse names a
+person — *Abath, Shadowknight, L70, Gin and Jumjum* — instead of a bare string.
+One indexed read per selection, zero requests: the facts are already in
+`roster_classes` because the class lookup paid for them.
+
+Two limits worth keeping straight. The world comes from the sessions in the
+selection (`roster_classes` is keyed by name AND world), so a name is answered
+by the server the raid was on. And unlike the class, **these are undated**:
+Census reports where somebody is NOW, and nothing here splits them into eras
+the way `_split_eras` splits a spellbook. So they caption a name and never feed
+a number — the tooltips say as much, and a raider Census never resolved gets
+nothing rather than a zero.
+
+There is no gear/AA link to go with them. EQ2U (`u.eq2wire.com`) is the obvious
+target and its character routes answer 200 with an empty body for every id and
+name tried on 2026-08-05, so it would have been a link to nowhere. Showing gear
+would mean ingesting `equipmentslotlist` from the character doc ourselves.
+
+**A class change is a DATE, not a tie** (`_split_eras`, `_write_eras`). EQ2
+lets a character betray into the other half of their archetype, and pooling
+forever then guarantees a deadlock between two full spellbooks: Klebb cast
+swashbuckler abilities until 2026-07-31 and brigand abilities after it (17 v
+16), Thwart was an illusionist until 2026-08-02 and a coercer from 2026-08-04
+(12 v 10). Both failed the tie rule, both went blank in **every raid they had
+ever appeared in**, and every further upload made it more permanent — Klebb was
+blank on the Mistmoore's Inner Sanctum page for exactly this reason. So when
+the pooled vote deadlocks, the contenders' ability WINDOWS decide: if the last
+swashbuckler ability lands before the first brigand one, that is not ambiguity,
+because a character who betrayed cannot cast the old book again. `_split_eras`
+cuts between the windows, infers each side from its own evidence, and each
+session is answered from the era it falls in — which is why these names skip
+the blanket write-back above.
+
+Disjointness is the whole test, not "two strong classes": a raider wearing
+another class's proc gear scores stray votes all night long and those
+interleave. One residual: `entities.class_guess` is per session, so a log that
+spans the changeover (Klebb's falls inside one 1.2M-line file) gets the era it
+cast more of, and the fights in that one file predating the switch read as the
+new class.
+
+**Voting cannot tell you WHETHER the row is a person** (`refine.roster_prescan`,
+`guess_session_classes(roster=…)`). EQ2 writes a summoned pet exactly like a
+raider — a bare capitalized name casting its class's real spells — and it
+receives group buffs and gets warded like one too, so every signal the vote
+reads agrees with itself. On 2026-08-04 that produced `Kartik — Berserker`,
+`Vaser — Fury`, `Leneker — Coercer 100%`; each acted in ONE of 21 encounters
+while every real raider acted in 20 or more, and the log carried no owner
+possessive anywhere, which is also why `petnames` (which learns from
+`Alas, <Owner>'s <Pet> has died…`) can never reach them.
+
+So the file has to be the tiebreak: `roster_prescan` collects the names that
+appear in a line **only a player character can produce** — chat, raid join /
+leave, guild login, loot, resurrection. On that night it covered all 26 real
+raiders and none of the seven pets. A name with no such evidence is written
+`{"class": null, "source": "unidentified"}` and the table says so, rather than
+showing a classless raider. Two deliberate asymmetries: the set is
+over-inclusive (server-wide chat counts, so a stranger who said hello lands in
+it) because a name wrongly INCLUDED only keeps the status quo while one wrongly
+excluded strips a real raider's class; and the mark is written for that session
+only, and other sessions' inference will not overwrite it, because the same
+name can be a raider in one log and a pet in the next.
 
 **What it still cannot do, and why it looks worse than it is.** Roughly half
 the ability names in a real raid log — 433 of 919 — have no Census row at all:
@@ -1069,41 +1434,53 @@ ACT list as wrong. Named bosses, the case that matters, are unique.
   palette in fixed selection order, since two raiders of one class would
   otherwise draw the same line.
 - **Selection sums** (`SelectionBar`): checking rows adds them up in a sticky
-  footer instead of immediately hijacking the panel — comparing is now a
-  deliberate second click. The same bar serves the ability breakdown, so
-  "what fraction of my parse is my priority spells" is a few checkboxes.
-- **Rank coloring** (`stats.rankClass`): a number is colored against the
-  same-role raiders currently on screen, and says nothing at all below four
-  peers, which is not a distribution.
+  footer instead of immediately hijacking the panel — comparing is a deliberate
+  second click. The same bar serves the ability breakdown, so "what fraction of
+  my parse is my priority spells" is a few checkboxes.
+- **Rank coloring** (`stats.rankScale`/`rankColor`/`rankTitle`, applied through
+  `SortableTable`'s `cellStyle` / `cellTitle` hooks): a row's PLACE among the
+  same-role raiders on screen, mixed into the text with `color-mix`, with the
+  standing spelled out in the cell's tooltip ("3rd of 7 healers").
+
+  It has been wrong twice. Hard terciles called the bottom third of the raid red
+  even when the whole field was within a point of each other — exactly what crit
+  becomes in later expansions. Distance-from-median fixed that and introduced a
+  worse problem: the size of the gap and the size of the group both moved the
+  color, and each row was measured against ITS OWN role's median, so one column
+  carried up to four yardsticks at once. On the Minion of Evil fight that put a
+  red 9,662 DPS (necromancer, against a 10,630 DPS-peer median) two rows above a
+  green 1,868 (defiler, against a 981 healer median), with nothing on screen
+  saying why. Position is the one thing a reader can verify against the column
+  they are already looking at.
+
+  **A row with no role gets no color**, and neither does a group under
+  `MIN_PEERS`. The old fallback — borrow the whole raid's median — is what made
+  the mixing invisible: a third of the roster has no class (Census covers about
+  half the ability names) and tanks are usually fewer than four, so most of the
+  uncomparable rows were quietly on the raid-wide scale beside role-scoped
+  neighbours. Better to claim nothing.
 - **Decomposition** (`stats.decompose`): DPS split into activity × hit size ×
   crit × alive%, each against the best peer, naming the biggest gap — the
   difference between "you're 20% behind" and "you cast 30% less".
-- New tabs/panels: `TimelineChart` (crosshair, fight bands, death markers,
-  table view), `DeathRecap`, `CompositionBar`, plus tier upgrades / debuff
-  uplift / per-ability fit, which the coach API had always returned and
-  nothing rendered.
-- `GET /api/zone-runs` gained `spark[]` (raid DPS per fight) for the home
-  page sparklines — one grouped query for the whole list.
 
-## ACT parity (diffed 2026-08-02 vs Lindsay's ACT screenshot, Zylphax the Shredder)
+## ACT parity
 
-The Zylphax encounter now matches ACT **exactly — all 25 players to the point
-of damage** (`test_act_parity_zylphax` guards it). Three bugs found and fixed:
+The Zylphax the Shredder encounter matches ACT **exactly — all 25 players to
+the point of damage** (`test_act_parity_zylphax` guards it). Two traps from
+that round that are not parity rules but will bite again:
 
-1. **Logger's swarm pets didn't roll up** (Bobby −17.3%): in the possessive
-   owner slot (`Bobby's blighted horde`) the logger's name means the PLAYER,
-   but the bare-name-is-pet rule classified it as his pet → rollup dropped.
-2. **`lastrowid` after `ON CONFLICT DO NOTHING` is garbage** (connection-wide
-   last-insert id, any table). Harmless on a fresh DB; corrupts ability
-   attribution on ANY second session or reparse. Now guarded by `rowcount`.
-3. **Non-focus self-hits counted as damage** (Spades +746): ACT excludes all
-   self-inflicted damage from Damage, we only excluded `focus` dtype. Self-hits
-   now shelve under ability kind `self` like focus does.
+- **`lastrowid` after `ON CONFLICT DO NOTHING` is garbage** — it is the
+  connection-wide last-insert id, from any table. Harmless on a fresh DB;
+  corrupts ability attribution on ANY second session or reparse. Guard with
+  `rowcount`.
+- In the possessive owner slot (`Bobby's blighted horde`) the logger's name
+  means the PLAYER, not the bare-name-is-pet rule — otherwise their swarm pets
+  never roll up (Bobby read 17.3% light).
 
-### ACT parity round 2 (2026-08-03, Emerald Halls zone view, 25 players)
+### The ACT model (round 2, Emerald Halls zone view, 25 players)
 
-Diffed the full zone-wide combatant table against Lindsay's ACT screenshot.
-The ACT model, now implemented (each verified numerically):
+Diffed the full zone-wide combatant table against ACT. Each rule verified
+numerically:
 
 1. **Ward absorbs fold into the hit they mitigated** (`parser/classify.py
    _pair_wards`). The log prints the absorb line BEFORE its hit line; the hit
@@ -1137,25 +1514,21 @@ The ACT model, now implemented (each verified numerically):
 
 Result on the Emerald Halls night: damage 21/25 exact (rest within 0.003%),
 cures 25/25, deaths 25/25, power drain ≈exact, EncDPS/EncHPS within 0.7%.
-Still open, in residual-size order:
-- **Combat clock 4421s vs ACT 4392s** (60 vs 61 encounters): boundary-second
-  differences (~0.5s/encounter) in ACT's internal open/close rules we can't
-  fully reverse-engineer from screenshots — uniform, doesn't reorder anyone.
-- **Damage-taken residuals -1..-3%** (Artonk -6%): suspected intercepts
-  ("Bobby intercepted some of the damage…" carries no amount) + boundary
-  trimming. Trailing-event trimming was tried and REGRESSED cures/EncHPS —
-  ACT keeps idle-window heals/power in the encounter; don't re-add it.
-- Emericant's ±6,307: ACT files manastone/potion self-power as PowerDrain.
+Residuals: damage-taken runs 1-3% light (Artonk -6%), suspected intercepts —
+the log carries no amount for one — plus boundary seconds; and Emericant's
+±6,307, which is ACT filing manastone/potion self-power as PowerDrain.
+**Trailing-event trimming was tried here and REGRESSED cures/EncHPS** (ACT
+keeps idle-window heals and power inside the encounter); don't re-add it. The
+combat-clock gap that used to sit at the top of this list was the corpse tail,
+below.
 
-### The corpse tail (2026-08-04, PARSE_VERSION 14)
+### The corpse tail
 
 `pipeline/encounters.split_trailing_corpse` — a mob's DoT keeps ticking for a
-few seconds after it dies, and the silence rule counted those ticks as combat.
-On Lindsay's Freeport pull ACT read 28s and we read 32s: same 28,634 damage,
-EncDPS 894.8 against ACT's 1,022.64, plus 32 damage on the mob's row ACT never
-counted. ACT ends the fight at the kill and opens a new encounter for the tick
-(its tree showed the 28s pull, then a `[00:00]` stub 4s later). We now do the
-same, and the replayed pull reproduces every number on that screenshot exactly.
+few seconds after it dies, and the silence rule counted those ticks as combat
+(the Freeport pull: ACT 28s, us 32s, same 28,634 damage, EncDPS 894.8 against
+ACT's 1,022.64). ACT ends the fight at the kill and opens a new encounter for
+the tick — a `[00:00]` stub 4s later.
 
 **The rule is a SUFFIX operation and that is the whole design.** Walk back from
 the end of a gap-cut segment over events that are only a dead mob still
@@ -1180,33 +1553,26 @@ other people keep swinging. A shorter silence threshold matches the count (6s
 gives 61) but not the clock, and would not have fixed the Freeport pull at all
 — that gap was 4s.
 
-**Confirmed against ACT's own source** (`/home/lindsay/tmp/ACT_English_Parser.cs`,
-the EQ2 parser plugin): the kill handler's `EndCombat(true)` is COMMENTED OUT,
-and the string "fighting" does not appear anywhere in the file. ACT never ends
-an encounter on a kill or on the combat-state line — boundaries come from
+**Confirmed against ACT's own source** (`ACT_English_Parser.cs`, the EQ2 parser
+plugin): the kill handler's `EndCombat(true)` is COMMENTED OUT, and the string
+"fighting" does not appear in the file at all. ACT never ends an encounter on a
+kill or on the combat-state line — boundaries come from
 `ActGlobals.oFormActMain.SetEncounter(time, attacker, victim)`, i.e. ACT core's
 idle timeout. So this is a behavioural match, not ACT's mechanism.
 
-**What ACT's exports then showed** (`Import/Export` -> XML, kept in
-`/home/lindsay/tmp/act-export*.xml`) is that the clock and the membership are
-DIFFERENT questions. An encounter holds everything the timeout keeps together,
-but its duration runs only to the GROUP's last action:
-
-- `a knotted guardian`, the interrupted Emerald Halls wipe: ACT reads 40s while
-  the mobs go on hitting bodies for 3 more seconds. Their damage is still in
-  ACT's totals — only the clock stops. We now read 40s too.
-- `Malkonis D'Morte`, a 411s raid kill: ACT ends on the killing blow at
-  21:23:33, not on the heals still landing at 21:23:39. Same as ours.
-- The Freeport pull: ACT ends on the kill, and the corpse tick 4s later is a
-  separate `[00:00]` encounter titled after the mob.
+**ACT's XML exports** (`Import/Export` → XML, the ground truth to collect —
+one per fight, not screenshots) then showed that the clock and the membership
+are DIFFERENT questions. An encounter holds everything the timeout keeps
+together, but its duration runs only to the GROUP's last action: the knotted
+guardian wipe reads 40s while the mobs go on hitting bodies for 3 more seconds
+(their damage still counts, only the clock stops), and the 411s Malkonis
+D'Morte kill ends on the killing blow, not on the heals landing 6s later.
 
 So `last` is the last ALLY action (ally damage/avoid, or a mob kill); mob
 damage never extends the clock, and heals never did. A corpse tick opens a new
-segment; a LIVE mob's swing does not (on a wipe the tail rides along).
-
-Diffed against ACT's exports, per combatant: the Malkonis kill is 27 of 30
-damage numbers exact with cures exact, and the knotted guardian wipe is 24 of
-26 exact with cures and deaths exact.
+segment; a LIVE mob's swing does not (on a wipe the tail rides along). Per
+combatant against those exports: Malkonis is 27 of 30 damage numbers exact with
+cures exact, the wipe 24 of 26 with cures and deaths exact.
 
 Still open, with evidence:
 - **ACT starts an encounter ~3s before we do** when the pull opens with THREAT
@@ -1221,7 +1587,7 @@ Still open, with evidence:
   bloodgorger 2; we report 0), and does NOT roll another player's pet death
   into its owner (we gave Bobby/Beaux/Aros a death each for pets).
 
-## Rezzes, revives, intercepts and the adjusted delay (2026-08-03, schema v10)
+## Rezzes, revives, intercepts and the adjusted delay (schema v10)
 
 Four things the log says that the parser was not listening for, plus one stat
 ACT cannot express. `PARSE_VERSION` 13; the startup sweep rebuilds everything.
@@ -1302,7 +1668,7 @@ fight ACT's AvgDelay reads 0.14-0.39s for the top parsers — a number nobody
 can act on — while the adjusted delay reads 1.2-1.65s and separates them:
 Spades 1.21s against Bobby 1.65s.
 
-## Phase 7b — attribution overhaul + stats engine v2 + workspace UX (2026-08-02)
+## Attribution and the stats engine
 
 **Pet knowledge base** (`parser/petnames.py`, global `pet_names` table): named
 pets (`Ellea's Lunar Attendant`) are grammatically identical to abilities with
@@ -1330,6 +1696,52 @@ stop appearing as raiders and their kills label the encounter. Target-side
 resolution now decomposes possessives exactly like source-side, so damage
 taken by `Ellea's blighted horde` lands on the same entity row.
 
+Everything that vetoes a reclassing is a claim that the name is a PERSON, so
+each one is a hole if a mob can produce it. Two found so far, both from real
+logs: a boss's self-heal (`Wuoshi's Nature's Salve heals Wuoshi`), fixed by
+resolving heal edges only between distinct names once `confirmed` is complete;
+and **owning a swarm pet**. That one reads like proof — only players summon
+dumbfires — but an encounter that holds the raid's pets prints `Enynti's
+protoflame` and `Enynti's awaken grave` for the boss, and one such line
+promoted Enynti to a confirmed player, which vetoed its own kill-victim
+reclassing. It sat in the Mistmoore's Inner Sanctum raider table with 872k
+damage and 24 people attacking it, credited with Ultraviolet Beam, Harm Touch
+and Chromatic Shower (abilities it was HIT by, pooled into its class vote
+across nine classes). The pet-owner rule is now applied only to names the raid
+never killed.
+
+`roster_prescan` is threaded in as the player-side authority (`refine_known_mobs
+(events, logger, roster)`): a name in it is never a mob, whatever the rest of
+the evidence says. It is the only player signal here a mob cannot manufacture,
+and it is what still protects a mind-controlled raider — who produces a
+player-credited kill line on their own name — now that the softer signals no
+longer get to veto on their own.
+
+**Bare-named summoned pets** (`refine_bare_pets`) are the mirror image of the
+one-word boss: EQ2 writes a dumbfire with no owner possessive anywhere in the
+file, so `petnames` can never reach it and the grammar makes it a raider.
+`Viber`, `Knyi`, `Geker`, `Holmes` and `Reaper` sat in raid tables with no
+class — the "?" rows. Two independent tells, either sufficient:
+
+- **their KIT** — `Viber` cast Grisly Feedback (a necromancer Grim Sorcerer's),
+  `Knyi` cast Confusion and Headache (an illusionist pet's), `Geker` cast Graven
+  Vanquishing (a conjuror pet's). `ability_catalog` already knows those are
+  `unit='pet'` because real pets under real owners taught it.
+- **Census has never heard of them**, and neither has the log. `Holmes` only
+  ever melees, so no kit gives it away, but no character by that name exists on
+  the server and it never chatted, looted, joined a raid or was resurrected.
+
+`roster` vetoes both, `known_mobs` wins outright (mobs cast pet kits too —
+`Enynti` cast Grave Decay), and the row lands as `swarm_pet` with no owner,
+which is the honest shape: an unowned dumbfire is not a raider and is not
+anybody's damage.
+
+Trap found while building it: `roster_prescan` matched `^<Name> receives ` as
+loot, and `Shotar receives a transcendent injury!` is a DEBUFF landing on a
+summoned pet. Four dumbfires were promoted to proven raiders by a combat
+message, which then vetoed every demotion. Loot carries an `\aITEM` link; the
+pattern now requires it.
+
 **Stats engine v2** (schema v5, `pipeline/statsroll.py`): per-ability avoid
 breakdown (`misses/parries/ripostes/dodges/blocks/reflects/resists` — the
 `parries`→"parrie" bug is dead), `zero_hits` (absorbed hits stay inside `hits`
@@ -1344,27 +1756,19 @@ any set of one session's encounters into the same payload shape (single-id
 fast-path; medians recomputed from events, null when pruned) — it powers
 every tree node below.
 
-Per-ACTOR AvgDelay (schema v7, parse v11): `encounter_actor_stats` stores
-`atk_swings` (offensive damage events + avoids, self-hits excluded) and
-`atk_span_s` (first→last swing); the API derives `avg_delay_s =
-span/(swings-1)`, which aggregates exactly across encounters (sum of spans /
-sum of gaps). Surfaced in the zone-page Damage tab, Workspace combatant
-table, and ComparePanel.
+Per-ACTOR AvgDelay: `encounter_actor_stats` stores `atk_swings` (offensive
+damage events + avoids, self-hits excluded) and `atk_span_s` (first→last
+swing); the API derives `avg_delay_s = span/(swings-1)`, which aggregates
+exactly across encounters (sum of spans / sum of gaps). See also "AvgDelay adj"
+below, which counts button presses instead of landings.
 
-**Workspace UX**: `/sessions/:id` is now one ACT-style page
-(`frontend/src/pages/Workspace.jsx` + the first shared components:
-`SortableTable`, `EncounterTree`, `ShareBar`, `useQueryState`): left tree
-(session **All** root → zone blocks → fights; consecutive trash collapses to
-`Trash ×N`), right pane = sortable combatant table → per-actor ability
-drilldown (ACT columns: Swings, ToHit, Median, AvgDelay, damage types, kind
-filter chips) + a DPS bar strip. Selection lives in the URL (`?sel=` id-list
-or `all`, `&actor=`). SessionDetail/Encounter/RaidReport/Coach **pages** are
-deleted (`/encounters/:id` redirects); the raid-report API remains and its
-engagement/death-cost/overheal numbers merge into the All node as columns.
-The coach engine, calibration, and `coach_api` are intact — no UI surface.
-Chain-pull labels cap at 4 nameds (`A + B + C +N more`).
+`/sessions/:id` (`pages/Workspace.jsx`) survives as the ACT-style per-FILE
+debug view — left tree, sortable combatant table, per-actor drilldown, URL
+selection (`?sel=`/`&actor=`). Everything a reader wants is on the zone-run
+pages; this one exists for looking at one upload in isolation. Chain-pull
+labels cap at 4 nameds (`A + B + C +N more`).
 
-## Hardening (phase 6)
+## Hardening
 
 - **Pruning** (`pipeline/prune.py`, loop in `main.py` every 6h, `PRUNE_DAYS`
   env, default 180, 0 disables): ready+unpinned sessions older than the
@@ -1385,7 +1789,7 @@ Chain-pull labels cap at 4 nameds (`A + B + C +N more`).
 ## Verification
 
 ```bash
-.venv/bin/python -m pytest backend/tests/ -q     # 188 tests incl. golden fixture
+.venv/bin/python -m pytest backend/tests/ -q     # 261 tests incl. golden fixture
 bash restart.sh && curl -s localhost:8450/api/sessions
 curl -F "file=@/home/lindsay/bobby.txt" -F "character_name=Bobby" localhost:8450/api/uploads
 ```

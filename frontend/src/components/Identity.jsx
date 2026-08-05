@@ -3,6 +3,17 @@ import { classColor, classLabel, classTitle, familyColor } from '../lib/classes.
 /* Class chip: the tint is decorative, the word is the encoding — they always
    ship together, so identity never rests on color alone. */
 export function ClassChip({ actor }) {
+  /* Nothing in the log proved a person was behind this name — a bare-named
+     summoned pet fights and casts exactly like a raider. Say so, rather than
+     leave a blank that reads as a class we have not got round to guessing. */
+  if (actor?.class_source === 'unidentified') {
+    return (
+      <span
+        className="classchip unid"
+        title="No chat, roster, loot or rez line anywhere in this log — probably a summoned pet, not a raider"
+      >unidentified</span>
+    )
+  }
   if (!actor?.class) return null
   const inferred = actor.class_source !== 'census'
   const weak = inferred && (actor.class_confidence ?? 1) < 0.6
@@ -11,6 +22,33 @@ export function ClassChip({ actor }) {
       <i style={{ background: classColor(actor.class) }} />
       {classLabel(actor.class)}
       {weak && <span className="q">?</span>}
+    </span>
+  )
+}
+
+/* Who a raider is, next to their name when the page is about THEM: the class,
+   then the level and guild Census already cached for the class lookup
+   (`census/roster.py` pays for the whole character doc). Both of those are
+   Census's answer for NOW, not for the night — nothing dates them the way the
+   log dates a class — so they caption the name and never feed a number on the
+   page. `compact` drops the guild for the places that name several raiders on
+   one line. Absent facts simply do not render: a raider Census has never
+   resolved is not level 0. */
+export function ActorFacts({ actor, compact = false }) {
+  if (!actor) return null
+  return (
+    <span className="actorfacts">
+      <ClassChip actor={actor} />
+      {actor.level ? (
+        <span className="lvl" title="Level, from Census — their level now, not on the night">
+          L{actor.level}
+        </span>
+      ) : null}
+      {!compact && actor.guild ? (
+        <span className="badge guild" title="Guild, from Census — where they are now">
+          {actor.guild}
+        </span>
+      ) : null}
     </span>
   )
 }

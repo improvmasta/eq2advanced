@@ -44,37 +44,55 @@ export const autoPct = (d) => (d && d.total ? (100 * d.auto) / d.total : null)
 export const procPct = (d) => (d && d.total ? (100 * d.proc) / d.total : null)
 export const castsPerMin = (d, duration) => (d && d.casts && duration ? d.casts / (duration / 60) : null)
 
-/* How far a value sits from its peers, as a signed strength in [-1, 1]:
-   positive is good, negative is bad, 0 is "nothing worth saying".
+/* Where a value PLACES among its peers, as a signed strength in [-1, 1]:
+   positive is good, negative is bad, 0 is the middle of the field.
 
-   Measured against the MEDIAN as a fraction of it, not as a tercile rank. A
-   rank says someone is in the bottom third even when the whole field is
-   within a point of each other — which is exactly what crit becomes in later
-   expansions, where everyone caps and the worst crit in the raid is 98% of
-   the best. Distance-from-median keeps that field uncolored, and still pulls
-   a real outlier to full strength. `full` is the fraction off the median that
-   earns the strongest tint (25% by default). */
-export function rankScale(value, peers, { worse = false, full = 0.25 } = {}) {
+   This used to measure distance from the peer median as a fraction of it, and
+   that was unreadable in practice — the size of the gap and the size of the
+   group both moved the color, so one column showed a red 9,662 DPS two rows
+   above a green 1,868 and nothing on screen explained why. Position is the one
+   thing a reader can check against the column they are already looking at: the
+   top of the group is green, the bottom is red, the middle is neither.
+
+   Ties share their placement, so a field where everyone is level (crit in the
+   later expansions, where the whole raid caps) lands everybody near zero and
+   draws no color — the honest answer, and the same one the old scale gave. */
+export function rankScale(value, peers, { worse = false } = {}) {
   if (value == null) return 0
-  const xs = peers.filter((v) => v != null).sort((a, b) => a - b)
-  if (xs.length < 4) return 0
-  const h = xs.length / 2
-  const mid = xs.length % 2 ? xs[Math.floor(h)] : (xs[h - 1] + xs[h]) / 2
-  // a median of zero (time dead, deaths) has no scale of its own — fall back
-  // to the top of the field so the spread still means something
-  const denom = Math.abs(mid) || Math.abs(xs[xs.length - 1]) || 0
-  if (!denom) return 0
-  const t = Math.max(-1, Math.min(1, (value - mid) / denom / full))
+  const xs = peers.filter((v) => v != null)
+  if (xs.length < MIN_PEERS) return 0
+  const below = xs.filter((v) => v < value).length
+  const tied = xs.filter((v) => v === value).length
+  const t = (2 * (below + tied / 2)) / xs.length - 1
   return worse ? -t : t
 }
 
-/* Strength -> cell color: one hue each way, mixed into the body text so the
-   tint grows with the gap instead of flipping on at a threshold. Below the
-   noise floor nothing is claimed at all. */
+/* A group smaller than this says nothing: with three tanks, "last of 3" is one
+   bad pull, not a standing. Below it every cell goes uncolored rather than
+   borrowing the whole raid's median, which is what used to put a templar's DPS
+   on the same scale as an assassin's. */
+export const MIN_PEERS = 4
+
+/* Placement -> cell color: one hue each way, mixed into the body text so the
+   tint grows with the standing instead of flipping on at a threshold. The
+   middle of the field is below the noise floor and claims nothing. */
 export function rankColor(t) {
   const m = Math.round(Math.abs(t || 0) * 85)
   if (m < 12) return undefined
   return `color-mix(in oklab, var(${t > 0 ? '--success' : '--danger'}) ${m}%, var(--text))`
+}
+
+/* The sentence the color is making, for the cell's tooltip — a color nobody can
+   read is a color that should not be there. */
+export function rankTitle(value, peers, groupLabel) {
+  if (value == null) return undefined
+  const xs = peers.filter((v) => v != null)
+  if (xs.length < MIN_PEERS) return undefined
+  const place = xs.filter((v) => v > value).length + 1
+  const ord = place % 10 === 1 && place % 100 !== 11 ? 'st'
+    : place % 10 === 2 && place % 100 !== 12 ? 'nd'
+      : place % 10 === 3 && place % 100 !== 13 ? 'rd' : 'th'
+  return `${place}${ord} of ${xs.length} ${groupLabel}`
 }
 
 /* "Why is my DPS low?" — DPS is uptime x activity x hit size x crit rate, so

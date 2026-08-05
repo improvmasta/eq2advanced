@@ -6,6 +6,23 @@
 
 * { box-sizing: border-box; margin: 0; }
 
+/* Scrollbars in the app's own colours, both themes. Two syntaxes on purpose:
+   the standard properties are what Firefox and current Chrome read, and the
+   ::-webkit- rules are what everything else still needs — they style the same
+   bars, so both point at the same tokens. `thin` keeps a dense table from
+   losing 15px of width to chrome. */
+* { scrollbar-width: thin; scrollbar-color: var(--gold-dim) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--gold-dim); border-radius: 6px;
+  /* the border is transparent padding: the thumb reads slim but stays a
+     comfortable target, and it never touches the content beside it */
+  border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--gold); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -96,6 +113,9 @@ p + p { margin-top: 8px; }
   flex-wrap: wrap; margin-top: 14px;
 }
 .pagehead .sub { color: var(--text-muted); font-size: var(--fs-xs); font-family: var(--font-data); }
+/* a second subtitle line — it would push the actions off the head if it shared
+   the line, so it drops under the subtitle it belongs to */
+.pagehead .sub .pitch { display: block; margin-top: 3px; max-width: 60ch; }
 .pagehead .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .crumbs { font-size: var(--fs-xs); font-family: var(--font-data); margin-top: 12px; }
 /* a heading inside a card — smaller than a page h1, still the title of the block */
@@ -103,17 +123,31 @@ p + p { margin-top: 8px; }
 
 /* ---------- metric strip (replaces the old chunky .tiles) ---------- */
 
+/* One panel with hairlines through it, not a grid of chips. The tiles used to
+   sit on --border gaps, which drew a full-strength rule around every figure —
+   a six-number strip with more lines in it than the table underneath. The
+   divider is the same quiet --row-line the table rows use, so the strip reads
+   as one object; the gold top edge and the sheen each tile carries under it
+   are what make it a headline rather than another card. Gaps rather than tile
+   borders because the strip wraps on a narrow screen, and a wrapped row needs
+   its rule too. */
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 1px;
-  background: var(--border);
+  background: var(--row-line);
   border: 1px solid var(--border);
+  border-top-color: var(--gold-dim);
   border-radius: var(--radius-md);
   overflow: hidden;
-  margin-top: 12px;
+  margin: 14px 0 0;
 }
-.metric { background: var(--surface-raised); padding: 7px 12px; }
+.metric {
+  background:
+    linear-gradient(180deg, rgba(var(--gold-rgb), 0.05), transparent 60%),
+    var(--surface-raised);
+  padding: 9px 13px 10px;
+}
 .metric .v {
   font-size: var(--fs-figure); color: var(--gold-bright);
   font-family: var(--font-data); font-variant-numeric: tabular-nums;
@@ -122,6 +156,7 @@ p + p { margin-top: 8px; }
 .metric .k {
   font-size: var(--fs-label); color: var(--text-muted); font-family: var(--font-data);
   text-transform: uppercase; letter-spacing: 0.09em;
+  margin-top: 1px;
 }
 .metric.wide { grid-column: span 2; }
 
@@ -190,6 +225,13 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
 .badge.conf-high, .badge.conf-calibrated { color: var(--success); }
 .badge.conf-medium { color: var(--warning); }
 .badge.conf-low, .badge.conf-none { color: var(--danger); }
+/* A guild is a fact Census reported, not a control. Gold means "a sharing
+   group" everywhere else in the app, so this one stays deliberately quiet —
+   and it truncates, because guild names are as long as people want. */
+.badge.guild {
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: middle;
+}
 
 /* adornment / slot chips — the small bracketed tags in the reference */
 .chip {
@@ -200,22 +242,6 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
 }
 .chip.empty { opacity: 0.45; }
 .chip.on { color: var(--rarity-treasured); border-color: #2f5b78; }
-
-/* ---------- tabs ---------- */
-
-.tabs {
-  display: flex; gap: 2px; margin-top: 14px;
-  border-bottom: 1px solid var(--border);
-}
-.tabs button {
-  background: none; border: none; border-bottom: 2px solid transparent;
-  border-radius: 0; color: var(--text-muted);
-  font-family: var(--font-data); font-size: var(--fs-xs);
-  text-transform: uppercase; letter-spacing: 0.08em;
-  padding: 6px 12px; cursor: pointer;
-}
-.tabs button:hover { background: var(--row-hover); color: var(--text); }
-.tabs button.active { color: var(--gold-bright); border-bottom-color: var(--gold); }
 
 /* ---------- stat rail (grouped label → value rows) ---------- */
 
@@ -292,6 +318,19 @@ button, .btn {
   cursor: pointer; white-space: nowrap;
 }
 button:hover { background: rgba(var(--gold-rgb), 0.22); }
+/* The default button is a gold OUTLINE with a gold wash, which is also exactly
+   what every "on" toggle in here wears (.chip.on, .listtools .chip.on,
+   .chip.toggle.big.on) — so a real action sitting next to badges read as a
+   switch somebody had already flipped. The actions you actually press are
+   filled: gold ground, page-coloured text, no ambiguity about which of the two
+   things a control is. */
+.btn.solid, button.solid {
+  background: var(--gold); border-color: var(--gold);
+  color: var(--bg); font-weight: 600;
+}
+.btn.solid:hover, button.solid:hover {
+  background: var(--gold-bright); border-color: var(--gold-bright); color: var(--bg);
+}
 button:disabled { opacity: 0.5; cursor: default; }
 button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
 button.danger:hover { background: rgba(224, 92, 92, 0.12); }
@@ -384,10 +423,14 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 /* ---------- session workspace (fight rail + ACT-style tables) ---------- */
 
 .workspace {
-  display: grid; grid-template-columns: 268px 1fr; gap: 14px;
+  display: grid; grid-template-columns: 292px 1fr; gap: 14px;
   align-items: start; margin-top: 14px;
 }
 .wsmain { min-width: 0; }
+/* The title moved to the rail, so the stat strip (or the tabs, on a tab that
+   has none) is now the first thing in this column — its own top margin would
+   drop the whole column below the rail it is supposed to line up with. */
+.wsmain > :first-child { margin-top: 0; }
 
 /* The fight rail. Three fixed columns — checkbox, clock, name — with the
    length right-aligned in tabular figures, so a night reads as a column of
@@ -399,28 +442,73 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
   max-height: calc(100vh - 24px);
   font-family: var(--font-data); font-size: var(--fs-data);
 }
+/* The page's title block. It names the zone, so it is set in Cinzel gold at
+   headline size — this is the h1 now, not a caption over a list, and there is
+   no second copy of it beside the tables to share the job with. Three rows:
+   the name (with the fight count on its baseline), one small line of when and
+   whose, and the raid-level actions. */
 .railhead {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  display: grid; gap: 4px;
+  padding: 10px 10px 9px; border-bottom: 1px solid var(--border);
 }
+.railtop { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .railtitle {
-  font-weight: 700; color: var(--gold-bright); min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin: 0; font-family: var(--font-heading); font-weight: 700;
+  font-size: 1.1rem; letter-spacing: 0.02em; line-height: 1.2;
+  color: var(--gold-bright); min-width: 0;
+  /* a long zone name wraps rather than truncating: it is the title, and half
+     a title is worse than two lines of one */
+  overflow-wrap: anywhere;
 }
 .railmeta {
   margin-left: auto; flex-shrink: 0;
   color: var(--text-muted); font-size: var(--fs-label);
   font-variant-numeric: tabular-nums;
 }
+/* when, how long, and whose parse — one line, and it stays one line. The
+   caption is what gives way when the rail is narrow; a tag pinned to the end
+   of it (the guild) holds its width instead of being truncated first. */
+.railsub {
+  display: flex; align-items: center; gap: 5px; min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-data); font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+}
+.railsub .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.railsub .badge { margin-left: 0; flex-shrink: 0; max-width: 108px; }
+.railsub .partial { white-space: nowrap; flex-shrink: 0; }
+/* Share / Compare / the parse picker / the sharing badges. They belong to the
+   raid, so they live with its title and survive an open drilldown. */
+.railacts {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 2px;
+}
+.railacts button, .railacts .btn { padding: 3px 10px; font-size: var(--fs-label); }
+.railacts .badge { margin-left: 0; }
+.railacts .parsepick select { max-width: 100%; margin: 0; }
+/* What this line SAYS (badges, whose parse) reads left; what it DOES ends it.
+   Compare is the last thing on the row rather than one more pill in the middle
+   of them. */
+.railacts .endact { margin-left: auto; }
+/* selection presets left, counting rules right of the hairline */
+/* Three switches, one line, no wrapping: they are one control — which kinds of
+   pull are being counted — and a row that reflows to two lines reads as three
+   unrelated settings. */
 .railtools {
-  display: flex; gap: 4px; flex-wrap: wrap; align-items: center;
+  display: flex; gap: 8px; flex-wrap: nowrap; align-items: center;
+  justify-content: space-between;
   padding: 7px 8px; border-bottom: 1px solid var(--row-line);
 }
+.railtools .switch { min-width: 0; }
 .railhint {
   margin: 0; padding: 6px 10px 0;
   color: var(--text-muted); font-family: var(--font-data); font-size: var(--fs-xs);
 }
 .raillist { flex: 1; overflow-y: auto; padding: 5px 5px 7px; }
+/* the tree spine: every fight hangs off Zonewide */
+.railkids {
+  margin: 2px 0 0 8px; padding-left: 6px;
+  border-left: 1px solid var(--row-line);
+}
 .railzone { margin-top: 4px; }
 
 .railrow {
@@ -429,10 +517,32 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 }
 .railrow:hover { background: var(--row-hover); }
 .railrow.active { background: var(--row-selected); border-left-color: var(--gold); }
+.railrow:focus-within { background: var(--row-hover); }
+
+/* One "on" for the whole rail. The row checkboxes were the browser's, the All
+   chip was rarity-blue and the wipes switch was gold — three different ways of
+   saying the same thing in a 40px strip. They are all gold now, and the
+   checkbox borrows the switch's exact track colors. */
 .railcheck {
-  accent-color: var(--gold); cursor: pointer; flex-shrink: 0;
-  width: 13px; height: 13px; margin: 0 3px 0 1px;
+  appearance: none; -webkit-appearance: none;
+  flex-shrink: 0; cursor: pointer; position: relative;
+  width: 13px; height: 13px; margin: 0 4px 0 1px;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface-raised);
 }
+.railcheck:checked, .railcheck:indeterminate {
+  background: rgba(var(--gold-rgb), 0.28); border-color: var(--gold-dim);
+}
+.railcheck:checked::after {
+  content: ''; position: absolute; left: 3.5px; top: 0.5px;
+  width: 3px; height: 7px; border: solid var(--gold-bright);
+  border-width: 0 2px 2px 0; transform: rotate(42deg);
+}
+.railcheck:indeterminate::after {
+  content: ''; position: absolute; left: 2px; top: 5px;
+  width: 7px; height: 2px; background: var(--gold-bright);
+}
+.railcheck:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .railbtn {
   flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px;
   background: none; border: none; padding: 4px 8px 4px 1px;
@@ -440,24 +550,59 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
   font-family: var(--font-data); font-size: var(--fs-data);
 }
 .railbtn:hover { background: none; }
+.railbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; border-radius: var(--radius-sm); }
 .railbtn .rt {
   width: 38px; flex-shrink: 0; color: var(--text-muted);
   font-size: var(--fs-label); font-variant-numeric: tabular-nums;
 }
 .railbtn .rl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the attempt number sits outside the ellipsis — on a night of seven pulls at
+   one boss it is the only part of the row that tells them apart */
+.railbtn .rn {
+  flex-shrink: 0; color: var(--text-muted);
+  font-size: var(--fs-label); font-variant-numeric: tabular-nums;
+}
+.railrow.active .railbtn .rn { color: var(--gold); }
 .railbtn .rd {
   flex-shrink: 0; color: var(--text-muted);
   font-size: var(--fs-label); font-variant-numeric: tabular-nums;
 }
 .railrow.active .railbtn .rl { color: var(--gold-bright); }
-.railrow.all .rl, .railrow.group .rl { font-weight: 700; }
+/* selecting a fight must not erase its outcome — the active row already says
+   it is active twice (background, gold left border), so the name keeps saying
+   the one thing only it can say */
+.railrow.active.won .railbtn .rl { color: var(--success); }
+.railrow.active.wiped .railbtn .rl { color: var(--danger); }
+.railrow.group .rl { font-weight: 700; }
+
+/* Zonewide: the root of the tree, and it stays visible while sixty fights
+   scroll past it. */
+.railrow.all {
+  position: sticky; top: -5px; z-index: 1; margin-bottom: 2px;
+  /* both surface tokens are translucent, and a sticky row that fights scroll
+     under has to be opaque — composite it over --bg rather than invent a
+     color, and switch the layer instead of the background for hover/active */
+  --railall-bg: var(--surface-raised);
+  background: linear-gradient(var(--railall-bg), var(--railall-bg)), var(--bg);
+}
+.railrow.all.active { --railall-bg: var(--row-selected); }
+.railrow.all:hover { --railall-bg: var(--row-hover); }
+.railrow.all .rl {
+  font-family: var(--font-heading); font-weight: 700;
+  letter-spacing: 0.04em; color: var(--gold);
+}
+.railrow.all.active .rl { color: var(--gold-bright); }
 .railrow.zone .rl {
   text-transform: uppercase; letter-spacing: 0.08em;
   font-size: var(--fs-label); color: var(--gold); font-weight: 600;
 }
 .railrow.named .rl { color: var(--gold-bright); font-weight: 600; }
 .railrow.trash .rl { color: var(--text-muted); }
-/* a lost pull, said in the fight's own name rather than shouted beside it */
+/* The outcome of a boss pull is the one thing read down this rail, so it is
+   said in the fight's own name rather than shouted beside it: green killed,
+   red lost. Trash is left muted — fifteen green totem rows would drown the
+   two lines that matter. */
+.railrow.won .rl { color: var(--success); font-weight: 600; }
 .railrow.wiped .rl { color: var(--danger); }
 /* excluded by the wipes switch: still listed, visibly not counted */
 .railrow.dropped { opacity: 0.45; }
@@ -472,6 +617,11 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .wipedot {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: var(--danger); margin-right: 6px; vertical-align: middle;
+  flex-shrink: 0;
+}
+.killmark {
+  display: inline-block; width: 6px; margin-right: 6px; font-style: normal;
+  color: var(--success); font-size: var(--fs-label); line-height: 1;
   flex-shrink: 0;
 }
 .twist, .twistpad { width: 14px; flex-shrink: 0; }
@@ -523,11 +673,9 @@ table.data th.sortable:hover { color: var(--text); }
 /* ---------- zone page: tabs + right-hand actor panel ---------- */
 
 /* The drilldown is the wider half: it carries the ability rows, while the raid
-   table beside it condenses to a name and one number. Its track is `auto`, not
-   a percentage, so the ability table sets the width — it expands to the right
-   and the page scrolls if it has to, rather than hiding columns behind a
-   scrollbar inside a card. */
-.workspace.withpanel { grid-template-columns: 268px minmax(180px, 0.6fr) minmax(520px, auto); }
+   table beside it condenses to a name and one number. Below the breakpoint the
+   panel drops under both; the merged two-column layout is further down. */
+.workspace.withpanel { grid-template-columns: 268px 1fr; }
 .actorpanel {
   position: sticky; top: 12px; margin-top: 0;
   max-height: calc(100vh - 24px); overflow-y: auto;
@@ -535,8 +683,33 @@ table.data th.sortable:hover { color: var(--text); }
 }
 /* Every cell is nowrap, so min-content is the table at full width. */
 .actorpanel .tablewrap { overflow-x: visible; }
+.actorpanel .drillhead { align-items: center; }
 .actorpanel .drillhead .closex { margin-left: auto; }
-.actorpanel .tabs { margin-top: 4px; }
+.actorpanel .tabs { margin: 4px 0 8px; }
+
+/* The panel is ABOUT this person — their name is its headline, not a section
+   label, so it opts out of the small-caps h2 treatment. */
+.panelname {
+  font-size: 1.3rem; text-transform: none; letter-spacing: 0.03em;
+  color: var(--gold-bright); font-weight: 700; line-height: 1.2;
+}
+/* The headline is a PERSON, so who they are travels with the name: the class
+   the parse settled on, and the level and guild Census had cached anyway. They
+   wrap under the name in a narrow column rather than squeezing it. */
+.actorfacts {
+  display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0;
+}
+.actorfacts .lvl {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.actorfacts .badge { margin-left: 0; }
+
+/* the pinned ACT-style "All" line — summed, emphasized, ruled off from the rows */
+table.data tr.allrow td {
+  font-weight: 600; background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
 
 /* In a column this narrow the summing bar's one-line layout collapses into an
    unreadable strip, so its stats wrap into a grid instead. */
@@ -548,44 +721,152 @@ table.data th.sortable:hover { color: var(--text); }
 .actorpanel .selbar .sa { margin-left: 0; }
 .actorpanel .filterbar { margin: 6px 0 8px; }
 
-/* What the swings did that the totals don't show — counted, not interpreted. */
-.wastestrip {
+/* Where the damage came from and what the swings did — one quiet line of
+   counts, no chart. Numbers carry it; the labels stay muted. */
+.statstrip {
   display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 8px;
   font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
 }
-.wastestrip b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.statstrip b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
 
-.tabs { display: flex; gap: 4px; margin: 10px 0 4px; flex-wrap: wrap; }
+/* the parse's own controls — Compare and the view toggles, at button size */
+.optionsbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 8px 0;
+}
+.optcheck {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text);
+}
+.optcheck input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
+
+/* ---------- tabs ---------- */
+
+/* The tab bar is the page's main switch and it has to look like one. It used
+   to be loose chips floating between the stat strip and the table, with the
+   two rule sets that styled it half-cancelling each other out; it is one bar
+   now — a rule the full width of the column, the tabs sitting ON it, and the
+   active one carrying a gold underline that breaks the rule where it is. The
+   margins are the spacing: air above it (from the stat strip) and below it
+   (into the table), so the three blocks read as three. */
+.tabs {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  margin: 16px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
 .tab {
-  background: none; border: 1px solid transparent; color: var(--text-muted);
-  border-radius: var(--radius-sm); padding: 4px 14px;
-  font-family: var(--font-data); font-size: var(--fs-data); cursor: pointer;
+  position: relative;
+  background: none; border: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-muted); cursor: pointer;
+  font-family: var(--font-data); font-size: var(--fs-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 8px 14px 9px;
+}
+/* the underline sits ON the bar's rule (bottom: -1px), so the active tab
+   joins the line rather than hanging above it */
+.tab::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: transparent;
 }
 .tab:hover { background: var(--row-hover); color: var(--text); }
 .tab.on {
-  background: rgba(var(--gold-rgb), 0.12); color: var(--gold-bright);
-  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: linear-gradient(180deg, transparent, rgba(var(--gold-rgb), 0.13));
 }
+.tab.on::after { background: var(--gold); }
 
 @media (max-width: 1200px) {
-  .workspace.withpanel { grid-template-columns: 268px 1fr; }
-  .workspace.withpanel .actorpanel,
-  .workspace.withpanel .cmpcol {
-    grid-column: 1 / -1; position: static; max-height: none;
-  }
+  .workspace.withpanel .panelcol { grid-column: 1 / -1; position: static; }
+  .workspace.withpanel .panelcol .actorpanel { position: static; }
 }
 
-/* compare panel: metrics as rows, one column per raider, numbers only.
-   The whole column (totals card + table) is sticky as one unit and only as
-   wide as the raiders in it — see .cmpcol's inline max-width. */
+/* compare panel: each checked raider's ACTUAL parse (the drilldown's
+   breakdown table), side by side like screenshots of two ACT windows. The
+   whole column (totals card + parses) is sticky as one unit; the tables set
+   the width and the page scrolls, same as the drilldown. */
 table.data .checkcol { width: 24px; padding-right: 0; }
 .checkcol input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
-.cmpcol {
-  position: sticky; top: 12px; align-self: start;
-  max-height: calc(100vh - 24px); overflow-y: auto; min-width: 0;
+/* The right-hand column, whatever is open in it — one raider's drilldown or a
+   comparison of several. It scrolls NOTHING of its own: what it holds owns its
+   own rows, so the page never grows a full-height scrollbar for the column
+   stacked beside the raid table. */
+.panelcol {
+  position: sticky; top: 12px; align-self: start; min-width: 0;
 }
-.cmpcol .actorpanel { position: static; max-height: none; overflow: visible; }
-.cmpcol .selhead { margin-top: 0; }
+/* Only the comparison gives up its own scrolling — its raider boxes each own
+   their rows. A single drilldown keeps the panel's internal scroll, so a long
+   ability list doesn't run past the bottom of the column. */
+.panelcol .comparepanel { position: static; max-height: none; overflow: visible; }
+.panelcol .selhead { margin-top: 0; }
+/* Each raider is their own thin-lined box with their own horizontal scroll:
+   a wide breakdown never drags the parse next to it along, and the boxes
+   share the panel's width instead of forcing the page wider. max-content
+   caps a box at its table's natural width so nothing stretches sparse. */
+.cmpraiders { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.cmpraider {
+  flex: 1 1 340px; min-width: 300px; max-width: max-content;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 8px 10px 10px;
+}
+.cmpraider .tablewrap { overflow-x: auto; }
+/* One header line per parse: name, class, the pet toggle — and the Columns
+   menu, which SortableTable renders just above its table and CSS lifts up
+   here rather than letting it own a line of its own. */
+.cmpraider { position: relative; }
+.cmpraider .tabletools { position: absolute; top: 8px; right: 10px; margin: 0; }
+.cmpraider .raiderhead {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 4px; padding-right: 116px; min-height: 24px;
+}
+.cmpraider .raiderhead .cmphead { font-size: 1rem; color: var(--gold-bright); }
+.cmpraider .raiderhead .cmphead:hover { color: var(--danger); }
+/* A parse is a WINDOW, the way ACT's is: the box is capped at the height of
+   the screen and the rows scroll inside it, so its horizontal scrollbar is
+   always at the bottom edge of something you are looking at instead of a
+   screen and a half below the rows you are reading. The height itself is
+   measured (SortableTable's useFitViewport) so the box ends at the foot of the
+   WINDOW wherever it starts on the page; this is the fallback for the first
+   paint and for a page with no JS layout pass yet. */
+.tablewrap.parsewin { max-height: calc(100vh - 260px); overflow: auto; }
+.tablewrap.parsewin table.data th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface-raised);
+}
+
+/* The same spell in the parse next door: hovering either row lights up both.
+   It has to carry across a gap and a border to a table your eye is not on,
+   so it is a gold wash with a marker in the gutter — plain row-hover was
+   invisible at that distance. */
+table.data tr.rowlink td {
+  background: rgba(var(--gold-rgb), 0.16);
+  border-bottom-color: var(--gold-dim);
+}
+table.data tr.rowlink td:first-child { box-shadow: inset 2px 0 0 var(--gold); }
+
+/* condensed cells: a comparison lives or dies by fitting beside its neighbor */
+.cmpraider table.data th, .cmpraider table.data td,
+.parsecol table.data th, .parsecol table.data td {
+  padding-left: 5px; padding-right: 5px;
+}
+
+/* A panel open on the raid page — one drilldown or a comparison, no
+   difference: the fight rail and the condensed raider list collapse into ONE
+   left-hand column and the parses get everything else. Only above the
+   breakpoint — below it the panel already goes full-width.
+
+   The two differ only in what the panel track is worth. A comparison shares a
+   fixed width between its raider boxes, which scroll their own rows (1fr). A
+   single drilldown is one ability table and is sized by it: `auto`, so the
+   table sets the width and the page scrolls sideways if it has to, rather
+   than hiding columns behind a scrollbar inside the card. */
+@media (min-width: 1201px) {
+  .workspace.withpanel { grid-template-columns: 320px minmax(520px, auto); }
+  .workspace.withpanel.withcmp { grid-template-columns: 320px minmax(0, 1fr); }
+  .workspace.withpanel .rail {
+    grid-column: 1; grid-row: 1; position: static; max-height: 44vh;
+  }
+  .workspace.withpanel .wsmain { grid-column: 1; grid-row: 2; }
+  .workspace.withpanel .panelcol { grid-column: 2; grid-row: 1 / span 2; }
+}
 
 /* Fixed layout so every raider gets the same width and the numbers line up
    down the column instead of drifting with the length of the value. */
@@ -599,11 +880,6 @@ table.cmptable td.lbl { color: var(--text-muted); font-family: var(--font-body);
    eye follows the gutter — ▲ on the leader, the gap on everyone else. */
 table.cmptable td.best .v { font-weight: 700; }
 .cmpval .d.lead { color: var(--gold); font-size: 0.6rem; }
-tr.cmpsection td {
-  text-transform: uppercase; letter-spacing: 0.08em;
-  font-size: var(--fs-label); color: var(--gold); font-weight: 600;
-  padding-top: 12px; border-bottom: 1px solid var(--border);
-}
 .cmphead {
   background: none; border: none; padding: 0; cursor: pointer;
   color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 600;
@@ -626,6 +902,16 @@ tr.cmpsection td {
 /* checkbox chip (consolidate pets) */
 .chip.toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .chip.toggle input { accent-color: var(--gold); margin: 0; cursor: pointer; }
+/* Sharing a line with a name, a chip at label size reads as a footnote. The
+   `big` variant is the same control at a size you can see and hit, and it
+   colours up when it is doing something. */
+.chip.toggle.big {
+  font-size: var(--fs-xs); padding: 2px 8px; color: var(--text);
+}
+.chip.toggle.big.on {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.14);
+}
 
 /* A switch, for the handful of controls that change what every number on the
    page means (wipes in or out). A checkbox says "pick this"; a switch says
@@ -649,6 +935,11 @@ tr.cmpsection td {
 }
 .switch input:checked + .track { background: rgba(var(--gold-rgb), 0.28); border-color: var(--gold-dim); }
 .switch input:checked + .track .knob { transform: translateX(12px); background: var(--gold-bright); }
+/* Half of that kind is counted — the knob sits between the two ends rather
+   than claiming a state the list is not in. */
+.switch.some { color: var(--text); }
+.switch input:indeterminate + .track { background: rgba(var(--gold-rgb), 0.14); border-color: var(--gold-dim); }
+.switch input:indeterminate + .track .knob { transform: translateX(6px); background: var(--gold-dim); }
 .switch input:focus-visible + .track { outline: 2px solid var(--gold); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .switch .knob { transition: background 120ms linear; }
@@ -811,39 +1102,65 @@ table.data.raidlist { font-size: var(--fs-base); }
 
 /* ---------- modal ---------- */
 
-/* Used by the parse comparison, which is a whole table's worth of answer and
-   has nowhere to live in a list of nights. Click-away and Escape both close. */
-.modalwrap {
-  position: fixed; inset: 0; z-index: 20;
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 36px 16px; overflow-y: auto;
-  background: rgba(0, 0, 0, 0.55);
+/* The Compare page: real parses lined up like two ACT windows on one screen.
+   Each parse is its own box with its OWN horizontal scroll — a wide breakdown
+   never drags its neighbor along — and the boxes split the viewport instead
+   of forcing the page wider. max-content caps a box at its table's natural
+   width so a lone parse doesn't stretch sparse. */
+.comparelayout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.parsecols {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
+  flex: 1 1 560px; min-width: 0;
 }
-.modalcard { width: min(1120px, 100%); margin: 0; }
-.modalcard .tablewrap { max-height: calc(100vh - 260px); overflow-y: auto; }
-/* Two raids is the common case, and a full-width modal gave each of them a
-   440px column to print one number in. The card is sized to its columns
-   instead (--pccols, set by the component) and only grows to the cap once
-   there are enough raids to need it. */
-.modalcard.pccard {
-  width: min(1120px, 100%, calc(220px + var(--pccols, 2) * 200px));
-}
+.parsecol { flex: 1 1 380px; min-width: 320px; max-width: max-content; }
+.parsecol .tablewrap { overflow-x: auto; }
+.parsecol .statstrip { margin-top: 10px; }
+.addcol { width: 300px; flex-shrink: 0; }
+/* arriving from a Compare button leaves one column — the next step is the card */
+.addcol.prominent { border-color: var(--gold-dim); }
+.addcol select, .addcol input { width: 100%; min-width: 0; margin-top: 8px; }
+.addcol .picklist { list-style: none; margin: 8px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 
-/* Each column names its raid and carries the fight picker under it, so the
-   dropdown belongs to the column it changes rather than to a toolbar. */
-.parsecmp .pchead { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
-.parsecmp .pchead .z {
+/* One result = one full-width target, because the whole row is the raid. The
+   border is there when unselected too, so picking one moves nothing. */
+.pickrow {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+  width: 100%; margin-top: 6px; padding: 5px 7px; text-align: left;
+  border: 1px solid transparent; border-radius: 4px;
+  background: none; color: var(--text); cursor: pointer;
+  font-family: var(--font-body); font-size: var(--fs-sm);
+}
+.pickrow:hover { background: var(--surface-raised); }
+.pickrow.on { border-color: var(--gold-dim); background: var(--surface-raised); }
+.pickrow .z { color: var(--gold-bright); }
+.pickrow .muted { flex-basis: 100%; font-size: var(--fs-label); }
+.pickrow .badge { margin-left: 0; }
+/* the second half of the player flow: which of them, then commit */
+.addcol .confirm {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+.addcol .confirm select { margin-top: 0; }
+.addcol .confirm .chip { flex-shrink: 0; }
+
+/* Each card names its parse and carries the fight and subject pickers under
+   it, so a dropdown belongs to the parse it changes rather than to a toolbar. */
+.parsecol { position: relative; }
+.parsecol .tabletools { position: absolute; top: 12px; right: 14px; margin: 0; }
+.pchead {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding-right: 116px;
+}
+.pchead .pctitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pchead .cmphead { font-size: 1rem; }
+.pchead .z {
   font-family: var(--font-body); font-size: var(--fs-sm); color: var(--gold-bright);
-  text-transform: none; letter-spacing: 0;
 }
-.parsecmp .pchead .muted { font-size: var(--fs-label); text-transform: none; }
-.parsecmp .pchead select {
-  margin: 4px 0 0; width: 100%; min-width: 0; font-size: var(--fs-label);
+.pchead .muted { font-size: var(--fs-label); }
+.pchead select {
+  margin: 4px 0 0; max-width: 300px; min-width: 0; font-size: var(--fs-label);
 }
-.parsecmp col.cmplabelcol { width: 190px; }
-.parsecmp tr.parsetotal td { border-bottom: 1px solid var(--gold-dim); }
-.parsecmp tr.parsetotal td.lbl { color: var(--gold); font-weight: 600; }
-.parsecmp td.lbl { color: var(--text); font-family: var(--font-body); }
 
 /* A night, then the zones inside it. The heading is a band rather than a
    bolder row so it never reads as data you can sort or select. */
@@ -932,6 +1249,9 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
 }
 .classchip > i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .classchip .q { color: var(--warning); }
+/* an actor with no class CLAIM, not an actor whose class is pending — italic
+   and dimmer so it never reads as one of the sixteen */
+.classchip.unid { font-style: italic; opacity: 0.7; }
 
 /* ---------- filter row above a table ---------- */
 
@@ -941,6 +1261,13 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
 }
 .filterbar input[type="text"] { width: 150px; margin-right: 0; }
 .filterbar .spacer { margin-left: auto; }
+/* Tanks / Healers / DPS / Utility are one control. They break as a group and
+   never among themselves — "Utility" dropped alone onto a second line read as
+   a stray button rather than the fourth role. */
+.filterbar .roles { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+/* Beside an open panel the raider list is a picker in a 320px column: the name
+   box takes its own line so the four roles keep theirs. */
+.workspace.withpanel .wsmain .filterbar input[type="text"] { width: 100%; }
 .chip.role { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .chip.role > i { width: 7px; height: 7px; border-radius: 2px; }
 
@@ -1007,8 +1334,14 @@ table.data td.rank-low { color: var(--danger); }
 
 /* ---------- column layout (drag to reorder, menu to hide) ---------- */
 
-.tabletools { position: relative; display: flex; justify-content: flex-end; margin-bottom: 4px; }
-.tabletools > .chip { cursor: pointer; }
+/* The table's control line: what the caller passes in sits on the left, the
+   Columns menu stays pinned to the right edge above the header it belongs to. */
+.tabletools {
+  position: relative; display: flex; align-items: flex-start; gap: 8px;
+  justify-content: flex-end; margin-bottom: 4px;
+}
+.tabletools > .filterbar { flex: 1 1 auto; margin-bottom: 0; }
+.tabletools > .chip { cursor: pointer; flex-shrink: 0; }
 .colmenu {
   position: absolute; top: 100%; right: 0; z-index: 6; margin-top: 4px;
   min-width: 190px; max-height: 320px; overflow-y: auto; padding: 8px;
@@ -1040,22 +1373,6 @@ table.data th.dragover { box-shadow: inset 2px 0 0 var(--gold); }
   position: sticky; top: 0; z-index: 2;
   background: var(--surface-raised);
 }
-
-/* ---------- composition bar ---------- */
-
-.compbar { margin: 8px 0 4px; }
-.compbar .track {
-  display: flex; gap: 2px; height: 10px;
-  background: var(--bar-track); border-radius: 3px; overflow: hidden;
-}
-.compbar .track > i { display: block; height: 100%; }
-.complegend {
-  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 5px;
-  font-family: var(--font-data); font-size: var(--fs-label); color: var(--text-muted);
-}
-.complegend .lg { display: inline-flex; align-items: center; gap: 5px; }
-.complegend .lg > i { width: 8px; height: 8px; border-radius: 2px; }
-.complegend .lg b { color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* ---------- timeline chart ---------- */
 
@@ -1207,20 +1524,32 @@ tr.healrow .recapbar > i { background: var(--success); }
   --fs-sm: 0.9rem;
   --fs-xs: 0.84rem;
   --fs-label: 0.72rem;
-  --fs-h2: 0.8rem;
-  --fs-h1: 1.35rem;
+  --fs-h2: 1.02rem;
+  --fs-h1: 1.5rem;
   --text-muted: #99a0bd;
   font-size: var(--fs-base);
 }
 :root[data-theme="light"] .manage { --text-muted: #4d5263; }
 .manage .note { max-width: 70ch; }
 
-/* the subject of each row/pane, one step above its surroundings */
-.manage .togglerow .gname { font-size: var(--fs-sm); }
+/* One ladder for the whole page, loudest first: page title, card head, the
+   sub-head inside a card, the subject of a row, the column labels over it. A
+   heading has to outrank the rows under it — the names inside the rows were
+   set in Cinzel a step LARGER than the card head they sat below, which read as
+   a page of headlines with the actual section labels lost between them. So the
+   headings own the heading font here and a row's subject does not. */
+.manage h2 { color: var(--gold-bright); }
+.manage h3 {
+  font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.1em;
+  border-bottom: 2px solid rgba(var(--gold-rgb), 0.32); padding-bottom: 3px;
+}
+.manage .panehead .cardtitle { font-size: 1rem; }
 .manage .mdrow .n { font-size: 0.95rem; }
-.manage .panehead .cardtitle { font-size: 1.15rem; }
-.manage .autochar .who .cardtitle { font-size: 1.05rem; }
-.manage .joincode { font-size: 1.3rem; }
+.manage .togglerow .gname, .manage .settingrow .gname { font-size: var(--fs-sm); }
+.manage .autochar .who .cardtitle {
+  font-family: var(--font-body); font-size: 0.95rem; font-weight: 600;
+}
+.manage .joincode { font-size: 0.95rem; }
 .manage .pluginstatus { font-size: var(--fs-sm); }
 
 /* ---------- manage pages: one pattern for Sharing / Import / Account / Admin ----------
@@ -1242,21 +1571,73 @@ tr.healrow .recapbar > i { background: var(--success); }
 .togglerow .gname { font-weight: 600; color: var(--text); }
 .togglerow .switch.on .gname { color: var(--gold-bright); }
 .togglerow .gmeta { color: var(--text-muted); font-size: var(--fs-label); }
-/* the back-catalogue choice: a real checkbox at the row's right edge, shown
-   only while the share is on (same chip.toggle idiom as "Combine pets") */
-.togglerow .pastraids { margin-left: auto; white-space: nowrap; font-size: var(--fs-xs); }
 .togglerow > input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
 label.togglerow { cursor: pointer; }
 
-/* auto-share: one block per character — name on the left, its groups beside */
-.autochar {
-  display: grid; grid-template-columns: 170px minmax(0, 460px);
-  gap: 2px 18px; align-items: start;
-  padding: 9px 0; border-bottom: 1px solid var(--row-line);
+/* A standing share and the two choices it carries, as a phone settings list:
+   name on the left, switch on the right, the choices indented under the share
+   they belong to with a line of explanation each. One idiom throughout — every
+   row asks "is this on", which is a switch's question, and the checkbox chips
+   this replaced read as status rather than as something you can change. */
+.sharegroup { border-bottom: 1px solid var(--row-line); }
+.sharegroup:last-child { border-bottom: none; }
+.settingrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 5px 2px; cursor: pointer;
+  font-family: var(--font-data); font-size: var(--fs-data); color: var(--text);
 }
-.autochar:last-child { border-bottom: none; padding-bottom: 2px; }
-.autochar .who { line-height: 1.3; padding-top: 5px; }
+.settingrow .t { display: flex; flex-direction: column; min-width: 0; }
+.settingrow .t small {
+  color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35;
+}
+.settingrow .gname { font-weight: 600; }
+.settingrow.on .gname { color: var(--gold-bright); }
+.settingrow .switch { flex: none; }
+/* the choices: indented under their share, quieter until they are on */
+.shareopts { padding-left: 16px; }
+.shareopts .settingrow {
+  padding: 4px 2px; border-top: 1px solid var(--row-line);
+  font-size: var(--fs-xs); color: var(--text-muted);
+}
+.shareopts .settingrow.on { color: var(--text); }
+
+/* Auto-share: one ruled table per rule kind (characters, guild tags) — the
+   subject on the left, the groups it feeds beside it. Weight tells you where
+   you are: a heavy rule under the section head, a full rule between subjects
+   (someone with six alts reads six blocks, not one long list of group names),
+   hairlines inside a subject, and a vertical rule holding the subject column
+   apart from its switches. */
+.autosec { margin-top: 12px; }
+.autosec > h3 { margin-bottom: 0; }
+.autotable { border-top: 1px solid var(--border); }
+.autohead {
+  display: grid; grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px; padding: 4px 0; border-bottom: 1px solid var(--border);
+  font-family: var(--font-data); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);
+}
+.autochar {
+  display: grid; grid-template-columns: 150px minmax(0, 1fr);
+  gap: 2px 14px; align-items: stretch;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+}
+/* the column head is the table's first div, so ODD is every SECOND subject
+   block — the first one stays clean under the head */
+.autochar:nth-of-type(odd) { background: rgba(var(--gold-rgb), 0.03); }
+.autochar:last-child { border-bottom: none; }
+.autochar .who {
+  line-height: 1.3; padding: 3px 12px 0 0;
+  border-right: 1px solid var(--row-line);
+}
 .autochar .who .muted { font-family: var(--font-data); font-size: var(--fs-label); }
+.autochar .togglelist { margin-top: 0; max-width: 420px; }
+
+/* Sharing is two decisions, not one scroll: the groups (wider — it carries a
+   master–detail) beside the standing rules that feed them. */
+.sharegrid {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 12px; align-items: start;
+}
 
 /* master–detail: list of things on the left, the open one on the right.
    Ruled like a table — row lines in the list, a divider between the columns,
@@ -1282,10 +1663,7 @@ label.togglerow { cursor: pointer; }
 .mdrow.active .n { color: var(--gold-bright); }
 .mdrow .m { display: block; color: var(--text-muted); font-size: var(--fs-label); }
 .mdpane { min-width: 0; max-width: 700px; border-left: 1px solid var(--border); padding-left: 18px; }
-.mdpane > h3 {
-  margin-top: 16px; margin-bottom: 4px;
-  border-bottom: 1px solid var(--border); padding-bottom: 3px;
-}
+.mdpane > h3 { margin-top: 14px; margin-bottom: 4px; }
 .panehead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .panehead .muted { font-family: var(--font-data); font-size: var(--fs-xs); }
 
@@ -1295,10 +1673,47 @@ label.togglerow { cursor: pointer; }
   margin-top: 6px; font-family: var(--font-data); font-size: var(--fs-data);
 }
 .inviterow input { margin-right: 0; }
+/* the code is a value to copy, so it sits in a field-shaped box the same height
+   as the input beside it — as bare gold type it read as a headline the section
+   didn't need */
 .joincode {
-  font-family: var(--font-mono); font-size: 1.05rem; letter-spacing: 0.15em;
-  color: var(--gold-bright); font-weight: 600;
+  display: inline-block; padding: 4px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  font-family: var(--font-mono); font-size: var(--fs-data); letter-spacing: 0.18em;
+  color: var(--text); font-weight: 600; line-height: 1.4;
 }
+/* Inviting is a footnote to the member list, so it gets a boxed strip of its
+   own under the table rather than a section head competing with the names
+   above it — and every action in it is a real button. Rotating the code is
+   rare, not secret: as link-coloured text it didn't read as clickable at all. */
+.invitebox {
+  display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap;
+  margin-top: 14px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--row-hover);
+  font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
+}
+.invitebox .lbl {
+  font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.1em;
+}
+.invitebox .inviteacts { display: inline-flex; align-items: center; gap: 6px; }
+.invitebox .byname { margin-left: auto; }
+.invitebox .byname input { width: 130px; margin-right: 0; }
+.invitebox button { font-size: var(--fs-label); padding: 3px 9px; }
+.invitebox .joincode { padding: 2px 9px; font-size: var(--fs-xs); }
+/* three short columns and a spare action cell: keep them together on the left
+   instead of stretching a four-name table across the pane */
+table.data.memberlist { max-width: 480px; }
+table.data.memberlist th:last-child, table.data.memberlist td:last-child { width: 100%; }
+/* leaving/deleting is not part of the panel above it */
+.panefoot {
+  gap: 8px; margin-top: 18px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* a sub-section head inside a card, ruled like the pane's */
+.cardsec { margin-top: 12px; margin-bottom: 6px; }
+.card > h2 + .cardsec { margin-top: 2px; }
 .quietacts {
   display: inline-flex; align-items: baseline; gap: 6px;
   color: var(--text-muted); font-size: var(--fs-xs);
@@ -1334,9 +1749,17 @@ label.togglerow { cursor: pointer; }
 }
 .pluginstatus b { color: var(--success); font-weight: 600; }
 
+/* the two Sharing cards stack before the master–detail inside the left one
+   does, so neither is ever squeezed */
+@media (max-width: 1180px) {
+  .sharegrid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 900px) {
   .mdgrid { grid-template-columns: 1fr; }
   .mdpane { border-left: none; padding-left: 0; border-top: 1px solid var(--border); margin-top: 8px; }
   .autochar { grid-template-columns: 1fr; }
+  /* one column: the head would label the wrong thing */
+  .autohead { display: none; }
 }
 

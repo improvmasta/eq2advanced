@@ -14,6 +14,7 @@ byte-for-byte equivalent to uploading the same file.
 import gzip
 import hashlib
 import json
+import logging
 import threading
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_sessio
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
                                 actor_rows, roll_encounter)
 
-LIVE_IDLE_S = 30 * 60        # receiving session quiet this long -> close it, next batch starts fresh
+LIVE_IDLE_S = 30 * 60        # receiving session quiet this long -> close it (reaped, or on the next batch)
 CLOSE_S = GAP_S + TRAIL_GRACE_S  # nothing can join a segment once this much log time has passed
 
 
@@ -94,6 +95,34 @@ def open_live_session(conn, character_id: int, logger: str) -> int:
         return conn.execute(
             "INSERT INTO sessions (character_id, source, status, created_ts, last_ingest_ts) "
             "VALUES (?, 'live', 'receiving', ?, ?)", (character_id, now, now)).lastrowid
+
+
+def reap_idle_live_sessions(conn) -> list[int]:
+    """Close every `receiving` session that has gone quiet.
+
+    `open_live_session` only closes a stale session when the NEXT batch for that
+    character arrives, and `/backfill/done` only fires when the plugin says so.
+    Quit EQ2 and ACT and neither ever happens: the session sits at 'receiving'
+    forever, the raid page keeps saying Live, and — because it is never rebuilt
+    from raw — no parser improvement can reach it either. This is the path that
+    does not depend on the client ever coming back.
+
+    Returns the session ids it closed. Rebuilding is the expensive part, so it
+    happens outside the row query.
+    """
+    cutoff = int(time.time()) - LIVE_IDLE_S
+    rows = conn.execute(
+        "SELECT id FROM sessions WHERE source='live' AND status='receiving' "
+        "AND COALESCE(last_ingest_ts, created_ts) < ? ORDER BY id", (cutoff,)).fetchall()
+    closed = []
+    for row in rows:
+        try:
+            finalize_live_session(row["id"])
+            closed.append(row["id"])
+        except Exception:
+            logging.getLogger("live").exception(
+                "finalizing idle live session %d failed", row["id"])
+    return closed
 
 
 def finalize_live_session(session_id: int) -> None:

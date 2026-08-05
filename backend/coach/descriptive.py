@@ -21,13 +21,20 @@ DEFAULT_RECOVERY_S = 0.5
 CURE_WINDOW_S = 30
 REZ_WINDOW_S = 120
 
+# Role follows EQ2's own class tree, not what a given parse happens to look
+# like. The Fighter archetype is Warrior (guardian/berserker), Crusader
+# (paladin/shadowknight) and Brawler (monk/bruiser) — all six are TANKS.
+# Brawlers tank through avoidance rather than plate mitigation, with the same
+# single and AE taunt kit and defensive stances; on TLE a monk main-tanking is
+# routine. A brawler parsing well no more makes them dps than a berserker's
+# parse does.
 ARCHETYPES = {
     "dps": ("assassin", "ranger", "swashbuckler", "brigand", "wizard", "warlock",
-            "necromancer", "conjuror", "beastlord", "bruiser", "monk"),
+            "necromancer", "conjuror", "beastlord"),
     "healer": ("templar", "inquisitor", "warden", "fury", "mystic", "defiler",
                "channeler"),
     "utility": ("dirge", "troubador", "coercer", "illusionist"),
-    "tank": ("guardian", "berserker", "paladin", "shadowknight"),
+    "tank": ("guardian", "berserker", "paladin", "shadowknight", "monk", "bruiser"),
 }
 
 

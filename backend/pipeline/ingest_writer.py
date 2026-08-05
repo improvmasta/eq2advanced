@@ -5,6 +5,8 @@ same resolution + rollup code per batch.
 """
 
 import gzip
+import logging
+import os
 import sqlite3
 import time
 import traceback
@@ -18,19 +20,76 @@ from parser.subjects import classify_entity_kind, decompose
 from pipeline.classguess import guess_session_classes
 from pipeline.encounters import (encounter_label, segment_events,
                                  split_trailing_corpse)
-from pipeline.refine import refine_known_mobs
+from pipeline.refine import refine_bare_pets, refine_known_mobs, roster_prescan
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
                                 ability_rows, actor_rows, roll_encounter)
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 15    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 18    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
 #                      15: the clock stops at the group's last action; a dead
 #                            mob's trailing ticks leave the fight
 #                            (pipeline.encounters.split_trailing_corpse)
+#                      16: a boss's self-heal no longer makes it player-like,
+#                            so one-word bosses that heal (Wuoshi) refine to
+#                            mobs instead of landing in the raider table and
+#                            handing their fight's title to the adds; and an
+#                            actor the log never proves is a person gets no
+#                            class claim (pipeline.refine.roster_prescan)
+#                      17: a segment is a FIGHT only if the raid engaged it —
+#                            proc-pet taps and stray DoT ticks stop counting as
+#                            named pulls, and a wipe the boss AoEd down before
+#                            anyone swung records success=0 instead of NULL
+#                            (pipeline.encounters.encounter_label)
+#                      18: owning a swarm pet no longer proves personhood, so
+#                            an encounter that holds the raid's pets ("Enynti's
+#                            protoflame") stops promoting the BOSS to a
+#                            confirmed player and vetoing its own reclassing —
+#                            it sat in the raider table with 872k damage while
+#                            24 people attacked it (pipeline.refine)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
+
+log = logging.getLogger("parse")
+
+ROSTER_LOOKUP_BUDGET = 60      # unseen names one parse may ask Census about
+
+
+def _sync_roster_classes(conn, session_id: int, character_id: int) -> None:
+    """Resolve this session's raiders against Census and re-run the class pass
+    if anything new came back.
+
+    Budgeted, because a first upload can carry two hundred names nobody has
+    looked up yet and a parse should not turn into a thirty-second HTTP loop;
+    whatever is left stays stale and the next parse (or
+    `backend/tools/sync_roster.py`) takes another bite. Cached answers cost
+    nothing, so the steady state is zero requests per raid."""
+    if os.environ.get("CENSUS_AUTO_REFRESH", "1") == "0":
+        return
+    try:
+        from census import client as census_client
+        from census import guilds as census_guilds
+        from census import roster as census_roster
+
+        names = [r["name"] for r in conn.execute(
+            "SELECT DISTINCT name FROM entities WHERE session_id=? AND kind='player'",
+            (session_id,))]
+        world = conn.execute("SELECT world_id FROM characters WHERE id=?",
+                             (character_id,)).fetchone()
+        report = census_roster.resolve(
+            conn, census_client.shared_client(), names,
+            world["world_id"] if world else census_roster.DEFAULT_WORLD,
+            budget=ROSTER_LOOKUP_BUDGET)
+        if report["found"]:
+            with conn:
+                guess_session_classes(conn, session_id)
+        # the guild rode along with those answers, so the raid can wear its tag
+        # on the first page load rather than after the hourly sweep
+        with conn:
+            census_guilds.retag_runs(conn, character_id)
+    except Exception:
+        log.exception("roster class sync failed for session %s", session_id)
 
 
 class EntityResolver:
@@ -40,12 +99,14 @@ class EntityResolver:
 
     def __init__(self, conn: sqlite3.Connection, session_id: int, logger: str,
                  pet_names: frozenset[str] = frozenset(),
-                 known_mobs: frozenset[str] = frozenset()):
+                 known_mobs: frozenset[str] = frozenset(),
+                 known_pets: frozenset[str] = frozenset()):
         self.conn = conn
         self.session_id = session_id
         self.logger = logger
         self.pet_names = pet_names
         self.known_mobs = known_mobs
+        self.known_pets = known_pets
         self._entities: dict[tuple[str, str], int] = {}
         self._rollups: dict[int, int | None] = {}
         self._kinds: dict[int, str] = {}
@@ -107,6 +168,8 @@ class EntityResolver:
             # ("Bobby's blighted horde" = the person's swarm pet) — the bare-name-
             # is-pet rule applies only to a whole subject, never to an owner.
             owner_kind = ("player" if s.name == self.logger
+                          # an owner is never a bare dumbfire, so known_pets
+                          # has no business here
                           else classify_entity_kind(s.name, "unknown", self.logger,
                                                     self.known_mobs))
             if owner_kind == "player":
@@ -117,7 +180,8 @@ class EntityResolver:
                 roll = None
             eid = self._entity(f"{s.name}'s {s.pet}", s.unit, owner_id=owner, rollup=roll)
             return eid, roll
-        kind = classify_entity_kind(s.name, "unknown", self.logger, self.known_mobs)
+        kind = classify_entity_kind(s.name, "unknown", self.logger, self.known_mobs,
+                                    self.known_pets)
         if kind == "player":
             eid = self.player(s.name)
             return eid, eid
@@ -147,7 +211,8 @@ class EntityResolver:
         if remainder is None and subj.unit in ("swarm_pet", "named_pet"):
             eid, roll = self.resolve_subject(subj)
             return eid, roll, subj.unit
-        kind = classify_entity_kind(name, "unknown", self.logger, self.known_mobs)
+        kind = classify_entity_kind(name, "unknown", self.logger, self.known_mobs,
+                                    self.known_pets)
         if kind == "player":
             eid = self.player(name)
             return eid, eid, "player"
@@ -289,6 +354,8 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
         # attributes from line 1
         observed_pets = petnames.prescan(_iter_lines(path), logger)
         pet_names = petnames.load(conn) | set(observed_pets)
+        # who this log PROVES is a person — see classguess.guess_session_classes
+        roster = roster_prescan(_iter_lines(path), logger)
 
         line_count = 0
 
@@ -299,13 +366,19 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                 yield line
 
         events = list(parse_lines(counted(), logger, pet_names))
-        known_mobs = refine_known_mobs(events, logger)
+        known_mobs = refine_known_mobs(events, logger, roster)
+        from census.catalog import pet_ability_names
+        from census.roster import missing_names
+        known_pets = refine_bare_pets(
+            events, logger, roster, pet_ability_names(conn), known_mobs,
+            missing_names(conn))
         from census.catalog import press_inputs
         periods, proc_names = press_inputs(conn)
 
         with conn:
             clear_derived(conn, session_id)
-            res = EntityResolver(conn, session_id, logger, pet_names, known_mobs)
+            res = EntityResolver(conn, session_id, logger, pet_names, known_mobs,
+                                 known_pets)
             resolved = _resolve_events(events, res)
             segments = [
                 piece
@@ -360,7 +433,7 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
 
             # class inference needs the finished ability rollups (it votes on
             # the abilities each player actually used), so it runs last
-            guess_session_classes(conn, session_id)
+            guess_session_classes(conn, session_id, roster)
 
             # learn-back: newly observed pet names + abilities pets actually
             # cast feed every future parse (and reparses of older sessions)
@@ -379,6 +452,13 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
 
             from pipeline.zoneruns import rebuild_zone_runs
             rebuild_zone_runs(conn, character_id)
+
+        # Census knows every raider's class by name, which is the answer the
+        # vote above can only approximate — but it is an HTTP round trip per
+        # unseen name, so it runs OUTSIDE the write transaction and the classes
+        # land on a second, cheap pass over the same session. Failing here
+        # costs a raid its ground truth, never its parse.
+        _sync_roster_classes(conn, session_id, character_id)
 
         drop_raw_if_unwanted(conn, session_id)
     except Exception:
