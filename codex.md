@@ -32,7 +32,7 @@ A raid-parsing and coaching site for EQ2 TLE, live at https://eq2advanced.com.
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # 311 tests; golden = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # 403 tests; golden = /home/lindsay/bobby.txt
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=codex bash ship.sh "message"         # Ship log + commit; pushes on main
 ```
@@ -370,6 +370,7 @@ builds on this host with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS, fix stale test count
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches); restore base.css styles lost to a git checkout
 - 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page

@@ -203,17 +203,6 @@ table.data td.c > * { margin-inline: auto; }
 /* numbers carry the eye; names and prose stay in the reading font */
 table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
 
-.sharebar {
-  position: relative; height: 9px; min-width: 90px;
-  background: var(--bar-track); border-radius: 2px; overflow: hidden;
-}
-.sharebar > i {
-  position: absolute; inset: 0 auto 0 0; display: block;
-  background: var(--bar); border-radius: 2px;
-}
-.sharebar.dps > i { background: var(--bar); }
-.sharebar.heal > i { background: var(--success); opacity: 0.75; }
-
 /* ---------- badges + chips ---------- */
 
 .badge {
