@@ -67,26 +67,29 @@ p + p { margin-top: 8px; }
 .topnav nav { display: flex; gap: 16px; font-size: var(--fs-xs); font-family: var(--font-data); }
 .topnav nav a.active { color: var(--gold-bright); }
 
-/* The on-air light. A pill set off from the tabs: red while ACT is streaming,
-   gold while a log is parsing, muted when the plugin is connected but idle. */
-.topnav .livepill {
-  display: inline-flex; align-items: center; gap: 6px; align-self: center;
-  margin-left: 6px; padding: 2px 10px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--text-muted);
+/* "Connected to ACT" — a status light, not an alarm. The pill stays neutral
+   white and the GREEN dot carries the state, because the connection working is
+   the good case; the old red "Live" pill spent all day telling you something
+   was wrong with the thing that was fine.
+
+   The light does NOT pulse. A steady dot says "connected" just as well and it
+   says it without moving in the corner of your eye all evening — this thing is
+   on screen for the length of a raid, which is exactly the wrong place for an
+   animation. Colour carries the state instead. */
+.topnav .actpill {
+  display: inline-flex; align-items: center; gap: 5px; align-self: center;
+  margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text);
+  font-size: var(--fs-label); line-height: 1.5; white-space: nowrap;
 }
-.topnav .livepill .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+.topnav .actpill .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  flex-shrink: 0;
 }
-.topnav .livepill.on {
-  color: var(--danger); border-color: var(--danger);
-  background: rgba(248, 113, 113, 0.1);
-}
-.topnav .livepill.on .dot { animation: livepulse 1.6s ease-in-out infinite; }
-.topnav .livepill.parsing { color: var(--gold-bright); border-color: var(--gold-dim); }
-@keyframes livepulse { 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) {
-  .topnav .livepill.on .dot { animation: none; }
-}
+/* mid-import: the connection is still good, so only the light changes */
+.topnav .actpill.parsing .dot { background: var(--gold-bright); }
+/* connected but nothing streaming — the light is on, just not lit up */
+.topnav .actpill.idle .dot { opacity: 0.55; }
 
 /* ---------- cards ---------- */
 
@@ -231,6 +234,20 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
 .badge.guild {
   max-width: 150px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; vertical-align: middle;
+}
+/* "This raid is still arriving." It sits beside the guild tag, so it has to
+   read as a different KIND of fact than the quiet one next to it — a state,
+   not a label — which is what the dot does. Static, like the ACT pill: the
+   colour is the signal, and a raid list with a blinking row in it is a list
+   you cannot read. */
+.badge.live {
+  color: var(--danger); border-color: var(--danger);
+  vertical-align: middle;
+}
+.badge.live::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  margin-right: 5px; vertical-align: 1px;
+  border-radius: 50%; background: var(--danger);
 }
 
 /* adornment / slot chips — the small bracketed tags in the reference */
@@ -448,8 +465,8 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
    the name (with the fight count on its baseline), one small line of when and
    whose, and the raid-level actions. */
 .railhead {
-  display: grid; gap: 4px;
-  padding: 10px 10px 9px; border-bottom: 1px solid var(--border);
+  display: grid; gap: 5px;
+  padding: 12px 11px 11px; border-bottom: 1px solid var(--border);
 }
 .railtop { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .railtitle {
@@ -465,18 +482,30 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
   color: var(--text-muted); font-size: var(--fs-label);
   font-variant-numeric: tabular-nums;
 }
-/* when, how long, and whose parse — one line, and it stays one line. The
-   caption is what gives way when the rail is narrow; a tag pinned to the end
-   of it (the guild) holds its width instead of being truncated first. */
+/* When the raid was — one line, and it stays one line. It was set at stat-key
+   size, which is a size for a label over a number, not for the date of the
+   night you are reading. */
 .railsub {
   display: flex; align-items: center; gap: 5px; min-width: 0;
   color: var(--text-muted);
-  font-family: var(--font-data); font-size: var(--fs-label);
+  font-family: var(--font-data); font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .railsub .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.railsub .badge { margin-left: 0; flex-shrink: 0; max-width: 108px; }
-.railsub .partial { white-space: nowrap; flex-shrink: 0; }
+/* Whose parse it is. The name is a person, so it is set in the body colour a
+   step up from the date above it; the guild rides beside it as the quiet tag
+   it is, and holds its width rather than being truncated first. */
+.railwho {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0;
+  font-family: var(--font-data); font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.railwho .whoname {
+  color: var(--text); font-weight: 600; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.railwho .badge { margin-left: 0; flex-shrink: 0; max-width: 130px; font-size: var(--fs-xs); }
+.railwho .partial { white-space: nowrap; flex-shrink: 0; font-size: var(--fs-xs); }
 /* Share / Compare / the parse picker / the sharing badges. They belong to the
    raid, so they live with its title and survive an open drilldown. */
 .railacts {
@@ -796,15 +825,31 @@ table.data .checkcol { width: 24px; padding-right: 0; }
 /* Only the comparison gives up its own scrolling — its raider boxes each own
    their rows. A single drilldown keeps the panel's internal scroll, so a long
    ability list doesn't run past the bottom of the column. */
-.panelcol .comparepanel { position: static; max-height: none; overflow: visible; }
+/* min-width is min-content on a drilldown so its one table sets the width; a
+   comparison must NOT do that — three boxes of min-content would widen the
+   grid column instead of scrolling inside it. */
+.panelcol .comparepanel {
+  position: static; max-height: none; overflow: visible; min-width: 0;
+}
 .panelcol .selhead { margin-top: 0; }
 /* Each raider is their own thin-lined box with their own horizontal scroll:
-   a wide breakdown never drags the parse next to it along, and the boxes
-   share the panel's width instead of forcing the page wider. max-content
-   caps a box at its table's natural width so nothing stretches sparse. */
-.cmpraiders { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+   a wide breakdown never drags the parse next to it along. max-content caps a
+   box at its table's natural width so nothing stretches sparse.
+
+   The boxes NEVER wrap. A comparison is a row of parses lined up left to
+   right, the way you would put ACT windows side by side; wrapping the third
+   one under the first made it a grid nobody read as one — and stacking that
+   second row doubled the panel's height, which shoved the raid table in the
+   column beside it down the page. Past what fits, this row scrolls sideways
+   (each box still scrolls its own rows and columns inside it). */
+.cmpraiders {
+  display: flex; flex-wrap: nowrap; gap: 12px; align-items: flex-start;
+  overflow-x: auto; padding-bottom: 4px;
+}
 .cmpraider {
-  flex: 1 1 340px; min-width: 300px; max-width: max-content;
+  /* grow into spare width, never shrink below the basis — two parses fill the
+     panel, four run off the right-hand edge and take the scrollbar with them */
+  flex: 1 0 340px; min-width: 300px; max-width: max-content;
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 8px 10px 10px;
 }
@@ -859,7 +904,16 @@ table.data tr.rowlink td:first-child { box-shadow: inset 2px 0 0 var(--gold); }
    table sets the width and the page scrolls sideways if it has to, rather
    than hiding columns behind a scrollbar inside the card. */
 @media (min-width: 1201px) {
-  .workspace.withpanel { grid-template-columns: 320px minmax(520px, auto); }
+  /* The rail's row is sized by the RAIL. The panel spans both rows, and with
+     two auto rows a tall panel pushed its overflow into row 1 — the rail
+     stayed put (align-items: start), so the raid table below it just dropped
+     an inch down the page for no visible reason. A flexible second row takes
+     that height instead: a spanning item skips content-sized tracks when it
+     also spans a flexible one. */
+  .workspace.withpanel {
+    grid-template-columns: 320px minmax(520px, auto);
+    grid-template-rows: auto 1fr;
+  }
   .workspace.withpanel.withcmp { grid-template-columns: 320px minmax(0, 1fr); }
   .workspace.withpanel .rail {
     grid-column: 1; grid-row: 1; position: static; max-height: 44vh;
@@ -1252,6 +1306,56 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
 /* an actor with no class CLAIM, not an actor whose class is pending — italic
    and dimmer so it never reads as one of the sixteen */
 .classchip.unid { font-style: italic; opacity: 0.7; }
+
+/* ---------- the Class tab ---------- */
+
+/* A rail of the classes in this raid, and one class's panel beside it. Same
+   two-column shape as the page's fight rail, one step narrower — the picker
+   here holds a word and a count, not a zone name and a clock. */
+.classtab { display: grid; grid-template-columns: 176px 1fr; gap: 12px; align-items: start; }
+.classrail { display: grid; gap: 10px; margin-top: 12px; }
+.classgroup { display: grid; gap: 3px; }
+/* Tanks / Healers / Utility / DPS — the order a raid frame reads. The label is
+   a divider, not a control: nothing here is clickable except a class. */
+.classrole {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 2px 4px 1px; border-bottom: 1px solid var(--border);
+}
+.chip.classpick {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  text-align: left; cursor: pointer; background: transparent; border-color: transparent;
+}
+.chip.classpick:hover { background: var(--surface-raised); }
+.chip.classpick > i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.chip.classpick .n { flex: 1; color: var(--text); }
+.chip.classpick .ct { font-variant-numeric: tabular-nums; }
+.chip.classpick.on { border-color: #2f5b78; background: var(--surface-raised); }
+.chip.classpick.on .n { color: var(--rarity-treasured); }
+
+.classhead { display: grid; gap: 6px; }
+.classhead > h2 { margin-bottom: 0; }
+/* who played it tonight — names, not numbers. The Damage tab is one click
+   away and does the counting. */
+.classroster { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.rosterchip { display: inline-flex; align-items: baseline; gap: 6px; }
+.rosterchip .n { font-family: var(--font-body); font-size: var(--fs-sm); }
+
+.classmetric > h3 { margin-bottom: 2px; }
+/* The placeholder is deliberately plain. A class with no stats written yet is
+   an ordinary state of this tab, not an error and not an advertisement. */
+.classempty { color: var(--text-muted); }
+.classempty p { margin: 0; }
+.classempty p + p { margin-top: 4px; }
+.classunmatched { grid-column: 1 / -1; margin-top: 4px; }
+
+@media (max-width: 900px) {
+  .classtab { grid-template-columns: 1fr; }
+  .classrail { display: flex; flex-wrap: wrap; gap: 6px; }
+  .classgroup { display: contents; }
+  .classrole { display: none; }
+  .chip.classpick { width: auto; border-color: var(--border); }
+}
 
 /* ---------- filter row above a table ---------- */
 
@@ -1763,3 +1867,139 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
   .autohead { display: none; }
 }
 
+
+/* ---------- the Abilities console (admin) ---------- */
+/* A work queue, so the layout has to make five hundred undecided abilities
+   feel like fifty: a class rail on the left, one collapsed line per ability on
+   the right, and the evidence + the decision form only when you open one. */
+
+.abilities .absearch {
+  width: 100%; max-width: 560px; padding: 6px 10px;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.abgrid {
+  display: grid; grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px; margin-top: 12px; align-items: start;
+}
+.abrail {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface); overflow: hidden;
+  position: sticky; top: 12px; max-height: 78vh; overflow-y: auto;
+}
+.abrail .railrow {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 5px 10px; background: none; border: 0; cursor: pointer;
+  color: var(--text-muted); font-size: var(--fs-sm); text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.abrail .railrow:last-child { border-bottom: 0; }
+.abrail .railrow:hover { color: var(--text); background: rgba(var(--gold-rgb), 0.06); }
+.abrail .railrow.on { color: var(--gold-bright); background: rgba(var(--gold-rgb), 0.12); }
+.abrail .railrow .count { font-family: var(--font-data); font-size: var(--fs-label); }
+
+.ablist { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.abrow {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.abrow.open { border-color: var(--gold-dim); }
+.abhead {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 10px; background: none; border: 0; cursor: pointer;
+  color: var(--text); text-align: left; font-size: var(--fs-sm);
+}
+.abhead .abname { font-weight: 600; flex-shrink: 0; }
+/* the Census reading, when there is one — quiet, because it is a lead, not a
+   verdict */
+.abhead .grant {
+  font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; min-width: 0;
+}
+.abhead .dmg {
+  margin-left: auto; font-family: var(--font-data);
+  font-size: var(--fs-label); color: var(--text-muted); flex-shrink: 0;
+}
+/* Only a human's answer gets a colour. Everything the machine thinks stays
+   grey, which is the whole correction this page exists for. */
+.badge.conf-ruled { color: var(--success); border-color: var(--success); }
+.badge.conf-curated { color: var(--gold-bright); border-color: var(--gold-dim); }
+.badge.sug-pet { color: var(--rarity-treasured); }
+.badge.sug-proc { color: var(--rarity-mythical); }
+.badge.sug-unclear { color: var(--text-muted); }
+
+.abbody { padding: 2px 10px 10px; border-top: 1px solid var(--border); }
+.abbody > .note { margin: 8px 0; }
+.evidence { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.evidence .fact {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+.evidence .fact b { color: var(--text); }
+.evidence .fact.warn { color: var(--warning); }
+/* the wiki's activated flag is the one piece of evidence the log cannot
+   contain, so it reads as a find rather than another counter */
+.evidence .fact.good { color: var(--success); }
+
+.ruler { display: flex; flex-direction: column; gap: 6px; }
+.rulerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rulerow > label {
+  width: 88px; flex-shrink: 0; text-align: right;
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rulerow input { flex: 1 1 220px; min-width: 0; padding: 4px 8px; font-size: var(--fs-data); }
+.rulerow input.clsin { flex: 0 0 130px; }
+.rulerow.acts { margin-top: 4px; }
+.rulerow.acts > .btn { margin-left: 88px; }
+.rulerow.acts > .btn + .btn { margin-left: 0; }
+
+/* segmented choice — every option visible, because the whole job is comparing
+   them; a dropdown would hide the answer you are trying to pick between */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.seg > button {
+  padding: 2px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: none;
+  color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-label);
+}
+.seg > button:hover { color: var(--text); border-color: var(--gold-dim); }
+.seg > button.on {
+  color: var(--bg); background: var(--gold-bright); border-color: var(--gold-bright);
+}
+/* 42 grant targets is a lot of chips, so the TIER has to be visible at a
+   glance or the groups disappear into the subclasses and get picked by
+   accident. Archetype reads loudest, subclass quietest — which is also the
+   order you should be asking the question in. */
+.seg.tiers { max-width: 640px; }
+.seg.tiers > button.tier-archetype { color: var(--text); font-weight: 600; }
+.seg.tiers > button.tier-class { color: var(--text); }
+.seg.tiers > button.tier-subclass { opacity: 0.72; }
+.seg.tiers > button.on { opacity: 1; }
+/* the group's membership, spelled out under the chips — a chip saying
+   "predator" is only honest if something says that means ranger and assassin */
+.reaches { margin: 0; font-family: var(--font-data); color: var(--text-muted); }
+
+/* The look-up-this-ability affordance on a parse row. Nearly invisible until
+   the row is hovered: a curator is reading the parse, not auditing it, and a
+   gear icon on every line of a raid table would be the loudest thing on the
+   page. */
+.fixability {
+  margin-left: 6px; font-size: var(--fs-label); line-height: 1;
+  color: var(--text-muted); opacity: 0; text-decoration: none;
+  transition: opacity 120ms linear;
+}
+tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
+.fixability:hover { color: var(--gold-bright); }
+@media (prefers-reduced-motion: reduce) {
+  .fixability { transition: none; }
+}
+.rolepick { font-family: var(--font-data); font-size: var(--fs-label); }
+
+@media (max-width: 780px) {
+  .abgrid { grid-template-columns: 1fr; }
+  .abrail { position: static; max-height: 220px; flex-direction: row; flex-wrap: wrap; }
+  .abrail .railrow { border-bottom: 0; border-right: 1px solid var(--border); }
+  .rulerow > label { width: auto; text-align: left; }
+  .rulerow.acts > .btn { margin-left: 0; }
+}

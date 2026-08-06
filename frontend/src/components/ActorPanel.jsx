@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BreakdownTable, {
-  KIND_FILTERS, PET_KINDS, actorRowsOf, breakdownRows, rowKeyOf,
+  KIND_FILTERS, PET_KINDS, actorRowsOf, breakdownRows, rateLabel, rowKeyOf,
 } from './BreakdownTable.jsx'
 import { ActorFacts } from './Identity.jsx'
 import SelectionBar from './SelectionBar.jsx'
@@ -89,7 +89,7 @@ export default function ActorPanel({
     const crits = sum((r) => r.crits)
     return [
       { k: 'Total', v: total ? fmt.num(total) : null },
-      { k: 'DPS', v: total ? fmt.num2(total / duration) : null },
+      { k: rateLabel(filter.kinds), v: total ? fmt.num2(total / duration) : null },
       {
         k: `of ${filter.label.toLowerCase()}`, v: total && tabTotal
           ? `${((total / tabTotal) * 100).toFixed(1)}%` : null,

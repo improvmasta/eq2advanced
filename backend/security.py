@@ -52,8 +52,30 @@ def require_admin(user=Depends(require_user)):
     return user
 
 
+def require_curator(user=Depends(require_user)):
+    """The Abilities console — GAME knowledge, not site state.
+
+    A separate role because the two jobs are unrelated: deciding that `Fae
+    Fires` is a fury's spell proc needs somebody who knows EQ2, and running
+    the site needs somebody with the disk. Handing out `admin` to get the
+    first would hand over user management, storage limits and the audit log
+    with it, which is a much bigger key than the task deserves.
+
+    A curator sees ability names, site-wide counts and class names — the
+    Abilities payload carries no player name, no entity and no row from
+    anybody's parse — so this widens nothing about who can read a raid. Admin
+    implies curator; the reverse is deliberately false."""
+    if user["role"] not in ("admin", "curator"):
+        raise HTTPException(403, "curator only")
+    return user
+
+
 def is_admin(user) -> bool:
     return user["role"] == "admin"
+
+
+def is_curator(user) -> bool:
+    return user is not None and user["role"] in ("admin", "curator")
 
 
 def owned_character(conn, user, character_id: int):

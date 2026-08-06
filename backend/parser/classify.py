@@ -19,6 +19,7 @@ from .events import (
     ParsedEvent,
     Subject,
 )
+from . import buffs
 from .flavor import resolve as resolve_flavor
 from .prefix import split_prefix, to_int, unescape_items
 from .subjects import decompose
@@ -377,6 +378,18 @@ def classify_body(ts: int, body: str, logger: str,
         # no caster, no amount — never counts toward HPS
         return ParsedEvent(ts, "anon_heal", tgt=m.group("tgt"))
 
+    if hit := buffs.match(body):
+        # the only place another player's cast is visible at all — see buffs.py
+        kind, ability, who = hit
+        if kind == "cast":
+            src = Subject(logger, "player") if who is None else Subject(who, "unknown")
+            return ParsedEvent(ts, "buff_cast", src=src, ability=ability)
+        # the landing names the TARGET and never the caster; attribution is
+        # paired on afterwards (`_pair_buffs`), and stays unclaimed when two
+        # casters are inside the same window
+        return ParsedEvent(ts, "buff", tgt="YOU" if who is None else who,
+                           ability=ability)
+
     if m := RE_PREPARE.match(body):
         # flavor text, NOT an ability name ("to rot a soul" -> Soulrot)
         what = m.group("what")
@@ -436,6 +449,40 @@ def _pair_wards(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
         yield ev
 
 
+BUFF_PAIR_WINDOW_S = 2   # cast line, then the landing line 0-2s later
+
+
+def _pair_buffs(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
+    """Give a buff landing the caster that produced it.
+
+    The two lines are written independently — the cast names the caster and no
+    target, the landing names the target and no caster — so the only link is
+    time. Census puts Jester's Cap at a 1s cast, and the observed delay is 0s
+    or 1s in 816 of 820 landings.
+
+    With several casters of the same buff in a raid this is still decisive
+    almost always: pairing across a 3-troubador log left 590 of 596 landings
+    with exactly ONE candidate caster and none ambiguous. When two casters DO
+    fall in one window the landing keeps no source at all — the log cannot say
+    whose it was, and picking one would invent attribution that reads as
+    measured."""
+    recent: dict[str, list[tuple[int, Subject]]] = {}
+
+    for ev in events:
+        if ev.type == "buff_cast" and ev.src is not None and ev.ability:
+            casts = recent.setdefault(ev.ability, [])
+            casts.append((ev.ts, ev.src))
+            if len(casts) > 8:
+                recent[ev.ability] = [c for c in casts
+                                      if ev.ts - c[0] <= BUFF_PAIR_WINDOW_S]
+        elif ev.type == "buff" and ev.src is None and ev.ability:
+            near = [s for ts, s in recent.get(ev.ability, ())
+                    if 0 <= ev.ts - ts <= BUFF_PAIR_WINDOW_S]
+            if near and len({s.name for s in near}) == 1:
+                ev.src = near[0]
+        yield ev
+
+
 _REPEATABLE = ("revive", "intercept", "death")
 
 
@@ -475,6 +522,11 @@ def parse_lines(lines: Iterable[str], logger: str,
         # (exact duplicate, per-spell — 234 of 918 in bobby.txt); a real
         # same-second re-prepare of the same spell can't happen, so collapse
         last_flavor: tuple[int, str] | None = None
+        # buff lines duplicate the same way. The key carries who and which
+        # ability, so two troubadors casting in one second stay two casts and
+        # one buff landing on two people stays two landings — the only thing
+        # collapsed is the client printing one event twice.
+        seen_buffs: tuple[int, set] = (-1, set())
         for line in lines:
             parts = split_prefix(line)
             if parts is None:
@@ -488,6 +540,14 @@ def parse_lines(lines: Iterable[str], logger: str,
                 if key == last_flavor:
                     continue
                 last_flavor = key
+            elif ev.type in ("buff", "buff_cast"):
+                if seen_buffs[0] != ts:
+                    seen_buffs = (ts, set())
+                key = (ev.type, ev.ability,
+                       ev.src.name if ev.src else None, ev.tgt)
+                if key in seen_buffs[1]:
+                    continue
+                seen_buffs[1].add(key)
             yield ev
 
-    yield from _dedupe_repeats(_pair_wards(raw()))
+    yield from _dedupe_repeats(_pair_buffs(_pair_wards(raw())))

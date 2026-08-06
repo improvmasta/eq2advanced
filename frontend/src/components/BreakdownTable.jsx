@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import SortableTable from './SortableTable.jsx'
 import { fmt } from '../lib/api.js'
+import { useCanCurate } from '../lib/session.jsx'
 import { MELEE_BUCKETS, critPct } from '../lib/stats.js'
 
 /* The ACT-style ability breakdown — one combatant's actual parse, the table
@@ -19,6 +21,16 @@ export const KIND_FILTERS = [
   { key: 'cure', label: 'Cures', kinds: ['cure'] },
   { key: 'self', label: 'Self', kinds: ['self'] },
 ]
+
+/* The per-second column is the same column on every tab, and it is NOT always
+   DPS — a healer's breakdown headed "DPS" is reading the wrong word off a
+   right number. ACT's own names where they exist (EncDPS/EncHPS); the rest
+   follow the same shape. */
+const RATE_LABEL = {
+  damage: 'DPS', self: 'DPS', heal: 'HPS', ward: 'HPS',
+  power: 'PPS', threat: 'TPS', detaunt: 'TPS',
+}
+export const rateLabel = (kinds) => RATE_LABEL[(kinds || [])[0]] || 'Rate'
 
 /* An ability that lands as more than one kind (lifetaps: damage + heal) shows
    its off-kind components condensed behind the row's … expander. */
@@ -209,6 +221,7 @@ export default function BreakdownTable({
   checkable, checkedKeys, onCheck, linkHover, wrapClass, fitViewport,
 }) {
   const [open, setOpen] = useState({})   // expandable row key -> open
+  const canCurate = useCanCurate()
 
   const [hover, setHover] = useState(null)
   useEffect(() => {
@@ -266,6 +279,19 @@ export default function BreakdownTable({
               </span>
             )}
             {r.kind !== kinds[0] && <span className="muted"> {r.kind}</span>}
+            {/* Wrong badge? Fix it here. The place you NOTICE that `Ice Comet`
+                is not a pet ability is a parse, not an admin page, and making
+                someone go find it by name is how a wrong label survives. Only
+                a curator sees it, and the page it opens checks that itself. */}
+            {canCurate && !r.gkey && r.ability && (
+              <Link
+                className="fixability"
+                to={`/admin/abilities?q=${encodeURIComponent(r.ability)}`}
+                onClick={(e) => e.stopPropagation()}
+                title={`Look up "${r.ability}" — is it a pet's, a proc, and what grants it?`}
+                aria-label={`Look up ${r.ability} in the Abilities console`}
+              >⚙</Link>
+            )}
             {!r.__sub && kids && (
               <button
                 className="expandcol"
@@ -279,7 +305,7 @@ export default function BreakdownTable({
       sortValue: (r) => (r.gkey ? r.ability : abilityLabel(r)),
     },
     {
-      key: 'encdps', label: 'DPS',
+      key: 'encdps', label: rateLabel(kinds),
       render: (r) => (r.total ? fmt.num2(r.total / duration) : '—'),
       sortValue: (r) => (r.total || 0) / duration,
     },

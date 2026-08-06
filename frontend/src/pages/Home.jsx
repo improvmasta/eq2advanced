@@ -105,8 +105,12 @@ export default function Home({ user }) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  // poll while an upload is parsing — new runs appear as parses land
+  // Poll while an upload is parsing — new runs appear as parses land — and
+  // while any raid ON THE LIST is streaming, which is the case `sessions` can't
+  // see: that one is somebody else's session, so the Live pill would otherwise
+  // stay up until you reloaded the page.
   const parsing = sessions?.some((s) => s.status === 'parsing' || s.status === 'receiving')
+    || runs?.some((r) => r.live)
   useEffect(() => {
     if (!parsing) return
     const t = setInterval(refresh, 2000)
@@ -307,6 +311,14 @@ export default function Home({ user }) {
           {r.guild && (
             <span className="badge guild" title="Majority guild of the roster, from Census">
               {r.guild}
+            </span>
+          )}
+          {/* Still being streamed — the plugin is sending this night in as it
+              happens, so the numbers below are a raid in progress, not a
+              finished one. */}
+          {r.live && (
+            <span className="badge live" title="Being streamed right now — the fights are still arriving">
+              Live
             </span>
           )}
         </span>

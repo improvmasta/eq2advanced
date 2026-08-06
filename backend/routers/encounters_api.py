@@ -10,6 +10,10 @@ powers the workspace tree's All / zone / collapsed-trash nodes.
 `GET /encounters/aoes?ids=…` read the stored EVENTS for the same selection (a
 pruned session contributes nothing — its events are gone — and says so).
 
+`GET /encounters/class-stats?ids=…` is the Class tab: the same selection split
+by class, each class holding whatever metrics `pipeline/classstats.py` has
+registered for it.
+
 Everything here takes the same `ids` list and the same visibility rule: every
 session touched must be visible to the caller, unknown ids 404, junk 422."""
 
@@ -21,11 +25,13 @@ from bisect import bisect_left
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import memo
+from census import catalog
 from census.roster import DEFAULT_WORLD
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
 from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
-from pipeline import aoes
+from pipeline import aoes, classstats
+from pipeline import classmetrics  # noqa: F401 — importing registers the metrics
 from pipeline.classguess import (backfill_session, parse_class_guess, resolve_class,
                                  strong_classes_here)
 from pipeline.statsroll import _melee_bucket
@@ -58,32 +64,35 @@ _ABILITY_SELECT = (
 
 
 def _pet_ability_names(conn) -> set[str]:
-    return {r[0] for r in conn.execute(
-        "SELECT ability_name FROM ability_catalog WHERE unit='pet'")}
+    """Names a badge may call a pet's — a hand-written ruling, else the curated
+    seed. The observed sightings that used to land here are candidates now,
+    reviewed on the Abilities admin page; see census/catalog.py for what
+    believing them cost."""
+    return catalog.pet_ability_names(conn)
 
 
 def _proc_ability_names(conn) -> set[str]:
-    """Names that fire on their own (buff/item procs). The UI separates them
-    from cast abilities — they are gear, not rotation."""
-    return {r[0] for r in conn.execute(
-        "SELECT ability_name FROM ability_catalog WHERE proc=1")}
+    """Names that fire on their own. Same ladder, same reason: Census's "may
+    cast X" grammar flagged `Berserk`, `Dragon Stance` and `Baffle`, which are
+    the class's own buttons."""
+    return catalog.proc_ability_names(conn)
 
 
 def _proc_evidence(conn) -> dict[str, str]:
-    """ability name -> why it is flagged, in words, for the badge's tooltip.
+    """ability name -> what fires it, in words, for the badge's tooltip.
 
-    A proc mark that turns out to be wrong is only reportable if the row says
-    where the claim came from — "curated" and "Census says a shadowknight buff
-    casts this" are different kinds of wrong."""
-    out = {}
+    A ruling knows the actual source — "Fae Fire (fury spell)" — so the badge
+    can say it rather than asserting a bare "proc" the reader has to trust."""
+    out = {r["ability_name"]: "seen firing with no cast, all night"
+           for r in conn.execute(
+               "SELECT ability_name FROM ability_catalog WHERE proc=1")}
     for r in conn.execute(
-            "SELECT ability_name, source, class FROM ability_catalog WHERE proc=1"):
-        if r["source"] == "curated":
-            out[r["ability_name"]] = "seen firing with no cast, all night"
-        elif r["class"]:
-            out[r["ability_name"]] = f"Census: cast by a {r['class'].replace(',', '/')} buff or item"
-        else:
-            out[r["ability_name"]] = "Census: something casts this on its own"
+            "SELECT ability_name, grant_kind, grant_name, grant_class "
+            "FROM ability_rulings WHERE fires='proc'"):
+        who = " ".join(x for x in (r["grant_class"], r["grant_kind"]) if x)
+        out[r["ability_name"]] = (
+            f"{r['grant_name']} ({who})" if r["grant_name"] and who
+            else r["grant_name"] or who or "set by hand")
     return out
 
 
@@ -812,6 +821,33 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
         "pruned_encounters": pruned_encounters,
         "pruned": False,
     }
+
+
+# -------------------------------------------------------------- class stats ---
+
+@router.get("/encounters/class-stats")
+def encounters_class_stats(ids: str = Query(...), user=Depends(optional_user)):
+    """The Class tab: one section per class present, holding that class's own
+    metrics (`pipeline/classstats.py`). A class with nothing written for it yet
+    is still a section — the tab shows who is in the raid and where their stats
+    will live.
+
+    Class resolution is not redone here: the actor list comes from the same
+    aggregate the Damage tab already asked for, so "what class is this raider"
+    has exactly one answer per page and it is the memoized one."""
+    conn = get_db()
+    enc_ids, encs, session_ids, sess_of = _selection(conn, user, ids)
+    agg = memo.get_or_build(
+        ("agg", tuple(enc_ids)),
+        lambda: _agg(conn, enc_ids, encs, session_ids, sess_of))
+    live = [e["id"] for e in encs if not sess_of[e["session_id"]]["pruned"]]
+    ctx = classstats.Ctx(
+        conn=conn, enc_ids=enc_ids, encs=list(encs), live_enc_ids=live,
+        session_ids=session_ids, actors=agg["actors"])
+    payload = classstats.collect(ctx)
+    payload["pruned_encounters"] = len(enc_ids) - len(live)
+    payload["pruned"] = not live
+    return payload
 
 
 def _detail(conn, enc) -> dict:

@@ -44,6 +44,35 @@ def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, in
     return out, dmg
 
 
+def _live_runs(conn, run_ids: list[int]) -> set[int]:
+    """Run ids being STREAMED right now — at most one per receiving session.
+
+    A run is live because of its session's state, not its own: a live session
+    keeps appending encounters and `zoneruns` re-links them as they land, so
+    the run row never changes while the raid is happening.
+
+    The `MAX(started_ts)` is the whole point. A plugin left running all evening
+    puts every zone it passed through in one session — Freeport, Loping Plains,
+    Sinking Sands, the Emerald Halls — and "any run belonging to a receiving
+    session" lit up TEN rows on the list, nine of which finished hours ago.
+    Only the run the lines are currently arriving in is live; the rest are
+    ordinary history that happens to share a session.
+
+    `live.reap_idle_live_sessions` is what makes this expire — without it a
+    crashed ACT would leave the pill up forever."""
+    if not run_ids:
+        return set()
+    ph = ",".join("?" * len(run_ids))
+    return {r[0] for r in conn.execute(
+        f"SELECT e.zone_run_id FROM encounters e "
+        f"JOIN sessions s ON s.id = e.session_id "
+        f"WHERE e.zone_run_id IS NOT NULL "
+        f"AND s.source='live' AND s.status='receiving' "
+        f"GROUP BY s.id "
+        f"HAVING e.started_ts = MAX(e.started_ts) "
+        f"AND e.zone_run_id IN ({ph})", run_ids)}
+
+
 @router.get("/zone-runs")
 def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_user)):
     """The raid list. `scope` is mine | shared | all (default). Signed out, the
@@ -85,7 +114,9 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
     # `via_public` therefore means "the ONLY reason you can see this is that
     # somebody published it", which is exactly what the list's switch filters
     personal = {r["id"] for r in conn.execute(PERSONAL_RUN_IDS, {"uid": uid})} if uid else set()
+    live = _live_runs(conn, run_ids)
     for r in runs:
+        r["live"] = r["id"] in live
         r["spark"] = spark.get(r["id"], [])
         r["raid_dps"] = round(run_dmg.get(r["id"], 0) / max(r["combat_s"] or 0, 1))
         r["mine"] = r["id"] in mine_ids
@@ -158,6 +189,7 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
         "SELECT 1 FROM public_runs WHERE zone_run_id=?", (run_id,)).fetchone() is not None
     payload["shared_with"] = (
         groupsmod.shares_for_runs(conn, [run_id]).get(run_id, []) if mine else [])
+    payload["live"] = run_id in _live_runs(conn, [run_id])
     payload.pop("roster_json", None)
     # Somebody else parsed the same night: the page says so and offers the
     # switch, rather than leaving a link somewhere else as the only way across.

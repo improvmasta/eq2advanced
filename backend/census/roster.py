@@ -144,3 +144,17 @@ def missing_names(conn, world_id: int = DEFAULT_WORLD) -> frozenset[str]:
     (pipeline/refine.py)."""
     return frozenset(r["name"] for r in conn.execute(
         "SELECT name FROM roster_classes WHERE world_id=? AND found=0", (world_id,)))
+
+
+def found_names(conn, world_id: int = DEFAULT_WORLD) -> frozenset[str]:
+    """Names Census RESOLVED to a real character on this world — the same
+    authority as `missing_names`, read the other way.
+
+    A pet is not in the character database, so a name Census answered for is a
+    person, and that is a veto no behavioral guess may override. It is the one
+    that was missing: `refine_bare_pets` used `found=0` as a way IN but never
+    used `found=1` as a way out, so `Gululu` (level 70 shadowknight),
+    `Wudi` (wizard) and `Moklok` (troubador, guild "Skill Issue") were all
+    filed as dumbfires and had their spellbooks learned as pet kits."""
+    return frozenset(r["name"] for r in conn.execute(
+        "SELECT name FROM roster_classes WHERE world_id=? AND found=1", (world_id,)))

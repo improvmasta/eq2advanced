@@ -56,6 +56,7 @@ export const url = {
   timeline: (ids, bucket) => `/api/encounters/timeline?ids=${ids.join(',')}${bucket ? `&bucket=${bucket}` : ''}`,
   deaths: (ids, windowS) => `/api/encounters/deaths?ids=${ids.join(',')}${windowS ? `&window=${windowS}` : ''}`,
   aoes: (ids) => `/api/encounters/aoes?ids=${ids.join(',')}`,
+  classStats: (ids) => `/api/encounters/class-stats?ids=${ids.join(',')}`,
   zoneRun: (id) => `/api/zone-runs/${id}`,
   zoneRunReport: (id) => `/api/zone-runs/${id}/report`,
 }
@@ -114,6 +115,7 @@ export const api = {
   encountersTimeline: (ids, bucket) => cachedGet(url.timeline(ids, bucket)),
   encountersDeaths: (ids, windowS) => cachedGet(url.deaths(ids, windowS)),
   encountersAoes: (ids) => cachedGet(url.aoes(ids)),
+  encountersClassStats: (ids) => cachedGet(url.classStats(ids)),
   raidReport: (id) => req(`/api/sessions/${id}/raid-report`),
   setCalibration: (id, calibration) => req(`/api/sessions/${id}/calibration`, json({ calibration })),
   upload: (file, characterName, retainRaw = true) => {
@@ -174,9 +176,22 @@ export const api = {
   adminDeletedGroups: () => req('/api/admin/groups'),
   adminRestoreGroup: (id) => mutate(req(`/api/admin/groups/${id}/restore`, { method: 'POST' })),
   adminSetLimits: (id, body) => req(`/api/admin/users/${id}/limits`, json(body)),
+  // user | curator | admin — curator opens the Abilities console and nothing else
+  adminSetRole: (id, role) => req(`/api/admin/users/${id}/role`, json({ role })),
   adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
   adminAudit: () => req('/api/admin/audit'),
   adminPublicRuns: () => req('/api/admin/public-runs'),
+  /* Abilities: the one admin surface that edits GAME knowledge rather than
+     site state. `scope=open` is the work queue (everything under full
+     confidence and unruled); any `q` searches every ability ever tracked, so
+     a settled answer can be reopened. Still no player names in the payload —
+     evidence is site-wide sums and class names. */
+  adminAbilities: ({ q = '', scope = 'open' } = {}) => req(
+    `/api/admin/abilities?scope=${scope}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+  adminRuleAbility: (name, body) => req(
+    `/api/admin/abilities/${encodeURIComponent(name)}`, { ...json(body), method: 'PUT' }),
+  adminUnruleAbility: (name) => req(
+    `/api/admin/abilities/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 }
 
 export const fmt = {

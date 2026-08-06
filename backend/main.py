@@ -140,8 +140,13 @@ def _startup_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    from census.catalog import backfill_scribed, seed_curated
+    from census.catalog import backfill_scribed, reset_verdicts, seed_curated
     from parser import petnames
+    # order matters: demote every machine-written pet/proc label to a candidate
+    # FIRST, then put the curated verdicts back. A database that already learned
+    # wrong loses its bad badges on the next restart, with no reparse — the
+    # labels live in ability_catalog, not in the rolled-up rows.
+    reset_verdicts(get_db())
     seed_curated(get_db())
     backfill_scribed(get_db())
     petnames.seed_curated(get_db())

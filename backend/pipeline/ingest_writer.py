@@ -26,7 +26,7 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 18    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 20    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
 #                      15: the clock stops at the group's last action; a dead
 #                            mob's trailing ticks leave the fight
@@ -48,6 +48,21 @@ PARSE_VERSION = 18    # 13: every rez family, revives + time dead, intercepts,
 #                            confirmed player and vetoing its own reclassing —
 #                            it sat in the raider table with 872k damage while
 #                            24 people attacked it (pipeline.refine)
+#                      19: curated buff lines (parser/buffs.py) — `buff_cast`
+#                            and `buff` events for the handful of abilities
+#                            whose apply the log prints, ANY raider's log
+#                            seeing them. Rollups and segmentation are
+#                            untouched: statsroll ignores both types and
+#                            segment_events only opens on damage/avoid, so ACT
+#                            parity is unchanged and the events are read by the
+#                            Class tab alone
+#                      20: pets and procs stop being inferred. Census `found=1`
+#                            vetoes the bare-name pet guess (Gululu, a level 70
+#                            shadowknight, was a dumbfire), and the catalog no
+#                            longer takes a pet or proc LABEL from a sighting or
+#                            from "may cast X" — so `proc_names` narrows and the
+#                            rollup's press counting changes with it
+#                            (census/catalog.py, pipeline/refine.py)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -368,10 +383,10 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
         events = list(parse_lines(counted(), logger, pet_names))
         known_mobs = refine_known_mobs(events, logger, roster)
         from census.catalog import pet_ability_names
-        from census.roster import missing_names
+        from census.roster import found_names, missing_names
         known_pets = refine_bare_pets(
             events, logger, roster, pet_ability_names(conn), known_mobs,
-            missing_names(conn))
+            missing_names(conn), found_names(conn))
         from census.catalog import press_inputs
         periods, proc_names = press_inputs(conn)
 
@@ -440,7 +455,7 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
             petnames.learn(conn, observed_pets, session_id)
             if pet_cast:
                 from census.catalog import observe_pet_abilities
-                observe_pet_abilities(conn, pet_cast)
+                observe_pet_abilities(conn, pet_cast, session_id)
 
             started = events[0].ts if events else None
             ended = events[-1].ts if events else None

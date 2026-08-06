@@ -1,14 +1,28 @@
 """ability_catalog: which log ability names belong to players vs pet kits, and
 which fire on their own (procs) rather than by a deliberate cast.
 
-Two sources, and curated always wins:
-- `census`: every cached spell contributes its name + base_name as a player
-  ability; every "may cast <X> on ..." effect contributes <X> as a proc — the
-  effect grammar is the proc flag the plan called for.
-- `curated`: pet-kit ability names (pets aren't in the Census spell
-  collection) and buff/item procs observed in real logs. Verified against
-  bobby.txt — every entry below appears there under a pet possessive chain or
-  as YOUR damage with zero prepare lines all night.
+**A pet or proc label is a CLAIM, and only a curated row may make one.**
+Everything else the machine works out is a candidate, kept beside the verdict
+and shown only in the review export (`backend/tools/ability_review.py`).
+
+That rule is the fix for the two ways the old catalog invented labels:
+
+- *Pets.* `observe_pet_abilities` wrote `unit='pet'` for anything a pet-KIND
+  entity cast, globally and permanently, off a single sighting. One bare name
+  mistaken for a dumbfire took its whole spellbook down with it, and because
+  `refine_bare_pets` reads this table back to decide what a pet is, the error
+  fed itself: 228 names ended up marked pet, 108 of which Census knows as
+  scribed player spells — `Ice Comet`, `Harm Touch`, `Raging Blow`. Necromancer
+  looked right only because the curated seed already covered it.
+- *Procs.* Census's `may cast <X> on ...` grammar names X for every buff that
+  references it, which flags a class's OWN combat art the moment anything can
+  fire it — `Berserk`, `Dragon Stance`, `Baffle`, `Knockdown`.
+
+So `unit='pet'` and `proc=1` come from `CURATED_PET_ABILITIES` /
+`CURATED_PROCS` and nowhere else. Both lists were verified against bobby.txt —
+every entry appears there under a pet possessive chain, or as YOUR damage with
+zero prepare lines all night. `pet_seen` and `proc_candidate` hold what the
+machine noticed, so promoting a name after review is editing one tuple here.
 
 Consumers: fit.spellbook drops pet-kit names from the player join (the
 Master's-Strike class of misjoin), raidreport's engagement classifier never
@@ -59,20 +73,50 @@ _CENSUS_UPSERT = (
     "class=excluded.class, unit=excluded.unit, proc=excluded.proc, scribed=1, "
     "source='census' WHERE ability_catalog.source IS NOT 'curated'")
 
+# A "may cast X" effect is a CANDIDATE, never the verdict — see the module
+# docstring. `proc_class` keeps whose buff fires it, which is a different
+# question from `class` (who scribes it) and used to be written over the top of
+# it; the review export prints both side by side.
 _PROC_UPSERT = (
-    "INSERT INTO ability_catalog (ability_name, class, unit, proc, scribed, source) "
-    "VALUES (?,?, 'player', 1, 0, 'census') ON CONFLICT(ability_name) DO UPDATE "
-    "SET proc=1 WHERE ability_catalog.source IS NOT 'curated'")
+    "INSERT INTO ability_catalog "
+    "(ability_name, class, unit, proc, proc_candidate, proc_class, scribed, source) "
+    "VALUES (?, NULL, 'player', 0, 1, ?, 0, 'census') ON CONFLICT(ability_name) "
+    "DO UPDATE SET proc_candidate=1, proc_class=excluded.proc_class")
 
 
 def seed_curated(conn) -> None:
-    """Idempotent curated seed; called at startup. Curated rows always win."""
+    """Idempotent curated seed; called at startup. Curated rows always win, and
+    they are now the ONLY rows that carry a pet or proc verdict."""
     with conn:
         conn.executemany(
-            "INSERT OR REPLACE INTO ability_catalog "
-            "(ability_name, class, unit, proc, source) VALUES (?,NULL,?,?,'curated')",
+            "INSERT INTO ability_catalog "
+            "(ability_name, class, unit, proc, source) VALUES (?,NULL,?,?,'curated') "
+            "ON CONFLICT(ability_name) DO UPDATE SET "
+            "unit=excluded.unit, proc=excluded.proc, source='curated'",
             [(n, "pet", 0) for n in CURATED_PET_ABILITIES]
             + [(n, "player", 1) for n in CURATED_PROCS])
+
+
+def reset_verdicts(conn) -> int:
+    """Demote every machine-written pet/proc label to a candidate. Idempotent,
+    runs at startup right before `seed_curated` puts the curated ones back.
+
+    This is what actually clears the badges off a database that has already
+    learned wrong: the labels live in this table, not in the parsed rows, so
+    nothing has to be reparsed for a raid page to stop calling Ice Comet a pet
+    ability. The evidence is not thrown away — an `observed` pet row becomes
+    `pet_seen`, a census proc becomes `proc_candidate` — so the review export
+    still ranks exactly what was demoted. -> rows demoted."""
+    with conn:
+        cur = conn.execute(
+            "UPDATE ability_catalog SET "
+            "  pet_seen = MAX(pet_seen, CASE WHEN unit='pet' THEN 1 ELSE 0 END), "
+            "  proc_candidate = MAX(proc_candidate, proc), "
+            "  proc_class = COALESCE(proc_class, CASE WHEN proc=1 AND scribed=0 "
+            "                                        THEN class END), "
+            "  unit = 'player', proc = 0 "
+            "WHERE source IS NOT 'curated' AND (unit='pet' OR proc=1)")
+    return cur.rowcount
 
 
 def backfill_scribed(conn) -> int:
@@ -114,29 +158,60 @@ def upsert_from_spells(conn, recs: list[dict]) -> None:
     conn.executemany(_PROC_UPSERT, proc_rows)
 
 
-def observe_pet_abilities(conn, names: set[str]) -> None:
-    """Learn-back from a parse: abilities actually cast by pet entities are
-    pet abilities. Runs inside the caller's transaction. Precedence stays
-    curated > observed > census — observed evidence overrides a census guess
-    but never a curated row."""
-    if names:
-        conn.executemany(
-            "INSERT INTO ability_catalog (ability_name, class, unit, proc, source) "
-            "VALUES (?, NULL, 'pet', 0, 'observed') ON CONFLICT(ability_name) "
-            "DO UPDATE SET unit='pet', source='observed' "
-            "WHERE ability_catalog.source IS NOT 'curated' "
-            "AND ability_catalog.source IS NOT 'observed'",
-            [(n,) for n in names])
+def observe_pet_abilities(conn, names: set[str], session_id: int) -> None:
+    """Learn-back from a parse: record which SESSIONS saw a pet-kind entity
+    cast each name. Runs inside the caller's transaction.
+
+    This used to write `unit='pet'` outright, and that is the bug this module's
+    docstring is about — the sighting it learns from is only as good as the
+    entity classification behind it, and one bare name mistaken for a dumbfire
+    brought its whole spellbook in. It is evidence now: no label until a human
+    moves the name into `CURATED_PET_ABILITIES`.
+
+    Keyed by session rather than counted, so a reparse re-states the same
+    evidence instead of inflating it — "seen in 4 raids" has to keep meaning
+    four raids after the PARSE_VERSION sweep runs."""
+    if not names:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO ability_pet_sightings (ability_name, session_id) "
+        "VALUES (?,?)", [(n, session_id) for n in names])
+    # denormalized onto the catalog so every reader (and the export) can rank
+    # candidates without a join
+    conn.executemany(
+        "INSERT INTO ability_catalog "
+        "(ability_name, class, unit, proc, pet_seen, source) "
+        "VALUES (?, NULL, 'player', 0, 0, 'observed') "
+        "ON CONFLICT(ability_name) DO NOTHING", [(n,) for n in names])
+    conn.executemany(
+        "UPDATE ability_catalog SET pet_seen = "
+        "(SELECT COUNT(*) FROM ability_pet_sightings p "
+        " WHERE p.ability_name = ability_catalog.ability_name) "
+        "WHERE ability_name = ?", [(n,) for n in names])
+
+
+# The precedence ladder, in SQL, once: a hand-written ruling wins, the curated
+# seed answers what has never been ruled on, and nothing else gets a vote. Both
+# readers below are the ONLY doors to these two labels — encounters_api calls
+# them rather than keeping its own copy, so a ruling reaches the badges, the
+# rollup's press counting and the coach in one edit.
+_PET_NAMES = (
+    "SELECT ability_name FROM ability_rulings WHERE unit='pet' "
+    "UNION SELECT ability_name FROM ability_catalog WHERE unit='pet' "
+    "AND ability_name NOT IN (SELECT ability_name FROM ability_rulings)")
+
+_PROC_NAMES = (
+    "SELECT ability_name FROM ability_rulings WHERE fires='proc' "
+    "UNION SELECT ability_name FROM ability_catalog WHERE proc=1 "
+    "AND ability_name NOT IN (SELECT ability_name FROM ability_rulings)")
 
 
 def pet_ability_names(conn) -> set[str]:
-    return {r[0] for r in conn.execute(
-        "SELECT ability_name FROM ability_catalog WHERE unit='pet'")}
+    return {r[0] for r in conn.execute(_PET_NAMES)}
 
 
 def proc_ability_names(conn) -> set[str]:
-    return {r[0] for r in conn.execute(
-        "SELECT ability_name FROM ability_catalog WHERE proc=1")}
+    return {r[0] for r in conn.execute(_PROC_NAMES)}
 
 
 def press_inputs(conn) -> tuple[dict[str, float], frozenset[str]]:

@@ -399,3 +399,83 @@ def test_lose_consciousness_is_a_death_and_dedupes_with_the_kill_line():
     ]
     evs = [e for e in parse_lines(lines, "Bobby") if e.type in ("death", "kill")]
     assert len(evs) == 1
+
+
+# ---------------------------------------------------------------- buff lines ---
+# The curated buff grammar (parser/buffs.py) — the ONLY place another player's
+# cast is visible at all, which is what makes a buff uptime computable from any
+# raider's upload rather than only the buffer's own.
+
+def test_the_buff_cast_line_names_the_caster():
+    e = ev("You begin to play the song of the Jester.")
+    assert (e.type, e.ability, e.src.name) == ("buff_cast", "Jester's Cap", "Bobby")
+    e = ev("Vestigial begins to play the song of the Jester.")
+    assert (e.type, e.ability, e.src.name) == ("buff_cast", "Jester's Cap", "Vestigial")
+
+
+def test_the_landing_line_names_the_target():
+    e = ev("The Jester inspires Rorschach.")
+    assert (e.type, e.ability, e.tgt) == ("buff", "Jester's Cap", "Rorschach")
+    # the logger's own copy of the same event
+    assert ev("You feel inspired by the Jester.").tgt == "YOU"
+
+
+def test_a_landing_is_credited_to_the_cast_that_produced_it():
+    """The two lines are written independently — the cast names nobody's
+    target, the landing names no caster — so the only link is time."""
+    from parser import parse_lines
+    lines = [
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Vestigial begins to play the song of the Jester.\r\n",
+        "(1785025823)[Sat Jul 25 20:30:23 2026] The Jester inspires Adam.\r\n",
+    ]
+    [land] = [e for e in parse_lines(lines, "Bobby") if e.type == "buff"]
+    assert (land.src.name, land.tgt) == ("Vestigial", "Adam")
+
+
+def test_two_casters_in_one_window_leave_the_landing_uncredited():
+    """A guess would read as measured. 590 of 596 landings in a three-troubador
+    log had exactly one candidate; these are the other six."""
+    from parser import parse_lines
+    lines = [
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Vestigial begins to play the song of the Jester.\r\n",
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Cobbletone begins to play the song of the Jester.\r\n",
+        "(1785025823)[Sat Jul 25 20:30:23 2026] The Jester inspires Adam.\r\n",
+    ]
+    evs = list(parse_lines(lines, "Bobby"))
+    assert len([e for e in evs if e.type == "buff_cast"]) == 2
+    assert [e.src for e in evs if e.type == "buff"] == [None]
+
+
+def test_a_stale_cast_does_not_claim_a_later_landing():
+    from parser import parse_lines
+    lines = [
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Vestigial begins to play the song of the Jester.\r\n",
+        "(1785025830)[Sat Jul 25 20:30:30 2026] The Jester inspires Adam.\r\n",
+    ]
+    [land] = [e for e in parse_lines(lines, "Bobby") if e.type == "buff"]
+    assert land.src is None
+
+
+def test_the_client_printing_a_buff_line_twice_is_one_event():
+    """Same second, same caster, same target — the client echo. Two different
+    casters, or two different targets, stay two events."""
+    from parser import parse_lines
+    lines = [
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Vestigial begins to play the song of the Jester.\r\n",
+        "(1785025822)[Sat Jul 25 20:30:22 2026] Vestigial begins to play the song of the Jester.\r\n",
+        "(1785025823)[Sat Jul 25 20:30:23 2026] The Jester inspires Adam.\r\n",
+        "(1785025823)[Sat Jul 25 20:30:23 2026] The Jester inspires Adam.\r\n",
+        "(1785025823)[Sat Jul 25 20:30:23 2026] The Jester inspires Bobby.\r\n",
+    ]
+    evs = list(parse_lines(lines, "Klebb"))
+    assert len([e for e in evs if e.type == "buff_cast"]) == 1
+    assert [e.tgt for e in evs if e.type == "buff"] == ["Adam", "Bobby"]
+
+
+def test_a_line_that_only_looks_like_a_cast_is_not_one():
+    """`You begin ...` is not a spell grammar — which is why buffs.py is a
+    curated list and not the generic third-person form."""
+    for body in ("You begin to breathe normally.", "You begin to move faster!",
+                 "You begin to choke!", "You begin to play an augmentation song."):
+        e = ev(body)
+        assert e is None or e.type != "buff_cast", body

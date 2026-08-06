@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 23
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -24,7 +24,10 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL,                 -- stored lowercase; see idx_users_username
   pw_hash BLOB NOT NULL,
   salt BLOB NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user',      -- admin|user (OPERATIONAL only, see security.py)
+  role TEXT NOT NULL DEFAULT 'user',      -- admin|curator|user. OPERATIONAL only
+                                          -- (security.py): none of them reads a
+                                          -- raid. `curator` opens the Abilities
+                                          -- console — EQ2 knowledge, not access.
   sq_id INTEGER,                          -- security question (auth.RESET_QUESTIONS)
   sq_hash BLOB,
   sq_salt BLOB,
@@ -178,14 +181,93 @@ CREATE TABLE IF NOT EXISTS abilities (
   class TEXT,
   census_spell_crc INTEGER
 );
+-- `unit` and `proc` are VERDICTS and only a human sets them (source='curated').
+-- Everything the machine works out is a CANDIDATE beside them, because both
+-- questions were being answered by evidence that cannot carry them: a name
+-- seen acting like a pet once, and Census's "may cast X on ..." grammar, which
+-- flags a class's own combat art the moment any buff anywhere references it.
+-- A candidate is what the review export ranks; it never reaches a badge.
 CREATE TABLE IF NOT EXISTS ability_catalog (
   ability_name TEXT PRIMARY KEY,
   class TEXT,
-  unit TEXT NOT NULL,                     -- player|pet
-  proc INTEGER NOT NULL DEFAULT 0,        -- fires on its own (buff/item proc)
+  unit TEXT NOT NULL,                     -- player|pet — VERDICT (curated only)
+  proc INTEGER NOT NULL DEFAULT 0,        -- fires on its own — VERDICT (curated only)
   scribed INTEGER NOT NULL DEFAULT 0,     -- `class` lists who SCRIBES it (not
                                           -- who procs it) — see catalog.py
+  pet_seen INTEGER NOT NULL DEFAULT 0,    -- times a pet-kind entity cast it (evidence)
+  proc_candidate INTEGER NOT NULL DEFAULT 0,  -- Census grammar says something casts it
+  proc_class TEXT,                        -- classes whose buff/item fires it
   source TEXT                             -- census|curated|observed
+);
+-- Game reference data from the EQ2 wiki (gamewiki.py) — the abilities Census
+-- does not carry. Census's spell collection is the better source for SPELLS
+-- and stays authoritative for them; what it has never been asked for is AAs
+-- (256 incidental rows against the wiki's 1215) and items, which is most of
+-- what a raid log names and nothing can currently explain.
+--
+-- `activated` is the field that earns this table on its own. `You prepare <X>`
+-- prints for spells and combat arts and NOT for AA activations, so an
+-- activated AA is indistinguishable from a proc in the log — 11 confirmed
+-- (Lifeburn, Mana Flow, Counterblade …) and 45 rows resting on that same
+-- signature. A recast timer is proof it is pressed, and it exists nowhere else.
+--
+-- `era` is why the ingest is safe on a TLE server: the wiki separates the AA
+-- trees by expansion with zero overlap, so a level-70 EoF server takes the
+-- Class/Subclass trees and never sees Heroic (RoK), Shadows (TSO) or Dragon
+-- (DoV) abilities that would otherwise label raids with content that does not
+-- exist here.
+-- Keyed by (name, KIND), because one name really can be two abilities: the
+-- fury spell `Tempest` and Karana's miracle `Tempest (Miracle)` both print as
+-- "Tempest" in a log, and 37 AA names collide with a blessing or miracle the
+-- same way. A single-column key let the deity sync silently overwrite them —
+-- and a name that is genuinely two things is an AMBIGUITY to report, not a
+-- race to win (`gamewiki.by_name` marks it and `suggest` refuses to be
+-- confident about it).
+CREATE TABLE IF NOT EXISTS wiki_abilities (
+  name TEXT NOT NULL,                     -- ability name as a log would print it
+  page_title TEXT NOT NULL,               -- the wiki page (may carry a "(AA)" suffix)
+  kind TEXT NOT NULL,                     -- aa|spell|item
+  era TEXT,                               -- eof|rok|tso|dov — which expansion
+  tiers TEXT,                             -- classtree grant targets, comma-joined
+  line TEXT,                              -- the AA line ("Rotting", "Intelligence")
+  activated INTEGER,                      -- 1 = has a recast/cost, so it is PRESSED
+  recast_s REAL,
+  power TEXT,
+  target TEXT,
+  descr TEXT,
+  effects TEXT,                           -- the raw effect bullets, verbatim
+  fetched_ts INTEGER NOT NULL,
+  PRIMARY KEY (name, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_wiki_abilities_kind ON wiki_abilities(kind, era);
+
+-- A HUMAN's answer about one ability, and the top of the precedence ladder:
+-- ruling > curated seed > nothing. Nothing else may write here — this is the
+-- table the Abilities admin page fills in, and its whole point is that it
+-- cannot be overwritten by the next parse.
+--
+-- `grant_kind` is what fires it (spell/aa/item/deity/pet), `grant_name` the
+-- thing itself ("Fae Fire", "Overclocked Lifestone", a deity) and `grant_class`
+-- who owns that thing. The last one is what makes SELF vs GRANTED answerable:
+-- Fae Fires on a fury is their own buff, on the warlock beside them it is the
+-- fury's — same ability, different answer, decided per row against this class.
+CREATE TABLE IF NOT EXISTS ability_rulings (
+  ability_name TEXT PRIMARY KEY,
+  unit TEXT NOT NULL,                     -- player|pet
+  fires TEXT NOT NULL,                    -- cast|proc
+  grant_kind TEXT,                        -- spell|aa|item|deity|pet|unknown
+  grant_name TEXT,
+  grant_class TEXT,
+  note TEXT,
+  decided_by INTEGER,
+  decided_ts INTEGER NOT NULL
+);
+-- Which sessions saw a pet-KIND entity cast an ability. Evidence for the pet
+-- review, keyed by session so a reparse re-states it rather than inflating it.
+CREATE TABLE IF NOT EXISTS ability_pet_sightings (
+  ability_name TEXT NOT NULL,
+  session_id INTEGER NOT NULL,
+  PRIMARY KEY (ability_name, session_id)
 );
 CREATE TABLE IF NOT EXISTS pet_names (
   name TEXT PRIMARY KEY,                  -- capitalized named-pet name ("Lunar Attendant")
@@ -698,6 +780,27 @@ def init_db() -> None:
         if "scribed" not in cat_cols:
             conn.execute("ALTER TABLE ability_catalog ADD COLUMN "
                          "scribed INTEGER NOT NULL DEFAULT 0")
+        # v22: the verdict/candidate split. The old rows carried machine guesses
+        # in `unit`/`proc`; `catalog.reset_verdicts` demotes them into the new
+        # candidate columns at startup, so nothing that was learned is lost —
+        # it just stops being a claim.
+        if "pet_seen" not in cat_cols:
+            conn.execute("ALTER TABLE ability_catalog ADD COLUMN "
+                         "pet_seen INTEGER NOT NULL DEFAULT 0")
+        if "proc_candidate" not in cat_cols:
+            conn.execute("ALTER TABLE ability_catalog ADD COLUMN "
+                         "proc_candidate INTEGER NOT NULL DEFAULT 0")
+        if "proc_class" not in cat_cols:
+            conn.execute("ALTER TABLE ability_catalog ADD COLUMN proc_class TEXT")
+        # v23b: wiki_abilities was first keyed on `name` alone, which let the
+        # deity sync overwrite 37 AAs of the same name (and hand the fury spell
+        # `Tempest` to Karana). It is pure re-syncable cache, so the repair is
+        # to drop it and let `tools/sync_wiki.py` refill — no data is lost that
+        # a re-sync cannot rebuild. Detected by shape, like the rest.
+        wiki_pk = [r[5] for r in conn.execute("PRAGMA table_info(wiki_abilities)")]
+        if wiki_pk and sum(1 for p in wiki_pk if p) < 2:
+            conn.execute("DROP TABLE wiki_abilities")
+            conn.executescript(SCHEMA)
         # v10: intercepts + the press ("adjusted delay") columns. Added by
         # shape like the rest — the rows themselves are rebuilt by the
         # PARSE_VERSION sweep, so the defaults only live until the reparse.

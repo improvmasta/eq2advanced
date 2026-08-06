@@ -14,9 +14,11 @@ import Calibration from './pages/Calibration.jsx'
 import Account from './pages/Account.jsx'
 import Groups from './pages/Groups.jsx'
 import Admin from './pages/Admin.jsx'
+import AdminAbilities from './pages/AdminAbilities.jsx'
 import JoinGroup from './pages/JoinGroup.jsx'
 import Login from './pages/Login.jsx'
 import { api } from './lib/api.js'
+import { SessionContext } from './lib/session.jsx'
 import { currentTheme, toggleTheme } from './theme.js'
 
 /* Signed out is a real state, not a wall: published raids read without an
@@ -60,7 +62,7 @@ export default function App() {
   }, [user, live])
 
   return (
-    <>
+    <SessionContext.Provider value={user ?? null}>
       <header className="topnav">
         <Link to="/" className="brand">EQ2 Advanced</Link>
         <nav>
@@ -71,18 +73,23 @@ export default function App() {
             <NavLink to="/groups">Sharing</NavLink>
             <NavLink to="/import">Import</NavLink>
             {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
+            {/* a curator's only door — they have no /admin to reach it from */}
+            {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
             <NavLink to="/account">Account</NavLink>
           </>}
           {user === null && <NavLink to="/login">Sign in</NavLink>}
-          {/* the on-air light: sits apart from the tabs because it is a state,
-              not a place you were going anyway */}
+          {/* The plugin's status light: sits apart from the tabs because it is
+              a state, not a place you were going anyway. It answers one
+              question — is ACT talking to us — so it says that in plain words
+              and lets the green light carry the state. Red and the word "Live"
+              read as an alarm for what is actually the good case. */}
           {user && live && (
-            <NavLink to="/live" className={`livepill ${live}`}
+            <NavLink to="/live" className={`actpill ${live}`}
                      title={live === 'on' ? 'Streaming from ACT right now'
                        : live === 'parsing' ? 'A log is being parsed'
                          : 'Plugin connected, nothing streaming'}>
               <i className="dot" />
-              Live{live === 'on' ? '' : ` (${live})`}
+              Connected to ACT
             </NavLink>
           )}
         </nav>
@@ -132,7 +139,12 @@ export default function App() {
             <Route path="/groups" element={<NeedsAccount user={user}><Groups /></NeedsAccount>} />
             <Route path="/admin" element={
               <NeedsAccount user={user}>
-                {user?.role === 'admin' ? <Admin /> : <Navigate to="/" replace />}
+                {user?.role === 'admin' ? <Admin user={user} /> : <Navigate to="/" replace />}
+              </NeedsAccount>} />
+            <Route path="/admin/abilities" element={
+              <NeedsAccount user={user}>
+                {['admin', 'curator'].includes(user?.role)
+                  ? <AdminAbilities user={user} /> : <Navigate to="/" replace />}
               </NeedsAccount>} />
             <Route path="/account" element={
               <NeedsAccount user={user}>
@@ -142,6 +154,6 @@ export default function App() {
           </ErrorBoundary>
         )}
       </main>
-    </>
+    </SessionContext.Provider>
   )
 }

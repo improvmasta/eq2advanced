@@ -14,7 +14,7 @@ import { api, fmt } from '../lib/api.js'
 const mb = (n) => (n == null ? '—' : `${(n / (1 << 20)).toFixed(1)} MB`)
 const bytesOrOff = (n) => (n ? mb(n) : 'unlimited')
 
-export default function Admin() {
+export default function Admin({ user: me }) {
   const [overview, setOverview] = useState(null)
   const [users, setUsers] = useState(null)
   const [audit, setAudit] = useState(null)
@@ -49,6 +49,11 @@ export default function Admin() {
         <span>
           {u.username}
           {u.role === 'admin' && <span className="badge named">admin</span>}
+          {u.role === 'curator' && (
+            <span className="badge" title="Can decide what abilities are on the Abilities page. No site access, and no route to anyone's parses.">
+              curator
+            </span>
+          )}
           {u.disabled_ts && <span className="badge">disabled</span>}
           {!u.has_question && <span className="badge" title="No security question — only an admin reset can recover this account">no reset</span>}
         </span>
@@ -94,6 +99,22 @@ export default function Admin() {
                   }}>
             Rename
           </button>
+          {/* Curator is a small key on purpose: it opens the Abilities console
+              and nothing else. Handing out `admin` to get somebody who knows
+              EQ2 deciding what a proc is would hand over accounts, storage and
+              the audit log with it. */}
+          {u.id !== me?.id && (
+            <select className="chip rolepick" value={u.role} disabled={busy}
+                    aria-label={`Role for ${u.username}`}
+                    title="user — nothing. curator — the Abilities console. admin — everything here."
+                    onChange={(e) => run(
+                      () => api.adminSetRole(u.id, e.target.value),
+                      `${u.username} is now ${e.target.value}.`)}>
+              <option value="user">user</option>
+              <option value="curator">curator</option>
+              <option value="admin">admin</option>
+            </select>
+          )}
         </span>
       ) },
   ]
@@ -109,6 +130,20 @@ export default function Admin() {
         <strong>No parse data is reachable from here.</strong> Storage and parse
         status only — to read someone's raid, ask them to share it.
       </p>
+
+      {/* The one console here that edits GAME knowledge instead of site state,
+          which is why it is a door rather than a card: it has its own role
+          (`curator`), and somebody who knows EQ2 should be able to work it
+          without being handed accounts and storage too. */}
+      <div className="card" style={{ maxWidth: 520 }}>
+        <h2>Abilities</h2>
+        <p className="note" style={{ marginTop: 4 }}>
+          What is a pet's, what fires on its own, and what grants it — a spell,
+          an AA, gear or a deity. Everything the parser is less than sure about
+          waits there for a decision.
+        </p>
+        <Link className="btnlink" to="/admin/abilities">Open the Abilities console →</Link>
+      </div>
 
       {error && <p className="err">{error}</p>}
       {msg && <p className="note flash">{msg}</p>}

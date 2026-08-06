@@ -104,7 +104,8 @@ MIN_PET_ABILITIES = 2
 def refine_bare_pets(events: list[ParsedEvent], logger: str, roster: frozenset[str],
                      pet_abilities: frozenset[str],
                      known_mobs: frozenset[str] = frozenset(),
-                     census_missing: frozenset[str] = frozenset()) -> frozenset[str]:
+                     census_missing: frozenset[str] = frozenset(),
+                     census_found: frozenset[str] = frozenset()) -> frozenset[str]:
     """Bare-named summoned pets, by the one thing they cannot hide: their KIT.
 
     EQ2 writes a dumbfire with no owner possessive anywhere in the file, so
@@ -136,14 +137,25 @@ def refine_bare_pets(events: list[ParsedEvent], logger: str, roster: frozenset[s
     with them. A pet or a mercenary swings at articled mobs all night; a boss
     swings at the raid. `known_mobs` is excluded outright on top of that: mobs
     cast pet kits too (`Enynti` cast Grave Decay), and that pass is the stronger,
-    behavior-proven finding."""
+    behavior-proven finding.
+
+    `census_found` is the veto this pass was missing, and its absence is what
+    made the whole pet layer wrong. `census_missing` was used as a way IN while
+    the SAME table's positive answer went unread: a pet has no row in the
+    character database, so a name Census resolved is a person, full stop.
+    Without it `Gululu` (level 70 shadowknight), `Wudi` (wizard) and `Moklok`
+    (troubador, guild "Skill Issue") were filed as dumbfires — and because
+    `census/catalog.observe_pet_abilities` then learned everything a "pet" cast,
+    their spellbooks became pet kits, which brought MORE bare names in here on
+    the next parse. The loop is cut at both ends: this veto, and a catalog that
+    no longer takes a label from a sighting."""
     cast: dict[str, set[str]] = defaultdict(set)
     fights_our_enemies: set[str] = set()
     for ev in events:
         src = ev.src
         if src is None or src.unit != "unknown" or not _single_token_cap(src.name):
             continue
-        if src.name in roster or src.name in known_mobs:
+        if src.name in roster or src.name in known_mobs or src.name in census_found:
             continue
         if ev.type == "damage" and ev.tgt and _has_article(ev.tgt):
             fights_our_enemies.add(src.name)

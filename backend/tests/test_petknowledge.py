@@ -90,12 +90,79 @@ def test_prescan_learns_and_attributes_backwards(client):
     # the composite-garbage form must not exist
     assert not conn.execute("SELECT 1 FROM abilities WHERE name LIKE ?",
                             ("Warden of Woe%",)).fetchall()
-    # and the ability the pet cast was learned as a pet ability
-    assert conn.execute("SELECT unit, source FROM ability_catalog WHERE ability_name=?",
-                        ("Woeful Smash",)).fetchone()["unit"] == "pet"
+    # The ability the pet cast is recorded as EVIDENCE and does not become a
+    # label. A sighting is only as good as the entity classification behind it,
+    # and taking the label straight from one is what put 108 Census-scribed
+    # player spells — `Ice Comet`, `Harm Touch`, `Raging Blow` — in the pet
+    # catalog off bare names the refiner had guessed at.
+    cat = conn.execute(
+        "SELECT unit, proc, pet_seen, source FROM ability_catalog WHERE ability_name=?",
+        ("Woeful Smash",)).fetchone()
+    assert cat["unit"] == "player"        # NOT 'pet' — see census/catalog.py
+    assert cat["pet_seen"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM ability_pet_sightings WHERE ability_name=? AND session_id=?",
+        ("Woeful Smash", sid)).fetchone()[0] == 1
+    # so nothing wears a pet badge on this evidence alone
+    from census.catalog import pet_ability_names
+    assert "Woeful Smash" not in pet_ability_names(conn)
     # the name itself is in the global knowledge base
     assert conn.execute("SELECT source FROM pet_names WHERE name=?",
                         ("Warden of Woe",)).fetchone()["source"] == "observed"
+    conn.close()
+
+
+def test_sightings_survive_a_reparse_without_inflating(client):
+    """`pet_seen` counts RAIDS, not passes. The PARSE_VERSION sweep reparses
+    every session, and a counter would have said "seen in 9 raids" for one."""
+    lines = [
+        line(T0, "You have entered The Estate of Unrest."),
+        line(T0 + 2, "Ellea's Warden of Woe's Woeful Smash hits a training dummy for 300 magic damage."),
+        line(T0 + 8, "Alas, Ellea's Warden of Woe has died from pain and suffering."),
+    ]
+    sid = upload(client, "c.txt", lines)
+    conn = db()
+    conn.isolation_level = None
+    before = conn.execute("SELECT pet_seen FROM ability_catalog WHERE ability_name=?",
+                          ("Woeful Smash",)).fetchone()["pet_seen"]
+    # the same evidence stated again, which is what a reparse does
+    from census.catalog import observe_pet_abilities
+    with conn:
+        observe_pet_abilities(conn, {"Woeful Smash"}, sid)
+        observe_pet_abilities(conn, {"Woeful Smash"}, sid)
+    after = conn.execute("SELECT pet_seen FROM ability_catalog WHERE ability_name=?",
+                         ("Woeful Smash",)).fetchone()["pet_seen"]
+    assert after == before
+    # a DIFFERENT raid seeing it is real corroboration and does count
+    with conn:
+        observe_pet_abilities(conn, {"Woeful Smash"}, sid + 1000)
+    assert conn.execute("SELECT pet_seen FROM ability_catalog WHERE ability_name=?",
+                        ("Woeful Smash",)).fetchone()["pet_seen"] == before + 1
+    conn.close()
+
+
+def test_a_ruling_beats_the_curated_seed(client):
+    """`ability_rulings` is the top of the ladder — it is how a human fixes
+    both a missing label and a wrong one (routers/admin_api.rule_ability)."""
+    from census.catalog import pet_ability_names, proc_ability_names
+    conn = db()
+    curated_pet = sorted(pet_ability_names(conn))[0]
+    with conn:
+        # take a curated pet ability back off
+        conn.execute(
+            "INSERT INTO ability_rulings (ability_name, unit, fires, decided_ts) "
+            "VALUES (?, 'player', 'cast', 0)", (curated_pet,))
+        # and promote something the seed never claimed
+        conn.execute(
+            "INSERT INTO ability_rulings (ability_name, unit, fires, grant_kind, "
+            "grant_name, grant_class, decided_ts) "
+            "VALUES ('Woeful Smash', 'pet', 'cast', 'pet', 'Warden of Woe', 'fury', 0)")
+    assert curated_pet not in pet_ability_names(conn)
+    assert "Woeful Smash" in pet_ability_names(conn)
+    assert "Woeful Smash" not in proc_ability_names(conn)
+    with conn:
+        conn.execute("DELETE FROM ability_rulings")
+    assert curated_pet in pet_ability_names(conn)   # back to the seed
     conn.close()
 
 

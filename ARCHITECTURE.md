@@ -1354,6 +1354,233 @@ still pool under "Unknown". Real contributed-DPS for utility classes needs
 buff application/expiry tracked into uptime windows — parser work, not an API
 change.
 
+### Pets and procs stop being inferred (schema v22, PARSE_VERSION 20)
+
+Everything above was a per-row softening of a claim that should never have been
+made. The claim itself was wrong, in two directions at once, and it had a
+feedback loop.
+
+**Pets.** `census/catalog.observe_pet_abilities` wrote `unit='pet'` for
+anything a pet-KIND entity cast — globally, permanently, off one sighting. But
+"pet-kind" includes `refine_bare_pets`' guess at a bare capitalized name, and
+that pass used Census `found=0` as a way IN while never reading `found=1` as a
+way out. So `Gululu` (a level 70 shadowknight), `Wudi` (wizard) and `Moklok`
+(troubador, guild "Skill Issue") were filed as dumbfires, their spellbooks were
+learned as pet kits, and `refine_bare_pets` reads that same table back to
+decide what a pet is — which brought more names in on the next parse. It
+converged on **228 pet-flagged names, 108 of which Census knows as scribed
+player spells**: `Ice Comet`, `Harm Touch`, `Apocalypse`, `Raging Blow`.
+Necromancer looked right only because `CURATED_PET_ABILITIES` already covered
+it, which is exactly why the bug survived — the class anyone checked was the
+one with a human answer.
+
+**Procs.** `may cast X on …` names X for every buff that references it, so a
+class's own button gets flagged the moment anything can fire it: `Berserk`
+(berserker), `Dragon Stance` (monk), `Baffle` (brigand), `Knockdown`, `Pin`.
+
+The fix is a precedence ladder, not a better guess:
+
+    ability_rulings  >  curated seed  >  no label at all
+
+`census/catalog.pet_ability_names` / `proc_ability_names` are the only doors to
+both labels and they encode that ladder in SQL; `encounters_api` calls them
+rather than keeping its own copy, so one ruling reaches the badges, the
+rollup's press counting and the coach together. `reset_verdicts` (startup, before
+`seed_curated`) demotes every machine-written label into the candidate columns
+`pet_seen` / `proc_candidate` — a database that already learned wrong loses its
+bad badges on the next restart with **no reparse**, because the labels live in
+`ability_catalog`, not in the rolled-up rows.
+
+What the machine still does is gather evidence, and the three columns are
+deliberately different strengths:
+
+- `pet_definite` — cast under `<Owner>'s <lowercase remainder>`, the swarm form
+  nothing else produces. Certain by grammar.
+- `pet_own` — under the logger's own bare name, certain by the YOU/YOUR rule.
+- `pet_guess` — a bare capitalized name the refiner guessed at. **Every bad
+  label came out of this column**, so it is named as the weak one and a handful
+  of them against thousands of player casts is discarded outright
+  (`PET_GUESS_SHARE`).
+
+`ability_pet_sightings` is keyed by session so the PARSE_VERSION sweep restates
+evidence instead of inflating it — "seen in 4 raids" has to keep meaning four
+raids.
+
+### Provenance comes from Census, not from a guess
+
+`Fae Fires` is not "a gear proc". Census holds `Fae Fire`, a level 35 **fury**
+spell whose effect text reads *"On any combat or spell hit this spell will cast
+Fae Fires on target of attack."* Every spell record carries `given_by`, `type`,
+`alternate_advancement` and `deity`, and `census/abilityreview.proc_sources`
+finds a proc's source spell by that effect text, so the answer to "spell, AA,
+gear or deity" is usually already cached.
+
+Two things had to change to read it. `census/effects.py` matched only `may
+cast`, dropping every guaranteed `will cast` — half the grammar, and the half
+holding `Shout`, `Thorns`, `Grisly Feedback`, `Prismatic Shock`, `Thunder
+Fist`. It now keeps the whole clause: `trigger`, `mode` and `per_min`, because
+"on a melee hit, ~3/min" is a proc and "on a kill" is a consequence of one, and
+they read identically once the condition is thrown away.
+
+What Census genuinely cannot answer yet is **gear and deity**: `census_items`
+holds 143 rows (an item is only fetched when something already referenced it)
+and exactly 2 spells carry the deity flag, because the ingest walks class spell
+pages. So "no cached spell casts it" is a real finding — gear, an AA or a deity
+— and splitting those three needs the `item` + `alternateadvancement` pulls
+that are still open.
+
+**Self vs granted is a per-ROW question**, not a per-ability one, and that is
+why `ability_rulings.grant_class` exists. `Fae Fires` on a fury is their own
+buff; on the warlock beside them it is the fury's. Same ability, two answers,
+decided against the actor's class — which is the buff-attribution problem
+above, now with the data it needs.
+
+### The Abilities console (`/admin/abilities`, role `curator`)
+
+Inference stops at "here is the evidence, here is how sure I am"; a person
+answers the rest. `scope=open` is the queue — unruled and under full confidence
+— and the class rail is the ergonomics: 565 undecided abilities is a wall, 56
+under `assassin` is an afternoon. An ability sits under **every** class that
+might own it (who scribes it, whose buff fires it, who was seen using it), so
+one name appearing three times is correct until it is ruled on, and `Unclassed`
+(160) is where the gear and AA procs collect. The search box reaches every
+ability ever tracked, settled ones included — that is how a wrong answer gets
+fixed later.
+
+`curator` is a separate role because the two jobs are unrelated: deciding what
+`Fae Fires` is needs someone who knows EQ2, and running the site needs someone
+with the disk. Granting `admin` to get the first would hand over accounts,
+storage limits and the audit log with it. It widens nothing about who can read
+a raid — the payload is ability names, site-wide sums and class names, never a
+player name, an entity or a row from anybody's parse, which keeps the admin
+console's promise intact.
+
+**The lookup button.** Every ability row in a parse carries a ⚙ for a curator
+(`BreakdownTable`, hidden until the row is hovered) linking to
+`/admin/abilities?q=<ability>`. The place you NOTICE that `Ice Comet` is not a
+pet ability is a raid page, not an admin queue, and making someone go find it
+by name is how a wrong label survives. `?q=` is the address rather than
+component state so the link works from anywhere; `BreakdownTable` reads the
+viewer from `lib/session.jsx` because it renders in three places that don't own
+a user, and that context carries no authority — everything it gates re-checks
+server-side, so a stale value shows a link that 403s, never data.
+
+### A grant is to a TIER, not a class (`classtree.py`)
+
+AAs are granted at every level of EQ2's tree — the Predator line belongs to
+rangers **and** assassins, a Scout AA to all seven scouts — so "who gets this"
+cannot be one class name. `classtree.expand` is the single translation:
+`predator` → {ranger, assassin}, `scout` → all seven, `ranger` → itself. A
+ruling stored against `predator` groups under both subclasses on the Abilities
+page and will compare against both when self-vs-granted lands, without being
+written twice or drifting.
+
+Census does not need this — it only ever writes subclass names, having expanded
+groups before we see them (its `class` column runs `assassin,beastlord,brigand,
+dirge,ranger,swashbuckler,troubador` where the game says "Scout"). The tree is
+for the side Census does not cover: what a person types. `normalize` is
+therefore strict — an unrecognized target is REJECTED at the API rather than
+dropped, because `predatr` saved silently is a grant that reaches nobody and
+looks like a decision.
+
+Note this is EQ2's own tree and NOT the role grouping in `coach/descriptive.py`.
+They answer different questions and must not be merged: that all six Fighter
+subclasses are TANKS is a fact about role; that Paladin and Shadowknight are
+both Crusaders is a fact about the tree, and only the second says who an AA
+reaches.
+
+The tier names came from the wiki's own category tree, which files spells and
+AAs at every tier the game grants at (`Category:Predator Spells` sits under
+`Category:Scout Spells`). That is also where two of them were corrected:
+Beastlord's tier-2 is **Animalist** and Channeler's is **Shaper**, not their own
+subclass names.
+
+### The wiki as reference data (`gamewiki.py`, schema v23)
+
+Census stays authoritative for SPELLS — 26,082 records with damage ranges,
+periods and the effect grammar, more than any wiki page holds. What it was
+never asked for is **AAs** (256 incidental rows against the wiki's 1215) and
+items, and between them they are most of what a raid log names and nothing
+could explain: 479 ability names with no Census row at all.
+
+**`activated` is what earns the table.** `You prepare <X>` prints for spells and
+combat arts and **not** for AA activations. So the log's only proof that
+something was PRESSED is missing exactly where AAs live, and an activated AA is
+indistinguishable from a gear proc: logger hits, no prepare line. That read
+`Lifeburn` — a five-minute recast the necromancer presses — as gear, along with
+`Mana Flow`, `Counterblade`, `Nullifying Staff` and 8 more confirmed, out of 45
+rows resting on the same silence. A recast timer settles it, and it exists
+nowhere in the log. `suggest()` therefore checks `activated` BEFORE the
+prepare-line test; the ordering is the fix, not an optimization.
+
+**The wiki is also a proc SOURCE.** Its effect bullets use the same trigger
+grammar Census does — "On a melee hit this spell has a X% chance to cast Pirate
+Stab on target of attack" — so `census.effects` reads them unchanged, with
+letter placeholders swapped for a zero because a wiki page covers every rank at
+once. That is how `Avast Ye` (rogue AA) is identified as the source of `Pirate
+Stab`, which Census cannot do. 42 abilities are sourced this way.
+
+**Era is a hard filter, not a preference.** The wiki separates its AA trees by
+expansion and they do not overlap at all — verified 1215 EoF pages against 407
+later ones, zero shared. `DEFAULT_ERAS = ("eof",)` because this is a level-70
+TLE server; ingesting Heroic (RoK), Shadows (TSO) or Dragon (DoV) would label
+raids with content that does not exist here, the same class of mistake as
+inferring a pet from one sighting. Adding RoK when the server gets there is one
+entry in `AA_TREES` and a re-sync.
+
+Run by hand (`backend/tools/sync_wiki.py`), never on a schedule: AA trees change
+once an expansion, and a nightly job against someone else's wiki buys nothing
+and costs them bandwidth. Content is CC-BY-SA — fine as internal reference data,
+and anything surfaced to a reader should carry attribution. Tests use pages
+recorded verbatim in `fixtures/wiki/` and never touch the network.
+
+**Deities are the other half** (`--what deity`): 139 blessings and miracles,
+always EoF because deities arrived with it. Each carries the god that grants it
+(`Rallos' Devastation` → Rallos Zek) in the `line` column — the same slot an
+AA's line uses, answering the same question — and no class tier, because a god
+grants to whoever worships it. All 139 are activated: a miracle is a button on
+an hour recast.
+
+**A name is not a key**, and getting that wrong cost real data twice:
+
+- `wiki_abilities` is keyed on **(name, kind)**. One name really is two
+  abilities — the fury spell `Tempest` and Karana's miracle both print the same
+  in a log, and 37 AA names collide with a blessing. The first single-column
+  key let the deity sync silently overwrite them.
+- The same AA on several classes gets one page each (`Enhance: Cure (Mystic)`,
+  `(Templar)`, `(Warden)`), and those **merge their tiers** rather than
+  overwriting. 66 pages were collapsing to 29 names, keeping one class and
+  losing the rest.
+- A wiki row only speaks when **Census does not contradict it**. Matching by
+  name is the weakest join available; a Census spell record is the game saying
+  a class scribes it. So `scribed_by` wins, and the wiki stays on screen as
+  evidence — which is what keeps `Tempest` a fury spell instead of handing it
+  to Karana. `by_name` marks a name the wiki itself holds twice as `ambiguous`
+  and `suggest` refuses to be confident about it.
+- Disambiguation pages are skipped outright. They are pointers, not abilities,
+  and ingesting one is exactly how a god claims a class spell.
+
+Result: the open queue fell 560 → 478 and high-confidence rows rose 944 → 1029,
+but the number that matters is 11 verdicts that were confidently wrong and are
+now right.
+
+**Gear was investigated and dropped** (2026-08-05), and the reasons are worth
+keeping so nobody spends the day again. EQ2 has ~212,000 items, so a crawl is
+out. `{{EquipmentEffect|<Ability>|}}` on an item page is a template PARAMETER,
+not a wiki link, so `list=backlinks` returns nothing and there is no reverse
+index to walk. What is left is full-text search with verification — search the
+ability name, read the candidate pages, accept only one whose own effect text
+casts that exact ability — and measured against the 381 abilities nothing can
+explain, sampling the 60 largest by damage, that found **13**. Two were out of
+era (`Caustic Poison` → a Level 90 crate item), which item pages do allow
+filtering because they carry `level`, dropping the yield to roughly 15%.
+
+~1500 requests for maybe 55 of 381 is a much worse trade than the AA pull, and
+unlike AAs it corrects nothing — those rows are already honestly marked
+unknown. An unresolved gear proc is a curator's job. Reopen only if Fandom
+enables CirrusSearch: `insource:` would turn that structured `effectlist` into
+a precise one-call reverse index and change the arithmetic entirely.
+
 ### `GET /api/encounters/timeline?ids=…&bucket=auto`
 
 Per-actor damage / heals / damage-taken bucketed over time. The clock is the
@@ -1422,6 +1649,150 @@ flags the giveaway — an observed timer that is a clean fraction of the
 reported one, from a source that is not a named — instead of reporting the
 ACT list as wrong. Named bosses, the case that matters, are unique.
 
+### `GET /api/encounters/class-stats?ids=…` — the Class tab
+
+The stats only one class can answer. "Was Jester's Cap up on the assassin all
+fight" is a troubador question and nobody else's; as a column in the combatant
+table it would be blank for twenty-five classes out of twenty-six. So the
+selection is split by class instead, and each class owns its panel.
+
+`pipeline/classstats.py` is a **registry**, and that is the whole design: a
+metric is one `@register(...)`-decorated function declaring its columns and
+returning rows. The endpoint enumerates the registry, the frontend
+(`ClassPanel.jsx`) formats by column UNIT (`text|num|pct|secs|clock|rate`), and
+nothing else has to change. Adding "Perfection of the Maestro uptime" is a
+Python function, not a migration plus an API change plus a component.
+
+Rules the shape enforces:
+
+- **`blurb` is required**, and it carries the LIMIT, not the pitch. These stats
+  live at the edge of what a log can prove — a buff with no fade line, a proc
+  with no logged source — and the caveat belongs beside the number, in the
+  panel, rather than in a doc nobody opens.
+- **A class with no metrics is still a section.** The honest state of this tab
+  is "we know who was here, we have not written their stats yet", and the
+  frontend says exactly that (`Coming soon.`). It is not an error state.
+- **Class resolution is not redone here.** The actor list comes from the
+  memoized `/agg` payload the Damage tab already fetched, so "what class is
+  this raider" has one answer per page — the one `classguess.resolve_class`
+  gave, dated to the fight.
+- **`class_source == 'unidentified'` is not a class we failed to guess.** It is
+  the refine pass saying nothing in the log proved a person was behind the
+  name, which usually means a summoned pet. Those names appear in neither the
+  class sections nor the unmatched list; filing them under "class unknown"
+  would be a claim about a pet.
+- **A metric that raises is isolated** (`status: "error"`) and the rest of the
+  tab renders. One bad regex must not take the Class tab out for a whole raid.
+- **`needs_events=True` on a pruned selection reports that** rather than
+  returning zeroes: pruning keeps the rollups and drops the events, and "no
+  uptime" and "no events" are different answers.
+
+`Ctx.events(types)` is the one expensive door — stored events for the live
+encounters with entity ids resolved to names, cached per type-set for the
+request, so two metrics wanting casts pay for one read.
+
+`test_classstats.py` covers the pipe with stub metrics (it empties the registry
+for every test, so the shape stays pinned whatever real metrics exist);
+`test_classmetrics.py` covers the real ones.
+
+### Curated buff lines (`parser/buffs.py`) — and Jester's Cap uptime
+
+A beneficial buff is nearly invisible in an EQ2 log: no damage, no heal, no
+name, no fade line. A handful of abilities do print flavor text, twice, and
+**both lines are written for everyone in chat range**:
+
+```
+Vestigial begins to play the song of the Jester.     <- the cast, caster named
+The Jester inspires Rorschach.                       <- the landing, target named
+```
+
+That is the only place in the parser where ANOTHER player's cast is visible at
+all (`You prepare …` is the logger's own and nothing else), which is what makes
+buff uptime computable from any raider's upload rather than only the buffer's.
+
+**Curated, not generic.** The third-person grammar exists — `<Name> begins
+<flavor>.`, 822 `Tasrin begins a phantasmal enchantment.` lines in one raid —
+but the flavor names an ability LINE, not an ability ("an augmentation song" is
+every troubador group buff), and the first-person form is not even always a
+spell: `You begin to breathe normally.`, `You begin to move faster!`, `You
+begin to choke!`. A line earns an entry when its flavor identifies ONE ability
+and its landing names the target. Each entry carries a `token` substring so the
+regexes never run on the lines that cannot match.
+
+Two event types come out: `buff_cast` (src = caster) and `buff` (tgt = who got
+it). `_pair_buffs` gives a landing the caster that produced it — the two lines
+are written independently, so the only link is time, and Census puts the cast
+at 1s. Across a three-troubador log that left **590 of 596 landings with
+exactly one candidate caster and none ambiguous**; when two casters do fall in
+one window the landing keeps NO source, because picking one would invent
+attribution that reads as measured.
+
+**Blast radius is deliberately nil.** `statsroll` ignores both types (the
+if/elif chain has no branch for them), and `segment_events` only ever opens or
+extends a segment on `damage`/`avoid` — so a troubador chain-casting between
+pulls cannot merge two fights, no ability row grows, no class vote changes, and
+ACT parity is untouched. The events are read by the Class tab alone.
+`PARSE_VERSION` 19 is the bump that backfills them into stored sessions.
+
+**Jester's Cap uptime** (`pipeline/classmetrics/troubador.py`) is the first
+metric. Census: troubador 65, single target, +22.5–42% Reuse Speed by tier,
+**30s duration on a 30s recast** (25s with the Enhance AA). Duration equals
+recast, so ~100% on one target is the ceiling and the number measures chain
+discipline rather than timing. Coverage is the UNION of the applications'
+windows, not their sum — an early refresh extends the buff, it does not add a
+second one — clipped to each fight and cut short by the target's death (a buff
+does not survive it and a rez does not bring it back). Applications are read
+with a one-duration lookback (`Ctx.events_around`), because a cap landed during
+the pull covers the opening of the fight and belongs to no encounter;
+the window is bounded to each selected fight's own run-up rather than opened to
+the session, since authorization here is per encounter.
+
+On the real 2026-08-03 raid the parser finds 829 casts (Vestigial 781,
+Piedpipper 48) and 820 landings across 12 targets, 816 of them credited.
+
+Still open, and stated in the metric's `blurb` rather than in a doc: a cast
+out of chat range is not logged at all, so every count is a floor.
+
+### Perfection of the Maestro — a metric with no line at all
+
+PotM prints nothing: no cast line, no landing line, no fade. All three were
+looked for. The only `augmentation song` casts in a raid night are the
+concentration buffs (77 across a five-week log, **none** within 35s of a PotM
+window), and the `An augmentation song affects X` landings name mobs buffing
+themselves. What gives it away is its PROC — Census says PotM casts *Precise
+Note* on a hostile spell cast, and exactly one spell in the game casts Precise
+Note. **A Precise Note is proof its caster had PotM that second**, and it is
+the only proof there is. 35,452 of them were already in the events table, so
+this metric needed no parser change.
+
+Everything it reports is therefore a floor, and the two constants are measured
+rather than assumed:
+
+- **`WINDOW_S` = 30.** Census says 20s, Enhance: PotM adds 10, and the longest
+  proven run across the reference raids is 31s — consistent, and it rules out
+  reading Census's base row as the answer.
+- **`JOIN_GAP_S` = 3.** How far apart two procs can be and still count as one
+  covered stretch. Across 35,339 stored procs, 95% of consecutive gaps inside a
+  window are ≤3s, and 3s is the largest join that does not start inventing
+  coverage: runs longer than the buff can possibly last are 0.5% of runs at a
+  3s join and **6.8% at 8s**. A generous tolerance does not find more coverage
+  — it manufactures the overlap below, which is how the first cut of this
+  metric reported 182 wasted seconds that were not there.
+
+`Windows` counts CASTS, not stretches — a proc more than one duration after the
+window opened cannot belong to it, while counting stretches would count how
+choppy someone's casting was (a caster who pauses twice inside one window has
+three stretches and one buff).
+
+**Double-covered** is the RoK question asked early. One troubador cannot chain
+PotM (90s recast, 30s buff), so a covered stretch longer than one window took
+more than one cast, and the excess is buff paid for twice. Group-scoped in EoF
+that is a rarity — 26s in a ten-fight Vyemm run, nothing at all in most — but
+when the buff goes raid-wide next expansion it becomes the direct measure of a
+second troubador's cast landing on someone already buffed. The arithmetic is
+the same in both eras, so there is no era switch: the column is quiet today
+because the waste is not happening yet.
+
 ### Frontend
 
 - `lib/classes.js` owns identity. **Color is assigned by EQ2 archetype
@@ -1437,6 +1808,22 @@ ACT list as wrong. Named bosses, the case that matters, are unique.
   footer instead of immediately hijacking the panel — comparing is a deliberate
   second click. The same bar serves the ability breakdown, so "what fraction of
   my parse is my priority spells" is a few checkboxes.
+- **Click reads, tick compares** (`ZoneRun.focusActor` vs `toggleCmp`). A click
+  on a raider's row REPLACES what the drilldown column is showing; only the
+  checkbox adds a second parse beside the first. They were the same gesture for
+  a while — a click ticked the box — and reading down the table three names deep
+  left three quarter-width parses side by side when what was wanted was the
+  third one. Clicking the raider already open closes the panel, so a click still
+  undoes itself, and mob/pet rows (which have no checkbox) stay plain
+  drilldowns on `?actor`.
+- **A comparison is a ROW, and it scrolls sideways** (`.cmpraiders`, base.css).
+  The raider boxes never wrap: past two or three they run off the right-hand
+  edge and take a horizontal scrollbar with them. Wrapping the third box under
+  the first read as a grid rather than as parses lined up, and it doubled the
+  panel column's height — which, with the rail and the raid table stacked in
+  the other column of the same grid, silently pushed the raid table an inch
+  down the page. `.workspace.withpanel` also pins that to `grid-template-rows:
+  auto 1fr` so a tall panel grows the table's row, never the rail's.
 - **Rank coloring** (`stats.rankScale`/`rankColor`/`rankTitle`, applied through
   `SortableTable`'s `cellStyle` / `cellTitle` hooks): a row's PLACE among the
   same-role raiders on screen, mixed into the text with `color-mix`, with the

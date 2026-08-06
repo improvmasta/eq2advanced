@@ -102,7 +102,7 @@ const KINDS = [
 ]
 
 export default function EncounterTree({
-  encounters, sel, onSelect, sessionLabel, sub, subTag, subTitle, actions,
+  encounters, sel, onSelect, sessionLabel, sub, who, subTitle, actions,
   titled = false, hideZones = false, selectedIds, onToggle, onSelectMany,
 }) {
   const blocks = useMemo(() => buildTree(encounters), [encounters])
@@ -212,15 +212,17 @@ export default function EncounterTree({
             {encounters.length} fight{encounters.length === 1 ? '' : 's'}
           </span>
         </div>
-        {/* The caption ellipses; anything pinned to the END of it (the guild
-            the raid was voted into) is a tag, not more caption, so it keeps
-            its width instead of being the first thing truncated away. */}
+        {/* Two captions, not one crammed line. WHEN the raid was is a
+            timestamp and reads as one; WHO it belongs to (the character whose
+            parse this is, and the guild the roster was voted into) is a name
+            and gets its own line at its own size — jammed onto the end of the
+            date it was the first thing an ellipsis ate. */}
         {sub && (
           <span className="railsub" title={subTitle}>
             <span className="t">{sub}</span>
-            {subTag}
           </span>
         )}
+        {who && <span className="railwho">{who}</span>}
         {actions && <div className="railacts">{actions}</div>}
       </div>
 

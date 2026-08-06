@@ -48,7 +48,7 @@ and `/home/lindsay/AGENTS.md` — don't duplicate them here.
 FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
-addressed) and `raw/` (live-ingest chunks). Schema is at **v21**; migrations in
+addressed) and `raw/` (live-ingest chunks). Schema is at **v23**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
@@ -80,6 +80,65 @@ Every one has a section in `ARCHITECTURE.md` carrying the evidence.
   expose the other fights in the same uploaded file.
 - **Admin is operational, not omniscient.** `role='admin'` is absent from every
   visibility decision; support is "ask them to share the raid".
+- **A pet or proc label is a CLAIM, and only a human makes one.** The ladder is
+  `ability_rulings` > the curated seed > no label (`census/catalog.py`, the two
+  `*_ability_names` readers are the only doors). Inferring them cost 228
+  pet-flagged names, 108 of which Census knows as scribed player spells (`Ice
+  Comet`, `Harm Touch`, `Raging Blow`) — `observe_pet_abilities` took a label
+  from one sighting, and `refine_bare_pets` read that table back to decide what
+  a pet was, so the error fed itself. Necromancer looked right only because the
+  curated seed covered it. Everything the machine notices is a CANDIDATE
+  (`pet_seen`, `proc_candidate`), reviewed at `/admin/abilities`. `pet_definite`
+  (a possessive with a lowercase remainder) is grammar; `pet_guess` (a bare
+  capitalized name) is where every bad label came from — never treat them alike.
+- **`You prepare <X>` does NOT print for an AA activation**, so the log's proof
+  of a press is missing exactly where AAs live and a pressed AA is
+  indistinguishable from a gear proc. `Lifeburn` (a 5-minute recast) read as
+  gear, with 45 rows on the same silence. `gamewiki.activated` (a recast timer)
+  is the only evidence that settles it, which is why `suggest()` checks it
+  BEFORE the prepare-line test — the ordering is the fix. The wiki is also a
+  proc SOURCE (`Avast Ye` -> `Pirate Stab`), using the same grammar as Census.
+- **The wiki ingest is ERA-FILTERED and must stay that way** (`gamewiki.AA_TREES`,
+  `DEFAULT_ERAS = ("eof",)`). This is a level-70 TLE server; the expansion trees
+  don't overlap at all (1215 EoF pages vs 407 later, zero shared), and pulling
+  Heroic/Shadows/Dragon would label raids with content that does not exist here.
+  Adding RoK is one entry plus a re-sync. Run `tools/sync_wiki.py` BY HAND —
+  never on a schedule. Census stays authoritative for spells; the wiki covers
+  what Census was never asked for. Deities (`--what deity`, 139 blessings and
+  miracles) are always EoF — they arrived with it.
+- **A NAME is not a key, and a wiki match is the weakest join there is.**
+  `wiki_abilities` is keyed on (name, KIND) because one name really is two
+  abilities: the fury spell `Tempest` and Karana's miracle both print the same,
+  and 37 AA names collide with a blessing. A single-column key let the deity
+  sync silently overwrite them. The same AA on several classes (`Enhance: Cure`
+  x3) MERGES its tiers rather than overwriting — 66 pages were collapsing to
+  29 names. And a wiki row only speaks when Census does not contradict it: a
+  scribed spell record is the game naming the class, so `scribed_by` wins and
+  the wiki stays visible as evidence (`gamewiki.by_name` marks `ambiguous`,
+  `suggest` refuses to be confident about it). Disambiguation pages are skipped
+  outright — they are pointers, not abilities.
+- **Census answers "spell, AA, gear or deity" — read it, don't guess.** Spell
+  records carry `given_by`, `type`, `alternate_advancement` and `deity`, and a
+  proc's source spell is findable by its effect text: `Fae Fires` is `Fae Fire`,
+  a level 35 FURY spell, not "a gear proc". The gap is real and narrow —
+  `census_items` has 143 rows and 2 spells carry the deity flag. AAs and
+  deities are now covered by `gamewiki.py`, so "no cached spell casts it" means
+  GEAR — and gear is a closed question, not a pending pull (see Open). Self vs
+  granted is a per-ROW question against `grant_class`, never a property of the
+  ability.
+- **A grant is to a TIER of EQ2's class tree, not a class** (`classtree.py`).
+  AAs are handed out at every level — Predator is rangers AND assassins, a
+  Scout AA is all seven — so `expand()` is the one translation and a ruling
+  against `predator` groups under both without being written twice. Census
+  never needs it (it writes only subclass names, pre-expanded); this is for
+  what a PERSON types, which is why an unrecognized target is rejected rather
+  than dropped. Not the same thing as the ROLE map in `coach/descriptive.py` —
+  don't merge them.
+- **`role` is operational and now has three values** (`user|curator|admin`).
+  `curator` opens the Abilities console and nothing else; none of the three
+  reaches anybody's parse (`security.py`). A curator gets a ⚙ on every parsed
+  ability row into `/admin/abilities?q=<name>` — the wrong label gets noticed
+  on a raid page, not in the queue.
 - **Bump `PARSE_VERSION` (`pipeline/ingest_writer.py`) after ANY parser or
   rollup semantics change** — the startup sweep reparses stale sessions.
   Zone-run dedupe only matches equal `parse_version`, so duplicate marking
@@ -170,8 +229,9 @@ one row with a `Parse` switch. Yours wins; otherwise the site picks the parse
 with the widest coverage, the same one for everybody.
 
 **The raid page** opens on Damage, with Healing / Defense / AoEs / Timeline /
-Insights beside it, a fight rail on the left and a drilldown panel on the
-right. Columns are the reader's (drag to reorder, hide from the Columns menu,
+Class beside it, a fight rail on the left and a drilldown panel on the right.
+**Insights is hidden for now** — one commented line in `TABS` (ZoneRun.jsx);
+the panel and `coach_api` are untouched and putting the entry back turns it on. Columns are the reader's (drag to reorder, hide from the Columns menu,
 remembered per tab). Rank coloring is continuous distance from the peer median
 (`stats.js rankScale`/`rankColor`) and says nothing under four peers. Opening a
 raider carries the page's tab into their parse (Damage → Damage, Healing →
@@ -179,6 +239,19 @@ Heals) and heads it with who they are — class, plus the level and guild Census
 already cached for the class lookup, which are undated and so caption the name
 rather than feeding any number. The rail's head puts the raid's guild pill
 right of the character whose parse it is and ends its action row with Compare.
+
+**The Class tab** holds the stats only one class can answer — a troubador's
+buff uptime is not a column the other twenty-five can share. A rail of the
+classes actually in the raid, a panel each, fed by the `pipeline/classstats.py`
+registry: adding a class stat is one `@register`-decorated function declaring
+its columns (metrics live in `pipeline/classmetrics/<class>.py`), and a class
+with none written yet says "Coming soon" rather than being hidden. `blurb` is
+required on every metric and carries the stat's LIMIT, because these live at
+the edge of what a log proves. Troubador so far: **Jester's Cap uptime** and
+casts (off the curated buff lines in `parser/buffs.py`) and **Perfection of
+the Maestro** coverage (off its Precise Note proc — PotM logs nothing else),
+which carries the raid-wide "double-covered" column for RoK. See
+ARCHITECTURE.md → the Class tab.
 
 **Compare** (`/compare`, in the nav, signed-out too) puts any parses side by
 side — whole raids or single players from different nights, matched by name.
@@ -209,7 +282,8 @@ include or exclude the back catalogue (`since_ts`); connecting a guild TAG to a
 group is the same rule keyed on the guild Census says the uploading character
 wears, so a new alt is covered without a new switch.
 
-**Coach and Census** are intact behind the Insights tab and `coach_api` —
+**Coach and Census** are intact behind `coach_api` (and the Insights tab, while
+it is hidden) —
 descriptive currencies, a Census-as-prior fit with per-ability coefficients,
 stat-marginal replay, calibration sessions, and the raid report (engagement
 timing, death cost, overheal/save estimates).
@@ -257,18 +331,42 @@ builds on this host with `bash build.sh`.
   screenshots were never diffed column-for-column; that log isn't uploaded.
 - **AA modeling** — a curated per-class `aa_effects` table, not a full tree
   ingest. Discuss with Lindsay before building it.
-- **Ability coverage is a DATA problem**: 433 of 919 log ability names have no
-  Census row (AAs, gear procs, item effects). Fixing it is a Census ingest job
-  (`alternateadvancement`), not a voting change in `classguess`.
+- **Ability coverage: AAs and deities are done, GEAR IS CLOSED AS WONTFIX.**
+  `gamewiki.py` holds 1215 EoF-era AAs and 139 blessings/miracles. Gear was
+  investigated and **deliberately dropped** (2026-08-05) — do not reopen it
+  without new information. There are ~212,000 items, so a crawl is out;
+  `{{EquipmentEffect|<Ability>|}}` is a template PARAMETER rather than a link,
+  so backlinks give no reverse index; and full-text search plus verification
+  measured **13 of 60** on the largest unexplained abilities, two of those out
+  of era (a Level 90 crate item), leaving ~15% once item `level` is filtered.
+  ~1500 requests to answer maybe 55 of 381 is a far worse trade than the AA
+  pull, which was one clean crawl and corrected 11 wrong verdicts. The remedy
+  is the curator: an unresolved gear proc gets looked up by hand.
+  Reopen only if Fandom enables CirrusSearch — `insource:` would turn that
+  structured `effectlist` into a precise one-call reverse index.
 - **Buff attribution** — damage from another player's buff proccing on you is
   entirely yours, and sourceless `is hit by <Effect>` lines pool under
   "Unknown". Real utility DPS needs buff uptime windows in the parser.
+- **Third-person cast lines are still dropped, except the curated ones.**
+  `parser/buffs.py` takes the handful whose flavor names ONE ability (Jester's
+  Cap so far); `classify.py` otherwise handles only the logger's `You prepare
+  <flavor>`, so 822 `Tasrin begins a phantasmal enchantment.` lines a raid go
+  unread. A raid-wide cast timeline needs the generic form plus a
+  flavor -> ability-line map, and the map is the work: the flavor identifies a
+  whole spell line, and `You begin to breathe normally.` is not a cast at all.
+- **PotM coverage is proc-derived and cannot be anything else.** Nothing in
+  the log marks the cast, the landing or the fade, so `potm_coverage` reads
+  Precise Note (its proc, and Census knows no other source). Every number is a
+  floor — melee raiders with the buff up never proc — and the two constants
+  are calibrated against the stored procs, not guessed. Don't widen
+  `JOIN_GAP_S` to "find" more coverage; it manufactures double-cover instead.
 - ACT residuals, in size order: ACT opens an encounter ~3s earlier on a THREAT
   pull, the boss's own Damage column reads ~10% light in `statsroll`, and ACT
   counts deaths on mob rows.
 
 ## Ship log
 
+- 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches); restore base.css styles lost to a git checkout
 - 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page
 - 2026-08-04 (claude): Import page rebuild: account-scoped pairing (schema v13), drag-drop uploader, no character prompt, no ACT export box

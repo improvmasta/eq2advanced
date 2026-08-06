@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import ActorPanel from '../components/ActorPanel.jsx'
 import AoePanel from '../components/AoePanel.jsx'
+import ClassPanel from '../components/ClassPanel.jsx'
 import ComparePanel from '../components/ComparePanel.jsx'
 import DeathRecap from '../components/DeathRecap.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
@@ -37,7 +38,15 @@ const TABS = [
   { key: 'deaths', label: 'Deaths' },
   { key: 'aoes', label: 'AoEs' },
   { key: 'timeline', label: 'Timeline' },
-  { key: 'insights', label: 'Insights' },
+  /* The stats only one class can answer — a troubador's buff uptime is not a
+     column the other twenty-five classes can share. See ClassPanel.jsx. */
+  { key: 'class', label: 'Class' },
+  /* Insights is HIDDEN, not removed — the panel, the coach endpoint and the
+     `tab === 'insights'` render below are all intact, and putting the entry
+     back here is the whole of turning it on again. An old ?tab=insights
+     bookmark lands on Damage while it is out, because `tab` is validated
+     against this list. */
+  // { key: 'insights', label: 'Insights' },
 ]
 
 /* The page tab and a parse's kind tabs are the same question at two scales, so
@@ -518,6 +527,9 @@ export default function ZoneRun({ user }) {
   const [playerQ, setPlayerQ] = useQueryState('player')
   const [q, setQ] = useQueryState('q')
   const [rolesQ, setRolesQ] = useQueryState('roles')
+  // which class the Class tab is showing — in the URL, so "look at what the
+  // troubs did on this night" is a link like every other selection here
+  const [clsQ, setClsQ] = useQueryState('cls')
   const [healedOpen, setHealedOpen] = useState(false)
   const [showNpcs, setShowNpcs] = useState(false)
   const [showPets, setShowPets] = useState(false)
@@ -526,6 +538,8 @@ export default function ZoneRun({ user }) {
   const [timelineErr, setTimelineErr] = useState(null)
   const [aoeData, setAoeData] = useState(null)
   const [aoeErr, setAoeErr] = useState(null)
+  const [classData, setClassData] = useState(null)
+  const [classErr, setClassErr] = useState(null)
   const [recaps, setRecaps] = useState(null)
   const [recapIdx, setRecapIdx] = useState(null)
 
@@ -534,6 +548,20 @@ export default function ZoneRun({ user }) {
       .then((d) => { setRun(d.zone_run); setEncounters(d.encounters) })
       .catch((e) => setError(e.message))
   }, [id])
+
+  /* A streaming raid grows under the page — new fights land in the rail and the
+     Live pill has to come DOWN when the plugin stops. Only this one request
+     repeats; the numbers panel keeps its own cache, so re-reading the run costs
+     a row and refreshes the rail. */
+  useEffect(() => {
+    if (!run?.live) return
+    const t = setInterval(() => {
+      api.zoneRun(id)
+        .then((d) => { setRun(d.zone_run); setEncounters(d.encounters) })
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(t)
+  }, [id, run?.live])
 
   useEffect(() => {
     let gone = false
@@ -629,6 +657,19 @@ export default function ZoneRun({ user }) {
   }, [tab, selIds && selIds.join(',')])
 
   useEffect(() => {
+    if (tab !== 'class' || !selIds?.length) return
+    let gone = false
+    const hit = peek(url.classStats(selIds))
+    setClassData(hit)
+    setClassErr(null)
+    if (hit) return
+    api.encountersClassStats(selIds)
+      .then((d) => { if (!gone) setClassData(d) })
+      .catch((e) => { if (!gone) setClassErr(e.message) })
+    return () => { gone = true }
+  }, [tab, selIds && selIds.join(',')])
+
+  useEffect(() => {
     if (tab !== 'deaths' || !selIds?.length) return
     let gone = false
     // clear both: the deaths request is slower than /agg, so keeping the old
@@ -676,7 +717,12 @@ export default function ZoneRun({ user }) {
   const actors = detail?.actors ?? []
   const duration = Math.max(detail?.encounter?.duration_s || 0, 1)
   const players = useMemo(() => actors.filter((a) => a.kind === 'player'), [actors])
+  /* The three raid-wide denominators, together and BEFORE their first reader:
+     the selection bar's "% of raid" picks one by tab, and it renders above the
+     header block that also uses them. */
   const raidDamage = players.reduce((s, a) => s + (a.damage || 0), 0)
+  const raidHealed = players.reduce((s, a) => s + healedOf(a), 0)
+  const raidTaken = players.reduce((s, a) => s + (a.damage_taken || 0), 0)
 
   const visibleActors = useMemo(() => actors.filter((a) =>
     (a.damage || 0) > 0 || (a.heals || 0) > 0 || (a.damage_taken || 0) > 0
@@ -685,11 +731,10 @@ export default function ZoneRun({ user }) {
   // checked-off combatants for comparison, order preserved in the URL
   const cmpList = useMemo(() => (cmpQ || '').split(',').filter(Boolean), [cmpQ])
   const cmpKeys = useMemo(() => new Set(cmpList), [cmpList])
-  /* Checking a raider and opening their parse are the SAME gesture. Clicking a
-     row ticks its box, so putting a second raider beside the first is one more
-     click and nothing else; unticking the last box puts the raid back. The
-     panel therefore follows the checks — an explicit ?actor is only how a mob
-     or a pet row (which has no checkbox) opens one. */
+  /* The panel follows the checks — an explicit ?actor is only how a mob or a
+     pet row (which has no checkbox) opens one. Clicking a name and ticking a
+     box are DIFFERENT gestures: a click is "show me this one instead", a tick
+     is "and this one too". */
   const soloActor = cmpList.length === 1 && actors.some((a) => a.key === cmpList[0])
     ? cmpList[0] : null
   const selectedActor = actorQ && actors.some((a) => a.key === actorQ) ? actorQ : soloActor
@@ -706,6 +751,16 @@ export default function ZoneRun({ user }) {
        theirs, and ticking anyone drops a mob or pet drilldown that was open —
        either way what is checked is what you are looking at. */
     if (!had || actorQ === key) setActorQ(null)
+  }
+  /* Clicking a raider's name REPLACES what the panel is showing — reading down
+     a raid table is one parse after another, and having each click add a
+     column meant three names in and the parse you wanted was a third of a
+     screen wide. Adding is the checkbox's job, and only its job. Clicking the
+     one already open closes it, so a click still undoes itself. */
+  const focusActor = (key) => {
+    setActorQ(null)
+    const only = cmpList.length === 1 && cmpList[0] === key
+    setCmpQ(only ? null : key)
   }
   // checking rows sums them in the header box; a second check is already the
   // ask to compare, so the table comes up with it — no extra button
@@ -740,16 +795,28 @@ export default function ZoneRun({ user }) {
     const sum = (get) => checkedActors.reduce((s, a) => s + (get(a) || 0), 0)
     const dmg = sum((a) => a.damage)
     const heal = sum((a) => (a.heals || 0) + (a.wards_absorbed || 0))
+    const taken = sum((a) => a.damage_taken)
+    /* "% of raid" is a share of whatever the TAB is about. Checking three
+       healers on the Healing tab and being told their share of raid DAMAGE is
+       a true number answering a question nobody asked. */
+    const shares = {
+      damage: ['damage', dmg, raidDamage],
+      healing: ['healing', heal, raidHealed],
+      defense: ['damage taken', taken, raidTaken],
+    }
+    const [what, part, whole] = shares[tab] || shares.damage
+    const dps = { k: 'DPS', v: dmg ? fmt.num2(dmg / duration) : null }
+    const hps = { k: 'HPS', v: heal ? fmt.num2(heal / duration) : null }
     return [
-      { k: 'DPS', v: dmg ? fmt.num2(dmg / duration) : null },
-      { k: 'HPS', v: heal ? fmt.num2(heal / duration) : null },
+      // the tab's own rate leads; the other one still shows if it is non-zero
+      ...(tab === 'healing' ? [hps, dps] : [dps, hps]),
       {
-        k: '% of raid', v: dmg && raidDamage ? `${((dmg / raidDamage) * 100).toFixed(1)}%` : null,
-        title: 'Combined share of raid DPS',
+        k: '% of raid', v: part && whole ? `${((part / whole) * 100).toFixed(1)}%` : null,
+        title: `Combined share of raid ${what}`,
       },
       { k: 'Deaths', v: sum((a) => a.deaths) || null },
     ]
-  }, [checkedActors, duration, raidDamage])
+  }, [checkedActors, duration, tab, raidDamage, raidHealed, raidTaken])
 
   const roleSet = useMemo(
     () => new Set((rolesQ || '').split(',').filter(Boolean)), [rolesQ])
@@ -1121,10 +1188,8 @@ export default function ZoneRun({ user }) {
      instead of a table — but what it counts follows the tab you are on. */
   const sumRep = (get) => Object.values(repRows || {})
     .reduce((s, n) => s + (get(n) || 0), 0)
-  const raidHealed = players.reduce((s, a) => s + healedOf(a), 0)
   const raidHeals = players.reduce((s, a) => s + (a.heals || 0), 0)
   const raidOverheal = sumRep((n) => n.overheal_est)
-  const raidTaken = players.reduce((s, a) => s + (a.damage_taken || 0), 0)
   const raidSelf = players.reduce((s, a) => s + (selfDamage[a.key] || 0), 0)
   const raidCures = players.reduce((s, a) => s + (a.cure_count || 0), 0)
   const totalDeaths = players.reduce((s, a) => s + (a.deaths || 0), 0)
@@ -1203,6 +1268,16 @@ export default function ZoneRun({ user }) {
       { k: 'Rezzes', v: players.reduce((s, a) => s + (a.rez_casts || 0), 0) },
       ...extraTiles,
     ],
+    class: [
+      ...timeTiles,
+      { k: 'Classes', v: classData?.classes?.length ?? '—' },
+      {
+        k: 'Raiders', v: classData
+          ? classData.classes.reduce((s, c) => s + c.actors.length, 0) : '—',
+        title: 'Players whose class this parse could pin',
+      },
+      ...extraTiles,
+    ],
   }
 
   /* The totals for what is checked — the head of the comparison column, and
@@ -1242,19 +1317,28 @@ export default function ZoneRun({ user }) {
         onSelectMany={selectFights}
         sessionLabel={zoneLabel}
         titled
-        /* When, how long, and whose vantage point it is — one small line under
-           the zone name. It reads as a caption, so it takes the short date and
-           hands the long one to the tooltip rather than wrapping the rail. */
-        sub={`${fmt.date(run.started_ts)} · ${fmt.timeRange(run.started_ts, run.ended_ts)}`
-          + ` · ${run.character_name}`}
-        /* The guild belongs on the caption, beside the person whose parse this
-           is: it says who was in the room. Down among the sharing badges it sat
-           in a row of controls and read as one of them. */
-        subTag={(
+        /* When it was: the short date and the clock, with the long date on the
+           tooltip rather than wrapping the rail. */
+        sub={`${fmt.date(run.started_ts)} · ${fmt.timeRange(run.started_ts, run.ended_ts)}`}
+        /* Whose parse it is, and who they were in the room with — a line of
+           its own under the date. The guild belongs beside the person, not
+           down among the sharing badges where it read as one of them. */
+        who={(
           <>
+            <span className="whoname" title="The character whose parse this is">
+              {run.character_name}
+            </span>
             {run.guild && (
               <span className="badge guild" title="Majority guild of the roster, from Census">
                 {run.guild}
+              </span>
+            )}
+            {/* Beside the guild, because both caption WHO this parse is — and a
+                raid still arriving is the first thing to know about the numbers
+                on the page. */}
+            {run.live && (
+              <span className="badge live" title="Being streamed right now — the fights are still arriving">
+                Live
               </span>
             )}
             {report?.partial && <span className="partial">· partial (pruned)</span>}
@@ -1406,12 +1490,12 @@ export default function ZoneRun({ user }) {
               rowKey={(a) => a.key}
               selectedKey={selectedActor}
               wrapClass={currentRows.length > 14 ? 'sticky' : ''}
-              /* A raider's row and their checkbox do the same thing — click one
-                 to read their parse and it is ticked, so the next raider you
-                 click is a comparison and unticking puts the raid back. Mobs
-                 and pets have no checkbox, so theirs stays a plain drilldown. */
+              /* Click a raider to READ them — the panel switches to that one
+                 parse, whatever was in it. Their box is what builds a
+                 comparison. Mobs and pets have no checkbox, so theirs stays a
+                 plain drilldown. */
               onRowClick={(a) => {
-                if (a.kind === 'player') toggleCmp(a.key)
+                if (a.kind === 'player') focusActor(a.key)
                 else setActorQ(a.key === selectedActor ? null : a.key)
               }}
               checkable={(a) => a.kind === 'player'}
@@ -1431,6 +1515,13 @@ export default function ZoneRun({ user }) {
           <ErrorBoundary resetKey={`aoes:${sel}`}>
             <AoePanel data={aoeData} err={aoeErr}
                       base={enc?.started_ts ?? run.started_ts} />
+          </ErrorBoundary>
+        )}
+
+        {detail && tab === 'class' && (
+          <ErrorBoundary resetKey={`class:${sel}:${clsQ}`}>
+            <ClassPanel data={classData} err={classErr} cls={clsQ}
+                        onPick={setClsQ} />
           </ErrorBoundary>
         )}
 
