@@ -2918,6 +2918,17 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   50% { opacity: 0.65; box-shadow: 0 0 0 5px rgba(74, 222, 128, 0); }
 }
 
+/* Replay: a recorded fight playing through the live meter, for a curator
+   working on this page out of raid hours. It has to be unmistakable — a
+   dashboard that cannot say whether it is showing tonight or last Tuesday is
+   worse than one that cannot replay at all — so the switch changes colour and
+   the bar wears the same warning tone the badge does. */
+.liveswitch.replaying, .liveswitch.replaying.on { border-color: var(--warning); color: var(--warning); }
+.liveswitch.replaying .dot.on { background: var(--warning); animation: none; }
+.badge.warn { color: var(--warning); border-color: var(--warning); }
+.replaybar { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.replaybar .picker { min-width: 190px; }
+
 /* ---- the meter ---- */
 
 .livemeter {

@@ -4,7 +4,9 @@ import EncounterTree from '../components/EncounterTree.jsx'
 import ErrorBoundary from '../components/ErrorBoundary.jsx'
 import LiveMeter from '../components/LiveMeter.jsx'
 import RaidNotes from '../components/RaidNotes.jsx'
+import ReplayPicker from '../components/ReplayPicker.jsx'
 import { api, fmt } from '../lib/api.js'
+import { useCanCurate } from '../lib/session.jsx'
 
 /* The raid dashboard — the page you leave open on the second monitor.
 
@@ -23,7 +25,13 @@ import { api, fmt } from '../lib/api.js'
 
    Going back in time renders the same meter, not a different page: a finished
    pull reads the way the live one does, and the depth (abilities, deaths,
-   timeline, AoE audit) is one click away on the raid page. */
+   timeline, AoE audit) is one click away on the raid page.
+
+   A curator or admin gets a third feed: REPLAY (backend/routers/replay_api.py)
+   plays a recorded fight back through the live meter at raid speed, so this
+   page can be worked on without waiting for Tuesday. It arrives as `partial`
+   events on the same shape, which is the point — the component under test does
+   not know which socket it is reading. */
 
 const IDLE_POLL_MS = 15000
 
@@ -58,6 +66,12 @@ function useLiveSession() {
 
 export default function Live() {
   const { sessions, sessionId, setSessionId, error, refresh } = useLiveSession()
+  const canCurate = useCanCurate()
+  /* {id, speed} while a recorded fight is playing. Replay and the live feed
+     are exclusive: both write `partial`, and a dashboard showing two fights at
+     once would be lying about one of them. */
+  const [replay, setReplay] = useState(null)
+  const [replayErr, setReplayErr] = useState(null)
   const [session, setSession] = useState(null)
   const [encounters, setEncounters] = useState([])
   const [status, setStatus] = useState(null)
@@ -73,7 +87,10 @@ export default function Live() {
 
   // --- the session's own fights, and the live feed --------------------------
   useEffect(() => {
-    if (!sessionId) { setSession(null); setEncounters([]); setPartial(null); return undefined }
+    if (!sessionId || replay) {
+      if (!sessionId) { setSession(null); setEncounters([]); setPartial(null) }
+      return undefined
+    }
     let dead = false
     const load = () => api.session(sessionId).then((d) => {
       if (dead) return
@@ -102,7 +119,33 @@ export default function Live() {
     })
     es.onerror = () => { /* EventSource retries itself; the close comes via status */ }
     return () => { dead = true; es.close() }
-  }, [sessionId, refresh])
+  }, [sessionId, refresh, replay])
+
+  // --- a recorded fight, played back at raid speed ---------------------------
+  useEffect(() => {
+    if (!replay) return undefined
+    setPartial(null)
+    setReplayErr(null)
+    const es = new EventSource(
+      `/api/replay/${replay.id}/stream?speed=${replay.speed}`)
+    es.addEventListener('partial', (ev) => {
+      const d = JSON.parse(ev.data)
+      setPartial(d)
+      /* A fight ENDS, and an EventSource whose server closed the stream
+         reconnects by default — which would quietly start the replay again
+         from the top and look like the meter had reset itself. The last frame
+         is the one worth keeping on screen, so close it here. */
+      if (d.replay?.done) es.close()
+    })
+    // a 403/404/409 arrives as the same anonymous error; the browser does not
+    // retry a failed HTTP status, so this is the end of that replay
+    es.onerror = () => {
+      es.close()
+      setReplayErr('That fight could not be replayed — its raw log may be gone.')
+      setReplay(null)
+    }
+    return () => es.close()
+  }, [replay])
 
   const selIds = useMemo(() => (sel == null ? []
     : String(sel).split(',').map(Number).filter(Number.isFinite)), [sel])
@@ -119,7 +162,13 @@ export default function Live() {
   }, [selIds.join(',')])
 
   const finished = status?.status === 'ready' || session?.status === 'ready'
-  const stale = !partial?.fight || (status && !status.uploader_online)
+  /* Dimming says "this picture has stopped moving". A replay has no uploader
+     to be quiet, so there the only question is whether it has started. */
+  const stale = replay ? !partial?.fight
+    : (!partial?.fight || (status && !status.uploader_online))
+  // the replay block the server attaches to a replayed `partial` — what is
+  // playing, where the cursor is, and whether it has run out
+  const rep = partial?.replay || null
 
   /* A finished fight, shaped like a live one so the same meter draws it. */
   const recordedFight = useMemo(() => {
@@ -172,7 +221,7 @@ export default function Live() {
   if (error) return <p className="err">{error}</p>
   if (sessions === null) return <p className="muted">Loading…</p>
 
-  if (!sessionId) {
+  if (!sessionId && !replay) {
     return (
       <div className="dashgrid idle">
         <div className="dashmain">
@@ -185,6 +234,15 @@ export default function Live() {
               its own — leave it open.
             </p>
           </div>
+          {canCurate && (
+            <div className="dashbar">
+              <ReplayPicker active={null}
+                            onStart={(id, speed) => setReplay({ id, speed })}
+                            onStop={() => setReplay(null)} />
+              <span className="muted">plays a recorded fight through this meter</span>
+            </div>
+          )}
+          {replayErr && <p className="err">{replayErr}</p>}
         </div>
         <div className="dashside">
           <ErrorBoundary resetKey="notes-idle">
@@ -200,11 +258,15 @@ export default function Live() {
   return (
     <div className="dashgrid">
       <div className="dashrail">
-        <button className={`liveswitch ${sel == null ? 'on' : ''}`}
+        <button className={`liveswitch ${sel == null ? 'on' : ''} ${replay ? 'replaying' : ''}`}
                 onClick={() => setSel(null)}>
-          <span className={`dot ${finished ? '' : 'on'}`} />
-          Live
-          <em>{finished ? 'night finished' : (partial?.fight ? 'in combat' : 'between pulls')}</em>
+          <span className={`dot ${replay ? 'on' : finished ? '' : 'on'}`} />
+          {replay ? 'Replay' : 'Live'}
+          <em>
+            {replay ? (rep?.done ? 'finished' : rep?.name || 'loading…')
+              : finished ? 'night finished'
+                : partial?.fight ? 'in combat' : 'between pulls'}
+          </em>
         </button>
         <EncounterTree
           encounters={encounters}
@@ -217,13 +279,32 @@ export default function Live() {
 
       <div className="dashmain">
         <div className="dashbar">
-          <span className={`badge ${status?.uploader_online ? 'named' : ''}`}>
-            {finished ? 'finished' : status?.uploader_online ? 'uploader online' : 'uploader quiet'}
-          </span>
-          <span className="muted">
-            {encounters.length} fight{encounters.length === 1 ? '' : 's'}
-            {status?.line_count ? ` · ${fmt.num(status.line_count)} lines` : ''}
-          </span>
+          {replay ? (
+            <>
+              <span className="badge warn">replay</span>
+              <span className="muted">
+                {rep ? `${rep.name || 'fight'} · ${rep.zone || 'unknown zone'}` : 'loading the log…'}
+                {rep ? ` · ${fmt.dur(rep.elapsed_s)} of ${fmt.dur(rep.span_s)}` : ''}
+                {rep && rep.speed !== 1 ? ` · ${rep.speed}×` : ''}
+                {rep?.done ? ' · finished' : ''}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={`badge ${status?.uploader_online ? 'named' : ''}`}>
+                {finished ? 'finished' : status?.uploader_online ? 'uploader online' : 'uploader quiet'}
+              </span>
+              <span className="muted">
+                {encounters.length} fight{encounters.length === 1 ? '' : 's'}
+                {status?.line_count ? ` · ${fmt.num(status.line_count)} lines` : ''}
+              </span>
+            </>
+          )}
+          {canCurate && (
+            <ReplayPicker active={replay}
+                          onStart={(id, speed) => { setSel(null); setReplay({ id, speed }) }}
+                          onStop={() => { setReplay(null); setPartial(null) }} />
+          )}
           {sessions.length > 1 && sessions.filter((s) => s.id !== sessionId).map((s) => (
             <button key={s.id} className="chip" onClick={() => { setSel(null); setSessionId(s.id) }}>
               {s.character_name}
@@ -234,7 +315,9 @@ export default function Live() {
           )}
         </div>
 
-        {finished && sel == null && (
+        {replayErr && <p className="err">{replayErr}</p>}
+
+        {finished && sel == null && !replay && (
           <div className="card">
             <p>This night has finalized — the live meter is done.</p>
             <p className="note" style={{ marginTop: 6, marginBottom: 0 }}>

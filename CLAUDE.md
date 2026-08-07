@@ -28,7 +28,7 @@
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # 534 tests; golden = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # 543 tests; golden = /home/lindsay/bobby.txt
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=claude bash ship.sh "message"        # Ship log + commit; pushes on main
 ```
@@ -279,6 +279,22 @@ Every one has a section in `ARCHITECTURE.md` carrying the evidence.
   session ids, no history, no account name. Revoked and never-existed answer
   the same. The page renders before the app shell, and `transparent` means the
   document paints nothing at all, because OBS composites it over the game.
+- **A replay is the live meter fed from a file, and it is TWO gates**
+  (`routers/replay_api.py`). It reads a recorded fight's raw lines back off
+  disk, parses them with the same `parse_lines` the live path calls, and walks
+  a cursor through them in wall-clock time — so the dashboard can be worked on
+  without waiting for a raid, and the page cannot tell the difference. It
+  writes NOTHING (no session, no encounter, no rows, no `LiveState`), which is
+  what makes pointing it at the back catalogue free. `simulate_live.py` is the
+  opposite tool on purpose: it goes through real ingest, which WRITES — that
+  one tests ingest, this one tests the screen. The gates are separate and must
+  stay so: `require_curator` gates the TOOL (a developer control is not
+  everyone's dashboard furniture), `visible_encounters` gates the FIGHT, so an
+  admin is still refused a stranger's raid. Reading is windowed by
+  `raw_chunks.first_ts/last_ts` (5.9s -> 0.03s on a real fight) and stops
+  `TAIL_GRACE_S` past the end rather than at the first later line, because
+  being wrong about log ordering would silently truncate a replay instead of
+  failing.
 - **Census**: `crc=` silently returns nothing for comma OR-lists (`id=` accepts
   them), so `spells_by_crcs` is one request per crc. Tests never touch live
   Census — recorded fixtures in `tests/fixtures/census/`, and conftest sets
@@ -390,7 +406,10 @@ open, and it says so when the night finalizes. **Notes** file against the zone
 on trash and the named on a pull, so a season of them reads as an outline of
 the zone; screenshots PASTE, because mid-raid nobody is naming a file.
 **Stream overlay**: /account mints a token URL for an OBS browser source
-showing just the meter — theme, which parses, how many rows.
+showing just the meter — theme, which parses, how many rows. **Replay** (a
+curator or admin only) plays any fight you can already open back through the
+meter at raid speed, from the dashboard's own bar — the way this page gets
+worked on out of raid hours.
 
 **Compare** (`/compare`, in the nav, signed-out too) puts any parses side by
 side — whole raids or single players from different nights, matched by name.
@@ -564,6 +583,7 @@ builds on this host with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
 - 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS, fix stale test count
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)

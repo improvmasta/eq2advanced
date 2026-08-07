@@ -514,6 +514,56 @@ is the default theme and means the document paints nothing at all — html and
 body included — because OBS composites the page over the game, and a background
 there is not a style choice, it is a rectangle over the raid.
 
+### Replaying a recorded fight (`routers/replay_api.py`)
+
+The meter is the one surface here that only exists while a raid is happening,
+which made it the one surface that could not be worked on: a change to a bar, a
+countdown or an empty state had to wait for the next raid night and then got one
+pass at it. A replay reads a recorded fight's RAW LINES back off disk, parses
+them with the same `parse_lines` the live path calls, and walks a cursor through
+the result in wall-clock time. The page cannot tell the difference, which is the
+whole point — the component under test does not know which socket it is reading.
+
+It is a third reader of `livemeter`, so it inherits that module's promise: it
+**writes nothing**. No session, no encounter, no rows, no `LiveState`. That is
+what makes it safe to point at any fight in the back catalogue, and it is why
+`test_golden_equivalence` never enters the picture.
+
+`backend/tools/simulate_live.py` is deliberately NOT this. It pushes a log
+through the real ingest endpoint, which parses, dedupes, writes chunks and
+creates a session — the right tool for testing INGEST, the wrong one for
+testing the SCREEN, because tuning a dashboard should not leave a night of
+junk raids behind it.
+
+**Two gates, kept apart.** `require_curator` (admin implies curator) gates the
+TOOL — a developer control does not belong in a reader's dashboard.
+`visible_encounters` gates the FIGHT, exactly as every other read does. Widening
+the second along with the first is the obvious mistake and would make replay a
+door into everybody's raids; "admin is operational, not omniscient" has to hold
+here too, and `test_replay_api.py` pins it with an admin being refused a
+stranger's fight.
+
+**Reading only the raw the fight can be in.** A live session is stored as a
+chunk per ingest batch, each carrying its own time bounds, so the window query
+skips the hours in front of the pull: on a real 340-second raid fight that was
+5.9s of decompression before the first frame, and is now 0.03s. An upload is one
+file and has no such shortcut. Past the fight, reading stops after
+`TAIL_GRACE_S` rather than at the first later timestamp — an EQ2 log is written
+in order, but the failure mode of being wrong about that is a silently short
+replay, so the margin is generous.
+
+Cadence is `TICK_S = 2.0`, the plugin's own send cadence, because a replay that
+refreshed faster than a raid can would be a smoother meter than any raid
+produces and would get tuned against a fiction. Speed multiplies log time, not
+the tick, and is clamped: at a high enough speed the fight arrives in one frame,
+which is a parse, not a replay.
+
+Verified against a real 21-raider pull (Mistress of the Veil, 19,761 events):
+the meter ramps the way a live one does, three AoEs count down off ACT's
+reported timers, and seven of the top eight damage rows match the recorded parse
+to the number. The eighth differs by 0.3% — the documented consequence of a view
+that credits by NAME instead of resolving entities.
+
 ## Census sync
 
 `census/client.py` (HTTP, retrying — Census reads regularly stall; service id
