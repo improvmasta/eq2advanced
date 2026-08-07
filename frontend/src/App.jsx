@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import FeedbackDialog from './components/FeedbackDialog.jsx'
 import Home from './pages/Home.jsx'
 import Import from './pages/Import.jsx'
 import ZoneRun from './pages/ZoneRun.jsx'
@@ -32,19 +33,25 @@ function NeedsAccount({ user, children }) {
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
-  const [live, setLive] = useState(null) // null | 'idle' | 'parsing' | 'on'
+  // undefined = not asked yet, null = the plugin has never been here
+  const [live, setLive] = useState(undefined) // | 'idle' | 'parsing' | 'on'
+  const [feedback, setFeedback] = useState(null) // the page they were on, or null
   const location = useLocation()
 
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
   }, [])
 
-  /* The on-air light. 'on' while the plugin is streaming, '(parsing)' while
-     any import is still chewing, '(idle)' once you have ever streamed —
-     null (no pill) if the plugin has never been here. Polls faster while
-     something is actually happening. */
+  /* The on-air light. 'on' while the plugin is streaming, 'parsing' while any
+     import is still chewing, 'idle' once you have ever streamed, and null if
+     the plugin has never been here. The header shows a pill for the first two
+     and the get-the-plugin link for null; 'idle' says nothing, because a
+     raider at 2pm knows they have it. Polls faster while something is
+     actually happening. */
   useEffect(() => {
-    if (!user) { setLive(null); return undefined }
+    // signed out has no plugin story, but "still checking who you are" must
+    // stay undefined or the plugin link flashes past on every load
+    if (!user) { setLive(user === null ? null : undefined); return undefined }
     let dead = false
     const check = () => api.sessions()
       .then((d) => {
@@ -75,46 +82,64 @@ export default function App() {
             {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
             {/* a curator's only door — they have no /admin to reach it from */}
             {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
-            <NavLink to="/account">Account</NavLink>
           </>}
           {user === null && <NavLink to="/login">Sign in</NavLink>}
-          {/* The plugin's status light: sits apart from the tabs because it is
-              a state, not a place you were going anyway. It answers one
-              question — is ACT talking to us — so it says that in plain words
-              and lets the green light carry the state. Red and the word "Live"
-              read as an alarm for what is actually the good case. */}
-          {user && live && (
+        </nav>
+        {/* One slot, one question about the plugin, answered for whoever is
+            asking it. Somebody who has never installed it gets the way in;
+            somebody streaming right now gets the light that says so. Between
+            those is a raider with the plugin sitting idle at 2pm, who needs
+            neither — they know they have it, and they are not raiding. */}
+        <div className="navtools">
+          {user && (live === 'on' || live === 'parsing') && (
+            /* A status light, not an alarm: the green dot carries the state
+               because the connection working is the GOOD case. */
             <NavLink to="/live" className={`actpill ${live}`}
                      title={live === 'on' ? 'Streaming from ACT right now'
-                       : live === 'parsing' ? 'A log is being parsed'
-                         : 'Plugin connected, nothing streaming'}>
+                       : 'A log is being parsed'}>
               <i className="dot" />
               Connected to ACT
             </NavLink>
           )}
-        </nav>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
-          {/* Said up front, on every page, because it is the question anyone
-              uploading their raid logs somewhere has first. */}
-          <span className="privacynote">
-            All parse uploads are private until <Link to="/groups">shared</Link>
-          </span>
-          {/* The plugin is the fastest way in, and nothing in the nav said so.
-              Points at Import rather than straight at the download so the
+          {/* Points at Import rather than straight at the download, so the
               install steps and the sharing settings arrive with the file. */}
-          <Link to="/import" className="navpill" title="Get the ACT plugin">
-            ACT plugin
-          </Link>
-          <button
-            onClick={() => setTheme(toggleTheme())}
-            title="Toggle light/dark"
-            aria-label="Toggle light/dark theme"
-          >
-            {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+          {/* `undefined` is "we haven't asked yet" and shows nothing: a raider
+              who has the plugin should not watch a Get-the-plugin pill flash
+              past on every page load while the first check comes back. */}
+          {live === null && (
+            <Link to="/import" className="navpill" title="Get the ACT plugin">
+              ACT plugin
+            </Link>
+          )}
+          {/* Everywhere, because a bug is noticed on the raid page and not on
+              whatever page a form would otherwise live on. Signed in only —
+              the report is worth much more with a name attached to it. */}
+          {user && (
+            <button className="iconbtn"
+                    onClick={() => setFeedback(location.pathname + location.search)}
+                    title="Report a bug or suggest something"
+                    aria-label="Send feedback">
+              <IconFeedback />
+            </button>
+          )}
+          {user && (
+            <NavLink to="/account" className="iconbtn" title="Account"
+                     aria-label="Account">
+              <IconAccount />
+            </NavLink>
+          )}
+          <button className="iconbtn"
+                  onClick={() => setTheme(toggleTheme())}
+                  title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+                  aria-label="Toggle light/dark theme">
+            {theme === 'dark' ? <IconSun /> : <IconMoon />}
           </button>
         </div>
       </header>
       <main className="container">
+        {feedback !== null && (
+          <FeedbackDialog page={feedback} onClose={() => setFeedback(null)} />
+        )}
         {user === undefined && <p className="muted">Loading…</p>}
         {user !== undefined && (
           <ErrorBoundary resetKey={location.key}>
@@ -157,3 +182,38 @@ export default function App() {
     </SessionContext.Provider>
   )
 }
+
+/* Header controls that are a tool rather than a place: feedback, the account,
+   the theme. One stroke weight and one box size so they read as a set, and no
+   labels — three words in the corner crowded out the nav they sat beside.
+   `currentColor` throughout, so hover and the active state are one CSS rule. */
+const iconProps = {
+  viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
+}
+
+const IconFeedback = () => (
+  <svg {...iconProps}>
+    <path d="M13.8 10.2a1.5 1.5 0 0 1-1.5 1.5H5.4L2.2 14V3.8a1.5 1.5 0 0 1 1.5-1.5h8.6a1.5 1.5 0 0 1 1.5 1.5z" />
+  </svg>
+)
+
+const IconAccount = () => (
+  <svg {...iconProps}>
+    <circle cx="8" cy="5.6" r="2.6" />
+    <path d="M2.9 13.9c0-2.5 2.3-4.1 5.1-4.1s5.1 1.6 5.1 4.1" />
+  </svg>
+)
+
+const IconSun = () => (
+  <svg {...iconProps}>
+    <circle cx="8" cy="8" r="3.1" />
+    <path d="M8 1v1.7M8 13.3V15M15 8h-1.7M2.7 8H1M12.9 3.1l-1.2 1.2M4.3 11.7l-1.2 1.2M12.9 12.9l-1.2-1.2M4.3 4.3L3.1 3.1" />
+  </svg>
+)
+
+const IconMoon = () => (
+  <svg {...iconProps}>
+    <path d="M13.6 9.7A5.9 5.9 0 0 1 6.3 2.4a5.9 5.9 0 1 0 7.3 7.3z" />
+  </svg>
+)

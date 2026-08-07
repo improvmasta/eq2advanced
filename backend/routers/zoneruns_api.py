@@ -12,7 +12,7 @@ import groups as groupsmod
 import memo
 import raidmatch
 from db import get_db, row_to_dict, rows_to_dicts
-from groups import PERSONAL_RUN_IDS, SHARED_RUN_IDS, VISIBLE_RUN_IDS
+from groups import PERSONAL_RUN_IDS, SHARED_RUN_IDS, VISIBLE_UNHIDDEN_RUN_IDS
 from pipeline.zoneruns import encounter_fp, rebuild_zone_runs
 from security import (optional_user, owned_zone_run, require_admin, require_user,
                       visible_zone_run)
@@ -24,7 +24,11 @@ def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, in
     """Raid DPS per fight, in fight order, for the home page's sparklines —
     plus each run's total player damage, which over `combat_s` is the raid-wide
     DPS the list prints. One grouped query for every listed run — the shape of
-    a night is cheap enough to ship with the list."""
+    a night is cheap enough to ship with the list.
+
+    Hidden fights are out of it for the owner too: `combat_s` no longer counts
+    them, so a sparkline that still drew them would put a spike over a
+    denominator that had stopped including it."""
     if not run_ids:
         return {}, {}
     ph = ",".join("?" * len(run_ids))
@@ -36,7 +40,7 @@ def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, in
             "FROM encounters e "
             "LEFT JOIN encounter_actor_stats a ON a.encounter_id = e.id "
             "LEFT JOIN entities en ON en.id = a.entity_id "
-            f"WHERE e.zone_run_id IN ({ph}) "
+            f"WHERE e.zone_run_id IN ({ph}) AND e.hidden_ts IS NULL "
             "GROUP BY e.id ORDER BY e.started_ts", run_ids):
         out.setdefault(r["run_id"], []).append(
             round(r["dmg"] / max(r["duration_s"], 1)))
@@ -90,9 +94,9 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
     if scope == "mine":
         where = "WHERE c.user_id = :uid"
     elif scope == "shared":
-        where = f"WHERE z.id IN ({SHARED_RUN_IDS})"
+        where = f"WHERE z.id IN ({SHARED_RUN_IDS}) AND z.encounter_count > 0"
     else:
-        where = f"WHERE z.id IN ({VISIBLE_RUN_IDS})"
+        where = f"WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS})"
     rows = conn.execute(
         "SELECT z.*, c.name AS character_name, c.user_id AS owner_id, "
         "u.username AS owner_username "
@@ -129,6 +133,12 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
         # "this run only looks like one visit because you merged it" — the list
         # offers Unmerge exactly here
         r["merged"] = r["id"] in joined
+        # A raid with every fight hidden only ever reaches its owner (the
+        # predicate above dropped it for everybody else), and the list says so
+        # rather than printing a night with no fights in it and no explanation.
+        if not r["mine"]:
+            r["hidden_count"] = 0
+        r["hidden"] = r["encounter_count"] == 0 and r["hidden_count"] > 0
     # Several people uploading one night is several runs, and a list that prints
     # them as five raids is wrong about the evening. `raid_key` groups them and
     # `primary` is the site's pick; whose parse a VIEWER opens is the browser's
@@ -160,12 +170,15 @@ def _merged_runs(conn, character_ids: set[int]) -> set[int]:
         if (r["character_id"], encounter_fp(r)) in fps}
 
 
-def _run_encounters(conn, run) -> list:
+def _run_encounters(conn, run, mine: bool) -> list:
     """Canonical encounters with the logger's headline numbers. The logger
-    entity is per encounter's own session (entities are session-scoped)."""
+    entity is per encounter's own session (entities are session-scoped).
+
+    A hidden fight reaches its OWNER, flagged, because the rail is where they
+    put it back — and nobody else, because that is what hiding it said."""
     return conn.execute(
         "SELECT e.id, e.session_id, e.zone, e.name, e.is_named, e.started_ts, "
-        "e.ended_ts, e.duration_s, e.success, "
+        "e.ended_ts, e.duration_s, e.success, e.hidden_ts IS NOT NULL AS hidden, "
         "s.damage AS logger_damage, s.dps AS logger_dps, s.heals AS logger_heals, "
         "(SELECT COUNT(*) FROM encounter_actor_stats a WHERE a.encounter_id = e.id) "
         "AS actor_count "
@@ -174,7 +187,9 @@ def _run_encounters(conn, run) -> list:
         "  AND le.kind = 'player' AND le.name = ? "
         "LEFT JOIN encounter_actor_stats s ON s.encounter_id = e.id "
         "  AND s.entity_id = le.id "
-        "WHERE e.zone_run_id = ? ORDER BY e.started_ts",
+        "WHERE e.zone_run_id = ? "
+        + ("" if mine else "AND e.hidden_ts IS NULL ")
+        + "ORDER BY e.started_ts",
         (run["character_name"], run["id"])).fetchall()
 
 
@@ -194,9 +209,12 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
     # Somebody else parsed the same night: the page says so and offers the
     # switch, rather than leaving a link somewhere else as the only way across.
     payload["alternates"] = raidmatch.alternates(
-        conn, VISIBLE_RUN_IDS, user["id"] if user else None, run)
+        conn, VISIBLE_UNHIDDEN_RUN_IDS, user["id"] if user else None, run)
+    # how much of the night the owner has hidden is the owner's business
+    if not mine:
+        payload["hidden_count"] = 0
     return {"zone_run": payload,
-            "encounters": rows_to_dicts(_run_encounters(conn, run))}
+            "encounters": rows_to_dicts(_run_encounters(conn, run, mine))}
 
 
 # ---------- player search ----------
@@ -220,7 +238,7 @@ def search_players(q: str, user=Depends(optional_user)):
     rows = conn.execute(
         "SELECT j.value AS name, COUNT(*) AS run_count, MAX(z.started_ts) AS last_ts "
         "FROM zone_runs z, json_each(z.roster_json) j "
-        f"WHERE z.id IN ({VISIBLE_RUN_IDS}) AND j.value LIKE :pat "
+        f"WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS}) AND j.value LIKE :pat "
         "GROUP BY j.value ORDER BY run_count DESC, j.value LIMIT 20",
         {"uid": uid, "pat": f"%{q}%"}).fetchall()
     return {"players": rows_to_dicts(rows)}
@@ -238,7 +256,7 @@ def player_runs(name: str, user=Depends(optional_user)):
         "z.raider_count, c.name AS character_name "
         "FROM zone_runs z JOIN characters c ON c.id = z.character_id, "
         "json_each(z.roster_json) j "
-        f"WHERE z.id IN ({VISIBLE_RUN_IDS}) AND j.value = :name "
+        f"WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS}) AND j.value = :name "
         "ORDER BY z.started_ts DESC",
         {"uid": uid, "name": name}).fetchall()
     return {"runs": rows_to_dicts(rows)}
@@ -340,7 +358,10 @@ def zone_run_report(run_id: int, user=Depends(optional_user)):
     run = visible_zone_run(conn, user, run_id)
     encounters = conn.execute(
         "SELECT id, session_id, zone, name, is_named, started_ts, ended_ts, "
-        "duration_s, success FROM encounters WHERE zone_run_id=? ORDER BY started_ts",
+        "duration_s, success FROM encounters WHERE zone_run_id=? "
+        # a hidden fight is out of the report for the owner too — the whole
+        # point of hiding one is that it stops counting
+        "AND hidden_ts IS NULL ORDER BY started_ts",
         (run_id,)).fetchall()
     # a 60-fight night replays every stored event to build this; the answer is
     # the same until something is written, so it is memoized (memo.py) and the
@@ -351,7 +372,7 @@ def zone_run_report(run_id: int, user=Depends(optional_user)):
             "character_name": run["character_name"]}
 
 
-# ---------- hand edits: delete fights, merge and unmerge runs ----------
+# ---------- hand edits: delete or hide fights, merge and unmerge runs ----------
 #
 # Every edit is a `run_edits` row keyed by encounter fingerprint, then the
 # character's runs are rebuilt from scratch. Nothing is destroyed and nothing
@@ -406,9 +427,46 @@ def _own_encounters(conn, user, enc_ids: list[int]) -> tuple[int, list[str]]:
     return chars.pop(), sorted({encounter_fp(r) for r in rows})
 
 
+def _run_encounter_ids(conn, run_id: int) -> list[int]:
+    """Every fight in a run, hidden ones included — a whole-raid edit means the
+    whole raid, and hiding one that is already hidden is a no-op."""
+    return [r["id"] for r in conn.execute(
+        "SELECT id FROM encounters WHERE zone_run_id=?", (run_id,))]
+
+
+@router.post("/encounters/hide")
+def hide_encounters(payload: dict = Body(...), user=Depends(require_user)):
+    """Hide fights, or put them back (`hidden: false`). Fingerprint-keyed like
+    every other edit, so one call covers every copy of a duplicated fight and
+    the next reparse hides it again."""
+    conn = get_db()
+    ids = [int(x) for x in payload.get("ids") or []]
+    hidden = bool(payload.get("hidden", True))
+    character_id, fps = _own_encounters(conn, user, ids)
+    edits = [(fp, "hide") for fp in fps]
+    _apply(conn, character_id, edits if hidden else [], [] if hidden else edits)
+    return {"hidden": hidden, "count": len(fps), "fingerprints": fps,
+            "character_id": character_id}
+
+
+@router.post("/zone-runs/{run_id}/hide")
+def hide_zone_run(run_id: int, payload: dict = Body(...), user=Depends(require_user)):
+    """Hide a whole night, or put it back. A run with every fight hidden is
+    gone for everyone the raid was shared with and still the owner's to read —
+    see `groups.VISIBLE_UNHIDDEN_RUN_IDS`."""
+    conn = get_db()
+    run = owned_zone_run(conn, user, run_id)
+    hidden = bool(payload.get("hidden", True))
+    character_id, fps = _own_encounters(conn, user, _run_encounter_ids(conn, run_id))
+    edits = [(fp, "hide") for fp in fps]
+    _apply(conn, character_id, edits if hidden else [], [] if hidden else edits)
+    return {"hidden": hidden, "count": len(fps), "fingerprints": fps,
+            "character_id": run["character_id"]}
+
+
 @router.post("/encounters/delete")
 def delete_encounters(payload: dict = Body(...), user=Depends(require_user)):
-    """Hide fights. Duplicated fights share a fingerprint, so one delete covers
+    """Delete fights. Duplicated fights share a fingerprint, so one delete covers
     every copy — otherwise the 'deleted' fight would reappear from the other
     overlapping file."""
     conn = get_db()
@@ -437,9 +495,7 @@ def delete_zone_run(run_id: int, user=Depends(require_user)):
     """Delete a whole night: every fight in it, in one edit."""
     conn = get_db()
     run = owned_zone_run(conn, user, run_id)
-    ids = [r["id"] for r in conn.execute(
-        "SELECT id FROM encounters WHERE zone_run_id=?", (run_id,))]
-    character_id, fps = _own_encounters(conn, user, ids)
+    character_id, fps = _own_encounters(conn, user, _run_encounter_ids(conn, run_id))
     _apply(conn, character_id, [(fp, "delete") for fp in fps], [])
     return {"deleted": len(fps), "fingerprints": fps,
             "character_id": run["character_id"],

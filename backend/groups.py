@@ -142,6 +142,24 @@ SHARED_RUN_IDS = f"""
       WHERE c.user_id = :uid
 """
 
+# Hiding is a SECOND predicate, applied beside the one above rather than folded
+# into it. Sharing asks "who did the owner send this to"; hiding asks "did the
+# owner mean anyone to read this at all", and the answer is the same for every
+# viewer — a group member, a stranger on a published raid, the site's own
+# admin. Keeping it out of VISIBLE_RUN_IDS keeps that predicate the single
+# statement of the sharing rule, which is what makes its four query sites
+# auditable.
+#
+# `zone_runs.encounter_count` is the VISIBLE fight count (pipeline/zoneruns), so
+# 0 means every fight in the run is hidden — a raid the owner hid whole. Their
+# own runs are always theirs to read, hidden or not.
+VISIBLE_UNHIDDEN_RUN_IDS = f"""
+    SELECT id FROM ({VISIBLE_RUN_IDS})
+    EXCEPT
+    SELECT z.id FROM zone_runs z JOIN characters c ON c.id = z.character_id
+      WHERE z.encounter_count = 0 AND c.user_id IS NOT :uid
+"""
+
 MEMBER_GROUP_IDS = "SELECT group_id FROM group_members WHERE user_id = :uid"
 
 

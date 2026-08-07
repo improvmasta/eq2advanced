@@ -22,11 +22,16 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
    that repeats every third row is not a grouping. Pass an ARRAY of those to
    group differently per sort column (the raid list: nights under a date sort,
    zones under a zone sort); whichever def matches the active sort is the one
-   that draws.
+   that draws. While a group IS drawing, the column it groups on has its value
+   in the heading over every row it owns, so a column's groupedRender(row) is
+   what that column shows INSTEAD for those rows — whatever is left once the
+   heading has said the shared part. Without one the column renders normally
+   (a heading that only sometimes draws can't silently blank a cell).
    prefsKey turns on per-user column layout: drag a header to reorder, hide
    columns from the Columns menu, both remembered in localStorage under that
    key. Which columns a table SHOULD offer is still the caller's decision;
-   this only remembers what you did with them. */
+   this only remembers what you did with them. defaultHidden is the caller's
+   starting layout and it is a BASELINE, not a first guess — see below. */
 
 const PREFS_PREFIX = 'eq2adv:cols:'
 
@@ -48,9 +53,8 @@ function loadPrefs(key) {
 function savePrefs(key, prefs) {
   if (!key || typeof localStorage === 'undefined') return
   try {
-    /* Only Reset (write({})) clears the entry. An explicit empty hidden list
-       must survive as itself: on tables with default-hidden columns it means
-       "show me everything", which is not the same as "never touched". */
+    /* Only Reset (write({})) clears the entry — an empty `hidden` beside a
+       non-empty `shown` is a real layout, not an untouched one. */
     if (!Object.keys(prefs).length) {
       localStorage.removeItem(PREFS_PREFIX + key)
     } else {
@@ -149,20 +153,35 @@ export default function SortableTable({
       .map((x) => x.c)
   }, [columns, prefs.order])
 
-  /* defaultHidden is the caller's starting layout (a comparison table hiding
-     Share and ToHit); any stored prefs — even an empty list — override it. */
-  const hidden = useMemo(
-    () => new Set(prefs.hidden ?? defaultHidden ?? []),
-    [prefs.hidden, defaultHidden])
-  const shown = useMemo(
+  /* Two lists, not one. `hidden` is what the reader turned OFF and `shown` is
+     what they turned back ON, and defaultHidden sits underneath both: a column
+     is hidden if the caller hides it by default or the reader hid it, unless
+     the reader explicitly asked for it.
+
+     A single stored list can't do that. It used to REPLACE defaultHidden
+     wholesale, so the first time anyone touched the Columns menu the table's
+     whole starting layout evaporated — and a default-hidden column added
+     later (DPS on Healing) turned itself on for everybody who had ever moved
+     a column, which is the opposite of default-hidden. */
+  const hidden = useMemo(() => {
+    const out = new Set(defaultHidden || [])
+    for (const k of prefs.hidden || []) out.add(k)
+    for (const k of prefs.shown || []) out.delete(k)
+    return out
+  }, [prefs.hidden, prefs.shown, defaultHidden])
+  /* `visible`, not `shown` — `prefs.shown` right above is the stored list of
+     keys the reader turned back on, and one name for both would read as the
+     same thing twice. */
+  const visible = useMemo(
     () => [...columns.filter((c) => c.fixed), ...movable.filter((c) => !hidden.has(c.key))],
     [columns, movable, hidden])
-  const cols = prefsKey ? shown : columns
+  const cols = prefsKey ? visible : columns
 
   const toggleHidden = (key) => {
-    const next = new Set(hidden)
-    if (next.has(key)) next.delete(key); else next.add(key)
-    write({ ...prefs, hidden: [...next] })
+    const off = new Set(prefs.hidden || [])
+    const on = new Set(prefs.shown || [])
+    if (hidden.has(key)) { off.delete(key); on.add(key) } else { on.delete(key); off.add(key) }
+    write({ ...prefs, hidden: [...off], shown: [...on] })
   }
   const drop = (targetKey) => {
     setDrag(null)
@@ -215,6 +234,20 @@ export default function SortableTable({
     return groupDef.label(r)
   }
 
+  /* The grouped column is the one column in the row whose value is already
+     printed above it, so it is the one column that must not print it again.
+     It keeps its header — that header is how you re-sort the table — and the
+     cells under it fall back to whatever the caller says is left over.
+
+     Only for rows a heading actually speaks for, which is why `pinned` is here:
+     topRows sit ABOVE the first heading and grouping never claims them, so
+     folding one would take a value away and put nothing over it. */
+  const folded = (c) => grouped && groupDef.key === c.key && !!c.groupedRender
+  const topCount = topRows?.length || 0
+  const cellOf = (c, r, pinned) => (
+    folded(c) && !pinned && !r.__sub ? c.groupedRender(r)
+      : c.render ? c.render(r) : c.format ? c.format(r[c.key]) : r[c.key])
+
   const click = (col) => {
     if (col.sortable === false) return
     setSort({
@@ -251,7 +284,8 @@ export default function SortableTable({
                   className="chip"
                   onClick={() => write({})}
                   disabled={!Object.keys(prefs).length}
-                >Reset</button>
+                  title="Put this tab's columns back the way they ship — order and visibility"
+                >Reset to defaults</button>
               </div>
               {movable.map((c) => (
                 <label key={c.key} className="colmenu-row">
@@ -281,6 +315,7 @@ export default function SortableTable({
                   (c.headAlign || c.align) === 'l' ? 'l'
                     : (c.headAlign || c.align) === 'c' ? 'c' : '',
                   c.sortable === false ? '' : 'sortable',
+                  folded(c) ? 'folded' : '',
                   prefsKey && !c.fixed ? 'draggable' : '',
                   drag?.over === c.key && drag.key !== c.key ? 'dragover' : '',
                   drag?.key === c.key ? 'dragging' : '',
@@ -336,11 +371,11 @@ export default function SortableTable({
                   {cols.map((c) => (
                     <td
                       key={c.key}
-                      className={`${c.align === 'l' ? 'l ' : c.align === 'c' ? 'c ' : ''}${(!r.__sub && c.cellClass?.(r)) || ''}`}
+                      className={`${c.align === 'l' ? 'l ' : c.align === 'c' ? 'c ' : ''}${folded(c) ? 'folded ' : ''}${(!r.__sub && c.cellClass?.(r)) || ''}`}
                       style={(!r.__sub && c.cellStyle?.(r)) || undefined}
                       title={(!r.__sub && c.cellTitle?.(r)) || undefined}
                     >
-                      {c.render ? c.render(r) : c.format ? c.format(r[c.key]) : r[c.key]}
+                      {cellOf(c, r, i < topCount)}
                     </td>
                   ))}
                 </tr>

@@ -28,7 +28,7 @@
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # 403 tests; golden = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # 449 tests; golden = /home/lindsay/bobby.txt
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=claude bash ship.sh "message"        # Ship log + commit; pushes on main
 ```
@@ -48,7 +48,7 @@ and `/home/lindsay/AGENTS.md` — don't duplicate them here.
 FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
-addressed) and `raw/` (live-ingest chunks). Schema is at **v23**; migrations in
+addressed) and `raw/` (live-ingest chunks). Schema is at **v26**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
@@ -78,8 +78,36 @@ Every one has a section in `ARCHITECTURE.md` carrying the evidence.
 - **Seeing is never changing** (`owned_zone_run`), and authorization is per
   ENCOUNTER (`visible_encounters`), never per session — a shared raid must not
   expose the other fights in the same uploaded file.
+- **Hiding is a SECOND predicate, beside the sharing one, never folded into
+  it.** Sharing asks who the owner sent a raid to; hiding asks whether they
+  meant anyone to read it at all, and the answer is the same for every viewer.
+  `VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS` rather than adding a
+  branch to it — that predicate stays the one auditable statement of the
+  sharing rule. Per fight, the choke point is `visible_encounters`: ids are
+  sequential, so "absent from the payload we sent" is not an access rule.
+  A hidden fight still SEGMENTS (dropping it would split a night at a gap that
+  only exists because it was hidden) and never COUNTS — `encounter_count` is
+  the visible count, `hidden_count` is the rest.
 - **Admin is operational, not omniscient.** `role='admin'` is absent from every
   visibility decision; support is "ask them to share the raid".
+- **Private chat is stripped at INGEST, never at display** (`pipeline/redact.py`).
+  An EQ2 log is the whole client log; the server stores the fight plus the group
+  and raid talk around it, and the unredacted file never lands on disk at all —
+  the upload path filters the byte stream as it arrives and the live path filters
+  before writing each chunk. Dropped: tells, guild, officer, every named channel
+  (LFG/General/Auction/…) and local `/say`. The classifier is an ALLOWLIST, so an
+  unrecognised channel is dropped rather than kept — a chat type nobody thought of
+  has to fail closed. It governs exactly the set `classify_body` already returns
+  None for, and it imports `CHAT_PREFIXES`/`CHAT_RE` from `classify` rather than
+  restating them, because a drifting copy is how redaction would start eating real
+  events; that is also why redaction can never change a number. `trim_to_fights`
+  is the second pass — retained group/raid chat outside any encounter window
+  (±`FIGHT_MARGIN_S`) goes once the parse knows where the fights are, and it takes
+  the UNION of windows across every session sharing those bytes so trimming for
+  one uploader cannot cut chat out from under another. The content address stays
+  the sha256 of the ORIGINAL bytes, or two raiders' copies of one night stop
+  deduping. Logs stored before this existed are cleaned by
+  `backend/tools/redact_existing.py` (one-time, `--dry-run` first).
 - **A pet or proc label is a CLAIM, and only a human makes one.** The ladder is
   `ability_rulings` > the curated seed > no label (`census/catalog.py`, the two
   `*_ability_names` readers are the only doors). Inferring them cost 228
@@ -220,8 +248,20 @@ it is provably identical to uploading the same file.
 zone by one character, derived from encounter rows by `pipeline/zoneruns.py`
 (content dedupe → segmentation → id-preserving upsert). `/` is the raid list,
 `/zones/:id` the raid page, `/sessions/:id` survives as the per-file debug
-view. The list is EDITABLE — delete, merge, split — and every edit is keyed by
-encounter FINGERPRINT so it survives the reparse a backfill triggers.
+view. Raids are EDITABLE — hide, delete, merge, split — and every edit is keyed
+by encounter FINGERPRINT so it survives the reparse a backfill triggers.
+
+**Hiding is not deleting** (schema v26). Delete says the pull never happened;
+hide says it is not the raid's business. A hidden fight is still its OWNER'S —
+listed in the rail, struck through, with the switch that puts it back — and is
+absent from every payload anybody else gets, out of `encounter_count`, the
+roster, `combat_s`, the sparkline and the raid report. Hide a whole raid and it
+leaves everyone else's list entirely. It rides the same `run_edits` mechanism
+(`kind='hide'`), so it survives a reparse; the visibility half is
+`groups.VISIBLE_UNHIDDEN_RUN_IDS` for a whole run and
+`security.visible_encounters` for one fight. Edit mode is `✎ Edit`, left of
+Compare on the raid page, plus a pencil on your own rows in the list. Delete
+confirms in place — click, then click Yes — never in a dialog.
 
 **One raid can arrive from several people.** `raidmatch.py` says which runs are
 the same night (zone + overlapping windows + shared roster) and the list draws
@@ -231,12 +271,30 @@ with the widest coverage, the same one for everybody.
 **The raid page** opens on Damage, with Healing / Defense / AoEs / Timeline /
 Class beside it, a fight rail on the left and a drilldown panel on the right.
 **Insights is hidden for now** — one commented line in `TABS` (ZoneRun.jsx);
-the panel and `coach_api` are untouched and putting the entry back turns it on. Columns are the reader's (drag to reorder, hide from the Columns menu,
-remembered per tab). Rank coloring is continuous distance from the peer median
-(`stats.js rankScale`/`rankColor`) and says nothing under four peers. Opening a
-raider carries the page's tab into their parse (Damage → Damage, Healing →
-Heals) and heads it with who they are — class, plus the level and guild Census
-already cached for the class lookup, which are undated and so caption the name
+the panel and `coach_api` are untouched and putting the entry back turns it on. **Pets** and **NPCs** are two switches beside the role chips, on every parse
+tab and off by default: a mob keeps its own credit, so the boss row is a real
+parse (damage, DPS, self-heals) and clicking it opens that parse in the panel.
+Columns are the reader's (drag to reorder, hide from the Columns menu,
+**Reset to defaults** to undo it all) and are remembered per TAB, per browser —
+not per run, so a layout set once holds on every raid you open next. Each parse
+tab also offers the other one's rate folded away: HPS is default-hidden on
+Damage and DPS on Healing. `defaultHidden` is a BASELINE the reader's own
+choices sit on top of, never a first guess a single menu click wipes out.
+Rank coloring is continuous distance from the peer median (`stats.js
+rankScale`/`rankColor`) and says nothing under four peers. **Deaths** is two
+columns: a **Tank deaths** report on the left (one tank death in detail — the
+killing blow, took/healed, a row per SECOND of damage taken beside healing
+received with NET as the verdict, then the raw log) and **Every death** on the
+right (`DeathList.jsx`) — fights separated, the clock to the second, deaths
+within 5s folded into one expandable moment captioned with what killed them,
+and the recap opening inside its own row. Windows are **5s for the tank, 3s for
+the raid list, one request** (a spike is over in two seconds); an EQ2 log stamps
+WHOLE seconds, so nothing here prints a tenth. Class chips abbreviate in the
+tight columns (`classShort`: SK, Necro, Troub, Illy…). No charts on the tab:
+the recap's per-row bars are gone and its stat tiles are one fact line. Opening a raider
+carries the page's tab into their parse (Damage → Damage, Healing → Heals) and
+heads it with who they are — class, plus the level and guild Census already
+cached for the class lookup, which are undated and so caption the name
 rather than feeding any number. The rail's head puts the raid's guild pill
 right of the character whose parse it is and ends its action row with Compare.
 
@@ -296,6 +354,22 @@ never a pill there — it is a `.settingrow`. Retune in the `.manage` block in
 card h3 > the subject of a row > the column labels over it. Headings own the
 heading font; a row's subject does not (Cinzel names set larger than the head
 above them turned the page into a stack of headlines).
+
+**The admin console** is five tabs (`?tab=`): Overview, Accounts, Content,
+Feedback, Audit — each fetching its own data. Two rules it now keeps. *An
+alert is something broken*: `receiving` is a plugin streaming RIGHT NOW, the
+healthiest state a session has, so Overview lists only errored sessions and
+parses stuck past `STUCK_PARSE_S`, each with the owner and an age, and counts
+the live ones separately. The old "jobs needing attention" listed every
+non-final session, which made a 24-raider night read as 24 failures. *The
+accounts table is searched, sorted and paged on the SERVER* (`q/sort/dir/
+limit/offset`, whitelisted sort columns, grouped joins rather than five
+correlated subqueries per row) — so it deliberately does NOT use
+`SortableTable`, which sorts in the browser and would sort one page while
+claiming to sort the set. Row actions live in a panel you open by clicking the
+row, not as four controls on every row. **Feedback** (schema v25) is a bug or
+suggestion filed from the topnav button on any page, carrying the path the
+reporter was on; admins triage it open → planned → closed.
 
 **Sharing** is two cards SIDE BY SIDE (`.sharegrid`, stacked under 1180px):
 *Groups* on the left — the create/join bar plus the master–detail (list,

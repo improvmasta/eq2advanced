@@ -75,6 +75,9 @@ export const api = {
   resetStart: (username) => req('/api/auth/reset/start', json({ username })),
   resetComplete: (username, answer, newPassword) => req(
     '/api/auth/reset/complete', json({ username, answer, new_password: newPassword })),
+  // kind: bug|suggestion. `page` is where they were when they hit the button —
+  // "the numbers look wrong" is unanswerable without it
+  sendFeedback: (kind, body, page) => req('/api/feedback', json({ kind, body, page })),
   characters: () => req('/api/characters'),
   addCharacter: (name) => req('/api/characters', json({ name })),
   deleteCharacter: (id) => req(`/api/characters/${id}`, { method: 'DELETE' }),
@@ -106,6 +109,12 @@ export const api = {
   deleteEncounters: (ids) => mutate(req('/api/encounters/delete', json({ ids }))),
   restoreEncounters: (fingerprints, characterId) => mutate(req(
     '/api/encounters/restore', json({ fingerprints, character_id: characterId }))),
+  // hiding is the reversible half of the same edit: the fight stays yours and
+  // stops reaching anyone you shared the raid with
+  hideEncounters: (ids, hidden = true) => mutate(req(
+    '/api/encounters/hide', json({ ids, hidden }))),
+  hideZoneRun: (id, hidden = true) => mutate(req(
+    `/api/zone-runs/${id}/hide`, json({ hidden }))),
   deleteSession: (id) => mutate(req(`/api/sessions/${id}`, { method: 'DELETE' })),
   coach: (sessionId) => req(`/api/sessions/${sessionId}/coach`),
   generateCoach: (sessionId) => req(`/api/sessions/${sessionId}/coach`, { method: 'POST' }),
@@ -168,7 +177,11 @@ export const api = {
 
   // admin console — metadata only, by design (backend/routers/admin_api.py)
   adminOverview: () => req('/api/admin/overview'),
-  adminUsers: () => req('/api/admin/users'),
+  // searched, sorted and paged on the server — the accounts table has to hold
+  // up with more accounts than fit on a screen
+  adminUsers: ({ q = '', sort = 'stored_bytes', dir = 'desc', limit = 50, offset = 0 } = {}) =>
+    req(`/api/admin/users?q=${encodeURIComponent(q)}&sort=${sort}&dir=${dir}`
+      + `&limit=${limit}&offset=${offset}`),
   adminSetDisabled: (id, disabled) => req(`/api/admin/users/${id}/disabled`, json({ disabled })),
   adminResetPassword: (id, password) => req(`/api/admin/users/${id}/password`, json({ password })),
   adminRenameUser: (id, username) => req(`/api/admin/users/${id}/username`, json({ username })),
@@ -179,8 +192,15 @@ export const api = {
   // user | curator | admin — curator opens the Abilities console and nothing else
   adminSetRole: (id, role) => req(`/api/admin/users/${id}/role`, json({ role })),
   adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
-  adminAudit: () => req('/api/admin/audit'),
+  adminAudit: ({ limit = 200, offset = 0 } = {}) =>
+    req(`/api/admin/audit?limit=${limit}&offset=${offset}`),
   adminPublicRuns: () => req('/api/admin/public-runs'),
+  // bug reports and suggestions: anyone signed in files them, an admin triages
+  adminFeedback: ({ status = '', kind = '', limit = 100, offset = 0 } = {}) =>
+    req(`/api/admin/feedback?status=${status}&kind=${kind}&limit=${limit}&offset=${offset}`),
+  adminSetFeedbackStatus: (id, status) => req(
+    `/api/admin/feedback/${id}`, { ...json({ status }), method: 'PATCH' }),
+  adminDeleteFeedback: (id) => req(`/api/admin/feedback/${id}`, { method: 'DELETE' }),
   /* Abilities: the one admin surface that edits GAME knowledge rather than
      site state. `scope=open` is the work queue (everything under full
      confidence and unruled); any `q` searches every ability ever tracked, so
@@ -219,7 +239,40 @@ export const fmt = {
     const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
     return h ? `${h}h ${m}m` : `${m}m`
   },
-  time: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+  /* The clock, with the half of the day as a SUFFIX rather than as part of the
+     number. "07:42 PM" is a data field; a raid list is read at a glance, so the
+     hour drops its leading zero and the meridiem goes lowercase. Returning the
+     two pieces separately is what lets a caller set the meridiem small — CSS
+     cannot size half of a text node — and `time` is the plain-string form for
+     everywhere that only needs the words. */
+  timeParts: (epoch, withSeconds) => {
+    if (epoch == null) return { t: '—', ap: '' }
+    const d = new Date(epoch * 1000)
+    const p = (n) => String(n).padStart(2, '0')
+    return {
+      t: `${d.getHours() % 12 || 12}:${p(d.getMinutes())}${withSeconds ? `:${p(d.getSeconds())}` : ''}`,
+      ap: d.getHours() < 12 ? 'am' : 'pm',
+    }
+  },
+  time: (epoch) => {
+    const { t, ap } = fmt.timeParts(epoch)
+    return ap ? `${t} ${ap}` : t
+  },
+  /* An EQ2 log stamps to the second and a wipe happens inside one minute, so
+     the death list prints seconds: 9:41p is where four of them read as one. */
+  timeS: (epoch) => {
+    const { t, ap } = fmt.timeParts(epoch, true)
+    return ap ? `${t} ${ap}` : t
+  },
+  /* The same clock without the AM/PM, for a column of consecutive seconds: the
+     card it sits in already said which half of the day this was, and repeating
+     it six times costs three characters of a narrow column every row. */
+  clockS: (epoch) => {
+    if (epoch == null) return '—'
+    const d = new Date(epoch * 1000)
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getHours() % 12 || 12}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  },
   date: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })),
   dateLong: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })),
   timeRange: (a, b) => (a == null ? '—' : b == null ? fmt.time(a) : `${fmt.time(a)} – ${fmt.time(b)}`),
@@ -232,4 +285,22 @@ export const fmt = {
     const mb = n / (1024 * 1024)
     return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`
   },
+}
+
+/* What to call a session in a list. An upload has a filename; a live session
+   has nothing but its fights, so it is named for where it was fought —
+   most-recent zone, because a plugin left running all evening moves. The date
+   is deliberately absent: every list showing this has a date column. */
+export function sessionLabel(s) {
+  if (s.upload_name) return s.upload_name
+  if (s.source === 'live') {
+    // A live session that logged no fights is common (zoning around, a short
+    // test); saying so beats a number, and the date column tells them apart.
+    if (!s.last_zone) {
+      return s.status === 'receiving' ? 'Live — waiting for fights' : 'Live — no fights'
+    }
+    const extra = (s.zone_count ?? 1) - 1
+    return extra > 0 ? `${s.last_zone} +${extra} zone${extra > 1 ? 's' : ''}` : s.last_zone
+  }
+  return `session ${s.id}`
 }

@@ -27,6 +27,10 @@ router = APIRouter(tags=["admin"])
 
 SETTINGS_KEYS = ("upload_max_bytes", "storage_max_bytes", "registration_open")
 
+# A parse normally takes seconds. Past this it is a thread that died with its
+# process — see the startup sweep in `main.py`, which repairs exactly this.
+STUCK_PARSE_S = 600
+
 
 @router.get("/admin/overview")
 def overview(admin=Depends(require_admin)):
@@ -44,39 +48,96 @@ def overview(admin=Depends(require_admin)):
         "FROM sessions").fetchone()
     on_disk = sum(p.stat().st_size for p in Path(UPLOADS_DIR).glob("*.txt.gz")) \
         if Path(UPLOADS_DIR).exists() else 0
-    jobs = rows_to_dicts(conn.execute(
-        "SELECT id, character_id, status, error, created_ts FROM sessions "
-        "WHERE status IN ('parsing','receiving','error') ORDER BY created_ts DESC LIMIT 50"))
+    # Only what somebody has to DO something about. A `receiving` session is a
+    # plugin streaming right now — the healthiest state there is — and listing
+    # every non-final session made a raid night look like 24 failures. The
+    # reaper (`pipeline/live.py`) closes a stream that goes quiet, so staleness
+    # there is already somebody's job; what is left is a parse that errored and
+    # a parse that has been running far too long to still be running.
+    now = int(time.time())
+    alerts = rows_to_dicts(conn.execute(
+        "SELECT s.id, s.source, s.status, s.error, s.created_ts, "
+        "  COALESCE(s.last_ingest_ts, s.created_ts) AS last_seen_ts, "
+        "  c.name AS character, u.username "
+        "FROM sessions s JOIN characters c ON c.id = s.character_id "
+        "JOIN users u ON u.id = c.user_id "
+        "WHERE s.status='error' OR (s.status='parsing' "
+        "  AND COALESCE(s.last_ingest_ts, s.created_ts) < ?) "
+        "ORDER BY s.created_ts DESC LIMIT 50", (now - STUCK_PARSE_S,)))
+    for a in alerts:
+        a["kind"] = "error" if a["status"] == "error" else "stuck"
+        a["age_s"] = max(0, now - a["last_seen_ts"])
+    live = {"receiving": 0, "parsing": 0}
+    for row in conn.execute(
+            "SELECT status, COUNT(*) AS n FROM sessions "
+            "WHERE status IN ('receiving','parsing') GROUP BY status"):
+        live[row["status"]] = row["n"]
+    # a stuck parse is already an alert; counting it as healthy work in flight
+    # would be the old panel's mistake in the other direction
+    live["parsing"] = max(0, live["parsing"] - sum(1 for a in alerts if a["kind"] == "stuck"))
     return {
         "counts": counts,
         "storage": {"raw_bytes": stored["raw"], "src_bytes": stored["src"],
                     "uploads_dir_bytes": on_disk},
-        "jobs": jobs,
+        "alerts": alerts,
+        "live": live,
         "settings": {k: get_int_setting(conn, k, 1 if k == "registration_open" else 0)
                      for k in SETTINGS_KEYS},
         "memo": __import__("memo").stats(),
     }
 
 
+SORT_COLS = {"username": "u.username", "created_ts": "u.created_ts",
+             "last_login_ts": "u.last_login_ts", "stored_bytes": "stored_bytes",
+             "character_count": "character_count", "session_count": "session_count",
+             "error_count": "error_count", "run_count": "run_count"}
+
+
 @router.get("/admin/users")
-def list_users(admin=Depends(require_admin)):
+def list_users(q: str = "", sort: str = "stored_bytes", dir: str = "desc",
+               limit: int = 50, offset: int = 0, admin=Depends(require_admin)):
     """One row per account: who they are, how much they're storing, whether
-    anything is broken. No route from here to what any of it contains."""
+    anything is broken. No route from here to what any of it contains.
+
+    Searched, sorted and paged on the SERVER. The counts are grouped joins
+    rather than the correlated subqueries this used to run — those were five
+    scans per user row, so the page got slower with every account.
+
+    `q` is a substring match, and `%`/`_` in it act as LIKE wildcards. Nobody
+    is being kept out of anything by this box, so that is a feature at worst."""
+    if sort not in SORT_COLS:
+        raise HTTPException(422, f"sort is one of {sorted(SORT_COLS)}")
+    if dir not in ("asc", "desc"):
+        raise HTTPException(422, "dir is asc or desc")
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     conn = get_db()
     rows = rows_to_dicts(conn.execute(
         "SELECT u.id, u.username, u.role, u.created_ts, u.last_login_ts, u.disabled_ts, "
         "u.upload_max_bytes, u.storage_max_bytes, (u.sq_id IS NOT NULL) AS has_question, "
-        "(SELECT COUNT(*) FROM characters c WHERE c.user_id = u.id) AS character_count, "
-        "(SELECT COUNT(*) FROM sessions s JOIN characters c ON c.id = s.character_id "
-        "  WHERE c.user_id = u.id) AS session_count, "
-        "(SELECT COUNT(*) FROM sessions s JOIN characters c ON c.id = s.character_id "
-        "  WHERE c.user_id = u.id AND s.status='error') AS error_count, "
-        "(SELECT COALESCE(SUM(s.raw_bytes),0) FROM sessions s "
-        "  JOIN characters c ON c.id = s.character_id WHERE c.user_id = u.id) AS stored_bytes, "
-        "(SELECT COUNT(*) FROM zone_runs z JOIN characters c ON c.id = z.character_id "
-        "  WHERE c.user_id = u.id) AS run_count "
-        "FROM users u ORDER BY u.username"))
-    return {"users": rows}
+        "COALESCE(cc.n, 0) AS character_count, "
+        "COALESCE(ss.n, 0) AS session_count, "
+        "COALESCE(ss.errs, 0) AS error_count, "
+        "COALESCE(ss.bytes, 0) AS stored_bytes, "
+        "COALESCE(zr.n, 0) AS run_count "
+        "FROM users u "
+        "LEFT JOIN (SELECT user_id, COUNT(*) AS n FROM characters GROUP BY user_id) cc "
+        "  ON cc.user_id = u.id "
+        "LEFT JOIN (SELECT c.user_id, COUNT(*) AS n, "
+        "                  SUM(s.status='error') AS errs, "
+        "                  COALESCE(SUM(s.raw_bytes),0) AS bytes "
+        "             FROM sessions s JOIN characters c ON c.id = s.character_id "
+        "            GROUP BY c.user_id) ss ON ss.user_id = u.id "
+        "LEFT JOIN (SELECT c.user_id, COUNT(*) AS n "
+        "             FROM zone_runs z JOIN characters c ON c.id = z.character_id "
+        "            GROUP BY c.user_id) zr ON zr.user_id = u.id "
+        "WHERE (? = '' OR u.username LIKE '%' || ? || '%') "
+        f"ORDER BY {SORT_COLS[sort]} {dir.upper()}, u.username "
+        "LIMIT ? OFFSET ?", (q, q, limit, offset)))
+    total = conn.execute(
+        "SELECT COUNT(*) FROM users u WHERE (? = '' OR u.username LIKE '%' || ? || '%')",
+        (q, q)).fetchone()[0]
+    return {"users": rows, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("/admin/users/{user_id}/disabled")
@@ -210,14 +271,18 @@ def update_settings(payload: dict = Body(...), admin=Depends(require_admin)):
 
 
 @router.get("/admin/audit")
-def audit_log(limit: int = 200, admin=Depends(require_admin)):
+def audit_log(limit: int = 200, offset: int = 0, admin=Depends(require_admin)):
     conn = get_db()
-    return {"entries": rows_to_dicts(conn.execute(
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+    entries = rows_to_dicts(conn.execute(
         "SELECT a.*, u.username AS actor FROM audit_log a "
         "LEFT JOIN users u ON u.id = a.actor_user_id "
         # id breaks the tie: several actions land in the same second and the
         # order they happened in is the whole point of a log
-        "ORDER BY a.ts DESC, a.id DESC LIMIT ?", (max(1, min(limit, 1000)),)))}
+        "ORDER BY a.ts DESC, a.id DESC LIMIT ? OFFSET ?", (limit, offset)))
+    total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+    return {"entries": entries, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/admin/groups")

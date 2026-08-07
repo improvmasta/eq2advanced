@@ -1,8 +1,8 @@
-import { classColor, classLabel, classTitle, familyColor } from '../lib/classes.js'
+import { classColor, classLabel, classShort, classTitle, familyColor } from '../lib/classes.js'
 
 /* Class chip: the tint is decorative, the word is the encoding — they always
    ship together, so identity never rests on color alone. */
-export function ClassChip({ actor }) {
+export function ClassChip({ actor, short }) {
   /* Nothing in the log proved a person was behind this name — a bare-named
      summoned pet fights and casts exactly like a raider. Say so, rather than
      leave a blank that reads as a class we have not got round to guessing. */
@@ -17,10 +17,14 @@ export function ClassChip({ actor }) {
   if (!actor?.class) return null
   const inferred = actor.class_source !== 'census'
   const weak = inferred && (actor.class_confidence ?? 1) < 0.6
+  /* `short` is for the tight columns (the tank picker, the death list). The
+     tooltip is `classTitle`, which names the class in full either way — an
+     abbreviation is only allowed to be one because the full word is a hover
+     away. */
   return (
     <span className="classchip" title={classTitle(actor)}>
       <i style={{ background: classColor(actor.class) }} />
-      {classLabel(actor.class)}
+      {short ? classShort(actor.class) : classLabel(actor.class)}
       {weak && <span className="q">?</span>}
     </span>
   )
@@ -54,13 +58,13 @@ export function ActorFacts({ actor, compact = false }) {
 }
 
 /* Combatant name for a table cell: family-colored stripe, name, class chip. */
-export function ActorName({ actor, badge, children }) {
+export function ActorName({ actor, badge, children, short }) {
   const stripe = familyColor(actor.class)
   return (
     <span className="actorname">
       <i className="famstripe" style={stripe ? { background: stripe } : undefined} />
       <span className="n">{actor.name}</span>
-      <ClassChip actor={actor} />
+      <ClassChip actor={actor} short={short} />
       {badge}
       {children}
     </span>

@@ -21,7 +21,7 @@ from fastapi import Depends, HTTPException, Request
 
 from auth import COOKIE, session_user
 from db import get_db
-from groups import VISIBLE_RUN_IDS
+from groups import VISIBLE_UNHIDDEN_RUN_IDS
 
 
 def current_user(request: Request):
@@ -126,7 +126,13 @@ def visible_encounters(conn, user, encs) -> dict[int, dict]:
     An encounter is visible when its session is yours OR its zone run is shared
     with you. Session-level authorization would be wrong here: a viewer cleared
     for one shared run would be cleared for every other fight in the same
-    uploaded file, which is exactly the leak sharing must not open."""
+    uploaded file, which is exactly the leak sharing must not open.
+
+    A HIDDEN fight is the owner's alone, and this is the only place that has to
+    know it: every ?ids= endpoint comes through here, so a viewer who worked out
+    an id from a neighbouring one is refused the same way a stranger is. The
+    payloads simply never name them (`zoneruns_api._run_encounters`), but "not
+    in the list we sent" is not an access rule."""
     if not encs:
         raise HTTPException(422, "ids is empty")
     session_ids = sorted({e["session_id"] for e in encs})
@@ -143,7 +149,7 @@ def visible_encounters(conn, user, encs) -> dict[int, dict]:
     for e in encs:
         if uid is not None and sess_of[e["session_id"]]["owner_id"] == uid:
             continue
-        if e["zone_run_id"] in shared:
+        if e["zone_run_id"] in shared and e["hidden_ts"] is None:
             continue
         raise HTTPException(404, "no such encounter")
     return sess_of
@@ -159,4 +165,4 @@ def _visible_of(conn, user, run_ids: list[int]) -> set[int]:
     named = ",".join(f":r{i}" for i in range(len(run_ids)))
     return {r["id"] for r in conn.execute(
         f"SELECT z.id FROM zone_runs z WHERE z.id IN ({named}) "
-        f"AND z.id IN ({VISIBLE_RUN_IDS})", {**params, "uid": _uid(user)})}
+        f"AND z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS})", {**params, "uid": _uid(user)})}

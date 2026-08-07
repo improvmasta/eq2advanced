@@ -89,6 +89,26 @@ export const CHART_COLORS = [
 export const CHART_DASH = ['', '', '5 3', '', '2 3', '8 3', '', '5 3 2 3']
 
 export const classLabel = (cls) => (cls ? cls[0].toUpperCase() + cls.slice(1) : null)
+
+/* What a raider calls the class in chat, for the places where the full word
+   does not fit: a chip inside a table cell that is sharing a 380px column with
+   a name, a clock and a mob. `Shadowknight` alone is wider than the name it is
+   captioning there.
+
+   Only the ones with real in-game shorthand are listed — a class not in this
+   map keeps its full name rather than being truncated into something nobody
+   says out loud, which is why `Templar`, `Warden`, `Fury`, `Mystic`, `Defiler`
+   and `Bruiser` are absent. `classLabel` stays the full word everywhere the
+   width is there, and the chip's tooltip always spells it out. */
+export const CLASS_SHORT = {
+  guardian: 'Guard', berserker: 'Zerker', paladin: 'Pally', shadowknight: 'SK',
+  inquisitor: 'Inq', channeler: 'Chan',
+  wizard: 'Wiz', warlock: 'Lock', conjuror: 'Conj', necromancer: 'Necro',
+  illusionist: 'Illy', coercer: 'Coercer',
+  assassin: 'Sin', brigand: 'Brig', swashbuckler: 'Swash', troubador: 'Troub',
+  beastlord: 'BL',
+}
+export const classShort = (cls) => (cls ? CLASS_SHORT[cls] || classLabel(cls) : null)
 export const familyOf = (cls) => CLASS_FAMILY[cls] || null
 export const roleOf = (actor) => actor?.archetype || CLASS_ROLE[actor?.class] || null
 export const classColor = (cls) => CLASS_COLOR[cls] || null

@@ -1,21 +1,67 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import UploadDrop from '../components/UploadDrop.jsx'
-import { api, fmt } from '../lib/api.js'
+import { api, fmt, sessionLabel } from '../lib/api.js'
 
 /* The two ways combat data gets in, and what came in so far.
 
-   The plugin box shows one thing at a time: the install manual until a device
-   is paired, a quiet status line after — the steps stay one click away. Sharing
-   is deliberately absent here; it lives on the Sharing page, and the box says
-   so in one line instead of embedding the controls. */
+   The plugin box shows one thing at a time, and which thing depends on whether
+   a key is in use. Unpaired, it is a setup manual and nothing else: one
+   numbered list carrying the download, the key and the ACT steps in the order
+   you do them. Paired, setup is finished work — the box leads with whether the
+   plugin is talking to us and folds the manual away. Sharing is deliberately
+   absent here; it lives on the Sharing page, and the box says so in one line
+   instead of embedding the controls.
+
+   Privacy is a pagehead disclosure, not a card: it is a reference someone reads
+   once and then wants out of the way of the thing they came to do. Two lists
+   because the question is "which side is my channel on". See pipeline/redact.py. */
+function Privacy({ open, onClose }) {
+  if (!open) return null
+  return (
+    <section className="card privacy" role="region" aria-label="What is stored">
+      <div className="privacygrid">
+        <div className="pcol drop">
+          <h3>Removed before storage</h3>
+          <ul>
+            <li>Tells, sent and received</li>
+            <li>Guild and officer chat</li>
+            <li>Channels — LFG, General, Auction, Crafting, custom</li>
+            <li>Local <code>/say</code></li>
+            <li>Group and raid chat outside a fight</li>
+          </ul>
+        </div>
+        <div className="pcol keep">
+          <h3>Kept</h3>
+          <ul>
+            <li>Combat: damage, heals, deaths, cures, zoning</li>
+            <li>Group and raid chat during a fight, ±90s</li>
+            <li>NPC dialogue</li>
+          </ul>
+        </div>
+      </div>
+      <p className="fineprint">
+        Filtering happens as the upload streams; the unfiltered file is never
+        written to disk. Unrecognised channels are dropped, not kept. Removed
+        lines are ones the parser ignores, so parses are unaffected — the
+        per-file count is in <b>Chat cut</b> below.
+      </p>
+      <p className="fineprint">
+        Admin accounts get no extra visibility: an unshared raid returns 404 for
+        an admin the same as for a stranger. Anyone with server access can read
+        the database — the limit is what gets stored, not who asks.
+      </p>
+      <button className="linklike" onClick={onClose}>Close</button>
+    </section>
+  )
+}
 
 function Method({ title, blurb, state, children }) {
   return (
     <section className="card method">
       <div className="methodhead">
         <h2>{title}</h2>
-        {state && <span className={`badge ${state === 'live' ? 'named' : ''}`}>{state}</span>}
+        {state && <span className={`badge ${state === 'live' ? 'live' : ''}`}>{state}</span>}
       </div>
       <p className="note">{blurb}</p>
       {children}
@@ -86,12 +132,50 @@ function ApiKey({ tokens, reload }) {
       </div>
       {key && !key.token && (
         <p className="fineprint">
-          This key was made before keys were viewable. It still works —
-          Refresh replaces it with one you can read here.
+          Made before keys were viewable. Still works; Refresh replaces it with
+          a readable one.
         </p>
       )}
       {error && <p className="err">{error}</p>}
     </div>
+  )
+}
+
+/* Setup as one list, in the order it is done. The download, the key and the
+   ACT steps used to be three stacked blocks that read as three unrelated
+   things; numbering them is what makes it obvious the key belongs to step 3
+   and not to the box at large. */
+function PluginSetup({ plugin, tokens, reloadTokens }) {
+  return (
+    <ol className="steps setupflow">
+      {/* Unblock the zip, not the extracted DLL — Explorer copies the web mark
+          onto what it unpacks and ACT won't load a marked one. */}
+      <li>
+        Download the plugin, then right-click the .zip → <b>Properties</b> →{' '}
+        <b>Unblock</b>, and extract it.
+        <div className="stepctl">
+          <a className="btnlink" href="/api/plugin/download" download>
+            Download {plugin?.download_name || 'EQ2Advanced.zip'}
+          </a>
+          {plugin?.available && (
+            <span className="meta">
+              {fmt.bytes(plugin.download_size ?? plugin.size)} · built {fmt.date(plugin.built_ts)}
+            </span>
+          )}
+        </div>
+      </li>
+      <li>In ACT: <b>Plugins → Plugin Listing → Browse</b>, pick <b>EQ2Advanced.dll</b>, <b>Add/Enable</b>.</li>
+      <li>
+        Paste this key into the plugin's <b>eq2advanced</b> tab.
+        <div className="stepctl">
+          <ApiKey tokens={tokens} reload={reloadTokens} />
+        </div>
+      </li>
+      <li>
+        Tick <b>Send my combat log as I play</b>. For old raids, use{' '}
+        <b>Import logs you already have</b> — point it at your whole logs folder.
+      </li>
+    </ol>
   )
 }
 
@@ -102,7 +186,7 @@ export default function Import() {
   const [confirmDel, setConfirmDel] = useState(null)
   const [busy, setBusy] = useState(false)
   const [plugin, setPlugin] = useState(null)
-  const [showSteps, setShowSteps] = useState(false)
+  const [showPrivacy, setShowPrivacy] = useState(false)
   const seen = useRef(false)
 
   const refresh = useCallback(() => {
@@ -147,75 +231,67 @@ export default function Import() {
     <div className="manage">
       <div className="pagehead">
         <h1>Import</h1>
-        <span className="sub">Get your raids in. Two ways, both take a minute.</span>
-        <span className="actions"><Link className="btnlink" to="/">Back to parses</Link></span>
+        <span className="sub">Plugin or file upload.</span>
+        <span className="actions">
+          <button className="btnlink disclose" aria-expanded={showPrivacy}
+                  onClick={() => setShowPrivacy((v) => !v)}>
+            What is stored <span className="caret">{showPrivacy ? '▴' : '▾'}</span>
+          </button>
+          <Link className="btnlink" to="/">Back to parses</Link>
+        </span>
       </div>
       {error && <p className="err">{error}</p>}
+
+      <Privacy open={showPrivacy} onClose={() => setShowPrivacy(false)} />
 
       <div className="methods">
         <Method
           title="ACT plugin"
           state={receiving.length ? 'live' : paired ? 'paired' : null}
-          blurb="Sends your log while you raid, and uploads your old logs in bulk. Set it up once."
+          blurb={paired
+            ? 'Uploads while you raid, and bulk-imports an existing log folder.'
+            : 'Uploads while you raid. Also bulk-imports an existing log folder. One-time setup.'}
         >
+          {!paired && <PluginSetup plugin={plugin} tokens={tokens} reloadTokens={loadTokens} />}
+
           {paired && (
-            <div className="pluginstatus">
-              <span>
-                <b>Key in use</b>
-                {lastSeen > 0
-                  ? <span className="muted"> · last upload {fmt.date(lastSeen)} {fmt.time(lastSeen)}</span>
-                  : <span className="muted"> · nothing uploaded with it yet</span>}
-              </span>
-              <button className="linklike" onClick={() => setShowSteps((v) => !v)}>
-                {showSteps ? 'Hide install steps' : 'Install steps'}
-              </button>
-            </div>
-          )}
+            <>
+              <div className="pluginstatus">
+                <span>
+                  <b>{receiving.length ? 'Receiving' : 'Connected'}</b>
+                  {lastSeen > 0
+                    ? <span className="muted"> · last upload {fmt.date(lastSeen)} at {fmt.time(lastSeen)}</span>
+                    : <span className="muted"> · no uploads yet</span>}
+                </span>
+              </div>
 
-          {/* The file itself is never collapsed: someone already paired is who
-              comes back for it when the DLL is rebuilt. Only the steps hide. */}
-          <p style={{ marginTop: paired ? 10 : 4 }}>
-            <a className="btnlink" href="/api/plugin/download" download>
-              Download {plugin?.download_name || 'EQ2Advanced.zip'}
-            </a>
-            {plugin?.available && (
-              <span className="muted" style={{ marginLeft: 8, fontSize: 'var(--fs-xs)' }}>
-                {fmt.bytes(plugin.download_size ?? plugin.size)} · built {fmt.date(plugin.built_ts)}
-              </span>
-            )}
-          </p>
+              {receiving.length > 0 && (
+                <p className="livecta">
+                  <Link className="btnlink" to="/live">Watch the live raid →</Link>
+                </p>
+              )}
 
-          {(!paired || showSteps) && (
-            <ol className="steps">
-              {/* Unblock the zip, not the extracted DLL — Explorer copies the
-                  web mark onto what it unpacks and ACT won't load a marked one. */}
-              <li>Right-click the .zip → <b>Properties</b> → <b>Unblock</b>, then extract.</li>
-              <li>In ACT: <b>Plugins → Plugin Listing → Browse</b>, pick <b>EQ2Advanced.dll</b>, <b>Add/Enable</b>.</li>
-              <li>Copy the API key below into the plugin's <b>eq2advanced</b> tab.</li>
-              <li>
-                Tick <b>Send my combat log as I play</b>. For old raids, use{' '}
-                <b>Import logs you already have</b> — point it at your whole logs folder.
-              </li>
-            </ol>
-          )}
-
-          <ApiKey tokens={tokens} reload={loadTokens} />
-
-          {receiving.length > 0 && (
-            <p style={{ marginTop: 8 }}>
-              <Link className="btnlink" to="/live">Watch the live raid →</Link>
-            </p>
+              {/* The download folds away with the steps, which the old layout
+                  refused to do. Someone coming back for a rebuilt DLL is
+                  looking for the same drawer the steps are in, and the summary
+                  names it — one click, and the box stays about whether the
+                  plugin is talking to us. */}
+              <details className="setupfold">
+                <summary>Setup, download &amp; API key</summary>
+                <PluginSetup plugin={plugin} tokens={tokens} reloadTokens={loadTokens} />
+              </details>
+            </>
           )}
 
           <p className="fineprint">
-            The plugin only sends logs. Who sees your raids is set on the{' '}
-            <Link to="/groups">Sharing</Link> page.
+            The plugin only sends logs. Who sees your raids is set on{' '}
+            <Link to="/groups">Sharing</Link>.
           </p>
         </Method>
 
         <Method
           title="Log files"
-          blurb="Already have logs? Drop them in. Nothing to install."
+          blurb="Drag in log files. Nothing to install."
         >
           <UploadDrop onUploaded={refresh} />
         </Method>
@@ -230,8 +306,9 @@ export default function Import() {
           </span>
         </div>
         <p className="note">
-          Every log you've sent. The raw file is kept so a parser improvement can be
-          replayed over it; deleting one removes every fight it contributed.
+          Filtered files are kept so parser improvements can be replayed over
+          them. Deleting one removes every fight it contributed.
+          <b> Chat cut</b> is the private lines dropped on import.
         </p>
 
         {working.length > 0 && (
@@ -241,9 +318,7 @@ export default function Import() {
         )}
         {sessions === null && !seen.current && <p className="muted">Loading…</p>}
         {sessions?.length === 0 && (
-          <p className="muted">
-            Nothing yet — drop a log above, or set up the plugin and it fills itself.
-          </p>
+          <p className="muted">No logs yet.</p>
         )}
 
         {sessions?.length > 0 && (
@@ -257,6 +332,9 @@ export default function Import() {
                   <th>Date</th>
                   <th>Size</th>
                   <th>Lines</th>
+                  <th title="private chat lines removed before this file was stored">
+                    Chat cut
+                  </th>
                   <th>Fights</th>
                   <th className="l">Status</th>
                   <th />
@@ -267,14 +345,18 @@ export default function Import() {
                   <tr key={s.id}>
                     <td className="name l">
                       {s.status === 'ready'
-                        ? <Link to={`/sessions/${s.id}`}>{s.upload_name || `session ${s.id}`}</Link>
-                        : (s.upload_name || `session ${s.id}`)}
+                        ? <Link to={`/sessions/${s.id}`}>{sessionLabel(s)}</Link>
+                        : sessionLabel(s)}
+                      {s.status === 'receiving' && <span className="badge live">live</span>}
                     </td>
                     <td className="l">{s.character_name}</td>
                     <td className="l muted">{s.source === 'live' ? 'plugin' : 'upload'}</td>
                     <td>{fmt.date(s.started_ts ?? s.created_ts)}</td>
                     <td>{s.raw_deleted_ts ? '—' : fmt.bytes(s.src_bytes)}</td>
                     <td>{fmt.num(s.line_count)}</td>
+                    <td className={s.redacted_lines ? 'cut' : 'muted'}>
+                      {s.redacted_lines ? fmt.num(s.redacted_lines) : '—'}
+                    </td>
                     <td>{s.encounter_count}</td>
                     <td className={`l status-${s.status}`}>
                       {s.status === 'receiving' ? 'receiving…'

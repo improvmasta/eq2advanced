@@ -22,7 +22,16 @@ def mount_spa(app: FastAPI) -> None:
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
-        candidate = DIST / path
-        if path and candidate.is_file():
-            return FileResponse(candidate)
+        # Starlette hands the path through unnormalized, so `..` reaches here and
+        # DIST / path escapes the build dir — data/eq2advanced.db is two levels up.
+        # Resolve and require containment before serving anything.
+        if path:
+            try:
+                candidate = (DIST / path).resolve()
+                candidate.relative_to(DIST.resolve())
+            except (ValueError, OSError):
+                pass
+            else:
+                if candidate.is_file():
+                    return FileResponse(candidate)
         return FileResponse(DIST / "index.html")

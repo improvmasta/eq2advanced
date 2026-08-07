@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, fmt } from '../lib/api.js'
+import { api, fmt, sessionLabel } from '../lib/api.js'
 
 export default function Calibration() {
   const [sessions, setSessions] = useState(null)
@@ -81,7 +81,7 @@ export default function Calibration() {
                 {ready.map((s) => (
                   <tr key={s.id} className={s.calibration ? 'selected' : ''}>
                     <td className="name">
-                      <Link to={`/sessions/${s.id}`}>{s.upload_name || `Session ${s.id}`}</Link>
+                      <Link to={`/sessions/${s.id}`}>{sessionLabel(s)}</Link>
                     </td>
                     <td className="l">{s.character_name}</td>
                     <td>{fmt.date(s.started_ts)}</td>

@@ -110,8 +110,13 @@ RE_INTERCEPT = re.compile(
 RE_ANON_HEAL = re.compile(r"^A healing spell is cast on (?P<tgt>.+)\.$")
 RE_PREPARE = re.compile(r"^You prepare (?P<what>.+?)\.?$")
 
-_CHAT_PREFIXES = ("\\aPC ", "\\aNPC ")
-_CHAT_RE = re.compile(r'^You (?:say|tell) ')
+# Chat, which classify_body discards. pipeline/redact.py imports these two so the
+# set it is allowed to strip from a stored log stays exactly the set the parser
+# ignores — a drift between them is how redaction would start eating real events.
+# `\b` not ' ': `You say, "…"` (local /say) is chat too, and matching on a space
+# missed it. Output is unchanged either way — it classified to None regardless.
+CHAT_PREFIXES = ("\\aPC ", "\\aNPC ")
+CHAT_RE = re.compile(r'^You (?:say|tell)\b')
 
 
 def _split_possessive_head(text: str) -> tuple[str, str] | None:
@@ -135,7 +140,7 @@ def _split_possessive_head(text: str) -> tuple[str, str] | None:
 def classify_body(ts: int, body: str, logger: str,
                   pet_names: frozenset[str] = frozenset()) -> ParsedEvent | None:
     """Classify one prefix-stripped body. Returns None for chat/unknown lines."""
-    if body.startswith(_CHAT_PREFIXES) or _CHAT_RE.match(body):
+    if body.startswith(CHAT_PREFIXES) or CHAT_RE.match(body):
         return None
     if "\\aITEM" in body:
         body = unescape_items(body)

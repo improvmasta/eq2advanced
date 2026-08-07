@@ -23,11 +23,25 @@ sessions (files) stay the ingest unit, runs are what the UI navigates.
 Hand edits (`run_edits`) ride on top of all three. They are keyed by encounter
 FINGERPRINT, not id, because a reparse drops and recreates every encounter row
 — deleting a fight or splitting a run has to mean the same thing after the next
-backfill as it did when you clicked it. Three kinds:
-  delete — the fight is hidden everywhere (`encounters.deleted_ts` is the
-           denormalized mark; this table stays the source of truth)
+backfill as it did when you clicked it. Four kinds:
+  delete — the fight is gone everywhere, including for the owner
+           (`encounters.deleted_ts` is the denormalized mark; this table stays
+           the source of truth)
+  hide   — the fight is the OWNER'S and nobody else's: still in their rail so
+           they can put it back, absent from every viewer's payload
+           (`security.py`) and out of every total on the page
+           (`encounters.hidden_ts` is its mark). Delete and hide are separate
+           kinds rather than one flag because they answer different questions —
+           "this pull never happened" and "this pull is not the raid's business"
+           — and un-hiding must not resurrect something deleted.
   break  — always start a new run at this fight (unmerge)
   join   — never start a new run at this fight (merge with the one before)
+
+A hidden fight still SEGMENTS: it happened, the raid was in the zone, and
+dropping it from the stream would split a night in two at a 40-minute gap that
+only exists because somebody hid the pull that spans it. It is only the totals
+it stays out of — `encounter_count` and the roster are what a viewer reads, so
+they count the visible fights and `hidden_count` carries the rest.
 """
 
 import math
@@ -77,8 +91,9 @@ def encounter_fp(e) -> str:
 
 
 def load_edits(conn: sqlite3.Connection, character_id: int) -> dict[str, set[str]]:
-    """-> {'delete': {fp, ...}, 'break': {...}, 'join': {...}}."""
-    out: dict[str, set[str]] = {"delete": set(), "break": set(), "join": set()}
+    """-> {'delete': {fp, ...}, 'hide': {...}, 'break': {...}, 'join': {...}}."""
+    out: dict[str, set[str]] = {
+        "delete": set(), "hide": set(), "break": set(), "join": set()}
     for r in conn.execute(
             "SELECT fp, kind FROM run_edits WHERE character_id=?", (character_id,)):
         out.setdefault(r["kind"], set()).add(r["fp"])
@@ -164,20 +179,24 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
     all_encs = conn.execute(
         "SELECT e.id, e.session_id, e.zone, e.name, e.is_named, e.started_ts, "
         "e.ended_ts, e.duration_s, e.success, e.zone_run_id, e.dup_of, e.deleted_ts, "
+        "e.hidden_ts, "
         "s.parse_version, COALESCE(s.ended_ts, 0) - COALESCE(s.started_ts, 0) AS coverage "
         "FROM encounters e JOIN sessions s ON s.id = e.session_id "
         "WHERE s.character_id = ? "
         "ORDER BY e.started_ts, e.ended_ts, e.session_id", (character_id,)).fetchall()
 
-    # re-apply hand deletes first: the mark is derived, run_edits is the truth,
-    # so a fight deleted before a reparse comes back deleted
+    # re-apply the two hand marks first: they are derived, run_edits is the
+    # truth, so a fight deleted or hidden before a reparse comes back that way
     edits = load_edits(conn, character_id)
     now = int(time.time())
     for e in all_encs:
-        want = now if encounter_fp(e) in edits["delete"] else None
-        if (e["deleted_ts"] is None) != (want is None):
-            conn.execute("UPDATE encounters SET deleted_ts=? WHERE id=?", (want, e["id"]))
+        fp = encounter_fp(e)
+        for col, kind in (("deleted_ts", "delete"), ("hidden_ts", "hide")):
+            want = now if fp in edits[kind] else None
+            if (e[col] is None) != (want is None):
+                conn.execute(f"UPDATE encounters SET {col}=? WHERE id=?", (want, e["id"]))
     encs = [e for e in all_encs if encounter_fp(e) not in edits["delete"]]
+    hidden_fps = edits["hide"]
 
     canonical, dup_of = _dedupe(encs)
     runs = _segment(canonical, edits)
@@ -190,22 +209,37 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
     run_id_of_enc: dict[int, int] = {}
     for members in runs:
         zone = members[0]["zone"]
-        start, end = members[0]["started_ts"], members[-1]["ended_ts"]
+        # Every rollup below describes the fights a READER gets, so it is taken
+        # over the shown ones — a night with its last two pulls hidden must not
+        # still claim to have run until midnight.
+        #
+        # A run with NOTHING shown falls back to the whole thing for the two
+        # fields that say what KIND of night it was: the window and the roster.
+        # Only its owner can see it at that point, and describing it as a
+        # zero-length night with nobody in it is not the truer statement — it is
+        # how a hidden raid disappeared off its owner's own list. `raider_count`
+        # is what partitions Raids from Solo/Group (`lib/raids.js`), so a NULL
+        # there moved a 24-man raid to the other side of a filter that is on by
+        # default, and the only way back to it was a switch nobody would think
+        # to flip. Hiding a raid must never make it hard to un-hide.
+        counted = [e for e in members if encounter_fp(e) not in hidden_fps]
+        described = counted or members
+        start, end = described[0]["started_ts"], described[-1]["ended_ts"]
         match = next(
             (ex for ex in existing
              if ex["id"] not in consumed and ex["zone"] == zone
              and start <= ex["ended_ts"] and end >= ex["started_ts"]), None)
         enc_ids = [e["id"] for e in members]
-        roster = _roster(conn, enc_ids)
+        roster = _roster(conn, [e["id"] for e in described])
         fields = (
-            zone, start, end, len(members),
-            sum(1 for e in members if e["is_named"]),
+            zone, start, end, len(counted), len(members) - len(counted),
+            sum(1 for e in counted if e["is_named"]),
             # named KILLS, not every success: trash carries a real success flag
             # now too, and "9/9 named" must mean nine bosses killed out of nine
             # engaged — which is only a meaningful ratio because a wipe can
             # finally be recorded as success=0
-            sum(1 for e in members if e["is_named"] and e["success"] == 1),
-            sum(e["duration_s"] for e in members),
+            sum(1 for e in counted if e["is_named"] and e["success"] == 1),
+            sum(e["duration_s"] for e in counted),
             len(roster) if roster is not None else None,
             json_dumps(roster) if roster is not None else None, now)
         if match is not None:
@@ -213,14 +247,14 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
             run_id = match["id"]
             conn.execute(
                 "UPDATE zone_runs SET zone=?, started_ts=?, ended_ts=?, "
-                "encounter_count=?, named_count=?, success_count=?, combat_s=?, "
-                "raider_count=?, roster_json=?, updated_ts=? WHERE id=?",
+                "encounter_count=?, hidden_count=?, named_count=?, success_count=?, "
+                "combat_s=?, raider_count=?, roster_json=?, updated_ts=? WHERE id=?",
                 fields + (run_id,))
         else:
             run_id = conn.execute(
                 "INSERT INTO zone_runs (character_id, zone, started_ts, ended_ts, "
-                "encounter_count, named_count, success_count, combat_s, raider_count, "
-                "roster_json, updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "encounter_count, hidden_count, named_count, success_count, combat_s, "
+                "raider_count, roster_json, updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (character_id,) + fields).lastrowid
         for eid in enc_ids:
             run_id_of_enc[eid] = run_id

@@ -5,7 +5,13 @@ because of someone else's character.
 
 The gzip is content-addressed and therefore SHARED: two people who were on the
 same raid upload the same bytes and get one file with two sessions pointing at
-it. Deleting a session only unlinks the file when it was the last pointer."""
+it. Deleting a session only unlinks the file when it was the last pointer.
+
+What gets stored is REDACTED as it streams (pipeline/redact.py): tells, guild and
+officer chat, the public channels and local /say are dropped before the write, so
+the unredacted client log never exists on this server at all. The content address
+stays the sha256 of the ORIGINAL bytes — that is what makes two raiders' copies
+of the same night dedupe to one file, and it is a hash, not a copy."""
 
 import gzip
 import hashlib
@@ -16,6 +22,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 
 from db import UPLOADS_DIR, get_db, get_int_setting
 from pipeline.ingest_writer import parse_session
+from pipeline.redact import StreamRedactor
 from security import require_user
 from siteconfig import edge_max_bytes
 
@@ -92,9 +99,12 @@ async def upload_log(file: UploadFile, character_name: str = Form(...),
     sha = hashlib.sha256()
     src_bytes = 0
     tmp = UPLOADS_DIR / f".incoming-{time.time_ns()}.txt.gz"
+    redactor = StreamRedactor()
     try:
         with gzip.open(tmp, "wb") as out:
             while chunk := await file.read(CHUNK):
+                # the hash and the size are of what was SENT; what is written is
+                # what survives redaction
                 sha.update(chunk)
                 src_bytes += len(chunk)
                 # counted as it streams: an oversized upload must never finish
@@ -104,7 +114,8 @@ async def upload_log(file: UploadFile, character_name: str = Form(...),
                         413, f"that log is over the {cap // (1 << 20)} MB limit — "
                              "upload it without keeping the file instead",
                         headers={"X-Parse-Only-Allowed": "1"})
-                out.write(chunk)
+                out.write(redactor.feed(chunk))
+            out.write(redactor.finish())
     except Exception:
         tmp.unlink(missing_ok=True)
         raise
@@ -129,10 +140,10 @@ async def upload_log(file: UploadFile, character_name: str = Form(...),
             tmp.rename(final)
         session_id = conn.execute(
             "INSERT INTO sessions (character_id, source, status, upload_sha256, upload_name, "
-            "src_bytes, raw_bytes, retain_raw, created_ts) "
-            "VALUES (?, 'upload', 'parsing', ?, ?, ?, ?, ?, ?)",
+            "src_bytes, raw_bytes, retain_raw, redacted_lines, created_ts) "
+            "VALUES (?, 'upload', 'parsing', ?, ?, ?, ?, ?, ?, ?)",
             (char_id, digest, file.filename, src_bytes, raw_bytes, int(keep),
-             int(time.time())),
+             redactor.dropped, int(time.time())),
         ).lastrowid
 
     threading.Thread(target=parse_session, args=(session_id, final), daemon=True).start()

@@ -44,16 +44,55 @@ const SIZES = {
   },
 }
 
-/* "Tonight" / "Yesterday" / weekday — a raid list is read by when, and the
-   exact date is one column over anyway. */
+/* "Today" / "Yesterday" / the weekday — how a raid night is actually referred
+   to. Never the month and day: every caller prints the exact date beside this,
+   so a label that spelled the date out again read "Sat, Aug 1  Aug 1, 2026". */
 function dayLabel(ts) {
   const d = new Date(ts * 1000)
   const midnight = new Date().setHours(0, 0, 0, 0)
   const days = Math.floor((midnight - new Date(d).setHours(0, 0, 0, 0)) / DAY_MS)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
-  if (days < 7) return d.toLocaleDateString([], { weekday: 'long' })
-  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString([], { weekday: 'long' })
+}
+
+/* The clock as this list sets it: the number at full size and the half of the
+   day small and quiet beside it. "pm" is not information you read — it is
+   information you check — so it should not weigh the same as the hour. */
+function Clock({ ts }) {
+  const { t, ap } = fmt.timeParts(ts)
+  return <span className="clock">{t}{ap && <span className="ap">{ap}</span>}</span>
+}
+
+/* What is true of THIS visit rather than of the zone it was to, so it rides
+   along whether or not the zone's name is printed beside it. */
+function runBadges(r) {
+  return (
+    <>
+      {r.merged && <span className="badge" title="Merged by hand">merged</span>}
+      {/* Only ever on your own row: a raid you hid is gone from everybody
+          else's list, so nobody else has one of these to read. */}
+      {r.hidden && (
+        <span className="badge hidden"
+              title="Not shared, not counted in stats.">
+          hidden
+        </span>
+      )}
+      {r.guild && (
+        <span className="badge guild" title="Majority guild of the roster, from Census">
+          {r.guild}
+        </span>
+      )}
+      {/* Still being streamed — the plugin is sending this night in as it
+          happens, so the numbers below are a raid in progress, not a
+          finished one. */}
+      {r.live && (
+        <span className="badge live" title="Being streamed right now — the fights are still arriving">
+          Live
+        </span>
+      )}
+    </>
+  )
 }
 
 export default function Home({ user }) {
@@ -72,6 +111,12 @@ export default function Home({ user }) {
     return new Set(saved.length ? saved : ['raid'])
   })
   const [sharing, setSharing] = useState(null)   // run id whose share panel is open
+  /* Per-row editing: one row open at a time, and the delete inside it armed
+     separately. Both are ids rather than booleans, so opening another row's
+     controls closes the first one's — two rows offering "Yes" at once is how
+     the wrong raid gets deleted. */
+  const [editRow, setEditRow] = useState(null)
+  const [rowConfirm, setRowConfirm] = useState(null)
   /* WHERE a raid came from, as ONE filter: a set of `char:<id>`, `group:<id>`
      and `public` keys, OR'd, empty meaning everything you can see. The menu
      (SourceFilter) groups them into sections; this owns the answer.
@@ -274,6 +319,20 @@ export default function Home({ user }) {
     setOrphans(empties.length ? empties : null)
   })
 
+  /* The row's own two verbs, on one raid — the same edits the selection bar
+     above does in bulk, reached without checking anything first. */
+  const doHideRun = (r) => perform(() => api.hideZoneRun(r.id, !r.hidden))
+
+  const doDeleteRun = (r) => perform(async () => {
+    const d = await api.deleteZoneRun(r.id)
+    setEditRow(null)
+    setRowConfirm(null)
+    setUndo(d.fingerprints?.length
+      ? { fingerprints: d.fingerprints, character_id: d.character_id, n: d.fingerprints.length }
+      : null)
+    setOrphans(d.empty_sessions?.length ? d.empty_sessions : null)
+  })
+
   const doUndo = () => perform(async () => {
     await api.restoreEncounters(undo.fingerprints, undo.character_id)
     setUndo(null)
@@ -288,9 +347,13 @@ export default function Home({ user }) {
 
   const columns = [
     {
-      /* Sorted by night (the default) the date sits in the group heading, so
-         the cell would say it twice; sorted by zone or DPS there is no
-         heading and the cell is the only place it appears. */
+      /* Sorted by zone or by DPS this cell is the only place the date appears.
+         Sorted by night — the default — the heading over the row has already
+         said it, and four runs from one Saturday were spending the widest
+         column on the left on four identical copies of "Saturday, Aug 1,
+         2026". What actually separates those four is when in the evening each
+         one started, so that is what the column carries under a heading: the
+         start time, left of the zone, which is also the order the rows are in. */
       key: 'day', label: 'Date', align: 'l',
       render: (r) => (
         <span className="runday">
@@ -298,6 +361,7 @@ export default function Home({ user }) {
           <span className="muted">{fmt.date(r.started_ts)}</span>
         </span>
       ),
+      groupedRender: (r) => <span className="runstart"><Clock ts={r.started_ts} /></span>,
       sortValue: (r) => r.started_ts,
     },
     {
@@ -307,29 +371,24 @@ export default function Home({ user }) {
       render: (r) => (
         <span className="runzone">
           {r.zone || 'Unknown zone'}
-          {r.merged && <span className="badge" title="Merged by hand">merged</span>}
-          {r.guild && (
-            <span className="badge guild" title="Majority guild of the roster, from Census">
-              {r.guild}
-            </span>
-          )}
-          {/* Still being streamed — the plugin is sending this night in as it
-              happens, so the numbers below are a raid in progress, not a
-              finished one. */}
-          {r.live && (
-            <span className="badge live" title="Being streamed right now — the fights are still arriving">
-              Live
-            </span>
-          )}
+          {runBadges(r)}
         </span>
       ),
+      /* Grouped by zone the heading names it, so the name goes and the badges
+         stay: merged, guild and live are facts about THIS visit, and two runs
+         under one Emerald Halls heading can differ on all three. */
+      groupedRender: (r) => <span className="runzone">{runBadges(r)}</span>,
       sortValue: (r) => r.zone || '',
     },
     {
       /* When it ran. Centred — a time range is text, not a figure, so a
          right-justified header over it reads like a mistake. */
       key: 'time', label: 'Time', align: 'c',
-      render: (r) => fmt.timeRange(r.started_ts, r.ended_ts),
+      render: (r) => (r.ended_ts == null ? <Clock ts={r.started_ts} /> : (
+        <span className="timerange">
+          <Clock ts={r.started_ts} /><span className="dash">–</span><Clock ts={r.ended_ts} />
+        </span>
+      )),
       sortValue: (r) => r.started_ts,
     },
     {
@@ -399,7 +458,11 @@ export default function Home({ user }) {
       render: (r) => {
         const groups = groupsOf(r)
         if (r.mine && !r.public && groups.length === 0) {
-          return <span className="muted" title="Only you can see this raid">private</span>
+          /* A pill, because it is the same KIND of answer as the public pill
+             and the group pills it shares the column with — but never gold:
+             gold in this column means somebody else can see the raid, which is
+             the opposite of what this one says. */
+          return <span className="badge private" title="Only you can see this raid">private</span>
         }
         return (
           // the pills are controls, so the row's own navigation stops here
@@ -422,6 +485,52 @@ export default function Home({ user }) {
         )
       },
     },
+    /* Editing one raid without checking it first. The pencil is all a resting
+       row carries — a Hide and a Delete on every row would be sixty destructive
+       buttons on a page people mostly read — and pressing it opens the two
+       sideways, in the cell, where the row you are about to change is. Delete
+       arms in the same spot: the second click is the confirmation.
+       Only your own rows; a shared night has nothing here to grey out. */
+    ...((runs || []).some((r) => r.mine) ? [{
+      key: 'edit', label: '', sortable: false, align: 'r', menuLabel: 'Edit',
+      render: (r) => (r.mine ? (
+        <span className="rowedit" onClick={(ev) => ev.stopPropagation()}>
+          <button
+            className={`ebtn ${editRow === r.id ? 'on' : ''}`}
+            aria-expanded={editRow === r.id}
+            title={editRow === r.id ? 'Done' : 'Hide or delete this raid'}
+            onClick={() => {
+              setEditRow(editRow === r.id ? null : r.id)
+              setRowConfirm(null)
+            }}
+          >✎</button>
+          {editRow === r.id && (
+            <span className="rowedits">
+              <button
+                className={`ebtn ${r.hidden ? 'on' : ''}`} disabled={busy}
+                title={r.hidden
+                  ? 'Hidden. Click to show it again.'
+                  : "Hide this raid. It won't show when shared, and it won't count in stats."}
+                onClick={() => doHideRun(r)}
+              >{r.hidden ? '⊙' : '⊘'}</button>
+              {rowConfirm === r.id ? (
+                <>
+                  <button className="ebtn yes" disabled={busy}
+                          title={`Delete this raid (${r.encounter_count} fights)`}
+                          onClick={() => doDeleteRun(r)}>Yes</button>
+                  <button className="ebtn" title="Cancel"
+                          onClick={() => setRowConfirm(null)}>✕</button>
+                </>
+              ) : (
+                <button className="ebtn del" disabled={busy}
+                        title="Delete this raid. The log stays, and you can undo."
+                        onClick={() => setRowConfirm(r.id)}>🗑</button>
+              )}
+            </span>
+          )}
+        </span>
+      ) : null),
+    }] : []),
   ]
 
   /* The compare column takes real width, and the list would answer by growing

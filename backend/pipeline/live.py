@@ -25,6 +25,7 @@ from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
+from pipeline.redact import keep_line
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
                                 actor_rows, roll_encounter)
 
@@ -181,11 +182,21 @@ def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -
                 duplicates += 1
 
         if accepted:
+            # Only redacted lines are STORED; dedupe keys, the batch's time bounds
+            # and the parse below all run on what actually arrived. That keeps the
+            # rebuild-from-raw at session close identical to the live parse — chat
+            # produces no events either way (see pipeline/redact.py).
+            stored = [line for line in accepted if keep_line(line)]
+            dropped_private = len(accepted) - len(stored)
+            if dropped_private:
+                conn.execute(
+                    "UPDATE sessions SET redacted_lines = redacted_lines + ? WHERE id=?",
+                    (dropped_private, session_id))
             chunk_dir = RAW_DIR / f"session-{session_id}"
             chunk_dir.mkdir(parents=True, exist_ok=True)
             path = chunk_dir / f"{state.chunk_seq:06d}.txt.gz"
             with gzip.open(path, "wt", encoding="utf-8") as out:
-                out.write("\r\n".join(accepted) + "\r\n")
+                out.write("\r\n".join(stored) + "\r\n" if stored else "")
             first = split_prefix(accepted[0])
             last = split_prefix(accepted[-1])
             conn.execute(

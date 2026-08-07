@@ -475,6 +475,17 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
         # costs a raid its ground truth, never its parse.
         _sync_roster_classes(conn, session_id, character_id)
 
+        # Ingest already dropped the private channels; this drops the group/raid
+        # talk that happened outside any fight, which needs the fights to exist
+        # and so cannot happen any earlier.
+        from pipeline.redact import trim_to_fights
+        trimmed = trim_to_fights(conn, session_id)
+        if trimmed:
+            with conn:
+                conn.execute(
+                    "UPDATE sessions SET redacted_lines = redacted_lines + ? WHERE id=?",
+                    (trimmed, session_id))
+
         drop_raw_if_unwanted(conn, session_id)
     except Exception:
         conn.execute(

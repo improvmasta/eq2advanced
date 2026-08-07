@@ -16,7 +16,7 @@ RAW_DIR = DATA_DIR / "raw"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 26
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   raw_deleted_ts INTEGER,                  -- set when a retain_raw=0 log is dropped
   src_bytes INTEGER,                       -- uncompressed upload size (quotas)
   raw_bytes INTEGER,                       -- stored gzip size
+  redacted_lines INTEGER NOT NULL DEFAULT 0,  -- private chat dropped before storage
+                                          -- (pipeline/redact.py) — shown on Import
+                                          -- so the promise is a number, not a claim
   created_ts INTEGER NOT NULL,
   last_ingest_ts INTEGER
 );
@@ -147,7 +150,10 @@ CREATE TABLE IF NOT EXISTS encounters (
   success INTEGER,
   zone_run_id INTEGER,                    -- run membership (canonical rows only)
   dup_of INTEGER,                         -- canonical encounter id when duplicated
-  deleted_ts INTEGER                      -- hidden by hand (run_edits kind='delete')
+  deleted_ts INTEGER,                     -- dropped by hand (run_edits kind='delete')
+  hidden_ts INTEGER                       -- hidden by hand (run_edits kind='hide'):
+                                          -- still the owner's to read, gone for
+                                          -- everyone else and out of every total
 );
 CREATE INDEX IF NOT EXISTS idx_encounters ON encounters(session_id, started_ts);
 CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id);
@@ -157,7 +163,10 @@ CREATE TABLE IF NOT EXISTS zone_runs (
   zone TEXT,                              -- NULL = encounters before any zone line
   started_ts INTEGER NOT NULL,            -- first canonical encounter start
   ended_ts INTEGER NOT NULL,              -- last canonical encounter end
-  encounter_count INTEGER NOT NULL DEFAULT 0,  -- canonical (non-dup) only
+  encounter_count INTEGER NOT NULL DEFAULT 0,  -- canonical (non-dup), VISIBLE only
+                                          -- 0 with hidden_count > 0 = the whole
+                                          -- run is hidden (see groups.py)
+  hidden_count INTEGER NOT NULL DEFAULT 0,     -- canonical fights hidden by hand
   named_count INTEGER NOT NULL DEFAULT 0,
   success_count INTEGER NOT NULL DEFAULT 0,
   combat_s INTEGER NOT NULL DEFAULT 0,
@@ -171,7 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_zone_runs_char ON zone_runs(character_id, started
 CREATE TABLE IF NOT EXISTS run_edits (
   character_id INTEGER NOT NULL REFERENCES characters(id),
   fp TEXT NOT NULL,          -- '<started_ts>|<zone>|<name>' of the encounter
-  kind TEXT NOT NULL,        -- delete | break (start a run here) | join (don't)
+  kind TEXT NOT NULL,        -- delete | hide | break (start a run here) | join (don't)
   created_ts INTEGER NOT NULL,
   PRIMARY KEY (character_id, fp, kind)
 );
@@ -497,6 +506,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
   detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,                     -- bug|suggestion
+  body TEXT NOT NULL,
+  page TEXT,                              -- SPA path it was filed from
+  status TEXT NOT NULL DEFAULT 'open',    -- open|planned|closed
+  created_ts INTEGER NOT NULL,
+  updated_ts INTEGER                      -- last status change
+);
+CREATE INDEX IF NOT EXISTS idx_feedback ON feedback(status, created_ts DESC);
 """
 
 
@@ -728,6 +748,9 @@ def init_db() -> None:
         for col in ("raw_deleted_ts", "src_bytes", "raw_bytes"):
             if col not in cols:
                 conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER")
+        if "redacted_lines" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN "
+                         "redacted_lines INTEGER NOT NULL DEFAULT 0")
         enc_cols = {r[1] for r in conn.execute("PRAGMA table_info(encounters)")}
         if "zone_run_id" not in enc_cols:
             conn.execute("ALTER TABLE encounters ADD COLUMN zone_run_id INTEGER")
@@ -735,8 +758,16 @@ def init_db() -> None:
             conn.execute("ALTER TABLE encounters ADD COLUMN dup_of INTEGER")
         if "deleted_ts" not in enc_cols:
             conn.execute("ALTER TABLE encounters ADD COLUMN deleted_ts INTEGER")
+        if "hidden_ts" not in enc_cols:
+            conn.execute("ALTER TABLE encounters ADD COLUMN hidden_ts INTEGER")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_encounters_run ON encounters(zone_run_id)")
+        # hidden_count starts at 0 on every existing row, which is the truth
+        # (there are no `hide` edits yet); the startup relink recomputes it
+        run_cols = {r[1] for r in conn.execute("PRAGMA table_info(zone_runs)")}
+        if "hidden_count" not in run_cols:
+            conn.execute("ALTER TABLE zone_runs ADD COLUMN "
+                         "hidden_count INTEGER NOT NULL DEFAULT 0")
         actor_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(encounter_actor_stats)")}
         if "save_count" not in actor_cols:
@@ -894,6 +925,9 @@ def init_db() -> None:
         # UPLOADER's character's Census guild — never the run's majority-vote
         # tag, which is a derived property of a raid and not a decision anybody
         # made about their own logs.
+        # v25: `feedback` — bug reports and suggestions filed from the site,
+        # triaged on the admin console. New table, same reasoning as v21: an
+        # empty one reads exactly like the pre-v25 behaviour.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

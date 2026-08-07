@@ -4,9 +4,10 @@ import ActorPanel from '../components/ActorPanel.jsx'
 import AoePanel from '../components/AoePanel.jsx'
 import ClassPanel from '../components/ClassPanel.jsx'
 import ComparePanel from '../components/ComparePanel.jsx'
-import DeathRecap from '../components/DeathRecap.jsx'
+import DeathList from '../components/DeathList.jsx'
 import EncounterTree from '../components/EncounterTree.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
+import TankDeaths, { hasTankDeath } from '../components/TankDeaths.jsx'
 import ErrorBoundary from '../components/ErrorBoundary.jsx'
 import { ActorName } from '../components/Identity.jsx'
 import SelectionBar from '../components/SelectionBar.jsx'
@@ -27,20 +28,23 @@ const PET_KINDS = new Set(['own_pet', 'swarm_pet', 'named_pet'])
    that repeated four columns from each of the others was a stop on the way to
    the one you wanted. The metric block above the table carries what the
    Overview was actually read for, retuned per tab. */
+/* Labels are the parser's own shorthand — a raider reads DPS/HPS/DEF faster
+   than the words, and it is what the columns underneath are already called.
+   The KEYS are untouched: ?tab=damage bookmarks and PANEL_KIND still work. */
 const TABS = [
-  { key: 'damage', label: 'Damage' },
-  { key: 'healing', label: 'Healing' },
-  { key: 'defense', label: 'Defense' },
+  { key: 'damage', label: 'DPS' },
+  { key: 'healing', label: 'HPS' },
+  { key: 'defense', label: 'DEF' },
   /* Dying is not a defensive statistic — it is the outcome the defensive ones
      were describing, and it reads as a list of events (who, in which fight,
      and what the last few seconds looked like) rather than a column. It had
-     the bottom half of Defense; now it has the tab. */
-  { key: 'deaths', label: 'Deaths' },
-  { key: 'aoes', label: 'AoEs' },
-  { key: 'timeline', label: 'Timeline' },
+     the bottom half of DEF; now it has the tab. */
+  { key: 'deaths', label: 'DEATHS' },
+  { key: 'aoes', label: 'AOE TIMERS' },
+  { key: 'timeline', label: 'TIMELINE' },
   /* The stats only one class can answer — a troubador's buff uptime is not a
      column the other twenty-five classes can share. See ClassPanel.jsx. */
-  { key: 'class', label: 'Class' },
+  { key: 'class', label: 'CLASS REPORT' },
   /* Insights is HIDDEN, not removed — the panel, the coach endpoint and the
      `tab === 'insights'` render below are all intact, and putting the entry
      back here is the whole of turning it on again. An old ?tab=insights
@@ -55,6 +59,25 @@ const TABS = [
    with a per-ability view map: from Defense or Timeline the panel keeps
    whatever it is on, which is Damage the first time. */
 const PANEL_KIND = { damage: 'damage', healing: 'heal' }
+
+/* Two windows, ONE request. A spike death is over in a couple of seconds, and
+   twelve of them buried the moment that mattered under the whole pull — so the
+   tank report looks at 5s and the raid list at 3s.
+ 
+   The fetch asks for the wider of the two and the list narrows it in the
+   browser, which is exact rather than approximate: `/deaths` caps each event
+   list at DEATH_MAX_ENTRIES and keeps the TAIL, so the last 3s of a 5s window
+   is always complete even when the 5s list was truncated. Two requests for two
+   windows would have doubled the work to learn the same events twice. */
+const TANK_WINDOW_S = 5
+const RAID_WINDOW_S = 3
+
+/* Offered, not shown. Each parse tab leads with its own rate and carries the
+   other one folded away — the Columns menu is where you say you want it, and
+   SortableTable remembers that answer for every raid you open next. Module
+   scope so the array identity is stable: a fresh one per render would rebuild
+   the table's hidden-column memo every time. */
+const TAB_HIDDEN = { damage: ['hps'], healing: ['dps'] }
 
 const healedOf = (a) => (a.heals || 0) + (a.wards_absorbed || 0)
 
@@ -509,7 +532,14 @@ export default function ZoneRun({ user }) {
   const navigate = useNavigate()
   const [sharing, setSharing] = useState(false)
   const [run, setRun] = useState(null)
-  const [encounters, setEncounters] = useState(null)
+  /* Everything the API sent, hidden fights included — they are the owner's and
+     the rail lists them. `encounters` below is the parse: what the tables, the
+     selection and every number on the page are made of. */
+  const [allEncounters, setAllEncounters] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [editBusy, setEditBusy] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(false)   // whole-raid delete, armed
+  const [editErr, setEditErr] = useState(null)
   const [detail, setDetail] = useState(null)
   const [report, setReport] = useState(null)
   const [coach, setCoach] = useState(null)
@@ -541,13 +571,16 @@ export default function ZoneRun({ user }) {
   const [classData, setClassData] = useState(null)
   const [classErr, setClassErr] = useState(null)
   const [recaps, setRecaps] = useState(null)
-  const [recapIdx, setRecapIdx] = useState(null)
 
   useEffect(() => {
     api.zoneRun(id)
-      .then((d) => { setRun(d.zone_run); setEncounters(d.encounters) })
+      .then((d) => { setRun(d.zone_run); setAllEncounters(d.encounters) })
       .catch((e) => setError(e.message))
   }, [id])
+
+  const encounters = useMemo(
+    () => (allEncounters ? allEncounters.filter((e) => !e.hidden) : null),
+    [allEncounters])
 
   /* A streaming raid grows under the page — new fights land in the rail and the
      Live pill has to come DOWN when the plugin stops. Only this one request
@@ -557,7 +590,7 @@ export default function ZoneRun({ user }) {
     if (!run?.live) return
     const t = setInterval(() => {
       api.zoneRun(id)
-        .then((d) => { setRun(d.zone_run); setEncounters(d.encounters) })
+        .then((d) => { setRun(d.zone_run); setAllEncounters(d.encounters) })
         .catch(() => {})
     }, 5000)
     return () => clearInterval(t)
@@ -593,6 +626,44 @@ export default function ZoneRun({ user }) {
     for (const fid of ids) { if (on) next.add(fid); else next.delete(fid) }
     if (!next.size) return          // never leave the page with nothing counted
     selectFights(encounters.filter((e) => next.has(e.id)).map((e) => e.id))
+  }
+
+  /* ---------- edit mode ----------
+     One path for every edit: run it, then re-read the raid. Hiding a fight
+     changes the run's totals, its roster and the guild those names were voted
+     into — all derived on the server — so patching the row in the browser would
+     leave a stale night on screen under a fresh rail. */
+  const raidHidden = !!allEncounters?.length && encounters?.length === 0
+
+  const applyEdit = async (fn) => {
+    setEditBusy(true)
+    setEditErr(null)
+    try {
+      await fn()
+      const d = await api.zoneRun(id)
+      setRun(d.zone_run)
+      setAllEncounters(d.encounters)
+      setSel(null)     // the selection can name a fight that just went away
+      api.zoneRunReport(id).then(setReport).catch(() => setReport(null))
+    } catch (e) {
+      // deleting the last fight of a raid takes the raid with it
+      if (e.status === 404) { navigate('/'); return }
+      setEditErr(e.message)
+    }
+    setEditBusy(false)
+  }
+
+  const hideFights = (encs, hidden) => applyEdit(
+    () => api.hideEncounters(encs.map((e) => e.id), hidden))
+  const deleteFights = (encs) => applyEdit(
+    () => api.deleteEncounters(encs.map((e) => e.id)))
+  const deleteRaid = async () => {
+    setEditBusy(true)
+    setEditErr(null)
+    try {
+      await api.deleteZoneRun(id)
+      navigate('/')
+    } catch (e) { setEditErr(e.message); setEditBusy(false) }
   }
 
   /* Clicking a fight you have already opened repaints from the cache in the
@@ -672,13 +743,12 @@ export default function ZoneRun({ user }) {
   useEffect(() => {
     if (tab !== 'deaths' || !selIds?.length) return
     let gone = false
-    // clear both: the deaths request is slower than /agg, so keeping the old
+    // clear it: the deaths request is slower than /agg, so keeping the old
     // payload would render deaths from fights that are no longer selected
-    const hit = peek(url.deaths(selIds))
+    const hit = peek(url.deaths(selIds, TANK_WINDOW_S))
     setRecaps(hit)
-    setRecapIdx(null)
     if (hit) return
-    api.encountersDeaths(selIds)
+    api.encountersDeaths(selIds, TANK_WINDOW_S)
       .then((d) => { if (!gone) setRecaps(d) })
       .catch(() => { if (!gone) setRecaps(null) })
     return () => { gone = true }
@@ -723,10 +793,6 @@ export default function ZoneRun({ user }) {
   const raidDamage = players.reduce((s, a) => s + (a.damage || 0), 0)
   const raidHealed = players.reduce((s, a) => s + healedOf(a), 0)
   const raidTaken = players.reduce((s, a) => s + (a.damage_taken || 0), 0)
-
-  const visibleActors = useMemo(() => actors.filter((a) =>
-    (a.damage || 0) > 0 || (a.heals || 0) > 0 || (a.damage_taken || 0) > 0
-    || (a.wards_absorbed || 0) > 0 || (a.power_fed || 0) > 0), [actors])
 
   // checked-off combatants for comparison, order preserved in the URL
   const cmpList = useMemo(() => (cmpQ || '').split(',').filter(Boolean), [cmpQ])
@@ -847,28 +913,39 @@ export default function ZoneRun({ user }) {
   const enc = detail?.encounter
   const zoneLabel = run.zone || 'Unknown zone'
 
-  /* Who gets a row. A pet's damage is already credited to its owner (ACT does
-     the same), so a pet row can only ever carry what the pet TOOK — that is
-     why "Tragedy's unswerving hammer" turns up owning nothing but a
-     DmgTaken figure, and why it is off by default rather than gone: the
-     defensive number is real, it just isn't a raider. Mobs and environment
-     rows are the same kind of clutter behind their own switch. */
+  /* Who gets a row, in two independent parts: the SWITCHES say which kinds of
+     combatant may appear at all, and the tab says what a row has to carry to
+     earn its place. Both off — the default — and every tab is the raid, which
+     is what these tables were before the switches reached past Defense.
+
+     A mob is a combatant with a real parse: the boss's damage, what it healed
+     itself for, what the raid put into it. Clicking its row opens that parse
+     in the panel exactly like a raider's. What a mob does NOT get is a share
+     of the raid denominators or a rank color — those are questions about
+     raiders — so those cells simply stay blank on its row.
+
+     Pets are the quieter half. An owned pet's damage is already credited to
+     its owner (ACT does the same), so its row usually carries only what it
+     TOOK — that is why "Tragedy's unswerving hammer" turns up owning nothing
+     but a DmgTaken figure. A dumbfire nobody owns keeps its own damage. */
+  const kindAllowed = (a) => {
+    if (a.kind === 'player') return true
+    if (PET_KINDS.has(a.kind)) return showPets
+    return showNpcs
+  }
+  const rowsFor = (carries) =>
+    applyFilters(actors.filter((a) => kindAllowed(a) && carries(a)))
+
   const tabRows = {
-    damage: applyFilters(players.filter((a) => (a.damage || 0) > 0)),
-    healing: applyFilters(players.filter((a) =>
-      healedOf(a) > 0 || (a.cure_count || 0) > 0
-      || (a.power_fed || 0) > 0 || (a.rez_casts || 0) > 0)),
-    // pets and mobs took real damage, so their switches live here — the only
-    // tab where a row carrying nothing but DmgTaken is the point
-    defense: applyFilters(visibleActors.filter((a) => {
-      if (a.kind === 'player') return (a.damage_taken || 0) > 0 || (a.deaths || 0) > 0
-      if (PET_KINDS.has(a.kind)) return showPets && (a.damage_taken || 0) > 0
-      return showNpcs && (a.damage_taken || 0) > 0
-    })),
+    damage: rowsFor((a) => (a.damage || 0) > 0),
+    healing: rowsFor((a) => healedOf(a) > 0 || (a.cure_count || 0) > 0
+      || (a.power_fed || 0) > 0 || (a.rez_casts || 0) > 0),
+    defense: rowsFor((a) => (a.damage_taken || 0) > 0
+      || (a.kind === 'player' && (a.deaths || 0) > 0)),
     // who it happened to and who picked them back up — a raider who neither
-    // died nor cast a rez has nothing to say on this tab
-    deaths: applyFilters(players.filter((a) =>
-      (a.deaths || 0) > 0 || (a.rez_casts || 0) > 0)),
+    // died nor cast a rez has nothing to say on this tab, and neither does a
+    // mob: a death is only counted against a player or their pet
+    deaths: rowsFor((a) => (a.deaths || 0) > 0 || (a.rez_casts || 0) > 0),
   }
   const currentRows = tabRows[tab] || tabRows.damage
 
@@ -1053,6 +1130,11 @@ export default function ZoneRun({ user }) {
   const damageCols = [
     nameCol,
     { ...dpsCol, cellStyle: rankAgainst(dpsOf), cellTitle: rankTitleAgainst(dpsOf) },
+    /* The other tab's rate, hidden by default and one tick away: a shadowknight
+       who healed 400k while topping the parse is a fact about the DAMAGE tab,
+       and reading it meant switching tabs and finding the row again. Next to
+       the rate it belongs beside, so turning it on reads as one pair. */
+    hpsCol,
     damageCol,
     shareCol,
     {
@@ -1101,6 +1183,7 @@ export default function ZoneRun({ user }) {
   const healingCols = [
     nameCol,
     hpsCol,
+    dpsCol,                       // default-hidden, same bargain as HPS on Damage
     healedCol,
     ...healedBreakdown,
     ...(healedOpen ? [] : [
@@ -1309,20 +1392,22 @@ export default function ZoneRun({ user }) {
   return (
     <div className={`workspace ${panelOpen ? 'withpanel' : ''}${comparing && detail ? ' withcmp' : ''}`}>
       <EncounterTree
-        encounters={encounters}
+        /* the rail lists the hidden fights too — it is where their owner puts
+           them back — and counts only the ones the rest of the page counts */
+        encounters={allEncounters}
         sel={selIds && selIds.length === encounters.length ? 'all' : sel}
         onSelect={(key) => { setSel(key === 'all' ? null : key); setActorQ(null) }}
         selectedIds={selSet}
         onToggle={toggleFights}
-        onSelectMany={selectFights}
         sessionLabel={zoneLabel}
         titled
         /* When it was: the short date and the clock, with the long date on the
            tooltip rather than wrapping the rail. */
         sub={`${fmt.date(run.started_ts)} · ${fmt.timeRange(run.started_ts, run.ended_ts)}`}
-        /* Whose parse it is, and who they were in the room with — a line of
-           its own under the date. The guild belongs beside the person, not
-           down among the sharing badges where it read as one of them. */
+        /* Whose parse it is: the character, the guild the roster was voted
+           into, and whether the night is still arriving. All facts, all
+           outlined — the only pills in the head that are DECISIONS are the
+           filled ones in `Seen by` below. */
         who={(
           <>
             <span className="whoname" title="The character whose parse this is">
@@ -1341,29 +1426,20 @@ export default function ZoneRun({ user }) {
                 Live
               </span>
             )}
-            {report?.partial && <span className="partial">· partial (pruned)</span>}
-          </>
-        )}
-        subTitle={fmt.dateLong(run.started_ts)}
-        actions={(
-          <>
-            {/* whose raid this is, and who else can see it — a shared night is
-                somebody's own parse and reads as theirs. The character is
-                already named a line up, so the badge only has to say this is
-                someone else's. */}
+            {/* A shared night is somebody's own parse and reads as theirs; the
+                character is already named beside this, so the badge only has to
+                say the page is read-only. */}
             {run.mine === false && (
               <span className="badge" title="Someone else's raid — read only">shared</span>
             )}
-            {run.public && <span className="badge named" title="Readable without an account">public</span>}
-            {run.shared_with?.map((g) => (
-              <span key={g.group_id} className="badge">{g.name}</span>
-            ))}
+            {report?.partial && <span className="partial">· partial (pruned)</span>}
             {/* Everyone in a raid runs their own ACT, so the same night can be
                 here several times over. The page opens on yours if you have one
                 and on the site's pick otherwise (backend `raidmatch`); this is
                 how you read somebody else's — the fights, the numbers and the
                 vantage point are all theirs, so it is a different page, not a
-                filter on this one. */}
+                filter on this one. It belongs with the character's name because
+                that is the fact it changes. */}
             {run.alternates?.length > 0 && (
               <span className="parsepick" title="The same raid, parsed by someone else">
                 <select
@@ -1382,28 +1458,116 @@ export default function ZoneRun({ user }) {
                 </select>
               </span>
             )}
-            {/* Raid-level actions live with the raid's title, so they survive
-                an open drilldown instead of disappearing with the page head. */}
-            {run.mine && user && <button onClick={() => setSharing(true)}>＋ Share</button>}
-            {/* Anyone who can read a parse can put it beside another one, and
-                it is the one thing on this line that DOES something to the
-                page rather than describing it — so it sits at the far end,
-                away from the badges, and it dresses as a solid button instead
-                of the gold outline every "on" toggle in the app wears. */}
-            <Link className="btn solid endact" to={`/compare?c=${id}:${cmpSel}:raid`}
+          </>
+        )}
+        subTitle={fmt.dateLong(run.started_ts)}
+        /* Who this raid reaches — the owner's own decisions, so it is shown to
+           the owner only. A viewer is told nothing about who ELSE can read it
+           (that rule is `shares_for_runs`, owner-only, and this is its UI). */
+        seenBy={run.mine && user ? (
+          <>
+            {run.public && (
+              <span className="sharepill pub" title="Readable without an account">Public</span>
+            )}
+            {run.shared_with?.map((g) => (
+              <span key={g.group_id} className="sharepill">{g.name}</span>
+            ))}
+            {!run.public && !run.shared_with?.length && (
+              <span className="nobody">Nobody but you</span>
+            )}
+            {/* A toggle, not a one-way door: the same button closes what it
+                opened. And what it opens lands HERE, under the pills it edits —
+                it used to be a card at the top of the main column, which is a
+                different part of the screen from the one you clicked in and
+                often not even on it. */}
+            <button className={`addshare ${sharing ? 'on' : ''}`}
+                    aria-expanded={sharing}
+                    title={sharing ? 'Close' : 'Choose who can see this raid'}
+                    aria-label="Choose who can see this raid"
+                    onClick={() => setSharing(!sharing)}>{sharing ? '×' : '+'}</button>
+            {sharing && (
+              <div className="sharebox">
+                <ShareDialog
+                  runIds={[id]} isAdmin={user?.role === 'admin'}
+                  onClose={() => setSharing(false)}
+                  onChanged={() => api.zoneRun(id)
+                    .then((d) => setRun(d.zone_run)).catch(() => {})} />
+              </div>
+            )}
+          </>
+        ) : null}
+        actions={(
+          <>
+            {/* Compare dresses as a filled gold button everywhere it appears;
+                the default button is a gold OUTLINE, which is pixel for pixel
+                what every "on" toggle in the app wears. */}
+            <Link className="btn solid" to={`/compare?c=${id}:${cmpSel}:raid`}
                   title="Put this raid beside another parse">
               ⇄ Compare
             </Link>
+            {run.mine && (
+              <button
+                className="editbtn"
+                aria-pressed={false}
+                title="Hide or delete fights"
+                onClick={() => { setEditing(true); setConfirmDel(false) }}
+              >
+                ✎ Edit
+              </button>
+            )}
           </>
+        )}
+        editing={editing && run.mine}
+        onHide={hideFights}
+        onDelete={deleteFights}
+        /* The same section, different verbs — the whole raid's copy of what
+           every row below now offers for one fight. Delete asks in place. */
+        /* Editing, the row is ONE right-packed cluster unfolded out of the Edit
+           button, with Done last — in the spot Edit was. Compare is not in it:
+           four labelled buttons do not fit across a 300px rail, and the one
+           that fell off the end was Done, onto a second line at the far left,
+           which is the opposite of "the click that opened this closes it".
+           Compare is a click away and comes back with Done. */
+        editbar={(
+          <span className="editopts">
+            {confirmDel ? (
+              <>
+                <span className="asking">Delete?</span>
+                <button className="chip danger" disabled={editBusy} onClick={deleteRaid}>
+                  Yes, delete
+                </button>
+                <button className="chip" onClick={() => setConfirmDel(false)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={`chip ${raidHidden ? 'on' : ''}`} disabled={editBusy}
+                  title={raidHidden
+                    ? 'Hidden. Click to show it again.'
+                    : "Hide every fight in this raid. It won't show when shared, and it won't count in stats."}
+                  onClick={() => applyEdit(() => api.hideZoneRun(id, !raidHidden))}
+                >
+                  {raidHidden ? '⊙ Show' : '⊘ Hide'}
+                </button>
+                <button className="chip danger" disabled={editBusy}
+                        title="Delete this raid. The uploaded log stays."
+                        onClick={() => setConfirmDel(true)}>
+                  🗑 Delete
+                </button>
+                <button className="editbtn done" disabled={editBusy}
+                        aria-pressed
+                        title="Stop editing"
+                        onClick={() => setEditing(false)}>
+                  ✓ Done
+                </button>
+              </>
+            )}
+            {editErr && <span className="err">{editErr}</span>}
+          </span>
         )}
         hideZones
       />
       <div className={`wsmain ${stale && detail ? 'stale' : ''}`}>
-        {sharing && (
-          <ShareDialog runIds={[id]} isAdmin={user?.role === 'admin'}
-                       onClose={() => setSharing(false)}
-                       onChanged={() => api.zoneRun(id).then((d) => setRun(d.zone_run)).catch(() => {})} />
-        )}
         {/* The raid's headline numbers come before the tabs, not after: they
             describe the night itself, and the tabs choose which view of it you
             are reading. With a panel open neither one is here — the column is
@@ -1422,7 +1586,16 @@ export default function ZoneRun({ user }) {
           <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'damage' ? null : k)} />
         )}
         {detailErr && <p className="err">{detailErr}</p>}
-        {!detail && !detailErr && tab !== 'insights' && tab !== 'aoes' && (
+        {/* Every fight hidden is a page with nothing to count, and it must not
+            sit on "Loading…" forever pretending otherwise. Only its owner can
+            be here — for anyone else the raid does not exist. */}
+        {raidHidden && (
+          <p className="muted">
+            Every fight in this raid is hidden. Use <strong>Edit → Show raid</strong> to
+            bring it back.
+          </p>
+        )}
+        {!raidHidden && !detail && !detailErr && tab !== 'insights' && tab !== 'aoes' && (
           <p className="muted">Loading…</p>
         )}
         {stale && detail && <div className="stalebar" aria-live="polite">Updating…</div>}
@@ -1453,29 +1626,34 @@ export default function ZoneRun({ user }) {
                       </button>
                     ))}
                   </span>
+                  {/* Who is in the table, right beside who is filtered out of
+                      it — the role chips narrow the raid, these two decide
+                      whether anything but the raid is in it at all. On every
+                      parse tab, not just Defense, and off by default: a mob is
+                      a combatant with a parse worth reading (click its row),
+                      but the table opens as the raid. */}
+                  <label
+                    className="chip toggle"
+                    title="Show pet rows. An owned pet's damage is credited to its owner, so its row usually carries only what it took."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showPets}
+                      onChange={(e) => setShowPets(e.target.checked)}
+                    /> Pets
+                  </label>
+                  <label
+                    className="chip toggle"
+                    title="Show mob and environment rows. Click one to read its parse."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showNpcs}
+                      onChange={(e) => setShowNpcs(e.target.checked)}
+                    /> NPCs
+                  </label>
                   {(roleSet.size > 0 || q) && (
                     <button className="chip" onClick={() => { setRolesQ(null); setQ(null) }}>Reset</button>
-                  )}
-                  {tab === 'defense' && (
-                    <>
-                      <label
-                        className="chip toggle"
-                        title="Pet rows show damage taken; their damage is counted under the owner"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={showPets}
-                          onChange={(e) => setShowPets(e.target.checked)}
-                        /> Pets
-                      </label>
-                      <label className="chip toggle" title="Show mob and environment rows">
-                        <input
-                          type="checkbox"
-                          checked={showNpcs}
-                          onChange={(e) => setShowNpcs(e.target.checked)}
-                        /> NPCs
-                      </label>
-                    </>
                   )}
                 </div>
               )}
@@ -1485,6 +1663,7 @@ export default function ZoneRun({ user }) {
               /* layout is per tab, and the condensed picker beside an open
                  drilldown is not a layout anyone wants remembered */
               prefsKey={panelOpen ? undefined : `zonerun:${tab}`}
+              defaultHidden={TAB_HIDDEN[tab]}
               rows={currentRows}
               defaultSort={tabSort[tab] || tabSort.damage}
               rowKey={(a) => a.key}
@@ -1564,50 +1743,33 @@ export default function ZoneRun({ user }) {
           </div>
         )}
 
+        {/* Two questions, two columns. "How did the tank die" is answered by
+            one death in detail and "who died tonight" by all of them in a
+            list, and the list is what was eating the page's whole width.
+            Narrow when a drilldown is open — the main column is half a page
+            then, and two of these inside it is four columns of nothing. */}
         {detail && tab === 'deaths' && recaps?.deaths?.length > 0 && (
-          <div className="card">
-            <h2>Every death</h2>
-            <p className="note">Pick one for the {recaps.window_s}s before it.</p>
-            <div className="tablewrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th className="l">Fight</th><th>Time</th><th className="l">Player</th>
-                    <th>Damage taken</th><th>Healing</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {recaps.deaths.map((d, i) => (
-                    <tr key={i} className={`clickable ${i === recapIdx ? 'selected' : ''}`}
-                        onClick={() => setRecapIdx(i === recapIdx ? null : i)}>
-                      <td className="name l">{d.encounter_name || 'trash'}</td>
-                      <td>{fmt.time(d.ts)}</td>
-                      <td className="l">
-                        <ActorName actor={actorsByKey[d.key] || { name: d.name }} />
-                      </td>
-                      <td>{fmt.num(d.incoming_total)}</td>
-                      <td>{fmt.num(d.healing_total)}</td>
-                      <td><span className="chip">{i === recapIdx ? 'Hide' : 'Recap'}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <ErrorBoundary resetKey={`deaths:${sel}`}>
+            <div className={`deathcols${
+              hasTankDeath(recaps.deaths, actorsByKey) && !panelOpen ? ' two' : ''}`}>
+              <TankDeaths
+                key={`tanks:${sel}`}
+                deaths={recaps.deaths}
+                windowS={recaps.window_s}
+                actorsByKey={actorsByKey}
+              />
+              <DeathList
+                /* what is expanded is indexed into THIS list of deaths, so a
+                   new fight selection starts the list closed rather than
+                   leaving a recap open on whatever death now sits at that
+                   index */
+                key={`deaths:${sel}`}
+                deaths={recaps.deaths}
+                windowS={Math.min(RAID_WINDOW_S, recaps.window_s)}
+                prunedEncounters={recaps.pruned_encounters}
+                actorsByKey={actorsByKey}
+              />
             </div>
-            {recaps.pruned_encounters > 0 && (
-              <p className="note">
-                {recaps.pruned_encounters} fight(s) had their events pruned — those
-                deaths are counted above but have no recap.
-              </p>
-            )}
-          </div>
-        )}
-        {detail && tab === 'deaths' && recapIdx != null && recaps?.deaths?.[recapIdx] && (
-          <ErrorBoundary resetKey={`recap:${recapIdx}:${sel}`}>
-            <DeathRecap
-              death={recaps.deaths[recapIdx]}
-              windowS={recaps.window_s}
-              onClose={() => setRecapIdx(null)}
-            />
           </ErrorBoundary>
         )}
         {detail && tab === 'deaths' && !recaps?.deaths?.length && deaths.length > 0 && (

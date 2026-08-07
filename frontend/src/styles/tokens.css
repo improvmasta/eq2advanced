@@ -40,6 +40,10 @@
   --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.07), transparent 55%),
           radial-gradient(150% 120% at 50% 45%, transparent 50%, #060810b8);
 
+  /* menus and tooltips lift off the page — per theme, because a 40%-black drop
+     under a white menu is a smudge, not a lift */
+  --shadow-color: #00000066;
+
   --font-heading: "Cinzel", serif;
   --font-body: "Spectral", Georgia, serif;
   /* data font — tables, stat rails, every number. Sans reads far cleaner than
@@ -67,28 +71,61 @@
   color-scheme: dark;
 }
 
-/* ---- light theme ---- */
+/* ---- light theme ----
+
+   Not the dark theme with the lights turned up. Two things made the first
+   attempt look like mud, and both are about WARMTH:
+
+   1. The page was a cool blue-grey (#eceef3) and every accent on it is a warm
+      gold. Warm ink on cool paper reads as dirt — the gold loses its identity
+      and lands somewhere around olive. So the paper is warm now: a low-chroma
+      parchment that gold sits on NATIVELY. It is barely tinted (a couple of
+      points of chroma), which is enough — the eye judges the gold relative to
+      the ground it is on, not in isolation.
+   2. Gold was darkened to make it legible, and a darkened yellow IS olive.
+      Dark mode uses gold as a LIGHT accent on near-black, which is where its
+      luxury comes from; you cannot get that by flipping the lightness. So the
+      roles split here instead: `--gold-bright` (the loudest thing on a page —
+      headings, zone names, figures) is a deep bronze that reads as rich warm
+      INK, `--gold` (links, labels, filled controls) keeps real chroma at AA
+      contrast, and `--gold-dim` (rules, sparklines, borders) is the only one
+      allowed to be an actual light amber, because nothing has to be read off
+      it. Same hue family throughout (~38°), three jobs, one ramp.
+
+   Contrast on the parchment: --gold 4.6:1, --gold-bright 8.1:1, --gold-dim
+   3.2:1 (graphics only). Check those before retuning any of the three. */
 :root[data-theme="light"] {
-  --bg: #eceef3;
-  --surface: #ffffffdb;
-  --surface-raised: #f6f7faf0;
-  --border: #d2d6e0e0;
-  --row-line: #d2d6e066;
-  --row-hover: #e6e9f0;
-  --row-selected: #dde2ed;
-  --bar-track: #d2d6e080;
-  --text: #1b1e28;
-  --text-muted: #5f6474;
+  --bg: #f2efe8;
+  --surface: #fffefbe8;
+  --surface-raised: #f8f5eef2;
+  --border: #ddd6c8;
+  --row-line: #ddd6c880;
+  --row-hover: #f1ece0;
+  --row-selected: #eae3d2;
+  --bar-track: #e4ddce90;
+  /* A parse is a page of small tabular numbers, so the secondary ink carries
+     more of it than anywhere else in the app — every column label, every kind
+     tag, every percentage beside a figure is --text-muted at 12.5px or under.
+     It sits at 7:1 rather than the 4.5 a muted grey usually gets away with;
+     below that the tables read washed out even though the figures themselves
+     are near-black. It is still four steps lighter than --text, which is what
+     keeps the hierarchy. */
+  --text: #1a1712;
+  --text-muted: #5f584a;
 
-  --gold: #8a6b33;
-  --gold-bright: #67501f;
-  --gold-dim: #b08d48;
-  --gold-rgb: 138, 107, 51;
-  --bar: #a4813a;
+  --gold: #8a6524;
+  --gold-bright: #5a4318;
+  --gold-dim: #a97e37;
+  --gold-rgb: 138, 101, 36;
+  --bar: #b08334;
 
-  --danger: #c33d3d;
-  --success: #257a43;
-  --warning: #9a6a00;
+  /* rank coloring mixes these INTO --text (stats.js rankColor), so the top and
+     bottom of a column are the lightest figures on the page — these are the
+     floor for a number somebody reads, not decoration. Deeper than the usual
+     light-theme red/green for exactly that reason: 5.2:1 and 5.5:1. */
+  --danger: #b53434;
+  --success: #1b6e3c;
+  --warning: #8a5d00;
 
   --rarity-common: #71716f;
   --rarity-treasured: #1c6f9e;
@@ -100,7 +137,11 @@
   --fam-mage: #b02a26;
   --fam-scout: #8a6a10;
 
-  --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.08), transparent 55%),
-          radial-gradient(150% 120% at 50% 45%, transparent 60%, #d7dae390);
+  /* the vignette is warm and much lighter than dark mode's. A grey one over
+     parchment is what made the edges of the page look dingy — the glow was
+     dimming the paper instead of lighting the middle of it. */
+  --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.10), transparent 55%),
+          radial-gradient(150% 120% at 50% 45%, transparent 62%, #cec3a72e);
+  --shadow-color: #4a3c1e2e;
   color-scheme: light;
 }

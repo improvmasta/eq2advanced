@@ -35,10 +35,21 @@ def list_sessions(user=Depends(require_user)):
     rows = conn.execute(
         "SELECT s.id, s.source, s.status, s.error, s.started_ts, s.ended_ts, s.line_count, "
         "s.upload_name, s.created_ts, s.calibration, s.pinned, s.pruned, "
-        "s.src_bytes, s.raw_bytes, s.raw_deleted_ts, "
+        "s.src_bytes, s.raw_bytes, s.raw_deleted_ts, s.redacted_lines, "
         "c.name AS character_name, "
         "(SELECT COUNT(*) FROM encounters e WHERE e.session_id = s.id "
-        " AND e.deleted_ts IS NULL) AS encounter_count "
+        " AND e.deleted_ts IS NULL) AS encounter_count, "
+        # A live session has no filename; label it from its fights instead.
+        # Most-recent zone first — one plugin run can span a whole evening
+        # (same call _live_runs makes in zoneruns_api).
+        "CASE WHEN s.source='live' AND s.upload_name IS NULL THEN "
+        " (SELECT e2.zone FROM encounters e2 WHERE e2.session_id = s.id "
+        "  AND e2.deleted_ts IS NULL ORDER BY e2.started_ts DESC LIMIT 1) "
+        "END AS last_zone, "
+        "CASE WHEN s.source='live' AND s.upload_name IS NULL THEN "
+        " (SELECT COUNT(DISTINCT e2.zone) FROM encounters e2 "
+        "  WHERE e2.session_id = s.id AND e2.deleted_ts IS NULL) "
+        "END AS zone_count "
         "FROM sessions s JOIN characters c ON c.id = s.character_id "
         f"{where} ORDER BY s.created_ts DESC",
         params).fetchall()

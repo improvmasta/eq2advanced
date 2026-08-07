@@ -278,6 +278,83 @@ content address). The cost is real and enforced, not hoped for: those sessions
 are skipped by `POST /sessions/{id}/reparse` and by the startup
 `_reparse_stale` sweep, so no future parser improvement can ever reach them.
 
+### What the server keeps of a log (`pipeline/redact.py`, schema v24)
+
+EverQuest II writes one log file for everything. `eq2log_<char>.txt` is not a
+combat log — it is the client log, and the combat is a minority of it. In the
+golden raid (275,822 lines) 1,132 lines are speech, and the split matters:
+519 of them are tells, guild chat, officer chat, the named channels
+(LFG/General/Auction/Crafting) and local `/say`. That, not anyone's DPS, is the
+sensitive content in an upload, and it used to be stored verbatim.
+
+**Application access control cannot solve this.** `groups.py` decides who may
+read a parse and does it well, but every check it makes is a check the person
+holding the disk can delete. The only durable answer to "who can read my chat"
+is that the chat is not there. So redaction happens at INGEST — the upload path
+filters the byte stream as it arrives (`StreamRedactor`, holding a partial line
+between reads) and the live path filters before writing each chunk. There is no
+window in which the unredacted file exists on the server, which also means there
+is nothing to go back and clean up, and no "we delete it after N days" to trust.
+
+**Why it cannot change a number.** `classify_body` returns None for every line
+starting `\aPC `/`\aNPC ` and for `You say|tell` — chat produces no events. The
+redactor governs *exactly* that set and never inspects anything else, so a line
+the parser reads is a line redaction cannot touch. The two sets are the same
+objects: `redact.py` imports `CHAT_PREFIXES`/`CHAT_RE` from `classify` rather
+than restating them, because a copy that drifts is precisely how this would
+quietly start eating events. `test_parse_is_identical_with_and_without_chat`
+pins the invariant, and the 434-test golden parse is the backstop.
+
+**Allowlist, not denylist.** Inside the governed set a line is dropped unless it
+matches a retained channel (group, raid party, NPC dialogue). A denylist would
+fail open: a custom channel, or a chat format from a client patch, would be
+retained because nobody wrote a rule against it. Default-deny gets it wrong in
+the safe direction. The one carve-out is a governed line carrying no quoted
+message (`Ellea blesses Spades …` / `Bob Goes Into a Bloodlust!!.`): no typed
+text means nothing private, so it stays as fight flavor.
+
+Finding the boundary was empirical rather than assumed. Two things fell out of
+reading the real log that guessing would have missed: NPC speech is 320 lines of
+scripted boss dialogue that belongs to the encounter and has no privacy
+dimension at all, and `_CHAT_RE` matched `^You (?:say|tell) ` **with a space**,
+so `You say, "…"` — the logger's own local chat — slipped past the parser's own
+chat test. It classified to None anyway further down, so the fix to `\b` changed
+no output; it did decide whether eight lines of Lindsay's `/say` were governed.
+
+**`trim_to_fights` is a second pass, after the parse.** Group and raid chat
+survives ingest; what survives *this* is the part of it said about a fight
+(±`FIGHT_MARGIN_S`, 90s — pull calls land before the first swing and the
+post-mortem right after the wipe). It runs post-parse because it needs the
+encounter windows to exist. It takes the UNION of windows across every session
+sharing those bytes: an upload file is content-addressed and shared between
+people who were on the same raid, so trimming to one uploader's fights would cut
+chat out from under the others. No parsed session on those bytes means "don't
+trim", never "trim everything".
+
+**The content address stays the sha256 of the ORIGINAL bytes.** It is a hash,
+not a copy, and it is what makes two raiders' uploads of one night dedupe to a
+single file. Hashing the redacted output instead would still work but would
+couple the dedupe key to the redaction rules, so a rule change would fork every
+stored file. `src_bytes` likewise measures what was sent (it feeds the quota);
+`raw_bytes` measures what was stored.
+
+`sessions.redacted_lines` counts what went, and the Import page shows it per
+file. That is deliberate: it turns "we strip your chat" from a claim into a
+number the uploader can check against their own log.
+
+Logs stored before any of this existed are cleaned by
+`backend/tools/redact_existing.py` (one-time, `--dry-run` first, atomic rename
+per file, safe to re-run — a redacted file redacts to itself). Until it has run
+the Import page's copy is true of new logs and false of old ones.
+
+**What the Import page does NOT claim.** It says an admin account is not a key —
+`role='admin'` has no part in any visibility check, and an administrator opening
+an unshared raid gets the same 404 a stranger does. It stops there. It does not
+claim the operator cannot read the database, because that would be false, and a
+privacy promise that overstates itself is worth less than none. What limits the
+operator is how little is kept, which is the whole reason the filtering is at
+import rather than at display.
+
 ## Live ingest — the frozen ACT-DLL contract
 
 `GET /api/ingest/hello`, `POST /api/ingest/batch`, `POST /api/ingest/backfill/done`;
@@ -772,13 +849,240 @@ switch (`?wipes=0`) takes them out of every total while leaving them listed and
 dimmed, and the page head then says how many were left out. Selecting a wipe on
 purpose always shows it — the filter can never empty the page.
 
-**Pet rows** are off by default, and their switch lives on Defense with the
-rows it reveals. A pet's damage is credited to its
-owner (`statsroll.actor_key`, ACT does the same), so a pet actor row can only
-ever carry what the pet TOOK — `Tragedy's unswerving hammer` is a real paladin
-hammer pet with a real DmgTaken figure and nothing else, which reads as a
-parse fragment sitting among the raiders. The `Pets` switch brings the rows
-back; `NPCs` still governs mob/environment rows.
+**There is no Nameds switch** (removed 2026-08-06). The switches exist to take
+things OUT of the count, and nobody reads a raid night with the bosses removed
+— that one was there to be left on. `named` is still a KIND (`KIND_OF`, the row
+colouring, the attempt numbers); it just has no switch, which leaves Trash and
+Wipes, packed left rather than spread across the rail.
+
+**The head is three blocks, and each answers one question.** It carried four
+kinds of thing in one undifferentiated stack until 2026-08-06, and the failure
+was legible:
+`Skill Issue` (the guild Census voted the roster into) sat one line above
+`Skill Issue (Temp)` (a sharing group) as two pills of nearly the same shape,
+`＋ Share` was a verb in a row of nouns, and `Done`/`Compare` right-aligned at
+the bottom read as a page footer — so the `THIS RAID …` bar that Edit opened
+*underneath* them read as a new section rather than as the button's own effect.
+You had to already know where to look.
+
+| block | question | contents |
+|-------|----------|----------|
+| `.railhead` | what was this night? | zone (h1), date · time range, then one line of character + guild + Live + `shared` + parse picker with `N fights · N hidden` right-aligned on it |
+| `.railsec.seen` | who can see it? | `SHARING` + filled `.sharepill`s (Public in blue, group names in gold) + a square gold `＋` |
+| `.railsec.acts` | what can I do to it? | Compare (left), Edit (right) — no label: a row of buttons says what it is, where pills alone do not |
+
+Two rules come out of that split. **A pill's fill says what kind of claim it
+is**: outlined is a fact somebody else established (the guild tag, Live,
+`shared`), filled gold is a decision the owner made (a share). That was already
+the app's rule everywhere else — `.badge.guild` is deliberately quiet *because*
+gold means a sharing group — and the head is where it was being broken. Inside
+that row `Public` is filled BLUE rather than shouted in caps: it is a different
+kind of reach (people you never named), and colour says so without making one
+pill louder than the rest. And
+**the count moved off the title's baseline**, where a long zone name wrapped to
+two lines and then got crowded by it.
+
+`Click to focus · tick to combine` is **gone**. It taught the two gestures once
+and then sat there forever; the space is worth more as the raid's own controls.
+
+**The share controls open where you clicked them.** `＋` is a square gold
+button at the end of the pills — square is what makes it read as a control
+rather than a pill that lost its label, so it is sized with `aspect-ratio` and
+centred with flex rather than by two hand-picked pixel values (they were 26 ×
+24, which is exactly the bug you cannot name but can see). It is a toggle — the
+same button closes what it opened — and `ShareDialog` renders inside the
+`SHARING` section, under the pills it edits, not as a card at the top of
+`.wsmain` (a
+different part of the screen from the one you were looking at, and often not on
+it at all). It is capped at `42vh` with its own scroll, because the rail is a
+fixed-height column and somebody in ten groups must not push the fight list off
+the bottom of it.
+
+**Edit mode is a state of the rail, not a screen you go to.** `✎ Edit` sits at
+the RIGHT end of the `RAID` row with Compare holding the left, owner only.
+Pressing it replaces the row with one right-packed cluster (`.editopts`, a
+max-width reveal that degrades to a cross-fade) — `⊘ Hide`, `🗑 Delete`,
+`✓ Done` — with Done in the spot Edit was, so the button that opened the
+options is the button that closes them. The options grow leftward into the gap
+because there is nothing to the right of Done in a 300px rail.
+
+**Compare is not in the edit row, and `.editopts` is `nowrap`.** Both are the
+same lesson. Four labelled buttons do not fit across this rail; the first
+attempt kept Compare and let the row wrap, and what fell off the end was Done,
+onto a second line at the far left — which is exactly the button-hunting this
+layout exists to stop. So the cluster carries only what editing needs, the
+labels lose the redundant "raid" (the section is called `RAID`), and if it ever
+has to break it breaks as a UNIT with Done still attached. Compare comes back
+with Done.
+
+Edit also tints the whole column (`.rail.editing`, plus an amber rule drawn
+*over* the children in a `::before` — the tint is deliberately faint, so an
+inset shadow would sit under every panel background) and puts the same two
+verbs on every row below. Nothing else moves: the fights, their checkboxes and
+the drilldown all keep working, because deciding a pull does not belong is
+something you do WHILE reading the parse that told you so.
+
+**The row buttons are drawn at full strength**, not as ghosts that appear on
+hover. Edit mode is a state you deliberately entered, and its whole point is
+the controls it added; a mode that can delete a night must not make you hunt
+for them. (The raid LIST is the other way round — see below — because there
+the pencil is on sixty rows of a page people mostly read.)
+
+**Delete confirms in place.** Clicking `🗑` turns that row's controls into
+`Yes` / `✕`, and only that row's — one `confirm` key in `EncounterTree`, one
+`rowConfirm` id on the raid list, so a second row can never be armed at the
+same time. A dialog would have covered the fight it was asking about; the
+second click keeps it under the cursor. Hiding needs no confirmation because
+hiding is the undo.
+
+**A hidden fight stays in the rail, struck through, with the switch that puts
+it back** — this is the only place its owner can reach it, since it is out of
+every payload anyone else gets. It is out of everything the rail COUNTS,
+though: the head's fight count (which says `+N hidden` beside it), the kind
+switches, the group checkboxes, the footer's total, and the selection ZoneRun
+hands to `/encounters/agg`. `ZoneRun` keeps the raw payload in `allEncounters`
+and derives `encounters` (the parse) from it; the rail is the one component
+that sees both.
+
+**Pets and NPCs are two switches in the filter bar**, immediately right of the
+role chips, on every parse tab (Damage / Healing / Defense / Deaths) and off by
+default. Who may have a row and what a row must CARRY to earn one are separate
+questions: `kindAllowed` answers the first, the per-tab predicate the second
+(`ZoneRun.jsx`, `rowsFor`). Both off, every tab is the raid.
+
+They lived on Defense alone until 2026-08-06, on the reasoning that a
+non-raider row carries nothing but DmgTaken. That is true of an OWNED pet and
+false of a mob. A pet's damage is credited to its owner (`statsroll.actor_key`,
+ACT does the same), so `Tragedy's unswerving hammer` really is a paladin hammer
+pet with a DmgTaken figure and nothing else — but a mob keeps its own credit
+(`_OWN_ROW_KINDS`), so the boss row has real damage, real DPS, its self-heals
+and everything the raid put into it. Hiding it from the Damage tab hid a parse
+people ask for, and clicking the row opens that parse in the panel like any
+raider's (mob rows have no checkbox, so it is a plain drilldown — see the
+compare-checkbox section).
+
+What a mob does NOT get is a share of a raid denominator (`Dmg %` is a share of
+RAID damage) or a rank color (`rankPool` returns null for anything that is not
+a player, so a boss can never sit in a tank's peer group). Those cells stay
+blank on its row rather than answering a question nobody asked. Deaths are the
+one tab where the NPC switch adds nothing and that is honest, not a bug: a
+death is credited to a player or their pet only (`rollup` is NULL for a mob),
+which is the ACT residual already recorded at the end of CLAUDE.md.
+
+### The Deaths tab is two columns (`TankDeaths.jsx` + `DeathList.jsx`)
+
+Two different questions were sharing one full-width table. *How did the tank
+die* is answered by ONE death in detail; *who died tonight* is answered by all
+of them in a list. The list was eating the page's whole width to answer the
+second question badly and the first one not at all, so it now sits on the
+right of a grid with a tank report on its left (`.deathcols.two`, one column
+under 1150px or with a drilldown open).
+
+**The page decides the layout, not the grid.** `.two` is added only when
+`hasTankDeath` says there is a tank death to put in the left column — a first
+grid child that renders `null` would drop the death list into the narrow
+column and leave the wide one empty, so the question has to be answered before
+the grid is drawn, by the same predicate the component itself filters on.
+
+**The tank report is the two curves, at three resolutions.** A tank's death is
+a failure of what was coming in against what was going out to meet it, and the
+thing every raid argues about afterwards is whether the heals were there. So
+each tank death gets the same question answered three ways: a **fact line**
+(took, healed), a **ledger** of one row per second, and a **log** of every
+event. Tanks are `roleOf(actor) === 'tank'`, which is all six FIGHTERS
+including brawlers.
+
+Both tables lead with the WALL CLOCK (`fmt.clockS`, the same readout without
+the AM/PM the card already established), not with a `−5s` countdown: the rows
+are consecutive seconds of a real night and the log everyone cross-checks
+against is stamped the same way.
+
+**`Net` is the ledger's whole point** — healed minus took, per second, red when
+they lost ground. Took and Healed side by side are two columns the reader has
+to subtract in their head every row; Net is the answer to the only question
+being asked. Every second of the window renders whether or not anything landed
+in it, because a ledger that skipped its empty seconds read as a list of events
+rather than a countdown, and a two-second hole where nobody healed him — the
+thing that killed him — rendered as no row at all.
+
+**FIVE seconds for the tank, THREE for the raid list, ONE request.** A tank
+dies to a spike and the spike is over in two or three seconds; twelve seconds
+of context buried the moment under the rest of the pull. The fetch asks for the
+wider of the two (`TANK_WINDOW_S`) and `DeathList.clip` narrows to
+`RAID_WINDOW_S` in the browser, which is EXACT rather than approximate:
+`_window_slice` caps each list at `DEATH_MAX_ENTRIES` and keeps the TAIL, so
+the last 3s of a 5s window is complete even when the 5s list was truncated —
+which is why `clip` only carries the truncation flag over when nothing was
+actually cut. Two requests would have fetched the same events twice.
+
+**There are no tenths of a second in an EQ2 log.** Every line is stamped
+`(1785630623)[Sat Aug  1 20:30:23 2026]` — whole epoch seconds — so `events.ts`
+is an INTEGER and the per-second buckets are the log's own resolution rather
+than a resampling of something finer. Within one second, line order survives as
+`events.seq`, which is why each `/deaths` list is ordered `(ts, seq)` and the
+blow by blow can only claim ordering within a SIDE: the payload carries no
+`seq`, so a hit and a heal in the same second cannot be interleaved against
+each other. Nothing on this tab may print a tenth it cannot measure — the
+recap's old `0.0s` column was formatting precision it never had.
+
+**A class chip may abbreviate where the width is not there.** `classShort`
+(`lib/classes.js`) is the name a raider says out loud — SK, Necro, Wiz, Troub,
+Illy, Conj, Brig, Swash — and `ActorName`/`ClassChip` take a `short` prop that
+the tank picker and the death list pass. `Shadowknight` alone is wider than the
+name it captions in a 380px column. Only classes with real in-game shorthand
+are in the map; anything else keeps its full name rather than being truncated
+into something nobody says, and the chip's tooltip (`classTitle`) always spells
+it out in full either way.
+
+**No charts anywhere in this tab.** The recap's per-row bars are gone — they
+were a chart of a column of numbers printed directly beside them, and in a
+column that now shares the page they cost more width than the amounts they
+illustrated. Direction survives as the sign and the row color, which is all
+the bar encoded. The recap's four stat tiles became one `.factline` for the
+same reason: same numbers, a quarter of the height.
+
+### Every death, by fight and by MOMENT (`components/DeathList.jsx`)
+
+The Deaths tab's lower half was a flat table of every death in the selection,
+and it was wrong in three ways that all have the same cause — it rendered the
+API's list rather than the thing the list describes.
+
+**Fights are separated.** A night's deaths run together otherwise, and a raid
+that wiped twice on one named and lost a healer on trash reads as one
+undifferentiated column of names. Each fight gets a `grouphead` band carrying
+its name, when its first death landed and how many it had.
+
+**The clock runs to the second** (`fmt.timeS`). An EQ2 log stamps to the
+second and a wipe happens well inside one minute, so `9:41p` is exactly the
+resolution at which four deaths to one AoE stop looking like four unrelated
+events.
+
+**Deaths within `CLUSTER_S` (5s) of each other are one MOMENT.** A wipe used to
+spend twenty-four rows saying one thing. The moment row says `6 players`, opens
+on a twisty into the individual deaths, and is captioned with what killed them
+— `commonBlow` reads the LAST entry of each `incoming` list (ordered by
+`(ts, seq)`, and a truncated list keeps its tail, so the killing blow always
+survives the cap) and only speaks when the log agrees: one source and one
+ability gives `Cataclysmic Slam — Overking Ohrmzz`, one source and several
+abilities gives the mob and a count, and neither gives `N sources`. A moment
+where some deaths carry no incoming events at all is marked `*`, because the
+caption is then a claim about the others. Five seconds is half a cast bar: two
+deaths that far apart are one AoE landing, ten seconds apart are two separate
+problems and folding those together would hide the second.
+
+**`Took` and `Healed` name their window in the column head** (`.colsub`, "last
+12s"). They were `Damage taken` / `Healing` — true numbers over an interval the
+header never mentioned, which is not a number anyone can read.
+
+**The recap opens inside the row it belongs to.** It used to render as its own
+card at the foot of the page, which on a bad night put it under a thousand
+lines of list; `DeathRecap` grew an `inline` dress (no card, no ✕, a gold spine
+down the left) that the expanded row hosts in a full-width cell. The standalone
+card is unchanged for anything that opens a recap on its own.
+
+What is expanded is indexed into the CURRENT list of deaths, so `DeathList`
+carries `key={deaths:${sel}}` — a new fight selection starts it closed instead
+of leaving a recap open on whatever death has since moved into that index.
 
 ### Read caches
 
@@ -801,18 +1105,19 @@ replays every stored event (~1.5s on the 60-fight Emerald Halls night) and
   on screen dimmed (`.wsmain.stale`) rather than replacing the page with
   "Loading…".
 
-### Hand edits to the raid list (schema v8)
+### Hand edits to the raid list (schema v8, hiding v26)
 
 Segmentation is a guess, so the list is editable: delete a raid or a fight,
 merge runs the game logged as two visits, unmerge them again. The hard part is
 that a reparse DROPS AND RECREATES every encounter row — an edit keyed by
 encounter id would silently evaporate on the next backfill. So `run_edits`
 keys by **fingerprint** — `<started_ts>|<zone>|<name>`, the dedupe key minus
-`ended_ts`, which every duplicate copy of a fight shares — with three kinds:
+`ended_ts`, which every duplicate copy of a fight shares — with four kinds:
 
 | kind | meaning | written by |
 |------|---------|------------|
-| `delete` | hide this fight everywhere | `POST /api/encounters/delete`, `DELETE /api/zone-runs/{id}` |
+| `delete` | this fight is gone, for its owner too | `POST /api/encounters/delete`, `DELETE /api/zone-runs/{id}` |
+| `hide` | the owner's alone: nobody else's payload, nobody's totals | `POST /api/encounters/hide`, `POST /api/zone-runs/{id}/hide` |
 | `join` | never start a run here (merge) | `POST /api/zone-runs/merge` |
 | `break` | always start a run here (unmerge/split) | `POST /api/zone-runs/{id}/split` |
 
@@ -823,6 +1128,42 @@ consults breaks/joins at each boundary. `POST /api/encounters/restore` removes
 delete rows (the Undo on Home), `POST /api/zone-runs/{id}/unmerge` removes the
 joins inside one run, and the run list carries `merged` so the UI only offers
 Unmerge where there is something to undo.
+
+**Hide is not a soft delete.** Delete says the pull never happened; hide says it
+is not the raid's business — a wipe on the way out, a guild-bank pull, the hour
+after the raid broke up. Three consequences, and each one is a place the code
+has to say it:
+
+- **It still segments.** A hidden fight stays in the encounter stream
+  `_segment` reads. Dropping it would split a night in two at a forty-minute
+  gap that exists only because somebody hid the pull spanning it.
+- **It stops counting**, for the owner as much as for anyone else.
+  `encounter_count` is the VISIBLE fight count and `hidden_count` carries the
+  rest; `named_count`, `success_count` and `combat_s` are taken over the shown
+  fights, as are the roster and therefore the majority-vote guild tag. The run's
+  WINDOW too — a night with its last two pulls hidden must not still claim to
+  have run until midnight. `_spark` filters `hidden_ts` for the same reason its
+  denominator did, and `/zone-runs/{id}/report` excludes them outright.
+  **The exception is a run with nothing shown at all**, which keeps the whole
+  night's window and roster (`described = counted or members`). Those two fields
+  say what KIND of night it was, and `raider_count` is what partitions Raids
+  from Solo/Group in the list (`lib/raids.js`) — blanking it moved a hidden
+  24-man raid across a filter that is on by default, so the raid vanished off
+  its OWNER's list and the switch that un-hides it became unreachable. Hiding a
+  raid must never make it hard to un-hide.
+- **It is a visibility rule, and it lives beside the sharing one rather than
+  inside it.** `groups.VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS`;
+  keeping the two separate is what leaves that predicate the single auditable
+  statement of the sharing rule (see its four traps above). A run whose
+  `encounter_count` is 0 with `hidden_count > 0` is a raid hidden whole, and it
+  leaves every list, detail and report a non-owner can reach. Per FIGHT, the
+  choke point is `security.visible_encounters`: a hidden encounter is refused
+  to everyone but the owner, because "not in the payload we sent" is not an
+  access rule — the ids are sequential and a viewer can guess a neighbour's.
+
+Hiding is reversible from the same control that set it (`{"hidden": false}`),
+which is the whole reason it exists as a separate kind: un-hiding must never be
+able to resurrect something deleted.
 
 `DELETE /api/sessions/{id}` is the only thing that destroys data: derived rows,
 ingest bookkeeping, frozen reports, and the raw bytes (content-addressed, so
@@ -851,6 +1192,19 @@ fights deleted -> "this log has nothing left in it, delete it too?"
   above the table and not in a bar pinned to the bottom. A selection with
   nothing you own says "shared with you — read only" rather than showing an
   empty row of buttons.
+- **One raid is edited from its own row**, without checking anything first: a
+  pencil in the last column, on your rows only, opening Hide and Delete
+  SIDEWAYS beside it (`.rowedits`, a max-width reveal that degrades to a
+  cross-fade under `prefers-reduced-motion`). Sideways because a menu dropping
+  out of a table cell covers the raids underneath, and the row you are editing
+  is the line you are pointing at. Delete arms in place, exactly as in the
+  rail. The bulk versions on `.listtools` are unchanged — this is the same two
+  verbs at the scale people actually use them. A raid hidden whole wears a
+  `hidden` badge; nobody else's list can carry one, because for everybody else
+  the row is not there. The PENCIL is quiet until its row is hovered and what
+  it opens is not (`.rowedit > .ebtn` vs `.rowedits .ebtn` — a child selector,
+  deliberately): sixty lit pencils would be noise, but the controls of a row
+  already in edit mode are the point.
 - **Two comparisons**: `RaidCompare` (list-row numbers, opens beside the table
   in `.cmpcol`; the list drops Timeline/Combat/Raiders to make room) answers
   "which night was bigger" from what the list already knows; its "Compare
@@ -1055,7 +1409,9 @@ breakdown itself is one component, `BreakdownTable.jsx`, extracted from
 `ActorPanel` and shared by the drilldown, the raid page's `ComparePanel` and
 this page, so a parse looks identical everywhere it appears; comparison
 surfaces pass `defaultHidden` (Share, ToHit, Median, MinHit) and the
-`SortableTable` Columns menu brings those back. Tables sharing a `prefsKey`
+`SortableTable` Columns menu brings those back — see "A default-hidden column
+is a baseline" below for why that survives the reader touching the menu.
+Tables sharing a `prefsKey`
 sync layout changes live (an in-module listener set — localStorage's own
 event only fires cross-tab), which is what keeps side-by-side columns lined
 up while you rearrange them. One kind tab (Damage / Healing, `?k`) rules
@@ -1849,6 +2205,24 @@ because the waste is not happening yet.
 - **Decomposition** (`stats.decompose`): DPS split into activity × hit size ×
   crit × alive%, each against the best peer, naming the biggest gap — the
   difference between "you're 20% behind" and "you cast 30% less".
+- **A default-hidden column is a BASELINE, not a first guess**
+  (`SortableTable`, `localStorage` under `eq2adv:cols:<prefsKey>`). Stored
+  prefs are TWO lists — `hidden` (what the reader turned off) and `shown` (what
+  they turned back on) — and `defaultHidden` sits underneath both: hidden if
+  the caller hides it by default or the reader hid it, unless the reader asked
+  for it by name. One list could not express that. It REPLACED `defaultHidden`
+  wholesale, so the first time anyone touched the Columns menu on a comparison
+  table its whole starting layout evaporated, and any default-hidden column
+  added later turned itself on for everyone who had ever dragged a header —
+  the exact opposite of default-hidden. The menu's reset says **Reset to
+  defaults**, because that is what it does: order and visibility both.
+- **Each parse tab offers the OTHER tab's rate, folded away.** `HPS` is a
+  default-hidden column on Damage and `DPS` is one on Healing (`tabHidden` in
+  `ZoneRun.jsx`), each sitting immediately beside the rate it pairs with. A
+  shadowknight who healed 400k while topping the parse is a fact about the
+  damage tab, and reading it meant switching tabs and finding the row again.
+  The layout is per tab and per browser, keyed `zonerun:<tab>` — not per run —
+  so ticking it once is ticking it for every raid you open afterwards.
 
 ## ACT parity
 
