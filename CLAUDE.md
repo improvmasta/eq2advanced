@@ -28,7 +28,7 @@
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # 449 tests; golden = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # 534 tests; golden = /home/lindsay/bobby.txt
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=claude bash ship.sh "message"        # Ship log + commit; pushes on main
 ```
@@ -48,7 +48,8 @@ and `/home/lindsay/AGENTS.md` — don't duplicate them here.
 FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
-addressed) and `raw/` (live-ingest chunks). Schema is at **v26**; migrations in
+addressed), `raw/` (live-ingest chunks), `parseshots/` and `noteshots/`
+(re-encoded screenshots). Schema is at **v29**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
@@ -214,6 +215,70 @@ Every one has a section in `ARCHITECTURE.md` carrying the evidence.
   Falling back to the whole raid put four yardsticks in one column.
 - **Ground truth is an ACT XML export** (`Import/Export` → XML), one per fight
   — not screenshots.
+- **An imported screenshot is a CLAIM, and is kept out of everything that
+  aggregates** (`pipeline/actshot.py`, `imported_parses`, schema v27). It is
+  how the other half of a comparison arrives when all anybody has is an image
+  from Discord. It writes one row and creates no session, character, encounter
+  or zone run, so no rollup, ranking, class stat or raidmatch can reach it;
+  it is private to whoever imported it (no group predicate — `groups.py` keeps
+  the one visibility rule and does not get a weaker sibling); and the image is
+  kept as a RE-ENCODED copy plus a thumbnail (`PARSESHOTS_DIR`), never the
+  uploaded bytes, written only once the table has read and served by an
+  owner-checked endpoint rather than a static mount — some columns can't be
+  verified by arithmetic, and the picture is the only other evidence they have. Nothing about the table is assumed: the row ladder is
+  FITTED (rescaling makes the pitch fractional, so a fixed one walks off it
+  within twenty rows), the columns come from the header's separator ticks —
+  told from header lettering by variance down the band, not by darkness — and
+  the decimal mark is decided by ARITHMETIC, since `5.612.947` is five million
+  to a German client and 5.612 to an American one. **The FIGHT LENGTH is fitted
+  from the table too, never taken from the title bar**: `Damage / EncDPS` is the
+  same number on every row, so its mode is forty readings against the title's
+  one — and on ACT's `All` line the title is flatly wrong (a shot printing
+  `[00:12]` over a 654-second parse recomputed every EncDPS as damage/12 and
+  published the `All` row at 378,596 DPS against ACT's 6,946.73). The title is
+  used only when fewer than four rows agree, and a disagreement is noted on the
+  shot. That same redundancy is the audit: Damage, EncDPS, Average, Hits,
+  Swings and ToHit cross-check or recompute — `Hits <= Swings` is an invariant,
+  so a Swings cell that breaks it is rebuilt from ToHit rather than published as
+  a 1042.86% hit rate — while Median, MinHit, MaxHit and Crit% cannot. Those are
+  reported as read, and a cell that FAILS a check it was subject to is blanked
+  rather than published wrong. ACT prints EncDPS, Average, ToHit and AvgDelay
+  with two decimals ALWAYS, so a reading with no separator at all lost the mark
+  and not the digits (AvgDelay `461` is 4.61). There is deliberately no review
+  step (Lindsay's call): a confirm grid cannot make an unverifiable number true.
+- **The live meter is a VIEW, and writes nothing** (`pipeline/livemeter.py`).
+  The dashboard's in-flight parse is built from the open segment `_flush`
+  already computes, handed to SSE as a `partial`, and stored nowhere — no rows,
+  no entity resolution, no encounter. That is what keeps
+  `test_golden_equivalence` true, and it is why the fight's name is
+  `provisional_*` until it closes and arrives again as an `encounter` card. Its
+  arithmetic deliberately matches `roll_encounter` (self-damage excluded, DPS
+  over the fight's clock, the same overheal reconstruction) — a meter that
+  measured differently would disagree with itself thirty seconds later. Three
+  gates decide whether it is built at all: nobody watching (`mark_watched`),
+  `mode=backfill`, and log time far behind the clock (`LIVE_LAG_S`) — the last
+  is why `simulate_live.py` grew `--restamp`. Readers get an RCU pointer swap,
+  never a lock.
+- **Live AoE detection imports `aoes.py`'s constants rather than restating
+  them**, and filters on nothing else. Name grammar would drop the bosses worth
+  a countdown (live, `Venekor` reads as a raider), so the ≥5-raiders-in-a-second
+  anchor is the whole evidence; sourceless `is hit by` effects count, pooled
+  under `Unknown` exactly as the recorded tab pools them (bobby.txt's Stench of
+  Death is 17 targets on a 30s reported timer). Only casts inside the CURRENT
+  fight feed an observed period.
+- **A note is keyed by (user, zone, named), NEVER by encounter** (schema v28).
+  Encounter ids all change when a live session is rebuilt from raw, so a note
+  that identified itself by one would lose its subject overnight;
+  `encounter_id` is provenance and is never joined for identity. Trash files
+  under the zone, a named files under the boss, and the client decides which
+  because it is the thing that knows what is on screen. Private, with no group
+  predicate — same rule as an imported screenshot.
+- **The overlay token is a capability in a URL** (schema v29). A browser source
+  sends no cookies and EventSource cannot set a header, so it rides in the
+  path — which is exactly why it reaches the live meter and nothing else: no
+  session ids, no history, no account name. Revoked and never-existed answer
+  the same. The page renders before the app shell, and `transparent` means the
+  document paints nothing at all, because OBS composites it over the game.
 - **Census**: `crc=` silently returns nothing for comma OR-lists (`id=` accepts
   them), so `spells_by_crcs` is one request per crc. Tests never touch live
   Census — recorded fixtures in `tests/fixtures/census/`, and conftest sets
@@ -311,26 +376,85 @@ the Maestro** coverage (off its Precise Note proc — PotM logs nothing else),
 which carries the raid-wide "double-covered" column for RoK. See
 ARCHITECTURE.md → the Class tab.
 
+**The raid dashboard** (`/live`) is the second monitor during a raid: the
+night's fights in the rail on the left, the pull happening right now in the
+middle, notes and screenshots on the right. The meter is ACT-shaped — a
+class-coloured bar behind every row, because a number you have to compare
+against twenty-three others is a table and a bar you can read from three feet
+away is a meter — over a scrolling raid DPS/HPS chart, with AoE countdowns
+above it (ACT's reported timer where it knows one, the shortest gap that
+repeated this fight where it does not, and it says which). Clicking back
+through the rail draws the SAME meter for a finished pull; the depth is one
+click away on the raid page. It picks the raid up on its own, so it can be left
+open, and it says so when the night finalizes. **Notes** file against the zone
+on trash and the named on a pull, so a season of them reads as an outline of
+the zone; screenshots PASTE, because mid-raid nobody is naming a file.
+**Stream overlay**: /account mints a token URL for an OBS browser source
+showing just the meter — theme, which parses, how many rows.
+
 **Compare** (`/compare`, in the nav, signed-out too) puts any parses side by
 side — whole raids or single players from different nights, matched by name.
 A column is the ACTUAL parse, like two ACT windows lined up: a player column
 is their ability breakdown, a raid column is the zone page's parse list, and
 the table is the shared `BreakdownTable.jsx` (drilldown, raid-page compare
 panel and this page all render it — comparing looks the same everywhere).
-Share/ToHit are hidden by default; the Columns menu brings them back. The
-whole comparison lives in `?c=<runId>:<sel>:<subject>,...` (kind tab in `?k`)
-so a link IS the comparison. Compare chips on the raid page and the player
-drilldown seed the first
-column; the add card is one faceted live search — a box over
-Zone/Date/Guild/Player dropdowns, computed IN THE BROWSER from the visible list
-it already fetched (`?roster=1`), so each dropdown only offers values that leave
-results and no combination strands you on an empty list. The card renders before
-the columns, so it holds the left edge as parses stack up beside it. Typing
-`freeth` finds Freethinker Hideout nights and Freethinkers-guild nights alike.
-A raid click adds; a player click selects the night and fills the dropdowns,
-then a confirm strip picks who. `GET /api/players` stays but the picker no
-longer calls it. It absorbed the old `RaidParseCompare` modal — don't rebuild
-it. See ARCHITECTURE.md → The Compare page.
+Share/ToHit are hidden by default; the Columns menu brings them back. **A
+column is built like the drilldown and carries its OWN kind tabs** — the same
+`KIND_FILTERS`, drawn only for the kinds it has rows for (`availKinds`) —
+rather than one page-wide Damage|Healing pair ruling every column; the tab is
+component state, not part of the link. The whole comparison lives in
+`?c=<runId>:<sel>:<subject>,...` so a link IS the comparison. Compare chips on
+the raid page and the player drilldown seed the first column. **The picker is a
+BAND across the top of the page**, not a card beside the parses: one faceted
+live search — a magnifier-marked box over Zone/Named/Date/Guild/Player
+dropdowns, computed IN THE BROWSER from the visible list it already fetched
+(`?roster=1`, which also carries each night's named mobs and their encounter
+ids, hidden pulls excluded for everyone but the owner) — with the full width
+underneath for the parses. A dropdown reads its own name when it is off
+("Zone", not "Any zone"), and Guild/Player put yours at the top marked
+`(You)`. Each only offers values that leave results, so no combination strands
+you on an empty list; typing `freeth` finds Freethinker Hideout nights and
+Freethinkers-guild nights alike, and a mob name finds the nights that pulled
+it. Results appear only once you have asked, each ruled off from the next, and
+**one click adds the parse**, already scoped to the named mob (all its pulls)
+and to the player the search is about — the column's own fight and subject
+dropdowns, side by side, fix whatever that got wrong, and a ✕ at the end of its
+title line closes it. A row's own parts hang off it as chips on a vertical
+rule, each MARKED rather than tinted: a skull for a pull, a head for a person.
+**Every dropdown here is `Picker.jsx`, never `<select>`** — a native popup is
+OS chrome no rule of `base.css` reaches, an `<option>` cannot hold a class dot
+beside a name, and a closed select is as wide as its widest row. Its button is
+sized by the row it sits in, its panel by its content, and its rows carry an
+icon and a muted hint (a raider's class, a night's pull count). **The open
+panel renders into `document.body`**: every `.card` carries `backdrop-filter`,
+which is a containing block for `position: fixed` AND a stacking context, so a
+menu written inside a card is sealed into it and painted under the cards after
+it — the facet menus dropped down behind the parse columns. z-index cannot fix
+that; leaving the card is the fix, and it is the same trap that put the
+screenshot viewer under the next column.
+`GET /api/players` stays but the picker no longer calls it. It absorbed the old
+`RaidParseCompare` modal — don't rebuild it. **A screenshot is another way of
+naming a parse, and the slot where the next parse lands is the box that takes
+one**: `ShotDrop` is the last column (`.dropslot` — a + in a heavy dashed
+border, captioned *Search or add a screenshot to compare…*, over a dimmed real
+ACT window as its background), not a control in the search band and not a page
+of its own. Drop or paste (which is how an image
+leaves Discord) an ACT window, it becomes a column, and the slot slides one
+place right. An
+imported column is the SAME `BreakdownTable` as a real parse — that is the
+point of importing one — badged `imported`, tabless (an image is of one view),
+and NAMED who–where–which-fight (`shotTitle`: *Bobby — Halls of Fate — All*)
+rather than by ACT's title bar, which names the view and hands back a column
+called `All`. The screenshot rides in the column HEAD, right of that title
+block rather than under it — the two are each about three lines tall, and a
+band above the table is spent by every parse in the row — with the ✕ past the
+picture in the card's corner. Click it to enlarge: `ShotViewer.jsx` (shared
+with Import) opens FIT to the screen and offers `Full size` for reading a cell
+off it, closes on any click, and renders into `document.body` for the
+stacking-context reason above. It refuses rather than invents where it must: a
+title bar with no `[mm:ss]` says per-second numbers can't be worked out. Token grammar keeps three fields,
+`shot:<id>:parse`, so the CSV, ordering and remove logic never learn which
+kind a column is. See ARCHITECTURE.md → The Compare page.
 
 **Accounts** are username + password, no email anywhere; the only self-service
 recovery is a security question. Groups carry sharing: an invite by username, a
@@ -440,6 +564,7 @@ builds on this host with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
 - 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS, fix stale test count
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches); restore base.css styles lost to a git checkout

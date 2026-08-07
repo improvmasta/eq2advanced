@@ -9,7 +9,8 @@ from fastapi import FastAPI
 
 from db import get_db, init_db
 from routers import (admin_api, auth_api, census_api, characters_api, coach_api,
-                     encounters_api, feedback_api, groups_api, ingest_api, plugin_api,
+                     encounters_api, feedback_api, groups_api, ingest_api,
+                     notes_api, overlay_api, parseshots_api, plugin_api,
                      sessions_api, tokens_api, uploads_api, zoneruns_api)
 from spa import mount_spa
 
@@ -179,5 +180,8 @@ app.include_router(groups_api.router, prefix="/api")
 app.include_router(admin_api.router, prefix="/api")
 app.include_router(plugin_api.router, prefix="/api")
 app.include_router(feedback_api.router, prefix="/api")
+app.include_router(parseshots_api.router, prefix="/api")
+app.include_router(notes_api.router, prefix="/api")
+app.include_router(overlay_api.router, prefix="/api")
 
 mount_spa(app)

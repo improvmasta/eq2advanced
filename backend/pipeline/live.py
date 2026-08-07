@@ -24,6 +24,7 @@ from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
+from pipeline import livemeter
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.redact import keep_line
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
@@ -31,6 +32,9 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
 
 LIVE_IDLE_S = 30 * 60        # receiving session quiet this long -> close it (reaped, or on the next batch)
 CLOSE_S = GAP_S + TRAIL_GRACE_S  # nothing can join a segment once this much log time has passed
+WATCH_TTL_S = 30             # a dashboard asks again every stream poll; this outlives one gap
+LIVE_LAG_S = 120             # log time this far behind the clock is history, not a raid in progress
+SNAPSHOT_MIN_S = 1.0         # floor between rebuilds; the stream polls slower than this anyway
 
 
 class LiveState:
@@ -49,6 +53,20 @@ class LiveState:
         # named-pet knowledge at session start; no prescan/refine live (the
         # close-time rebuild through parse_session applies both to everything)
         self.pet_names: frozenset[str] = frozenset()
+        # --- the dashboard's in-flight view (pipeline/livemeter.py) ----------
+        # The open segment as `_flush` last saw it: the fight in progress, held
+        # as event REFERENCES rather than indices into `pending`, because the
+        # flush that computes it also renumbers that list.
+        self.open_events: list = []
+        self.open_start_ts: int | None = None
+        self.open_zone: str | None = None
+        self.roster: dict[str, str] = {}   # name_lower -> class, for the bars
+        # Replaced whole, never mutated: the SSE generators read this attribute
+        # from the event loop while a batch is being processed in a worker
+        # thread, and swapping one reference is the only thing they can observe
+        # atomically. Nobody who holds a snapshot may edit it.
+        self.snapshot: dict | None = None
+        self.watch_until = 0.0             # nobody watching -> nothing computed
 
 
 _states: dict[int, LiveState] = {}
@@ -71,6 +89,8 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
                 "ORDER BY ts DESC, seq DESC LIMIT 1", (session_id,)).fetchone()
             if zrow and zrow["extra"]:
                 state.zone = json.loads(zrow["extra"]).get("zone")
+            from census.roster import known_classes
+            state.roster = known_classes(conn)
             _states[session_id] = state
     return state
 
@@ -78,6 +98,25 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
 def drop_state(session_id: int) -> None:
     with _states_lock:
         _states.pop(session_id, None)
+
+
+def mark_watched(session_id: int, ttl_s: int = WATCH_TTL_S) -> None:
+    """A dashboard is open on this session — keep building snapshots for the
+    next `ttl_s` seconds. Snapshots cost a pass over the open fight per batch,
+    so a raid nobody is watching pays nothing."""
+    with _states_lock:
+        state = _states.get(session_id)
+    if state is not None:
+        state.watch_until = time.time() + ttl_s
+
+
+def live_snapshot(session_id: int) -> dict | None:
+    """The last in-flight view of this session, or None if there is no live
+    state (never started, or the process restarted). Treat the result as
+    FROZEN — it is the same dict the producer published."""
+    with _states_lock:
+        state = _states.get(session_id)
+    return state.snapshot if state is not None else None
 
 
 def open_live_session(conn, character_id: int, logger: str) -> int:
@@ -215,6 +254,8 @@ def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -
             # character row and this read `["id"]` off it
             rebuild_zone_runs(conn, char["id"])
 
+        _publish_snapshot(state, mode, now)
+
         conn.execute(
             "UPDATE sessions SET line_count = COALESCE(line_count,0) + ?, last_ingest_ts=? "
             "WHERE id=?", (len(accepted), now, session_id))
@@ -226,12 +267,54 @@ def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -
     return {"accepted": len(accepted), "duplicates": duplicates, "session_id": session_id}
 
 
+def _publish_snapshot(state: LiveState, mode: str, now: int) -> None:
+    """Recompute the dashboard's in-flight view, if anyone is looking.
+
+    Two gates, both about not showing a raid that is not happening. `mode` is
+    the plugin's own word for it: a backfill batch is an old log being caught
+    up, and a night from March must not flash on screen as a pull in progress.
+    `LIVE_LAG_S` catches the same thing from the other side — a live-mode
+    client replaying history, which is what `tools/simulate_live.py` does.
+
+    Nothing here writes to the database, and the result is reachable only
+    through `live_snapshot`. That is deliberate: the incremental rows have to
+    stay identical to what uploading the same file produces
+    (tests/test_ingest.py::test_golden_equivalence), so the fight in progress
+    gets a picture, never a record.
+    """
+    wall = time.time()
+    if wall >= state.watch_until:
+        state.snapshot = None
+        return
+    stale = mode != "live" or (state.last_line_ts is not None
+                               and now - state.last_line_ts > LIVE_LAG_S)
+    if stale:
+        state.snapshot = None
+        return
+    # The plugin sends every ~2s and the biggest measured fight (46k events,
+    # nearly 7 minutes) rebuilds in 65ms, so this never fires in a raid. It is
+    # here for a client sending far faster than that, where rebuilding per
+    # batch would be pure waste — the stream cannot show more than it polls.
+    if state.snapshot is not None and wall - state.snapshot["computed_ts"] < SNAPSHOT_MIN_S:
+        return
+    try:
+        state.snapshot = livemeter.snapshot_payload(
+            state.open_events, state.logger, state.open_zone,
+            state.open_start_ts, state.roster)
+    except Exception:
+        # a view is never worth failing an ingest batch over
+        logging.getLogger("live").exception(
+            "live snapshot failed for session %d", state.session_id)
+        state.snapshot = None
+
+
 def _flush(conn, state: LiveState, force: bool = False) -> bool:
     """Write out every event that can no longer change segment: all events in
     closed segments, plus segment-less events older than CLOSE_S. The still-hot
     tail stays in memory for the next batch. -> True when encounters landed."""
     events = state.pending
     if not events:
+        state.open_events, state.open_start_ts, state.open_zone = [], None, None
         return False
     latest = max(state.last_line_ts or 0, events[-1].ts)
     segs = segment_events(events, state.logger, initial_zone=state.zone)
@@ -241,6 +324,14 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
         n_closed -= 1
     closed, open_seg = segs[:n_closed], segs[n_closed] if n_closed < len(segs) else None
     open_first = open_seg.event_indices[0] if open_seg else None
+
+    # The fight in progress, for the dashboard (pipeline/livemeter.py). Kept as
+    # references because `pending` is rebuilt at the end of this function, and
+    # published here rather than recomputed later so the segmentation the view
+    # shows is the one the writer just made.
+    state.open_events = [events[i] for i in open_seg.event_indices] if open_seg else []
+    state.open_start_ts = open_seg.start_ts if open_seg else None
+    state.open_zone = open_seg.zone if open_seg else None
 
     enc_of_idx: dict[int, int] = {}          # event index -> encounter id
     for seg in closed:

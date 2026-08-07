@@ -7,6 +7,7 @@ import Import from './pages/Import.jsx'
 import ZoneRun from './pages/ZoneRun.jsx'
 import Compare from './pages/Compare.jsx'
 import Live from './pages/Live.jsx'
+import Overlay from './pages/Overlay.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
 import Characters from './pages/Characters.jsx'
@@ -67,6 +68,19 @@ export default function App() {
     const t = setInterval(check, live === 'on' || live === 'parsing' ? 5_000 : 30_000)
     return () => { dead = true; clearInterval(t) }
   }, [user, live])
+
+  /* The stream overlay renders BEFORE the shell, not inside it. Everything the
+     shell provides — nav, theme toggle, account icon, the container's own
+     background — is furniture on somebody's stream, and the page is authorized
+     by the token in its URL rather than by the session this provider carries.
+     It is a different surface that happens to share a bundle. */
+  if (location.pathname.startsWith('/overlay/')) {
+    return (
+      <Routes>
+        <Route path="/overlay/:token" element={<Overlay />} />
+      </Routes>
+    )
+  }
 
   return (
     <SessionContext.Provider value={user ?? null}>

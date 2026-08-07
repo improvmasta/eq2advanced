@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import OverlaySettings from '../components/OverlaySettings.jsx'
 import { api } from '../lib/api.js'
 
 export default function Account({ user, onSignedOut, onUserChange }) {
@@ -108,6 +109,8 @@ export default function Account({ user, onSignedOut, onUserChange }) {
           {sqMsg && <p className="status-ready" style={{ marginTop: 8 }}>{sqMsg}</p>}
           {sqError && <p className="err" style={{ marginTop: 8 }}>{sqError}</p>}
         </div>
+
+        <OverlaySettings />
       </div>
     </div>
   )

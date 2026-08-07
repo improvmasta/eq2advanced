@@ -48,6 +48,38 @@ def _spark(conn, run_ids: list[int]) -> tuple[dict[int, list[int]], dict[int, in
     return out, dmg
 
 
+def _named_for_runs(conn, run_ids: list[int],
+                    mine_ids: set[int]) -> dict[int, list[dict]]:
+    """The named mobs each night killed (or wiped to), with the encounter ids
+    that ARE that fight — one entry per name, because a raid pulls a named
+    twice often enough that two rows for `Vyk` would read as two bosses.
+
+    It rides `?roster=1` for the same reason the roster does: the Compare
+    picker facets in the browser, and "the night we did Vyk" is how people name
+    a raid to each other. A handful of names per run is small beside the roster
+    already in the payload.
+
+    Same hiding rule as the fight rail (`_run_encounters`): a hidden fight is
+    still its OWNER's, and nobody else's picker offers it."""
+    if not run_ids:
+        return {}
+    ph = ",".join("?" * len(run_ids))
+    out: dict[int, list[dict]] = {}
+    for r in conn.execute(
+            f"SELECT id, zone_run_id, name, hidden_ts FROM encounters "
+            f"WHERE zone_run_id IN ({ph}) AND is_named = 1 AND name IS NOT NULL "
+            f"ORDER BY started_ts", run_ids):
+        if r["hidden_ts"] is not None and r["zone_run_id"] not in mine_ids:
+            continue
+        rows = out.setdefault(r["zone_run_id"], [])
+        hit = next((n for n in rows if n["name"] == r["name"]), None)
+        if hit:
+            hit["ids"].append(r["id"])
+        else:
+            rows.append({"name": r["name"], "ids": [r["id"]]})
+    return out
+
+
 def _live_runs(conn, run_ids: list[int]) -> set[int]:
     """Run ids being STREAMED right now — at most one per receiving session.
 
@@ -82,11 +114,11 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
     """The raid list. `scope` is mine | shared | all (default). Signed out, the
     only runs that exist are the published ones.
 
-    `roster=1` sends each night's roster with it, parsed — the Compare page's
-    picker facets on names client-side rather than asking the server per
-    keystroke. Same visibility predicate, so it reveals nothing a viewer could
-    not already read fight by fight; parsed here so the client never learns how
-    the roster is stored."""
+    `roster=1` sends each night's roster AND its named mobs with it, parsed —
+    the Compare page's picker facets on names client-side rather than asking
+    the server per keystroke. Same visibility predicate, so it reveals nothing
+    a viewer could not already read fight by fight; parsed here so the client
+    never learns how the roster is stored."""
     conn = get_db()
     uid = user["id"] if user else None
     if scope not in ("mine", "shared", "all"):
@@ -144,10 +176,12 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
     # `primary` is the site's pick; whose parse a VIEWER opens is the browser's
     # decision, because your own always wins and the payload is shared.
     raidmatch.annotate(runs)
+    named = _named_for_runs(conn, run_ids, mine_ids) if roster else {}
     for r in runs:
         raw = r.pop("roster_json", None)
         if roster:
             r["roster"] = json.loads(raw) if raw else []
+            r["named"] = named.get(r["id"], [])
     return {"zone_runs": runs, "scope": scope, "signed_in": user is not None}
 
 

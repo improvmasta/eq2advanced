@@ -342,7 +342,54 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
   transition: border-color 0.15s, background 0.15s;
 }
 .dropzone.drag { border-color: var(--gold); background: rgba(var(--gold-rgb), 0.05); }
-input[type="text"], input[type="email"], input[type="password"], select {
+
+/* The screenshot drop box. Same dashed-target language as .dropzone, drawn
+   heavier: a 1px hairline read as a divider rather than as a target, and this
+   is a place you PUT something. The + carries most of that. */
+.shotdrop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border: 2px dashed var(--gold-dim); border-radius: var(--radius-md);
+  padding: 16px 12px; margin-top: 8px; text-align: center;
+  cursor: pointer; user-select: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.shotdrop .plus {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--gold-dim); color: var(--gold);
+  font-family: var(--font-data); font-size: 1.35rem; line-height: 1;
+}
+.shotdrop:hover .plus, .shotdrop.over .plus {
+  border-color: var(--gold); color: var(--gold-bright);
+}
+.shotdrop.compact { padding: 12px 10px; }
+.shotdrop p { margin: 0; font-size: var(--fs-xs); }
+.shotdrop:hover { border-color: var(--gold-dim); background: var(--row-hover); }
+.shotdrop:focus-visible { outline: 1px solid var(--gold-dim); }
+.shotdrop.over { border-color: var(--gold); background: rgba(var(--gold-rgb), 0.05); }
+/* Reading takes seconds, so the box stops looking clickable while it works. */
+.shotdrop.busy { cursor: progress; border-style: solid; border-color: var(--gold-dim); }
+
+/* The one thing on this site that has to MOVE. Reading a screenshot takes
+   several seconds of nothing visibly happening, and a still box with a
+   sentence on it is exactly what a finished box looks like — so the wait needs
+   a mark that is only true while the work is running. It stands where the +
+   stood, same 34px circle, so the box does not resize when the drop lands.
+
+   Reduced motion SLOWS it rather than stopping it: a progress indicator that
+   holds still is not a quieter animation, it is a lie about the state. */
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid var(--gold-dim);
+  border-top-color: var(--gold-bright);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}
+input[type="text"], input[type="email"], input[type="password"],
+input[type="search"], select {
   background: var(--surface-raised); color: var(--text); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 4px 8px;
   font-family: var(--font-data); font-size: var(--fs-data);
@@ -1394,61 +1441,270 @@ table.data.raidlist { font-size: var(--fs-base); }
    Each parse is its own box with its OWN horizontal scroll — a wide breakdown
    never drags its neighbor along — and the boxes split the viewport instead
    of forcing the page wider. max-content caps a box at its table's natural
-   width so a lone parse doesn't stretch sparse. */
-.comparelayout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+   width so a lone parse doesn't stretch sparse.
+
+   The parses get the full width: the picker is a BAND above them (.addbar),
+   not a column beside them, so nothing spends 300px of every row on a control
+   you have already used. */
 .parsecols {
   display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
-  flex: 1 1 560px; min-width: 0;
+  min-width: 0;
 }
 .parsecol { flex: 1 1 380px; min-width: 320px; max-width: max-content; }
+
+/* Where the next parse lands, drawn before it exists — and it is the drop box
+   itself (ShotDrop), so the slot that says "another one goes here" is the same
+   object that takes one. It is a column like the others, which is what walks
+   it right as parses fill in from the left. */
+.parsecol.dropslot {
+  /* beats the subgrid rule below on specificity, but the row span is still
+     its job: in the grid it has to fill a whole three-track band */
+  display: flex; flex-direction: column; justify-content: center; gap: 12px;
+  grid-row: span 3;
+  flex: 0 1 300px; min-width: 260px; max-width: 340px;
+  /* Its own padding, not the card's: a drop target is mostly air, and the
+     dashed edge has to stand clear of both the picture behind it and the two
+     things printed on it. */
+  padding: 26px 22px; min-height: 200px;
+  /* the same top margin every other card in the row carries — it is one of
+     the columns, so its top edge is level with the parse beside it, and with
+     no parses yet that margin is the air under the search band */
+  margin-top: 12px;
+  position: relative; overflow: hidden;
+}
+/* A real ACT window, dimmed almost to a texture, behind the empty slot: the
+   box says what goes in it by showing it. Faint enough that the caption stays
+   the only thing you READ, and it lifts on hover and while a file is over the
+   box, which is the slot answering the pointer. Decorative and inert
+   (aria-hidden by construction — it is a pseudo-element). */
+.parsecol.dropslot::before {
+  /* inset, never bleeding into the dashed edge: the border is the box's own
+     line and a texture running under it reads as a broken crop */
+  content: ''; position: absolute; inset: 14px; pointer-events: none;
+  border-radius: var(--radius-sm);
+  background: url(../assets/act-window.webp) center top / cover no-repeat;
+  opacity: 0.09; filter: grayscale(0.35) contrast(1.1);
+  transition: opacity 0.15s;
+}
+.parsecol.dropslot:hover::before { opacity: 0.16; }
+.parsecol.dropslot.over::before { opacity: 0.22; }
+/* the wash is behind, the words are in front */
+.parsecol.dropslot > * { position: relative; }
+/* On parchment the screenshot is itself a pale window, so it needs more
+   presence to register at all — and multiply keeps it from washing the card
+   out the way a plain overlay does. */
+:root[data-theme="light"] .parsecol.dropslot::before {
+  opacity: 0.16; mix-blend-mode: multiply;
+}
+:root[data-theme="light"] .parsecol.dropslot:hover::before { opacity: 0.26; }
+:root[data-theme="light"] .parsecol.dropslot.over::before { opacity: 0.34; }
+
+/* THE TABLES HAVE TO LINE UP. Comparing two parses means reading across them,
+   and the columns carry different amounts of chrome above the table — a run
+   column has a fight picker and a subject picker, a raid column has a stat
+   strip, an imported one has neither — so left to itself each table starts at
+   its own height and the comparison is done by scrolling one eye at a time.
+
+   Every column therefore renders the same three slots (head / meta / body),
+   and the row is a grid whose items span three shared tracks: subgrid makes
+   the three heights the MAX across the row, so the tables begin on one line.
+   Wrapping survives it — auto-placement starts a fresh band of three tracks
+   on each new line, and a wrapped column could never have aligned with the
+   line above anyway. Where subgrid is missing this whole block is skipped and
+   the flex rules above still lay the columns out, just unaligned. */
+@supports (grid-template-rows: subgrid) {
+  .parsecols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, max-content));
+    align-items: start;
+  }
+  .parsecol {
+    display: grid; grid-row: span 3; grid-template-rows: subgrid;
+    max-width: 100%; min-width: 0;
+  }
+}
+/* A column with nothing to put in its meta slot still renders the empty div,
+   so the shared track keeps its height and that column's table starts level
+   with the others. That whitespace is the alignment, not a gap to close. */
+.parsecol .pcbody { min-width: 0; }
+.parsecol .pcmeta .statstrip { margin-top: 10px; }
+.note.partial { margin-top: 8px; }
+
+/* ---------- the kept screenshot ---------- */
+
+.shotthumb {
+  display: block; padding: 0; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: none; cursor: pointer;
+  line-height: 0; overflow: hidden;
+}
+.shotthumb:hover { border-color: var(--gold-dim); }
+.shotthumb:focus-visible { outline: 1px solid var(--gold-dim); }
+.shotthumb img { width: 108px; height: auto; display: block; }
+
+.shotmodal {
+  position: fixed; inset: 0; z-index: 60; display: flex;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+.shotmodalbody {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px;
+  max-width: min(96vw, 1500px); max-height: 92vh;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.shotmodalhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Opens FIT to the screen: a 2200px capture dropped on a laptop otherwise
+   showed one corner of a table with no way to tell which corner. `Full size`
+   in the head bar switches to the stored pitch and scrolls, which is the mode
+   for actually reading a number off it — small antialiased digits scaled to a
+   viewport are precisely what cannot be checked. Two modes, because those are
+   two different jobs; the kept copy on disk is never shrunk either way. */
+/* Clicking the picture closes the viewer, so it says so. */
+.shotmodalscroll { overflow: auto; min-height: 0; cursor: zoom-out; }
+.shotmodalscroll img {
+  display: block; max-width: 100%; max-height: calc(92vh - 90px);
+  width: auto; height: auto; margin: 0 auto;
+}
+.shotmodalscroll.full img { max-width: none; max-height: none; margin: 0; }
+.shotmodalbody .note { margin: 0; }
 .parsecol .tablewrap { overflow-x: auto; }
 .parsecol .statstrip { margin-top: 10px; }
-.addcol { width: 300px; flex-shrink: 0; }
-/* arriving from a Compare button leaves one column — the next step is the card */
-.addcol.prominent { border-color: var(--gold-dim); }
-.addcol select, .addcol input { width: 100%; min-width: 0; margin-top: 8px; }
-.addcol .picklist { list-style: none; margin: 8px 0 0; padding: 0;
-  display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+/* An imported column's head: the title block on the left, the screenshot to
+   the right of it. Both are about three short lines tall, so side by side they
+   cost ONE band of the column where stacked they cost two — and vertical space
+   is the scarce thing on this page, because every band above the table is a
+   band both parses have to spend before their rows line up.
 
-/* One result = one full-width target, because the whole row is the raid. The
-   border is there when unselected too, so picking one moves nothing. */
+   The thumb stays a stamp: it is evidence you click, not a picture you read,
+   and the one that IS readable is a click away. */
+.pchead.pcheadshot { flex-direction: row; align-items: flex-start; gap: 10px; }
+.pcheadshot .pcheadtext {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+}
+.pcheadshot .shotthumb { flex-shrink: 0; }
+/* the corner of the card, past the picture — the far end of the head, which is
+   where every other column's ✕ also sits */
+.pcheadshot > .closex { flex-shrink: 0; margin-left: 0; }
+/* An imported column's title is three facts joined (who, where, which fight),
+   so it is set a step smaller than a name that is one word — it has to share
+   the line with a picture and still read as one heading rather than wrap into
+   a paragraph. */
+.pcheadshot .pctitle .panelname { font-size: 1rem; }
+/* Capped in height as well as width, cropped from the TOP LEFT when a window
+   is tall and narrow — that corner is the title bar and the first rows, which
+   is the part of a shot anybody recognizes. */
+.shotthumb.headshot img {
+  width: 132px; height: auto; max-height: 110px;
+  object-fit: cover; object-position: left top;
+}
+/* The add band: one card across the top of the page, every control on a line.
+   Horizontal because each of them is a narrowing of the SAME question — they
+   belong together on a row, not stacked down a rail — and because what they
+   produce wants the width underneath. */
+.addbar h2 { margin-top: 0; }
+.addbar .note { margin-bottom: 10px; }
+.addfacets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.addfacets .picker { flex: 0 1 auto; min-width: 0; }
+.addfacets .pickerbtn { max-width: 200px; }
+.addfacets .chip { flex-shrink: 0; }
+
+/* The magnifier lives INSIDE the field, so the field needs no label of its
+   own — it is the one control here whose name would only repeat its glyph. */
+/* Small on purpose: it is one control among six, not the head of the row, and
+   at full width it pushed every dropdown off to the right. */
+.searchbox { position: relative; display: flex; flex: 0 1 180px; min-width: 130px; }
+.searchbox svg {
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+}
+.searchbox input[type="search"] { width: 100%; margin: 0; padding-left: 27px; }
+
+/* Results only exist once something has been asked (see AddBar), so they can
+   afford to be a proper grid rather than a list squeezed into a rail. */
+.addresults {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 6px; margin-top: 12px;
+}
+.addresults .pickrow { align-self: start; }
+
+/* One result is the NIGHT — clicking it adds the whole raid — with the parts
+   of it that matched offered underneath as their own targets, so a search that
+   found a boss or a person can be clicked straight into that parse instead of
+   adding the raid and narrowing it afterwards. Clicking IS the add, so there
+   is no selected state to draw. */
+/* Each result is ruled off from the next. A dozen of these in a three-column
+   grid, every one of them two or three lines with a strip of chips under it,
+   ran together into a block of text where a row's own chips were as likely to
+   read as the next row's subtitle. The hairline says where a night ends. */
 .pickrow {
+  display: flex; flex-direction: column; gap: 3px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--row-line);
+}
+.pickmain {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
-  width: 100%; margin-top: 6px; padding: 5px 7px; text-align: left;
+  width: 100%; padding: 5px 7px; text-align: left;
   border: 1px solid transparent; border-radius: 4px;
   background: none; color: var(--text); cursor: pointer;
   font-family: var(--font-body); font-size: var(--fs-sm);
 }
-.pickrow:hover { background: var(--surface-raised); }
-.pickrow.on { border-color: var(--gold-dim); background: var(--surface-raised); }
-.pickrow .z { color: var(--gold-bright); }
-.pickrow .muted { flex-basis: 100%; font-size: var(--fs-label); }
-.pickrow .badge { margin-left: 0; }
-/* the second half of the player flow: which of them, then commit */
-.addcol .confirm {
-  display: flex; align-items: center; gap: 8px; margin-top: 10px;
-  padding-top: 10px; border-top: 1px solid var(--border);
+.pickmain:hover { background: var(--surface-raised); border-color: var(--gold-dim); }
+.pickmain .z { color: var(--gold-bright); }
+.pickmain .muted { flex-basis: 100%; font-size: var(--fs-label); }
+.pickmain .badge { margin-left: 0; }
+/* Indented under the night they belong to, and quieter than it: they are a way
+   INTO that row, not twelve more results. The vertical rule is the lineage —
+   it descends out of the row above and holds the chips under it, so a strip of
+   mob names cannot be read as a result of its own. */
+.pickchips {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 1px 0 0 13px; padding: 0 7px 2px 9px;
+  border-left: 1px solid var(--row-line);
 }
-.addcol .confirm select { margin-top: 0; }
-.addcol .confirm .chip { flex-shrink: 0; }
+.pickchips .chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  cursor: pointer; font-size: var(--fs-label);
+}
+.pickchips .chip:hover { border-color: var(--gold-dim); color: var(--gold-bright); }
+/* a person, not a pull — the one place the two kinds of target sit together,
+   which is why each carries a MARK and not just a tint (see MobIcon/WhoIcon) */
+.pickchips .chip.who { color: var(--gold); }
+.pickchips .chip .x { color: var(--text-muted); font-size: var(--fs-label); }
+.pickchips .chip:hover .x { color: inherit; }
+/* the glyph rides the chip's own color, at cap height, and never sets the row */
+.tico { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.85; }
 
 /* Each card names its parse and carries the fight and subject pickers under
-   it, so a dropdown belongs to the parse it changes rather than to a toolbar. */
+   it, so a dropdown belongs to the parse it changes rather than to a toolbar.
+   The head is built like the drilldown's: the name, who they are, the ✕ at
+   the end of that line, then the controls and the kind tabs — a compare
+   column IS the drilldown, so it reads like one. */
 .parsecol { position: relative; }
-.parsecol .tabletools { position: absolute; top: 12px; right: 14px; margin: 0; }
 .pchead {
-  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
-  padding-right: 116px;
+  display: flex; flex-direction: column; gap: 2px; align-items: stretch;
 }
-.pchead .pctitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pchead .cmphead { font-size: 1rem; }
+.pchead .pctitle {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.pchead .pctitle .panelname { font-size: 1.1rem; margin: 0; }
+.pchead .pctitle .closex { margin-left: auto; flex-shrink: 0; }
 .pchead .z {
   font-family: var(--font-body); font-size: var(--fs-sm); color: var(--gold-bright);
 }
 .pchead .muted { font-size: var(--fs-label); }
-.pchead select {
-  margin: 4px 0 0; max-width: 300px; min-width: 0; font-size: var(--fs-label);
-}
+/* Fights then subject, left to right: the fights narrow the parse, the
+   subject picks one out of it. They were stacked, which read as two unrelated
+   settings and cost a line of every column.
+
+   The subject is the SHORT one. A raider is one word and a fight is a mob name
+   plus a clock, so splitting the row evenly spent half a 380px column drawing
+   `Bobby` in the middle of a field — the fights control takes the slack and
+   the subject takes what it needs. Neither is set by its longest row any more:
+   the list is a panel of its own width (see Picker.jsx). */
+.pcpickers { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.pcpickers .picker.fights { flex: 1 1 150px; min-width: 0; }
+.pcpickers .picker.who { flex: 0 1 auto; min-width: 0; max-width: 60%; }
+.pchead .tabs { margin: 10px 0 0; }
+.parsecol .optionsbar { margin: 8px 0 0; }
 
 /* A night, then the zones inside it. The heading is a band rather than a
    bolder row so it never reads as data you can sort or select. */
@@ -1514,11 +1770,18 @@ a.btnlink:hover { background: rgba(var(--gold-rgb), 0.12); text-decoration: none
   gap: 12px; align-items: start;
 }
 .methods .method { margin-top: 0; height: 100%; }
+/* The row of ways in is a SECTION; what follows it is another one. A card's
+   ordinary 12px margin is a gap between siblings, not a break between
+   sections, which ran the imported-log table straight into the boxes above. */
+.methods { margin-bottom: 10px; }
 .method.soon { opacity: 0.82; }
 .methodhead { display: flex; align-items: baseline; gap: 8px; }
 .methodhead h2 { margin: 0; }
 .methodhead .badge { margin-left: auto; }
-.method .dropzone { margin-top: 4px; }
+/* Inset from the card that holds it, rather than filling it to the padding:
+   a dashed rectangle running parallel to a solid one a few pixels outside it
+   reads as a mistake. The same rule the Compare drop slot follows. */
+.method .dropzone { margin: 10px 6px 6px; padding: 22px 16px; }
 .fineprint {
   margin: 0 0 8px; padding-left: 18px;
   font-family: var(--font-data); font-size: var(--fs-xs); color: var(--text-muted);
@@ -1710,6 +1973,87 @@ table.data td.rank-low { color: var(--danger); }
   cursor: pointer; white-space: nowrap;
 }
 .colmenu-row:hover { color: var(--gold-bright); }
+
+/* ---------- Picker: a dropdown that belongs to this theme ---------- */
+
+/* Same bones as the menu above, because it is the same gesture. What a native
+   `<select>` could not do, and why this exists: its popup is OS chrome (the
+   one surface here that no rule of this stylesheet reaches), an `<option>` is
+   a string with no room for a class dot, and the closed control is as wide as
+   its widest row. So the BUTTON is sized by the row it sits in and truncates,
+   while the PANEL is sized by its content — the two halves that a select
+   welds together. See components/Picker.jsx. */
+.picker { position: relative; display: inline-flex; max-width: 100%; }
+.pickerbtn {
+  display: inline-flex; align-items: center; gap: 6px; width: 100%;
+  padding: 4px 7px; text-align: left;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-data); font-size: var(--fs-label);
+  cursor: pointer; min-width: 0;
+}
+.pickerbtn:hover:not(:disabled) { border-color: var(--gold-dim); color: var(--gold-bright); }
+.pickerbtn:disabled { opacity: 0.5; cursor: default; }
+.picker.open .pickerbtn { border-color: var(--gold-dim); color: var(--gold-bright); }
+.pickerbtn:focus-visible { outline: 1px solid var(--gold-dim); }
+/* the value takes the slack and gives it back as an ellipsis; the caret is
+   pinned to the right edge so the control's width never depends on the word */
+.pickerbtn .pv { flex: 0 1 auto; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+/* the hint gives up room three times as fast as the value: in a control too
+   narrow for `Bobby — Troubador`, the name is the part that has to survive */
+.pickerbtn .ph {
+  flex: 0 3 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--text-muted); font-size: var(--fs-label);
+}
+.pickerbtn .caret { margin-left: auto; padding-left: 2px; opacity: 0.6; flex-shrink: 0; }
+
+/* Fixed and in `document.body`, placed from the button's rect — see the head
+   of Picker.jsx for why it cannot live in the card that opened it. `left`,
+   `top`/`bottom` and the widths are written by the component; everything the
+   panel LOOKS like is here. */
+.pickermenu {
+  position: fixed; z-index: 55; width: max-content;
+  padding: 6px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  backdrop-filter: blur(var(--blur));
+  box-shadow: 0 8px 24px var(--shadow-color);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.pickerfilter[type="search"] {
+  width: 100%; margin: 0 0 5px; font-size: var(--fs-label); padding: 3px 7px;
+}
+/* capped by whichever is smaller: a sensible list, or the room actually left
+   between the button and the edge of the window (`--picker-cap`) */
+.pickerlist { max-height: min(300px, var(--picker-cap, 300px)); overflow-y: auto; }
+.pickerempty { margin: 4px 2px; font-size: var(--fs-label); }
+/* An optgroup, and it is a LABEL rather than a row: nothing here is clickable
+   that isn't an option. */
+.pickergroup {
+  padding: 6px 4px 2px; font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-top: 1px solid var(--row-line); margin-top: 3px;
+}
+.pickerslot:first-child .pickergroup { border-top: 0; margin-top: 0; padding-top: 2px; }
+.pickeropt {
+  display: flex; align-items: center; gap: 7px; padding: 4px 6px;
+  border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap;
+}
+/* Hover and keyboard are ONE highlight — a menu with two of them is a menu
+   where the arrow keys and the mouse disagree about where you are. */
+.pickeropt.active { background: var(--row-hover); color: var(--gold-bright); }
+.pickeropt.on { color: var(--gold-bright); }
+.pickeropt.on .pv { font-weight: 600; }
+.pickeropt .pv { overflow: hidden; text-overflow: ellipsis; }
+.pickeropt .ph { margin-left: auto; padding-left: 10px; color: var(--text-muted);
+  font-size: var(--fs-label); }
+.pickeropt.active .ph { color: var(--text); }
+/* The class dot from the chips, on its own: decorative, and never the only
+   thing saying which class a row is — the word is right there in the hint. */
+.cdot {
+  width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  background: var(--border);
+}
 
 table.data th.draggable { cursor: grab; }
 table.data th.dragging { opacity: 0.45; }
@@ -2321,6 +2665,11 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
 .manage table.data.slim { max-width: 640px; }
 .manage table.data.mid { max-width: 720px; }
 .manage .card + .card { margin-top: 12px; }
+/* ...but a card BESIDE another one is not a card under it. That sibling rule
+   outranks `.methods .method { margin-top: 0 }` on source order alone, which
+   stepped Log files down a notch from ACT plugin — two boxes that are
+   alternatives, drawn as if one followed the other. */
+.manage .methods .card + .card { margin-top: 0; }
 
 /* an alert is a person and an age, not just a session id */
 .alertrow {
@@ -2522,3 +2871,228 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .rulerow > label { width: auto; text-align: left; }
   .rulerow.acts > .btn { margin-left: 0; }
 }
+
+/* ---------- the raid dashboard (/live) ---------- */
+
+/* Three columns, because the page answers three questions at once: what the
+   night has been (the rail), what is happening (the meter), and what is worth
+   writing down (the notes). It is meant to be left open on a second monitor,
+   so it uses the full width rather than the reading measure the parse pages
+   keep — nobody is reading prose here. */
+.dashgrid {
+  display: grid; grid-template-columns: 292px minmax(0, 1fr) 340px;
+  gap: 14px; align-items: start; margin-top: 14px;
+}
+.dashgrid.idle { grid-template-columns: minmax(0, 1fr) 340px; }
+.dashrail { position: sticky; top: 12px; display: grid; gap: 8px; }
+.dashmain { min-width: 0; }
+.dashmain > :first-child { margin-top: 0; }
+.dashside { min-width: 0; position: sticky; top: 12px; }
+
+/* Back to now. It sits above the rail rather than inside it because it is not
+   one of the night's fights — it is the way out of them. */
+.liveswitch {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 11px; text-align: left;
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.liveswitch.on { border-color: var(--gold); color: var(--gold-bright); }
+.liveswitch em {
+  margin-left: auto; font-style: normal; font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+.dashbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 10px; font-size: var(--fs-label);
+}
+
+/* The live dot: the one moving thing on the page, and it means exactly one
+   thing — data is arriving. */
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-muted); flex: none;
+}
+.dot.on { background: var(--success); animation: livepulse 2s ease-in-out infinite; }
+@keyframes livepulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.35); }
+  50% { opacity: 0.65; box-shadow: 0 0 0 5px rgba(74, 222, 128, 0); }
+}
+
+/* ---- the meter ---- */
+
+.livemeter {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); backdrop-filter: blur(var(--blur));
+  overflow: hidden;
+}
+.livemeter.stale { opacity: 0.72; }
+.livemeter.idle { padding: 22px 14px; text-align: center; }
+
+/* The headline sits ON the chart: the shape of the pull is context for the
+   number, not a second thing to look at. */
+.liveheadline { position: relative; padding: 12px 14px 10px; }
+.livechart { position: absolute; inset: auto 0 0 0; height: 92px; pointer-events: none; }
+.livechart svg { display: block; width: 100%; }
+.livearea { fill: color-mix(in oklab, var(--gold) 12%, transparent); }
+.liveline { stroke: color-mix(in oklab, var(--gold) 45%, transparent); stroke-width: 1.5; }
+.livechart.heal .livearea { fill: color-mix(in oklab, var(--fam-priest) 14%, transparent); }
+.livechart.heal .liveline { stroke: color-mix(in oklab, var(--fam-priest) 55%, transparent); }
+.livechart .peak {
+  position: absolute; right: 8px; bottom: 4px;
+  font-family: var(--font-data); font-size: var(--fs-label); color: var(--text-muted);
+}
+.lhtext { position: relative; }
+.lhname { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lhname h2 { margin: 0; font-size: var(--fs-h2); color: var(--gold-bright); }
+.lhname .zone { font-size: var(--fs-label); color: var(--text-muted); }
+.lhnums { display: flex; align-items: flex-end; gap: 18px; margin-top: 6px; flex-wrap: wrap; }
+.lhnums span { display: flex; flex-direction: column; font-family: var(--font-data); }
+.lhnums b { font-size: 1.15rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.lhnums .big b { font-size: 1.9rem; color: var(--gold-bright); }
+.lhnums i { font-style: normal; font-size: var(--fs-label); color: var(--text-muted); }
+.lhnums .bad b { color: var(--danger); }
+
+.metertabs {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-top: 1px solid var(--border);
+}
+.metertabs .collabel {
+  margin-left: auto; font-family: var(--font-data);
+  font-size: var(--fs-label); color: var(--text-muted);
+}
+
+/* A row is a bar first and a table row second. The number is there to be read
+   once you have already found the row by its length. */
+.meterrows { padding: 4px 0 8px; }
+.meterrow {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px; font-family: var(--font-data); font-size: var(--fs-data);
+}
+.meterrow .fill {
+  position: absolute; left: 0; top: 2px; bottom: 2px;
+  border-radius: 0 2px 2px 0; z-index: 0;
+  transition: width 400ms ease-out;
+}
+.meterrow > :not(.fill) { position: relative; z-index: 1; }
+.meterrow .rank {
+  width: 1.6em; text-align: right; color: var(--text-muted);
+  font-size: var(--fs-label);
+}
+.meterrow .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.meterrow .who b { font-weight: 600; }
+.meterrow .who em {
+  font-style: normal; font-size: var(--fs-label); color: var(--text-muted);
+}
+.meterrow .val {
+  margin-left: auto; display: flex; align-items: baseline; gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.meterrow .val em {
+  font-style: normal; color: var(--gold); min-width: 5.5em; text-align: right;
+}
+.meterrow.mob .who b { color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .meterrow .fill { transition: none; }
+  .dot.on { animation: none; }
+}
+
+/* ---- AoE countdowns ---- */
+
+.aoetimers { padding: 6px 14px 10px; border-top: 1px solid var(--border); }
+.aoehead {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+.aoerow {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px; font-family: var(--font-data); font-size: var(--fs-data);
+  border-bottom: 1px solid var(--row-line);
+}
+.aoerow:last-child { border-bottom: 0; }
+.aoerow .fill {
+  position: absolute; left: 0; top: 1px; bottom: 1px; z-index: 0;
+  background: color-mix(in oklab, var(--warning) 16%, transparent);
+  transition: width 500ms linear;
+}
+.aoerow > :not(.fill) { position: relative; z-index: 1; }
+.aoerow.due .fill { background: color-mix(in oklab, var(--danger) 22%, transparent); }
+.aoerow .src { color: var(--text-muted); font-size: var(--fs-label); }
+.aoerow .cd {
+  margin-left: auto; display: flex; align-items: baseline; gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.aoerow .cd em {
+  font-style: normal; font-size: var(--fs-label); color: var(--text-muted);
+}
+.aoerow .cd em.reported { color: var(--gold); }
+.aoerow.due .cd { color: var(--danger); }
+@media (prefers-reduced-motion: reduce) { .aoerow .fill { transition: none; } }
+
+/* ---- notes ---- */
+
+.card.notes { margin-top: 0; max-height: calc(100vh - 24px); overflow: auto; }
+.notetarget { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.notetarget .zonename, .notetarget .mobname {
+  font-family: var(--font-data); font-size: var(--fs-data); min-width: 0; flex: 1;
+}
+.notetarget .zonename { color: var(--text-muted); }
+.notebody { width: 100%; resize: vertical; font-size: var(--fs-data); }
+.noteactions { display: flex; gap: 8px; margin-top: 8px; }
+.notelist { margin-top: 12px; display: grid; gap: 10px; }
+.noteitem { border-top: 1px solid var(--row-line); padding-top: 8px; }
+.noteitem p { margin: 4px 0 0; white-space: pre-wrap; font-size: var(--fs-data); }
+.noteitem .nh {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-label); color: var(--text-muted);
+}
+.noteitem .nh .when { font-family: var(--font-data); }
+.noteitem .nh button { margin-left: auto; }
+.noteshots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+@media (max-width: 1500px) {
+  .dashgrid { grid-template-columns: 260px minmax(0, 1fr); }
+  .dashgrid .dashside { grid-column: 1 / -1; position: static; }
+  .dashgrid.idle { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .dashgrid { grid-template-columns: minmax(0, 1fr); }
+  .dashrail { position: static; }
+}
+
+/* ---------- the stream overlay (/overlay/<token>) ---------- */
+
+/* OBS composites the page over the game, so `transparent` means the document
+   itself paints nothing — html and body included. A background here is not a
+   style choice, it is a rectangle over somebody's raid. */
+:root[data-overlay] , :root[data-overlay] body {
+  background: transparent; background-image: none;
+}
+.overlaypage { padding: 8px; display: grid; gap: 8px; }
+.overlaypage.empty { padding: 0; }
+/* Readable over anything: the meter keeps its own panel, and the type carries
+   a shadow because the thing behind it is a moving game. */
+.overlaypage.theme-transparent .livemeter {
+  background: rgba(12, 13, 20, 0.62);
+  border-color: rgba(255, 255, 255, 0.14);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  color: #f2f3f8;
+}
+.overlaypage.theme-transparent .lhnums i,
+.overlaypage.theme-transparent .meterrow .who em,
+.overlaypage.theme-transparent .meterrow .rank { color: #c7cade; }
+.overlaypage.theme-dark { background: var(--bg); }
+.overlaypage.theme-light { background: #fffefb; }
+/* The headline chart is off on an overlay (no room, and it is the numbers
+   people are watching), so the head does not need the space it reserved. */
+.overlaypage .liveheadline { padding-bottom: 8px; }
+
+/* the settings card on /account */
+.overlayrow { margin-top: 10px; }
+.overlayrow + .overlayrow { border-top: 1px solid var(--border); padding-top: 12px; }
+.overlayrow .urlrow { display: flex; gap: 6px; align-items: center; }
+.overlayrow .urlrow input {
+  flex: 1; min-width: 0; font-family: var(--font-data); font-size: var(--fs-label);
+}
+.overlayrow .rowsnum { width: 5em; font-family: var(--font-data); }
+.overlayrow .settingrow .chips { display: flex; gap: 4px; }

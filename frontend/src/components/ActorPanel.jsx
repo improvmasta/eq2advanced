@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BreakdownTable, {
-  KIND_FILTERS, PET_KINDS, actorRowsOf, breakdownRows, rateLabel, rowKeyOf,
+  CompositionStrip, KIND_FILTERS, actorRowsOf, breakdownRows, rateLabel, rowKeyOf,
 } from './BreakdownTable.jsx'
 import { ActorFacts } from './Identity.jsx'
 import SelectionBar from './SelectionBar.jsx'
 import Tabs from './Tabs.jsx'
 import { fmt } from '../lib/api.js'
-import { MELEE_BUCKETS } from '../lib/stats.js'
 
 /* Individual parse in the right-hand column: the selected combatant's ability
    breakdown next to (not under) the raid table. The table itself is the shared
@@ -50,31 +49,6 @@ export default function ActorPanel({
     const w = el.getBoundingClientRect().width
     if (w > (parseFloat(el.style.minWidth) || 0)) el.style.minWidth = `${Math.ceil(w)}px`
   }, [kindFilter, combinePets, rows])
-
-  /* Composition and waste both read the damage rows regardless of which chip
-     is showing — they describe the parse, not the current view. */
-  const damageRows = useMemo(
-    () => actorRows.filter((r) => r.kind === 'damage'), [actorRows])
-  const comp = useMemo(() => {
-    const out = { cast: 0, auto: 0, proc: 0, pet: 0, total: 0 }
-    for (const r of damageRows) {
-      const amt = r.total || 0
-      out.total += amt
-      if (PET_KINDS.has(r.source_kind) || r.via_pet) out.pet += amt
-      if (MELEE_BUCKETS.has(r.ability)) out.auto += amt
-      else if (r.proc) out.proc += amt
-      else out.cast += amt
-    }
-    return out
-  }, [damageRows])
-  const waste = useMemo(() => {
-    const out = { resists: 0, zero: 0 }
-    for (const r of damageRows) {
-      out.resists += r.resists || 0
-      out.zero += r.zero_hits || 0
-    }
-    return out
-  }, [damageRows])
 
   const pickedRows = rows.filter((r) => picked.has(rowKeyOf(r)))
   const togglePick = (k) => setPicked((s) => {
@@ -132,20 +106,7 @@ export default function ActorPanel({
       </div>
       {/* Counts, not advice: this panel is the parse. What a resist means is a
           judgement, and judgements live on the Insights tab. */}
-      {kindFilter === 'damage' && comp.total > 0 && (
-        <div className="statstrip">
-          <span><b>{Math.round((100 * comp.cast) / comp.total)}%</b> cast</span>
-          <span><b>{Math.round((100 * comp.auto) / comp.total)}%</b> autoattack</span>
-          {comp.proc > 0 && (
-            <span><b>{Math.round((100 * comp.proc) / comp.total)}%</b> procs</span>
-          )}
-          {comp.pet > 0 && (
-            <span><b>{Math.round((100 * comp.pet) / comp.total)}%</b> pets</span>
-          )}
-          {waste.resists > 0 && <span><b>{fmt.num(waste.resists)}</b> resisted</span>}
-          {waste.zero > 0 && <span><b>{fmt.num(waste.zero)}</b> absorbed</span>}
-        </div>
-      )}
+      {kindFilter === 'damage' && <CompositionStrip rows={actorRows} />}
       <BreakdownTable
         rows={rows}
         kinds={filter.kinds}

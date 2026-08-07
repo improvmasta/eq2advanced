@@ -13,10 +13,17 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.paren
 DB_PATH = DATA_DIR / "eq2advanced.db"
 UPLOADS_DIR = DATA_DIR / "uploads"
 RAW_DIR = DATA_DIR / "raw"
+# Re-encoded screenshots behind imported parses. Separate from `uploads/`,
+# which is content-addressed raw logs and is reasoned about very differently.
+PARSESHOTS_DIR = DATA_DIR / "parseshots"
+# Screenshots attached to raid notes. Its own directory rather than a shared
+# one: these are the raid's evidence, those are claims about a parse, and a
+# retention decision about either should never sweep up the other.
+NOTESHOTS_DIR = DATA_DIR / "noteshots"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 29
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -517,6 +524,109 @@ CREATE TABLE IF NOT EXISTS feedback (
   updated_ts INTEGER                      -- last status change
 );
 CREATE INDEX IF NOT EXISTS idx_feedback ON feedback(status, created_ts DESC);
+-- A parse that only ever existed as a screenshot (pipeline/actshot.py). It is
+-- NOT a session and must never become one: no entities, no encounters, no zone
+-- run, nothing that reaches a rollup, a ranking or raidmatch. It exists to be
+-- put beside a real parse on /compare and nowhere else, which is why the rows
+-- live as JSON here rather than in encounter_ability_stats — the moment they
+-- share a table with parsed numbers, something will average the two together.
+-- The image IS kept, but never the original: a re-encoded copy plus a
+-- thumbnail, so the picture can be put beside the numbers it produced. That is
+-- the whole reason to keep one — some columns can't be verified by arithmetic,
+-- and the screenshot is the only other evidence there is. It stays as private
+-- as the row, and re-encoding means what lands on disk is an image this app
+-- wrote rather than the file somebody was handed.
+CREATE TABLE IF NOT EXISTS imported_parses (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT,                             -- the ACT title bar, as read
+  zone TEXT,
+  encounter TEXT,
+  character_name TEXT,
+  kind TEXT NOT NULL DEFAULT 'damage',    -- damage|heal, from the title's view
+  duration_s INTEGER,
+  when_text TEXT,                         -- as printed; undated shots have none
+  decimal_mark TEXT,                      -- which mark this client used
+  columns_json TEXT NOT NULL,             -- the columns THIS shot carried
+  total_json TEXT,                        -- ACT's `All` line
+  rows_json TEXT NOT NULL,
+  notes_json TEXT,                        -- what was recomputed or dropped
+  source TEXT NOT NULL DEFAULT 'screenshot',
+  image_name TEXT,                        -- webp under PARSESHOTS_DIR, or NULL
+  thumb_name TEXT,
+  image_w INTEGER,                        -- of the stored copy, for the viewer
+  image_h INTEGER,
+  image_bytes INTEGER,
+  created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_imported_parses
+  ON imported_parses(user_id, created_ts DESC);
+
+-- v28: raid notes — what you write down DURING a raid, from the dashboard.
+--
+-- The key is (user, zone, mob), and that is the whole idea: a note filed while
+-- the raid is on trash belongs to the ZONE (mob_name NULL) and one filed on a
+-- named belongs to that NAMED, so six months of "watch the adds on the third
+-- tick" pile up under the boss they are about instead of under the night they
+-- were typed on. That pile is the raid outline this is meant to grow into.
+--
+-- `encounter_id` / `zone_run_id` are PROVENANCE and nothing else. A live
+-- session is rebuilt from raw when it closes and its encounter ids all change,
+-- so a note that identified itself by one would lose its subject overnight.
+-- Never JOIN them to decide what a note is about.
+--
+-- Private to whoever wrote it, with no group predicate — the same rule
+-- `imported_parses` keeps. Sharing lives in groups.py or it does not exist.
+CREATE TABLE IF NOT EXISTS raid_notes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  zone TEXT NOT NULL,
+  mob_name TEXT,                          -- NULL = a zone note (trash)
+  body TEXT NOT NULL DEFAULT '',
+  encounter_id INTEGER,                   -- provenance only, see above
+  zone_run_id INTEGER,
+  created_ts INTEGER NOT NULL,
+  updated_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_raid_notes_key
+  ON raid_notes(user_id, zone, mob_name, created_ts DESC);
+
+-- A screenshot attached to a note. Stored the way parse shots are (see
+-- routers/parseshots_api.py): re-encoded to webp under NOTESHOTS_DIR, never
+-- the uploaded bytes, and served by an owner-checked endpoint rather than a
+-- static mount.
+CREATE TABLE IF NOT EXISTS raid_note_shots (
+  id INTEGER PRIMARY KEY,
+  note_id INTEGER NOT NULL REFERENCES raid_notes(id),
+  image_name TEXT NOT NULL,
+  thumb_name TEXT,
+  image_w INTEGER,
+  image_h INTEGER,
+  image_bytes INTEGER,
+  created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_raid_note_shots ON raid_note_shots(note_id, id);
+
+-- v29: stream overlay tokens — a URL you paste into OBS as a browser source.
+--
+-- A capability, not an account: the token IS the authorization, because a
+-- browser source carries no cookies and EventSource cannot set a header. So
+-- the token is deliberately narrow — it reaches the live meter for whichever
+-- of that user's characters is streaming right now, and nothing else. No
+-- session ids, no history, no account. Revoking is a row update, which is the
+-- only reason it is a row rather than a signed string: a URL that is on
+-- somebody's stream needs to be killable without changing anything else.
+CREATE TABLE IF NOT EXISTS overlay_tokens (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  token TEXT NOT NULL UNIQUE,
+  label TEXT,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_ts INTEGER NOT NULL,
+  revoked_ts INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_overlay_tokens_user
+  ON overlay_tokens(user_id, created_ts DESC);
 """
 
 
@@ -715,6 +825,8 @@ def _rebuild_sessions(conn) -> None:
 def init_db() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    PARSESHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    NOTESHOTS_DIR.mkdir(parents=True, exist_ok=True)
     conn = get_db()
     _rebuild_users(conn)
     _rebuild_characters(conn)
@@ -768,6 +880,15 @@ def init_db() -> None:
         if "hidden_count" not in run_cols:
             conn.execute("ALTER TABLE zone_runs ADD COLUMN "
                          "hidden_count INTEGER NOT NULL DEFAULT 0")
+        # v27 shipped `imported_parses` before it kept the picture; the columns
+        # are added by shape so a database created in between gets them too.
+        # NULL means "no image", which is what those rows honestly are.
+        shot_cols = {r[1] for r in conn.execute("PRAGMA table_info(imported_parses)")}
+        for col, typ in (("image_name", "TEXT"), ("thumb_name", "TEXT"),
+                         ("image_w", "INTEGER"), ("image_h", "INTEGER"),
+                         ("image_bytes", "INTEGER")):
+            if shot_cols and col not in shot_cols:
+                conn.execute(f"ALTER TABLE imported_parses ADD COLUMN {col} {typ}")
         actor_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(encounter_actor_stats)")}
         if "save_count" not in actor_cols:
@@ -928,6 +1049,16 @@ def init_db() -> None:
         # v25: `feedback` — bug reports and suggestions filed from the site,
         # triaged on the admin console. New table, same reasoning as v21: an
         # empty one reads exactly like the pre-v25 behaviour.
+        # v27: `imported_parses` — a parse read back off an ACT screenshot.
+        # New table again, and deliberately a table of its OWN: it holds
+        # claims about somebody else's night, so nothing that aggregates real
+        # sessions can reach it by accident.
+        # v28: `raid_notes` + `raid_note_shots` — what the dashboard writes
+        # down mid-raid, keyed by zone and named rather than by encounter.
+        # Two more new tables: nothing existing reads them, so an old database
+        # gets them empty and behaves exactly as it did.
+        # v29: `overlay_tokens` — the stream overlay's URL credential. Same
+        # reasoning again: new table, nothing else reads it.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

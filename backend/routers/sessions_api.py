@@ -5,8 +5,9 @@ no group-share and no admin path. Sharing operates on zone runs (the raids you
 were in), so a shared night exposes those fights' derived stats and never the
 log, the other fights in the same file, or its parse plumbing.
 
-The /stream endpoint is SSE for the Live page: it polls the DB and pushes fight
-cards as the live ingest path finalizes encounters."""
+The /stream endpoint is SSE for the dashboard: it polls the DB and pushes fight
+cards as the live ingest path finalizes encounters, plus a `partial` view of
+the fight still in progress (pipeline/livemeter.py)."""
 
 import asyncio
 import json
@@ -16,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from db import get_db, row_to_dict, rows_to_dicts
+from pipeline import live
 from security import owned_session, require_user
 
 router = APIRouter(tags=["sessions"])
@@ -193,13 +195,23 @@ def _encounter_cards(conn, session_id: int, character_name: str, after_id: int):
 
 @router.get("/sessions/{session_id}/stream")
 async def session_stream(session_id: int, user=Depends(require_user)):
-    """SSE: `encounter` events as fights finalize, `status` heartbeats while the
-    session is receiving/parsing; closes once it reaches ready/error."""
+    """SSE: `encounter` events as fights finalize, `partial` events for the
+    fight still in progress, `status` heartbeats while the session is
+    receiving/parsing; closes once it reaches ready/error.
+
+    `encounter` is the record — a fight the writer has committed. `partial` is
+    a VIEW of the open segment (pipeline/livemeter.py), rebuilt from memory on
+    every ingest batch and never stored; its numbers move, and its fight name
+    is provisional until the fight closes and arrives again as an `encounter`.
+    """
     visible_session(get_db(), user, session_id)
 
     async def gen():
         last_enc_id = 0
+        last_partial = None
         while True:
+            # asking is what turns snapshots on: nobody watching, nothing built
+            live.mark_watched(session_id)
             conn = get_db()
             sess = conn.execute(
                 "SELECT s.*, c.name AS character_name, c.id AS char_id FROM sessions s "
@@ -221,6 +233,10 @@ async def session_stream(session_id: int, user=Depends(require_user)):
                 "ended_ts": sess["ended_ts"], "uploader_online": online,
             }
             yield f"event: status\ndata: {json.dumps(status)}\n\n"
+            snap = live.live_snapshot(session_id)
+            if snap is not None and snap["computed_ts"] != last_partial:
+                last_partial = snap["computed_ts"]
+                yield f"event: partial\ndata: {json.dumps(snap)}\n\n"
             if sess["status"] in ("ready", "error"):
                 break
             await asyncio.sleep(STREAM_POLL_S)

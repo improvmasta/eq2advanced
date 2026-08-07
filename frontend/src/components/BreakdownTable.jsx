@@ -44,6 +44,12 @@ const AVOID_COLS = ['misses', 'parries', 'ripostes', 'dodges', 'blocks', 'resist
    Fully-absorbed rows still land (hits > 0, total 0) and stay. */
 const didSomething = (r) => (r.total || 0) !== 0 || (r.hits || 0) !== 0
 
+/* Which kind tabs a given parse can actually answer, in KIND_FILTERS order.
+   For a surface that draws the tabs per parse rather than per page (the
+   Compare page): a fury's column has no Threat tab to click. */
+export const availKinds = (actorRows) => KIND_FILTERS.filter(
+  (f) => actorRows.some((r) => f.kinds.includes(r.kind) && didSomething(r)))
+
 /* Set-in-stone pet kits (the game hasn't changed): each pet ability belongs to
    one summoned-pet archetype, so the bare-name own pet — whose identity the
    log never states — is attributed by what it casts. Pet autoattack carries no
@@ -208,6 +214,42 @@ export function ParseStrip({ actor, derived, kind, duration, combat }) {
   return (
     <div className="statstrip">
       {items.map(([k, v]) => <span key={k}><b>{v}</b> {k}</span>)}
+    </div>
+  )
+}
+
+/* Where the damage came from and what the swings threw away — counts, not
+   advice. Reads the DAMAGE rows of a combatant's `actorRowsOf` output
+   whichever tab is showing, because it describes the parse rather than the
+   current view; the caller draws it on the damage tab, where it is about what
+   the reader is looking at. Silent for a parse with no damage in it.
+
+   It lives here with ParseStrip so the drilldown and the Compare page put the
+   same line above the same table — one parse, one look, wherever it appears. */
+export function CompositionStrip({ rows }) {
+  const comp = { cast: 0, auto: 0, proc: 0, pet: 0, total: 0 }
+  const waste = { resists: 0, zero: 0 }
+  for (const r of rows) {
+    if (r.kind !== 'damage') continue
+    const amt = r.total || 0
+    comp.total += amt
+    if (PET_KINDS.has(r.source_kind) || r.via_pet) comp.pet += amt
+    if (MELEE_BUCKETS.has(r.ability)) comp.auto += amt
+    else if (r.proc) comp.proc += amt
+    else comp.cast += amt
+    waste.resists += r.resists || 0
+    waste.zero += r.zero_hits || 0
+  }
+  if (comp.total <= 0) return null
+  const pct = (v) => `${Math.round((100 * v) / comp.total)}%`
+  return (
+    <div className="statstrip">
+      <span><b>{pct(comp.cast)}</b> cast</span>
+      <span><b>{pct(comp.auto)}</b> autoattack</span>
+      {comp.proc > 0 && <span><b>{pct(comp.proc)}</b> procs</span>}
+      {comp.pet > 0 && <span><b>{pct(comp.pet)}</b> pets</span>}
+      {waste.resists > 0 && <span><b>{fmt.num(waste.resists)}</b> resisted</span>}
+      {waste.zero > 0 && <span><b>{fmt.num(waste.zero)}</b> absorbed</span>}
     </div>
   )
 }

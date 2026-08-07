@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import ShotDrop from '../components/ShotDrop.jsx'
+import ShotViewer, { ShotThumb } from '../components/ShotViewer.jsx'
 import UploadDrop from '../components/UploadDrop.jsx'
 import { api, fmt, sessionLabel } from '../lib/api.js'
 
@@ -389,6 +391,111 @@ export default function Import() {
           </div>
         )}
       </div>
+
+      <Parseshots />
+    </div>
+  )
+}
+
+/* Parses imported from a screenshot. They live here beside the logs because
+   this is the page that answers "what have I put in", but they are a separate
+   card and say so plainly: a shot is somebody else's parse read off an image,
+   it contributes no fights, and it is only ever seen on /compare. */
+function Parseshots() {
+  const [items, setItems] = useState(null)
+  const [error, setError] = useState('')
+  const [confirm, setConfirm] = useState(null)
+  const [viewing, setViewing] = useState(null)   // the shot whose image is open
+
+  const refresh = useCallback(() => {
+    api.parseshots().then((d) => setItems(d.items)).catch((e) => setError(e.message))
+  }, [])
+  useEffect(() => { refresh() }, [refresh])
+
+  async function remove(id) {
+    try { await api.deleteParseshot(id) } catch (e) { setError(e.message) }
+    setConfirm(null)
+    refresh()
+  }
+
+  return (
+    <div className="card">
+      <div className="drillhead">
+        <h2>Screenshot imports</h2>
+        <span className="muted" style={{ marginLeft: 'auto' }}>
+          {items?.length ?? 0} parse{items?.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      <p className="note">
+        A parse read off an ACT screenshot — the way somebody else's numbers
+        arrive when all you have is an image from Discord. These add no fights
+        and change no totals; they exist to sit beside your own parse on{' '}
+        <Link to="/compare">Compare</Link>. Click a thumbnail to see the
+        screenshot it was read from — a re-encoded copy, kept private to you.
+      </p>
+      {error && <p className="err">{error}</p>}
+      <ShotDrop onImported={refresh} />
+
+      {items === null && <p className="muted">Loading…</p>}
+      {items?.length === 0 && <p className="muted">Nothing imported yet.</p>}
+      {items?.length > 0 && (
+        <div className="tablewrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th className="l">Shot</th>
+                <th className="l">Fight</th>
+                <th className="l">Character</th>
+                <th className="l">Zone</th>
+                <th>Length</th>
+                <th className="l">Imported</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((s) => (
+                <tr key={s.id}>
+                  {/* The picture is the only evidence behind the columns
+                      arithmetic can't check, so it sits in the row rather than
+                      a detail page. */}
+                  <td className="l">
+                    {s.has_image
+                      ? <ShotThumb shot={s} onOpen={() => setViewing(s)} />
+                      : <span className="muted">—</span>}
+                  </td>
+                  <td className="l">
+                    <Link to={`/compare?c=shot:${s.id}:parse`}>
+                      {s.encounter || 'Unnamed fight'}
+                    </Link>
+                    {s.kind === 'heal' && <span className="muted"> healing</span>}
+                  </td>
+                  <td className="l">{s.character_name || '—'}</td>
+                  <td className="l">{s.zone || '—'}</td>
+                  <td>{s.duration_s ? fmt.dur(s.duration_s) : '—'}</td>
+                  {/* when_text is what ACT PRINTED, kept as a string: an
+                      undated shot has none, and inventing one from the import
+                      time would date somebody else's raid to today. */}
+                  <td className="l">{s.when_text || fmt.date(s.created_ts)}</td>
+                  <td className="r">
+                    {confirm === s.id ? (
+                      <>
+                        <span className="muted">Delete? </span>
+                        <button className="chip danger" onClick={() => remove(s.id)}>Yes</button>
+                        <button className="chip" onClick={() => setConfirm(null)}>No</button>
+                      </>
+                    ) : (
+                      <button className="chip danger" onClick={() => setConfirm(s.id)}>
+                        delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {viewing && <ShotViewer shot={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }

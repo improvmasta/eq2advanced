@@ -231,6 +231,110 @@ def test_stream_of_finished_session_closes(client):
     assert '"status": "ready"' in r.text
 
 
+# ---- the in-flight view (pipeline/livemeter.py) ----
+#
+# The dashboard's live meter is a VIEW over the open segment: no rows, no
+# encounter, nothing a later rebuild has to agree with. These pin the two
+# gates that decide whether it is computed at all, and the fact that it never
+# leaks into the record — `test_golden_equivalence` below is the other half of
+# that promise.
+
+def open_fight(ts_offset=0, zone=True):
+    """A pull that is happening NOW, so it clears the live-lag gate. A zone
+    line hard-cuts a segment, so a continuation batch must not repeat one."""
+    now = int(time.time()) + ts_offset
+    lines = [line(now, "You have entered The Estate of Unrest.")] if zone else []
+    return lines + [
+        line(now + 1, "YOU hit a knotted guardian for 1000 crushing damage."),
+        line(now + 2, "YOU hit a knotted guardian for 1500 crushing damage."),
+        line(now + 2, "Mendya heals YOU for 400 hit points."),
+    ]
+
+
+def test_no_snapshot_until_somebody_is_watching(client):
+    """A snapshot costs a pass over the open fight on every batch, so a raid
+    with no dashboard open pays nothing."""
+    from pipeline import live as livemod
+    _, _, token = mint_token(client, "Unwatched")
+    sid = send_batch(client, token, open_fight()).json()["session_id"]
+    assert livemod.live_snapshot(sid) is None
+
+    livemod.mark_watched(sid)
+    send_batch(client, token, open_fight(4, zone=False)).json()
+    snap = livemod.live_snapshot(sid)
+    assert snap is not None
+    fight = snap["fight"]
+    assert fight["zone"] == "The Estate of Unrest"
+    assert fight["provisional_name"] == "a knotted guardian"
+    assert fight["provisional_is_named"] is False
+    assert fight["raid"]["damage"] == 5000       # both batches, still open
+    assert fight["raid"]["heals"] == 800
+    assert [a["name"] for a in fight["actors"] if a["kind"] == "player"] \
+        == ["Unwatched", "Mendya"]
+
+
+def test_watching_expires(client):
+    from pipeline import live as livemod
+    _, _, token = mint_token(client, "Expiry")
+    sid = send_batch(client, token, open_fight()).json()["session_id"]
+    livemod.mark_watched(sid, ttl_s=0)
+    send_batch(client, token, open_fight(4, zone=False))
+    assert livemod.live_snapshot(sid) is None
+
+
+def test_a_backfill_is_not_a_raid_in_progress(client):
+    """The plugin's own word for it: `mode=backfill` is an old log being
+    caught up, and last March's raid must not flash on screen as a pull."""
+    from pipeline import live as livemod
+    _, _, token = mint_token(client, "Backfilly")
+    sid = send_batch(client, token, open_fight(), mode="backfill").json()["session_id"]
+    livemod.mark_watched(sid)
+    send_batch(client, token, open_fight(4), mode="backfill")
+    assert livemod.live_snapshot(sid) is None
+
+
+def test_live_mode_replaying_old_log_time_is_also_not_a_raid(client):
+    """The same protection from the other side — a live-mode client replaying
+    history (which is what tools/simulate_live.py does without --restamp)."""
+    from pipeline import live as livemod
+    _, _, token = mint_token(client, "Oldy")
+    sid = send_batch(client, token, FIGHT_A).json()["session_id"]   # T0: 2024
+    livemod.mark_watched(sid)
+    send_batch(client, token, FIGHT_B)
+    assert livemod.live_snapshot(sid) is None
+
+
+def test_partial_reaches_the_stream_and_writes_nothing(client):
+    """The wiring end to end: a snapshot published by a batch comes out of the
+    SSE endpoint as a `partial`, and the fight it describes is still not in the
+    record.
+
+    The status is flipped by hand because TestClient runs a request to
+    COMPLETION before handing back a response — an endless stream would just
+    hang. Finalizing properly would drop the live state along with it, which is
+    the thing under test, so this closes the stream and leaves memory alone.
+    """
+    from pipeline import live as livemod
+    _, _, token = mint_token(client, "Partly")
+    sid = send_batch(client, token, open_fight()).json()["session_id"]
+    livemod.mark_watched(sid)
+    send_batch(client, token, open_fight(4, zone=False))
+
+    before = client.get(f"/api/sessions/{sid}").json()["encounters"]
+    conn = sqlite3.connect(dbmod.DB_PATH)
+    conn.execute("UPDATE sessions SET status='ready' WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+
+    r = client.get(f"/api/sessions/{sid}/stream")
+    assert "event: partial" in r.text, r.text
+    payload = json.loads(r.text.split("event: partial\ndata: ")[1].split("\n\n")[0])
+    assert payload["fight"]["raid"]["damage"] == 5000
+    assert payload["fight"]["actors"][0]["name"] == "Partly"
+    # the fight is still open: it is in the view and NOT in the record
+    assert client.get(f"/api/sessions/{sid}").json()["encounters"] == before
+
+
 # ---- golden equivalence: streamed batches == whole-file upload ----
 
 @pytest.mark.skipif(not GOLDEN.exists(), reason="golden fixture not present")

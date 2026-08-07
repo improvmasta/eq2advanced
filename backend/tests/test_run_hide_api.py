@@ -163,6 +163,14 @@ def test_a_hidden_fight_is_the_owners_alone(client, world):
     assert theirs["zone_run"]["hidden_count"] == 0
     assert client.get(f"/api/encounters/agg?ids={victim['id']}").status_code == 404
     assert client.get(f"/api/encounters/{victim['id']}").status_code == 404
+    # the Compare picker tells the same story: its named-mob facet rides
+    # `?roster=1`, so a hidden pull is not a boss the groupmate can search for
+    def picker_named(c):
+        runs = c.get("/api/zone-runs?roster=1").json()["zone_runs"]
+        return [n["name"] for r in runs if r["id"] == run_id for n in r["named"]]
+    assert "Hagfiend the Vile" not in picker_named(client)
+    sign_in(client, "hider")
+    assert "Hagfiend the Vile" in picker_named(client)
     # and it is out of the raid report for BOTH of them — hiding a pull is
     # exactly a claim that it should stop counting
     for who in ("mate", "hider"):

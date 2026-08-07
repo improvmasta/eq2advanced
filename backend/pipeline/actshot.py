@@ -25,6 +25,12 @@ Three properties of a Discord screenshot drive the rest of it:
   * **The locale is unknown.** `5.612.947` is five million to a German client
     and 5.612 to an American one, and at this font size `.` and `,` differ by
     a couple of pixels. Guessing is not required — see `_pick_locale`.
+  * **The title bar's `[mm:ss]` is not always the fight length.** On a single
+    encounter it is; on ACT's `All` line it is not, and a shot of `All` printing
+    `[00:12]` over 654 seconds of parse turned every EncDPS into damage/12.
+    The duration therefore comes from the TABLE — `Damage / EncDPS` is the same
+    number on every row, so forty rows are forty readings of it and their mode
+    beats one OCR of one field. See `_duration_from_table`.
   * **Some cells cannot be checked.** ACT's table is redundant enough that
     Damage, EncDPS, Average, Hits, Swings and ToHit all cross-check or
     recompute; Median, MinHit, MaxHit and Crit% do not. Unverifiable cells are
@@ -70,6 +76,15 @@ COLUMN_ALIASES = {
 INT_FIELDS = {'damage', 'healed', 'median', 'min_hit', 'max_hit',
               'hits', 'swings', 'deaths', 'misses', 'blocked'}
 DEC_FIELDS = {'dps', 'hps', 'average', 'to_hit', 'avg_delay', 'crit_pct'}
+
+# Columns ACT prints with exactly two decimals. Crit% is not one of them — it
+# prints as a whole percent — so a reading of it without a mark is a whole
+# number rather than a lost mark.
+TWO_DP_FIELDS = {'dps', 'hps', 'average', 'to_hit', 'avg_delay'}
+
+# How many rows have to agree on Damage/EncDPS before the table is allowed to
+# overrule the title bar about the fight length.
+MIN_DURATION_ROWS = 4
 
 # The Resist column is a closed vocabulary, so a misread snaps back to it
 # rather than reaching the reader as `cisease`.
@@ -411,6 +426,14 @@ def to_number(raw, field, decimal):
     if field in INT_FIELDS:
         digits = re.sub(r'\D', '', s)
         return float(digits) if digits else None
+    if field in TWO_DP_FIELDS and not re.search(r'[.,]', s):
+        # ACT prints these with two decimals ALWAYS, so a reading carrying no
+        # mark at all lost the mark rather than the digits: AvgDelay `461` is
+        # 4.61, and EncDPS `747` is 7.47. Losing a mark cannot shorten the
+        # digit string — `4.61` and `4,61` both read as `461` either way —
+        # which is what makes this safe to apply without a second reading.
+        digits = re.sub(r'\D', '', s)
+        return float(digits) / 100 if digits else None
     thousands = ',' if decimal == '.' else '.'
     s = s.replace(thousands, '')
     s = s.replace(decimal, '.')
@@ -424,27 +447,44 @@ def to_number(raw, field, decimal):
         return None
 
 
-def _pick_locale(cells, fields, nrows, duration_s):
-    """Decide the decimal mark by ARITHMETIC rather than by guessing.
+def _duration_from_table(cells, fields, nrows, decimal):
+    """The fight length the TABLE implies, and how many rows say so.
 
-    `Damage / EncDPS` is the encounter duration on every row, so the reading
-    that reproduces the duration printed in the title is the right one. With
-    no duration to check against, fall back to the shape of the two-decimal
-    columns (`98,60` / `100.00`), which is the same evidence a human uses."""
+    `Damage / EncDPS` is the same number on every row, so a full table is
+    forty readings of the duration. The mode of those readings is the answer:
+    it survives the rows whose EncDPS lost a decimal mark, and unlike the
+    title bar it is right about ACT's `All` line as well as a single fight."""
     di = next((i for i, f in enumerate(fields) if f in ('damage', 'healed')), None)
     ri = next((i for i, f in enumerate(fields) if f in ('dps', 'hps')), None)
-    if duration_s and di is not None and ri is not None:
-        score = {}
-        for dec in ('.', ','):
-            hits = 0
-            for r in range(nrows):
-                dmg = to_number(cells.get((r, di)), 'damage', dec)
-                rate = to_number(cells.get((r, ri)), 'dps', dec)
-                if dmg and rate and abs(dmg / rate - duration_s) <= 1.5:
-                    hits += 1
-            score[dec] = hits
-        if max(score.values()) > 0:
-            return max(score, key=score.get)
+    if di is None or ri is None:
+        return 0, None
+    ratios = []
+    for r in range(nrows):
+        dmg = to_number(cells.get((r, di)), 'damage', decimal)
+        rate = to_number(cells.get((r, ri)), 'dps', decimal)
+        if dmg and rate and rate > 0:
+            ratios.append(dmg / rate)
+    best_n, best_v = 0, None
+    for c in ratios:
+        near = [v for v in ratios if abs(v - c) <= max(0.5, c * 0.01)]
+        if len(near) > best_n:
+            best_n, best_v = len(near), sorted(near)[len(near) // 2]
+    return best_n, best_v
+
+
+def _pick_locale(cells, fields, nrows):
+    """Decide the decimal mark by ARITHMETIC rather than by guessing.
+
+    The reading that makes the table agree with ITSELF about the fight length
+    wins. That only settles it when the two marks disagree about which rows
+    fit, though, and usually they don't: reading `9.241,15` under the wrong
+    mark still recovers every digit and merely shifts the ratio by a factor of
+    100 — the same factor on every row, so the cluster is exactly as tight.
+    What separates them then is the shape of the two-decimal columns
+    (`98,60` against `100.00`), which is the same evidence a human uses."""
+    fit = {dec: _duration_from_table(cells, fields, nrows, dec)[0] for dec in ('.', ',')}
+    if abs(fit['.'] - fit[',']) >= 2:
+        return max(fit, key=fit.get)
     tally = {'.': 0, ',': 0}
     for (r, c), v in cells.items():
         if fields[c] in ('to_hit', 'crit_pct', 'dps', 'average'):
@@ -464,7 +504,7 @@ def _snap_resist(v):
     return near[0] if near else (v or None)
 
 
-def _repair(row, duration_s, notes):
+def _repair(row, duration_s, notes, highlighted=False):
     """Recompute what ACT's own arithmetic determines, and blank what fails.
 
     Average is Damage/Hits and the rate is Damage/duration, so a dropped
@@ -485,7 +525,23 @@ def _repair(row, duration_s, notes):
         if row.get('average') is None or abs(row['average'] - want) > max(1.0, want * 0.02):
             row['average'] = round(want, 2)
     if hits and row.get('swings'):
-        row['to_hit'] = round(hits / row['swings'] * 100, 2)
+        if hits <= row['swings']:
+            row['to_hit'] = round(hits / row['swings'] * 100, 2)
+        else:
+            # More hits than swings cannot happen, so the Swings cell lost a
+            # digit (73 read as 7). ToHit is a third reading of the same fact
+            # and puts it back; recomputing from the pair instead published a
+            # ToHit of 1042.86%. The recovered count has to stay within a digit
+            # of Hits — that is the same statement as "ToHit is a rate, not
+            # noise", and it catches a ToHit cell that was itself misread.
+            want = (round(hits / (row['to_hit'] / 100))
+                    if row.get('to_hit') and 0 < row['to_hit'] <= 100 else 0)
+            if hits <= want < hits * 10:
+                row['swings'] = float(want)
+            else:
+                row['swings'] = row['to_hit'] = None
+                notes.append(f"{row.get('name')}: dropped Swings/ToHit "
+                             f"(more hits than swings)")
 
     lo, med, hi = row.get('min_hit'), row.get('median'), row.get('max_hit')
     if lo is not None and hi is not None and lo > hi:
@@ -494,8 +550,15 @@ def _repair(row, duration_s, notes):
     elif med is not None and lo is not None and hi is not None and not (lo <= med <= hi):
         row['median'] = None
         notes.append(f"{row.get('name')}: dropped Median (outside Min..Max)")
-    if row.get('crit_pct') is not None and not 0 <= row['crit_pct'] <= 100:
-        row['crit_pct'] = None
+    crit = row.get('crit_pct')
+    if crit is not None and not 0 <= crit <= 100:
+        # On the highlighted row the selection's focus rectangle reads as a
+        # stray leading digit — the same artifact `ROW_ARTIFACT` strips off the
+        # name — so `67%` arrives as `167%`. A percentage is bounded, which
+        # makes dropping that digit a CHECK rather than a guess; anywhere else
+        # there is nothing to appeal to and the cell goes.
+        drop = re.sub(r'\D', '', f'{crit:g}')[1:] if highlighted and crit > 100 else ''
+        row['crit_pct'] = float(drop) if drop and float(drop) <= 100 else None
     return row
 
 
@@ -521,6 +584,11 @@ def _clean_name(raw, highlighted):
     name = (raw or '').strip().strip('|[]').strip()
     if highlighted:
         name = ROW_ARTIFACT.sub('', name, count=1)
+    # A possessive comes back as a curly quote, and often as two marks at once
+    # (`undead horde'’s`) where tesseract could not decide which it was. ACT
+    # prints one straight apostrophe, and the name is a JOIN KEY against real
+    # parses — `undead horde’s Grim Bolt` matches nothing.
+    name = re.sub(r"[‘’ʻʼ′`']+", "'", name)
     return name.strip()
 
 
@@ -584,9 +652,21 @@ def extract(data):
         raise ShotError('no Damage or Healed column in this table')
 
     cells, nrows = _read_cells(flat, cols, fields, top, bottom, pitch, hot)
-    decimal = _pick_locale(cells, fields, nrows, meta.get('duration_s'))
+    decimal = _pick_locale(cells, fields, nrows)
 
-    shot = ActShot(title=title, decimal=decimal,
+    # The table outranks the title bar about the fight length. They agree on a
+    # single encounter; on ACT's `All` line they do not, and believing the
+    # title there rewrote every EncDPS in the parse.
+    notes = []
+    n_fit, table_s = _duration_from_table(cells, fields, nrows, decimal)
+    if n_fit >= MIN_DURATION_ROWS and table_s and table_s >= 1:
+        titled = meta.get('duration_s')
+        if titled and abs(titled - table_s) > max(1.0, table_s * 0.02):
+            notes.append(f'title bar says {titled}s, but {n_fit} rows put the '
+                         f'fight at {round(table_s)}s — using the rows')
+        meta['duration_s'] = int(round(table_s))
+
+    shot = ActShot(title=title, decimal=decimal, notes=notes,
                    columns=[f for f in fields if f],
                    **{k: v for k, v in meta.items()})
     for r in range(nrows):
@@ -606,7 +686,7 @@ def extract(data):
                 continue                        # decorative, and never read cleanly
             else:
                 row[f] = to_number(raw, f, decimal)
-        _repair(row, shot.duration_s, shot.notes)
+        _repair(row, shot.duration_s, shot.notes, r in hot)
         if name.lower() == 'all':
             shot.total = row                    # ACT's totals line is not an ability
         else:

@@ -222,6 +222,26 @@ def test_list_roster_opt_in(client, uploaded):
     assert any("Aros" in v for v in rosters.values())
 
 
+def test_list_named_opt_in(client, uploaded):
+    """`?roster=1` also carries each night's named mobs and the encounter ids
+    that are that fight — the Compare picker's named-mob facet, and what lets
+    picking one land a column already scoped to the boss."""
+    plain = client.get("/api/zone-runs").json()["zone_runs"]
+    assert all("named" not in r for r in plain)
+
+    runs = client.get("/api/zone-runs?roster=1").json()["zone_runs"]
+    mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
+    assert [n["name"] for n in mist["named"]] == [
+        "Traininglord the Unstoppable", "Interloper the Third"]
+    # ids are real encounters of that run, and the dup upload adds none
+    detail = client.get(f"/api/zone-runs/{mist['id']}").json()["encounters"]
+    by_name = {e["name"]: e["id"] for e in detail}
+    assert [n["ids"] for n in mist["named"]] == [
+        [by_name["Traininglord the Unstoppable"]], [by_name["Interloper the Third"]]]
+    # trash keeps its own name and is not a named mob
+    assert all(n["name"] != "a training cube" for n in mist["named"])
+
+
 def test_roster_opt_in_respects_visibility(client, uploaded):
     """Same predicate as the list — asking for rosters is not a way around it."""
     c2 = TestClient(client.app)

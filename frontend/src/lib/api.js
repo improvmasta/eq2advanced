@@ -135,6 +135,55 @@ export const api = {
     return mutate(req('/api/uploads', { method: 'POST', body: fd }))
   },
   uploadLimits: () => req('/api/uploads/limits'),
+
+  /* Parses imported from an ACT screenshot. Not cached: reading one takes
+     seconds and the answer is only ever fetched once per column. */
+  parseshots: () => req('/api/parseshots'),
+  parseshot: (id) => req(`/api/parseshots/${id}`),
+  importParseshot: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return req('/api/parseshots', { method: 'POST', body: fd })
+  },
+  deleteParseshot: (id) => req(`/api/parseshots/${id}`, { method: 'DELETE' }),
+  /* The kept screenshot. A plain URL rather than a fetch — it goes straight
+     into an <img>, and the session cookie authorises it exactly as it does
+     every other request. */
+  parseshotImage: (id, thumb) => `/api/parseshots/${id}/image${thumb ? '?thumb=1' : ''}`,
+
+  /* Raid notes, filed from the dashboard against a zone or a named. Not
+     cached: the panel is looking at exactly one subject at a time and rewrites
+     it as you type. `mob` absent asks for the ZONE's notes, which is a real
+     filter — see backend/routers/notes_api.py. */
+  notes: (zone, mob) => {
+    if (!zone) return req('/api/notes')
+    const q = new URLSearchParams({ zone })
+    if (mob) q.set('mob', mob)
+    return req(`/api/notes?${q}`)
+  },
+  notesOutline: () => req('/api/notes/outline'),
+  addNote: (note) => req('/api/notes', json(note)),
+  updateNote: (id, patch) => req(`/api/notes/${id}`, { ...json(patch), method: 'PATCH' }),
+  deleteNote: (id) => req(`/api/notes/${id}`, { method: 'DELETE' }),
+  addNoteShot: (noteId, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return req(`/api/notes/${noteId}/shots`, { method: 'POST', body: fd })
+  },
+  deleteNoteShot: (noteId, shotId) => req(
+    `/api/notes/${noteId}/shots/${shotId}`, { method: 'DELETE' }),
+  noteShotImage: (noteId, shotId, thumb) => (
+    `/api/notes/${noteId}/shots/${shotId}/image${thumb ? '?thumb=1' : ''}`),
+
+  /* Stream overlay links. The overlay PAGE never calls these — it is
+     authorized by the token in its own URL and fetches `/api/overlay/<token>`
+     directly, with no cookie and no session. These are the account side:
+     minting one, changing what it shows, taking it back. */
+  overlayTokens: () => req('/api/overlay-tokens'),
+  createOverlayToken: (body) => req('/api/overlay-tokens', json(body)),
+  updateOverlayToken: (id, body) => req(
+    `/api/overlay-tokens/${id}`, { ...json(body), method: 'PATCH' }),
+  revokeOverlayToken: (id) => req(`/api/overlay-tokens/${id}/revoke`, { method: 'POST' }),
   // the ACT plugin build this server is serving (size/date for the Import page)
   plugin: () => req('/api/plugin'),
 

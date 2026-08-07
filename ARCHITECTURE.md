@@ -379,9 +379,9 @@ Design points, in the order they bit:
   simulator's `--window` does this and the DLL must too.
 - **Incremental finalization is a view, not the record.** Per-session in-memory
   tail (`pipeline/live.py`); each batch re-segments the tail and flushes any
-  encounter that can no longer change (a later segment exists, or GAP+grace =
-  35s of log time passed) to the normal tables — that's what the Live page's
-  SSE cards read. At close (`done`, or 30-min staleness) the whole session is
+  encounter that can no longer change (a later segment exists, or
+  `CLOSE_S = GAP_S + TRAIL_GRACE_S` = 17s of log time passed) to the normal
+  tables — that's what the dashboard's SSE cards read. At close (`done`, or 30-min staleness) the whole session is
   **rebuilt from its raw chunks through `parse_session`** — the exact bulk
   path — so a finished live session is provably identical to uploading the
   file (guarded by `test_golden_equivalence`: encounters, actor stats, ability
@@ -401,7 +401,118 @@ Design points, in the order they bit:
   chunks + `ingest_lines` survive, and the close-time rebuild reparses raw.
 - SSE: `GET /api/sessions/{id}/stream` (cookie auth) polls the DB ~1.5s and
   pushes `encounter` cards + `status` heartbeats (incl. uploader-online from
-  `device_tokens.last_seen_ts`); closes at ready/error.
+  `device_tokens.last_seen_ts`) + `partial` views of the open fight (below);
+  closes at ready/error.
+
+## The raid dashboard (`/live`) and the fight in progress
+
+Everything above reports fights that are OVER. The dashboard is the second
+monitor during a raid, so it needed the other thing — the pull that is
+happening — and that is `pipeline/livemeter.py`.
+
+**It is a view, and being a view is the whole design.** `_flush` already
+computes the open segment and drops it; the dashboard's snapshot is built from
+exactly those events, handed to the SSE stream as a `partial`, and stored
+nowhere. No DB writes, no entity resolution, no encounter row. That is what
+keeps `test_golden_equivalence` true: the record is still the record, and this
+is a photograph of it mid-fight. The consequences are stated in the payload
+rather than hidden — the fight's name is `provisional_*` until it closes and
+arrives again as an `encounter` card, and credit is by NAME (a pet credits its
+owner through the subject it already carries) because resolution is the
+expensive half of a flush.
+
+What it measures is deliberately the same statistic the recorded page reports:
+self-inflicted damage is excluded exactly as `roll_encounter` excludes it, DPS
+divides by the fight's elapsed clock, and overheal is the same HP-deficit
+reconstruction. A live meter that used different arithmetic would visibly
+disagree with itself thirty seconds later.
+
+Three gates decide whether a snapshot is built at all, and all three are about
+not showing a raid that is not happening:
+
+- **Nobody watching, nothing built.** `mark_watched(session_id)` is called by
+  each stream poll; without a dashboard open the raid pays nothing.
+- **`mode=backfill` is history**, by the plugin's own word for it — an old log
+  being caught up must not flash on screen as a pull in progress.
+- **`LIVE_LAG_S`** catches the same thing from the other side: log time far
+  behind the clock is a replay, which is what `simulate_live.py` does *without*
+  `--restamp` (that flag exists so an old log can be replayed as a raid
+  happening now, and it is how this is tested by hand).
+
+Reading it from the SSE generator is an **RCU-style pointer swap**: the
+producer (a worker thread, under the per-session lock) builds a fresh dict and
+assigns the attribute; readers on the event loop take the reference and treat
+it as frozen. One atomic store, no reader lock, no copies.
+
+**Live AoE timers** reuse `pipeline/aoes.py`'s definition — a second in which
+one enemy ability touched `MIN_TARGETS` players is a cast — importing its
+constants rather than restating them, so the live rule and the recorded rule
+cannot drift apart. Two differences, both deliberate. Nothing filters on name
+grammar, because that would drop exactly the bosses worth a countdown (live,
+`Venekor` is indistinguishable from a raider by name; the anchor rule is the
+real evidence — a raider's green AE hits mobs, so touching five RAIDERS in one
+second is a claim only an enemy ability can make). And a sourceless
+`X is hit by <Effect>` counts, pooled under `Unknown` the way the recorded tab
+pools it: bobby.txt's `Stench of Death` reaches 17 people on a 30s reported
+timer, and dropping it would hide the biggest thing on the screen. Only casts
+inside the CURRENT fight feed an observed period — the wait between two pulls
+is a raid taking a break — so a boss's first cast counts down only when ACT's
+reported-timer list knows the ability, and a single cast with no timer at all
+is not shown, because a row that can only say "that happened" is noise.
+
+Cost: one pure-Python pass over the open fight per batch. Measured against the
+biggest fight in bobby.txt — 46,521 events over 408 seconds — that is 65ms,
+with a `SNAPSHOT_MIN_S` floor so a client sending faster than the stream polls
+cannot spin on it.
+
+### Notes are keyed by zone and named, never by encounter (schema v28)
+
+The dashboard's right column files what you write mid-raid. On trash it belongs
+to the ZONE (`mob_name IS NULL`), on a named it belongs to that boss, and the
+client decides which — it is the thing that knows what is on screen, and a
+server reading it back off encounter rows would be reconstructing an answer it
+was already told.
+
+The key is `(user_id, zone, mob_name)` because **encounter ids do not survive**:
+a live session is rebuilt from raw when it closes and every id in it changes, so
+a note that identified itself by one would lose its subject overnight.
+`encounter_id`/`zone_run_id` are stored as provenance and are never joined for
+identity. Keying on the boss instead means tonight's note lands beside every
+other attempt on that boss, which is the pile this exists to grow into — an
+outline of the zone, written one pull at a time (`GET /api/notes/outline`).
+
+Notes are private to whoever wrote them, with no group predicate, exactly as
+imported parses are: `groups.py` owns the one visibility rule and does not get a
+weaker sibling. Screenshots are stored the way parse shots are — re-encoded to
+WebP under `NOTESHOTS_DIR`, never the uploaded bytes, served by an owner-checked
+endpoint rather than a static mount.
+
+### The stream overlay is a capability in a URL (schema v29)
+
+`/overlay/<token>` is a page for an OBS browser source, and that decides the
+design: a browser source carries no cookies and `EventSource` cannot set a
+header, so the token has to ride in the path. Taking that seriously means the
+token is deliberately narrow — it reaches the in-flight meter for whichever of
+that account's characters is streaming right now, and nothing else. No session
+ids, no fight cards, no history, no account name; a URL that ends up in a VOD
+must not be a way into anybody's parses (`test_overlay_api.py` asserts the
+absence of each field).
+
+Two doors, one read surface: the overlay stream and the session stream both
+read `live.live_snapshot`, rather than one endpoint branching on how the caller
+authenticated — a generator that decides authorization halfway through is one
+nobody can audit. The session it points at is re-resolved every tick, so
+switching to an alt mid-stream follows on its own, and the stream stays OPEN
+with `{"live": false}` when nothing is running: an OBS source is opened once
+and left for hours, so a stream that ended between raids would be a scene that
+goes blank for good. Revoking is a row update because a URL already out in the
+world has to be killable without changing anything else.
+
+The page renders BEFORE the app shell (`App.jsx` branches on the path): nav,
+theme toggle and account icon are furniture on somebody's stream. `transparent`
+is the default theme and means the document paints nothing at all — html and
+body included — because OBS composites the page over the game, and a background
+there is not a style choice, it is a rectangle over the raid.
 
 ## Census sync
 
@@ -1414,19 +1525,31 @@ is a baseline" below for why that survives the reader touching the menu.
 Tables sharing a `prefsKey`
 sync layout changes live (an in-module listener set — localStorage's own
 event only fires cross-tab), which is what keeps side-by-side columns lined
-up while you rearrange them. One kind tab (Damage / Healing, `?k`) rules
-every column: comparing this column's damage to that one's heals isn't a
-comparison. Each column carries a `ParseStrip` — one compact line of
-headline numbers (Combat, DPS/HPS, total, crit, deaths) standing in for
-ACT's title bar.
+up while you rearrange them.
+
+**A column carries its own kind tabs**, the same `KIND_FILTERS` set the
+drilldown offers (Damage / Heals / Power / Threat / Cures / Self) and only the
+ones that parse has rows for (`availKinds`) — a fury's column has no Threat tab
+to click. A raid column offers the two the parse list is written for, Damage and
+Heals. This replaced a page-wide Damage|Healing tab pair above the columns,
+which existed on the argument that comparing one column's damage to another's
+heals is not a comparison: true, and still the reader's call rather than the
+page's. The tab lives in component state, NOT in `?c` — the token says what the
+comparison is OF, a tab is how you are looking at it — and removing a column
+takes its tab with it (they are held by position, so a survivor must not
+inherit it). A screenshot column has no tabs at all: an image is of one view.
+Beyond the tabs, a column is built like the drilldown on purpose — name, class
+chip, ✕, controls, tabs, then the composition strip (`CompositionStrip`, shared
+with `ActorPanel`) or a raid column's `ParseStrip`, one compact line of headline
+numbers standing in for ACT's title bar.
 
 **The URL is the comparison.** One query param `c`, a CSV of
 `<runId>:<sel>:<subject>` tokens, where `sel` is `all` or fight ids joined by
 `.` — not `+`, which `URLSearchParams` reads as a space — and `subject` is
 `raid` or a player name (EQ2 names are single-word alphanumeric, so the
 delimiters can't collide). Malformed tokens are dropped, never crashed on.
-Everything on the page — add, remove, flip a fight or a subject — rewrites `c`
-(the kind tab rewrites `k`), so a pasted link reproduces the whole comparison.
+Everything on the page — add, remove, flip a fight or a subject — rewrites `c`,
+so a pasted link reproduces the whole comparison.
 
 **Every number comes from `/encounters/agg`** — per-encounter authorized,
 memoized, client-cached — and never from the run report, whose rows are frozen
@@ -1442,48 +1565,325 @@ the comparison stands, which is what makes the links safe to share.
 page's title block — the fight rail's head (carrying the page's current fight
 selection) — and one in the
 player drilldown header (`ActorPanel compareTo`, players only — comparing a
-mob across nights isn't a thing). Both land with one column loaded and the
-add-a-parse card prominent.
+mob across nights isn't a thing). Both land with one column loaded, and the
+placeholder slot beside it says where the next one goes.
 
 **The picker is one faceted live search, computed in the browser.** The first
 version was a flat `<select>` over every visible run plus a separate two-step
 player search — two controls that could not narrow each other, and a dropdown
 that grows to three hundred options is not a picker. It is now a search box over
-Zone / Date / Guild / Player dropdowns and a short result list: typing `freeth`
-surfaces *Freethinker Hideout* nights AND Freethinkers-guild nights, because
-zones and guilds match anywhere in the string (people type them from the middle)
-while roster names match from the front (people type those from the start).
+Zone / Named mob / Date / Guild / Player dropdowns: typing `freeth` surfaces
+*Freethinker Hideout* nights AND Freethinkers-guild nights, because zones,
+guilds and mob names match anywhere in the string (people type them from the
+middle) while roster names match from the front (people type those from the
+start).
 
 It is client-side because the page **already fetches the whole visible list**,
 one row per NIGHT with the same yours-then-primary rule as the raid list.
-`?roster=1` (`list_zone_runs`) adds each night's names, parsed server-side so the
-client never learns the storage format; ~300 nights × ~24 names is about 100 KB,
-smaller than one `/encounters/agg` answer the page will fetch anyway. That buys
-zero debounce, zero new endpoints, and instant cross-narrowing: **each dropdown's
-options are computed from the nights matching every OTHER facet**, so no
-combination of choices can strand you on an empty list. The Guild dropdown is not
-rendered at all when nothing visible carries a tag — a fresh backfill degrades by
-the control not existing yet, not by an empty select.
+`?roster=1` (`list_zone_runs`) adds each night's names AND its named mobs with
+the encounter ids that are each fight, parsed server-side so the client never
+learns the storage format; ~300 nights × ~24 names is about 100 KB, smaller than
+one `/encounters/agg` answer the page will fetch anyway. That buys zero debounce,
+zero new endpoints, and instant cross-narrowing: **each dropdown's options are
+computed from the nights matching every OTHER facet**, so no combination of
+choices can strand you on an empty list. The Guild dropdown is not rendered at
+all when nothing visible carries a tag — a fresh backfill degrades by the
+control not existing yet, not by an empty select. Named mobs follow the fight
+rail's hiding rule (`_named_for_runs`): a hidden pull is still its owner's and
+is not a boss anyone else can search for.
 
-**A raid click adds; a player click selects.** One click on a result row adds the
-whole raid, because the anchor column already said what kind of comparison this
-is, and the facets survive it — stacking three Freethinkers nights is
-click-click-click. When a player anchors the page (or the Player facet is set),
-the row click instead *selects* the night and fills the Zone/Date/Guild dropdowns
-from it, and a confirm strip offers that night's roster (defaulting to the
-anchored name) plus "Whole raid" — so the common case, "me on another night", is
-click-row, click-Add, and no mode is a dead end.
+**The search is a BAND across the top, and one click on a result IS the add.**
+The picker used to be a 300px card holding the left edge with the parses stacked
+to its right — better than trailing them, which walked the control further right
+with every raid added, but still a third of every row spent on something you
+have already used. It is now a card across the top of the page — the facets on
+one line, the full width underneath for the parses — with a search field
+carrying its own magnifier, then Zone / Named / Date / Guild / Player. Each
+dropdown is named for what it holds rather than for the rows it would leave
+alone ("Zone", not "Any zone": a facet is off when it reads its own name), and
+Guild and Player put YOUR guild and YOUR characters at the top marked `(You)`,
+read off the `mine` flag the list already carries — hunting for your own name
+among three hundred alphabetical ones is the picker failing at its one job.
 
-**The picker card renders BEFORE the columns**, so it holds the left edge while
-parses stack up to its right. It used to trail them, which walked the one
-control you use repeatedly further right with every raid added — and off the
-screen by the third.
+A result click lands the column already scoped to what the search was about —
+the named mob's fights if one is picked (all of them: a raid pulls a boss twice
+often enough that both belong), and the person if the Player facet or the anchor
+column names one, spelled the way the roster spells them. The old two-step
+(select a night, then pick a subject in a confirm strip, then press Add) is
+gone: the column's own two dropdowns fix whatever the click got wrong, which is
+the same control in the place you are already looking.
+
+**Every dropdown on the page is `Picker`, not `<select>`.** A native select
+costs three things this page cannot spend. Its popup is OS chrome —
+`color-scheme` gets it dark and that is the end of what this stylesheet may say
+about it, so the surface a reader opens most often is the one surface that
+looks like nothing else here. An `<option>` is a string, so a raider can be a
+name or a class but not both. And a closed select is as wide as its widest
+option, which is how one 24-name roster came to set the width of a control
+reading `Bobby`, and how a fight label (mob name plus a clock) pushed the
+subject picker to the far side of a 380px column. `Picker.jsx` splits those
+apart: the BUTTON is sized by the row it sits in and truncates, the PANEL is
+sized by its content. Rows carry an icon and a muted hint, so a player row is a
+class dot, a name and the class spelled out; sections are optgroups; past ten
+rows the panel grows a filter, because a roster is a list you search.
+
+The open panel is rendered into `document.body` and positioned from the
+button's rect. That is not a preference — **every `.card` here carries
+`backdrop-filter`, which makes it a stacking context AND a containing block for
+`position: fixed`**, so a menu written inside a card is sealed into that card's
+box and painted under every later sibling however high its z-index goes. The
+search band is a card and the parse columns are cards after it, so facet menus
+dropped down *behind* the parses. The same trap put the screenshot viewer under
+the next column. Leaving the card is the fix; a bigger z-index cannot be one.
+
+**A row's own parts are targets too.** A night found by a mob name is not really
+an answer of "this raid" — searching `saw` and getting *The Emerald Halls* means
+the pull, not the night — so the matching named mobs sit under the row as chips
+and go straight to that fight, as does any raider whose name the query matched.
+A chip carries a MARK, not just a tint: a skull for a pull, a head for a person.
+They are the one place on the page where the two kinds of target sit in one
+strip, and telling them apart by color alone is the mistake the class chips are
+careful not to make. The chips hang off a vertical rule descending from their
+row, and each result is ruled off from the next — a dozen results in a
+three-column grid, each two or three lines with a strip of chips under it, ran
+together into a block where one row's chips read as the next row's subtitle.
+With no question about mobs asked, the night's named mobs are offered anyway
+(capped): going straight to a boss is the common move. Raiders are not offered
+that way — twenty-four names under every row is a roster, not a shortlist — and
+the chips compose with the facets rather than replacing them, so a mob chip
+keeps the player the search is about and a person chip keeps the pull.
+
+**Results appear only once something has been asked, and the empty slot is the
+drop box.** Twelve recent raids sitting there on arrival read as the page's
+content, when the content is the parses underneath — so what speaks in the
+meantime is the last column: a `ShotDrop` styled as a parse column (`.dropslot`,
+a + inside a heavy dashed border) captioned *Search or add a screenshot to
+compare…*. It says where the next parse lands AND takes one, which is why there
+is no second placeholder and no drop target up in the search band: those were
+two objects making one statement. It stays for good, walking right as parses
+fill in from the left. Removing a column is an explicit ✕ at the end of its
+title line (the drilldown's), not a click on the title itself — a heading that
+deletes what you are reading is not a heading.
 
 `GET /api/players?q=` / `GET /api/players/{name}/runs` remain in `zoneruns_api.py`
 — a `json_each` scan of `zone_runs.roster_json` behind `VISIBLE_RUN_IDS`, the
 same predicate as the list — but the picker no longer calls them. `?roster=1`
 runs behind that identical predicate, so it reveals nothing a viewer could not
 already read fight by fight.
+
+## Importing a parse from a screenshot (`pipeline/actshot.py`, schema v27)
+
+Half of every comparison people actually make lives in Discord as an image.
+Somebody posts their ACT window, somebody else wants to know how they measure
+up, and there is no log on either side of that exchange — only a JPEG. This
+reads one back into numbers.
+
+**It is not a second ground truth.** An ACT XML export is what the parser is
+validated against, and that has not changed. A screenshot is a CLAIM about
+somebody else's night, read off pixels, and the whole design follows from
+taking that seriously rather than from trying to make it look authoritative.
+
+### It is kept out of the parse world entirely
+
+An import writes one row in `imported_parses` and touches nothing else: no
+session, no character, no encounter, no zone run, no entity. That is the
+containment, and it is structural rather than a matter of remembering to
+filter. Nothing that rolls up, ranks, votes on a guild tag or clusters a raid
+can reach a shot, because none of them look in that table. The rows live as
+JSON in it for the same reason — the moment they share a table with parsed
+numbers, something eventually averages the two together.
+
+Visibility is equally deliberate: a shot is private to whoever imported it,
+full stop. `groups.py` owns the one visibility predicate for real parses, and
+the rule about that predicate is that it does not acquire weaker siblings. A
+shot needs no branch in it, so it gets none; if shots ever want sharing they go
+through the existing predicate rather than beside it. Ids are sequential, so a
+stranger's `GET` answers 404 exactly as a missing one does.
+
+The picture is kept, but never the original file. A re-encoded WebP copy and a
+thumbnail go to `PARSESHOTS_DIR`; the uploaded bytes do not. This reverses a
+first decision to drop the image entirely, and the reason it reversed is the
+table further down: four columns cannot be checked by any arithmetic, so the
+screenshot is the only other evidence those numbers have, and a parse you
+cannot put beside its source is one you have to take on faith. Re-encoding is
+what makes that safe to keep — the file on disk is an image this app wrote, at
+a size it chose, carrying nothing the original file carried besides pixels.
+
+The copies are exactly as private as the row. Served by an owner-checked
+endpoint rather than a static mount, because a static directory makes the
+filename the permission; named with a random token so a stray path is not one
+either; and `Cache-Control: private` so no shared cache holds somebody's
+screenshot. They are written only AFTER the table reads — a picture of
+something that is not an ACT window has no reason to be on this disk — and
+deleting the parse deletes them.
+
+The kept copy is deliberately NOT shrunk to a convenient web size. Its purpose
+is reading a number off it, and small antialiased digits scaled to fit a
+viewport are precisely what cannot be checked; it is bounded at 2200px only so
+a 4K capture doesn't sit at full size.
+
+The VIEWER is a separate question from the file, and it answers differently:
+it opens **fit to the screen** and zooms on request. Opening at the stored
+pitch followed that same reading-a-number argument and got it wrong by one
+step — a 2200px capture dropped onto a laptop shows you one corner of a table
+with no way to tell which corner. So the first paint is the whole window and
+`Full size` scrolls it at its stored pitch, which is the mode for checking a
+cell. Two jobs, two modes. It also renders into `document.body`: opened from
+inside a compare column it was trapped in that column's card (`backdrop-filter`
+again — see the Picker note above) and painted under the column to its right.
+
+**An imported column is NAMED, not labelled with whatever ACT's title bar
+said.** That title bar names the VIEW, so a whole-night screenshot comes back
+called `All` — true, and no answer at all to "which parse is this" when two
+imported columns sit side by side. `shotTitle` joins who, where and which
+fight: *Bobby — Halls of Fate — All*, dropping any part the shot doesn't carry.
+The screenshot itself sits in the column HEAD, right of that title block rather
+than under it: both are about three short lines tall, so side by side they cost
+one band of the column where stacked they cost two, and vertical space above
+the table is spent by BOTH parses before their rows line up. The ✕ goes past
+the picture, in the card's corner — everywhere else it ends the title line,
+which is the same statement (the far end of the head).
+
+### Nothing about the table is assumed
+
+ACT's columns are the reader's, and the two committed fixtures prove it: one
+has `AvgDelay` and the other has no such column. So the geometry is measured
+per image.
+
+*Rows.* Horizontal rules give the ladder, but they are FITTED rather than
+walked. Rescaling by Discord makes the pitch fractional — 17.46px, so gaps
+alternate 17/18 — and a fixed pitch drifts off the ladder within twenty rows.
+Every (pitch, offset) is scored by how many rules land on it and the winner is
+refit by least squares. That also absorbs the two things that break a greedy
+chain: a highlighted row swallows its own rule, and the pie chart under the
+table contributes rules of its own. Getting this wrong is not subtle — the
+pie's legend entries are ability names, so a ladder that runs past the table's
+bottom edge reads the legend as parse rows.
+
+*Columns.* Only the header band carries separator ticks. A separator is told
+apart from header LETTERING by variance down the band, not by darkness: on a
+rescaled shot the two are equally dark, and a mean-only test reads half the
+header as columns. The heading is then OCR'd and fuzzy-matched to a field,
+because the heading is the only thing that says what a column is.
+
+*The selected row.* ACT draws it white-on-blue. Greyscaling loses it entirely,
+and inverting leaves dark text on grey inside an otherwise white column strip,
+which `psm 6` drops. It is binarized to black-on-white and re-read three ways —
+tight crop, wide crop, whole row — because no single crop is right: tight
+clips a right-aligned leading digit (`824` → `24`), wide bleeds the
+neighbour's digits in (`1,017.33` → `64,017.33`), and whole-row loses column
+identity where a word box straddles a boundary. The three disagree in
+different places, so their agreement is the answer, grouped by DIGITS so that
+`2.57` and `257` count as one reading — they differ only in whether the
+decimal mark survived.
+
+### The locale is arithmetic, not a setting
+
+`5.612.947` is five million to a German client and 5.612 to an American one,
+and at this font size `.` and `,` are a couple of pixels apart. Nothing asks
+the user and nothing guesses: `Damage / EncDPS` is the same number on every
+row, so the mark that makes the most rows agree on it wins. That is usually a
+tie — reading `9.241,15` under the wrong mark still recovers every digit and
+merely shifts the ratio by a factor of 100, the same factor on every row, so
+the cluster is exactly as tight — and the tiebreak is the shape of the
+two-decimal columns (`98,60` against `100.00`), which is the evidence a human
+uses. The Discord fixture is German and is detected as such.
+
+### The fight length comes from the table, not the title bar
+
+The title's `[mm:ss]` is the duration of ONE encounter. On ACT's `All` line it
+is not the fight length at all, and a shot of `All` printing `[00:12]` over 654
+seconds of parse was read as a 12-second fight: `_repair` recomputed every
+EncDPS as damage/12, so the `All` row published 378,596 DPS against ACT's own
+6,946.73 and every ability row was wrong by the same factor of 54. Only the
+DPS column was wrong, which is the column people import a screenshot to read.
+
+So the duration is fitted from the table (`_duration_from_table`): the mode of
+`Damage / EncDPS` across the rows, which is forty readings of one number
+against the title's one. It survives the rows whose EncDPS lost a decimal mark,
+and it is right about `All` as well as a single pull. The title is used only
+when fewer than four rows agree, and where the two disagree the shot carries a
+note saying so. On both single-encounter fixtures they agree, and the title's
+value is kept untouched.
+
+The same reversal applies to the two-decimal columns. ACT prints `EncDPS`,
+`Average`, `ToHit` and `AvgDelay` with two decimals ALWAYS, so a reading
+carrying no separator at all lost the mark rather than the digits — AvgDelay
+`461` is 4.61. Losing a mark cannot shorten the digit string, which is what
+makes that safe to apply without a second reading.
+
+### What can be checked, and what is simply reported
+
+ACT's table is redundant, and that redundancy is the entire warrant for showing
+an OCR'd parse at all:
+
+| column | how it is known |
+|---|---|
+| `Damage` | the `All` row is the sum of the rest |
+| `EncDPS` | `Damage / duration` — recomputed, and it is also what FITS the duration |
+| `Average` | `Damage / Hits` — recomputed, so a dropped decimal repairs itself |
+| `ToHit` | `Hits / Swings` — recomputed while `Hits <= Swings` holds |
+| `Hits`, `Swings` | `Hits <= Swings` is an invariant; a Swings cell that breaks it lost a digit (`73` → `7`) and is rebuilt from ToHit, which is a third reading of the same fact. Publishing the pair instead printed a ToHit of 1042.86% |
+| `Median`, `MinHit`, `MaxHit` | **unverifiable**, beyond `Min <= Median <= Max` |
+| `Crit%` | **unverifiable**, beyond being a percentage — which is enough to drop the selection artifact's leading digit on the highlighted row (`167%` → 67%) |
+
+Unverifiable cells are reported as read. A cell that FAILS a check it was
+subject to is blanked rather than published: a number we have positive
+evidence is wrong is worse than no number. `Resist` snaps to the closed
+vocabulary of damage types, so `cisease` never reaches a reader.
+
+There is deliberately **no review step**. One was designed and dropped on
+Lindsay's call, and the reasoning holds: a confirm grid cannot make an
+unverifiable number true, and the cells it would have caught are exactly the
+ones nobody can check against anything anyway. What survives instead is the
+labelling — an imported column says `imported` wherever it appears.
+
+### On the page
+
+`ShotDrop` IS Compare's empty column rather than a page of its own, because a
+screenshot is another way of NAMING a parse, not a separate activity — and
+because the slot that says "another parse goes here" and the box that takes one
+are the same statement. Drop it, paste it (the way an image leaves Discord is
+right-click → Copy image, so paste is first-class, not a nicety) or click to
+browse; it becomes a column, and the slot slides one place right, still ready
+for the next one, exactly as the search is after a hit.
+
+Behind it, dimmed almost to a texture, is a real ACT window
+(`frontend/src/assets/act-window.webp` — a 640px crop of the TABLE, not the pie
+chart, 33 KB): the box shows what goes in it instead of only saying so. It
+lifts on hover and again while a file is over the box, so the slot answers the
+pointer. On the parchment theme it is stronger and multiplied, because a pale
+screenshot on a pale card is otherwise invisible; either way it stays faint
+enough that the caption is the only thing you read. Reading takes seconds rather than milliseconds, so the
+endpoint is a plain `def` — FastAPI runs it in the threadpool and one import
+does not stall the event loop.
+
+The token grammar keeps three fields, `shot:<id>:parse`, so the CSV, the
+ordering and the remove logic never learn which kind a column is; only the
+fetch and the table differ. `shot` cannot collide with a run id, which is
+always a number. An imported column renders the SAME `BreakdownTable` as a
+real parse — that is the point of importing one — and every column it draws is
+either carried by the shot or derived the way it is for a real parse. `Crit %`
+is the one worth naming: a shot carries the percentage, so the crit COUNT is
+reconstructed from it, which the table's own `All` row then re-weights.
+
+**The picture travels with the parse.** An imported column carries the
+screenshot as a thumbnail beside its headline numbers (`ShotViewer.jsx`, shared
+with the Import page's table), and clicking it opens the stored image at full
+size — scrolling rather than scaled down, because the reason to open it is to
+read a figure off it. Clicking ANYWHERE closes it: backdrop, picture, caption,
+Escape, the Close chip; only the head bar is exempt. Some of the columns cannot
+be checked by arithmetic, so the picture is the only other evidence there is —
+leaving it behind on the Import page put the claim and its evidence on two
+different screens.
+
+A screenshot is of ONE view, so its column has no kind tabs — a Healing shot is
+a Healing column, headed as one, next to whatever the columns beside it are
+showing. (While a page-wide tab ruled every column, that same fact had to be an
+apology: a Healing shot on the Damage tab said to switch tabs instead of drawing
+heals under a DPS heading.) And it refuses rather than invents where it must: a
+title bar with no `[mm:ss]` means there is no clock, so the column says
+per-second numbers cannot be worked out rather than dividing by a guess.
 
 ## Reading the raid, not just counting it
 
