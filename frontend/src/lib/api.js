@@ -57,6 +57,7 @@ export const url = {
   deaths: (ids, windowS) => `/api/encounters/deaths?ids=${ids.join(',')}${windowS ? `&window=${windowS}` : ''}`,
   aoes: (ids) => `/api/encounters/aoes?ids=${ids.join(',')}`,
   classStats: (ids) => `/api/encounters/class-stats?ids=${ids.join(',')}`,
+  encountersReport: (ids) => `/api/encounters/report?ids=${ids.join(',')}`,
   zoneRun: (id) => `/api/zone-runs/${id}`,
   zoneRunReport: (id) => `/api/zone-runs/${id}/report`,
 }
@@ -83,15 +84,12 @@ export const api = {
   deleteCharacter: (id) => req(`/api/characters/${id}`, { method: 'DELETE' }),
   // device tokens are per ACCOUNT (v13) — one pairing covers every character
   tokens: () => req('/api/tokens'),
-  mintToken: (label) => req('/api/tokens', json({ label })),
   // Sonarr-style: revokes every live key and mints the replacement
   refreshToken: (label) => req('/api/tokens/refresh', json({ label })),
-  revokeToken: (id) => req(`/api/tokens/${id}/revoke`, { method: 'POST' }),
   census: (charId) => req(`/api/characters/${charId}/census`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
   censusSnapshots: (charId) => req(`/api/characters/${charId}/census/snapshots`),
   censusDiff: (charId, snapId) => req(`/api/characters/${charId}/census/snapshots/${snapId}/diff`),
-  spell: (id) => req(`/api/spells/${id}`),
   sessions: () => req('/api/sessions'),
   session: (id) => req(`/api/sessions/${id}`),
   // `roster` asks for each night's names too — the Compare picker facets on
@@ -125,6 +123,8 @@ export const api = {
   encountersDeaths: (ids, windowS) => cachedGet(url.deaths(ids, windowS)),
   encountersAoes: (ids) => cachedGet(url.aoes(ids)),
   encountersClassStats: (ids) => cachedGet(url.classStats(ids)),
+  // the run report, for a caller that has fights and no run — the dashboard
+  encountersReport: (ids) => cachedGet(url.encountersReport(ids)),
   raidReport: (id) => req(`/api/sessions/${id}/raid-report`),
   setCalibration: (id, calibration) => req(`/api/sessions/${id}/calibration`, json({ calibration })),
   upload: (file, characterName, retainRaw = true) => {
@@ -155,10 +155,13 @@ export const api = {
      cached: the panel is looking at exactly one subject at a time and rewrites
      it as you type. `mob` absent asks for the ZONE's notes, which is a real
      filter — see backend/routers/notes_api.py. */
-  notes: (zone, mob) => {
+  notes: (zone, mob, scope) => {
     if (!zone) return req('/api/notes')
     const q = new URLSearchParams({ zone })
     if (mob) q.set('mob', mob)
+    // 'zone' widens it to everything filed in the zone, nameds included —
+    // what the dashboard column and the outline read.
+    if (scope) q.set('scope', scope)
     return req(`/api/notes?${q}`)
   },
   notesOutline: () => req('/api/notes/outline'),
@@ -273,6 +276,19 @@ export const fmt = {
     const m = Math.floor(s / 60), r = s % 60
     return m ? `${m}m ${r}s` : `${r}s`
   },
+  /* A running clock, read the way a clock is read: `2:07`, not `2m 7s`.
+     For the live dashboard only — a figure that changes every second while you
+     are watching it should not change WIDTH every second too, so it is fixed
+     punctuation and two-digit seconds, on `font-variant-numeric: tabular-nums`
+     so the digits sit still. Counting DOWN rounds the other way (a countdown
+     shows 0:01 until it is actually up), which is AoeTimers' own `mmss`. */
+  clock: (s) => {
+    if (s == null) return '—'
+    const n = Math.max(0, Math.floor(s))
+    const h = Math.floor(n / 3600), m = Math.floor((n % 3600) / 60), r = n % 60
+    const mm = h ? String(m).padStart(2, '0') : String(m)
+    return `${h ? `${h}:` : ''}${mm}:${String(r).padStart(2, '0')}`
+  },
   /* The header clocks, in the units a raid night is actually thought about.
      "132m 18s" is a number you have to divide before it means anything; the
      seconds stay because the two clocks beside each other (raid time vs
@@ -325,8 +341,6 @@ export const fmt = {
   date: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })),
   dateLong: (epoch) => (epoch == null ? '—' : new Date(epoch * 1000).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })),
   timeRange: (a, b) => (a == null ? '—' : b == null ? fmt.time(a) : `${fmt.time(a)} – ${fmt.time(b)}`),
-  dayKey: (epoch) => new Date(epoch * 1000).toLocaleDateString('en-CA'), // local YYYY-MM-DD
-  pct: (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—'),
   bytes: (n) => {
     if (n == null) return '—'
     if (n < 1024) return `${n} B`

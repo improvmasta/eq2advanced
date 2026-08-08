@@ -9,10 +9,11 @@
 
 ## Read also
 
-- `ARCHITECTURE.md` — how it works and WHY. This file is the index and the
-  rules; that one holds the reasoning, and it is where a design decision goes.
+- `ARCHITECTURE.md` — the INDEX of the design reference in `docs/*.md`. Read
+  the topic file for the area you're changing (only that one) before touching
+  it; new design decisions and their evidence go there, not here.
 - `AGENTS.md` — agent instructions and provisioning notes.
-- `codex.md` — the same context for Codex; keep the two in sync.
+- `codex.md` — a pointer here; context lives in this file only.
 
 ## App
 
@@ -28,7 +29,7 @@
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # 543 tests; golden = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # golden fixture = /home/lindsay/bobby.txt
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=claude bash ship.sh "message"        # Ship log + commit; pushes on main
 ```
@@ -49,540 +50,302 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/` and `noteshots/`
-(re-encoded screenshots). Schema is at **v29**; migrations in
+(re-encoded screenshots). Schema is at **v30**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
 ## The rules — don't relitigate these
 
-Every one has a section in `ARCHITECTURE.md` carrying the evidence.
+One line each; the evidence lives in the named `docs/` file. Read it before
+arguing with a rule or working near one.
+
+Deployment and runtime — `docs/runtime.md`:
 
 - **Never ship, never deploy.** The container on 10.1.1.5 is Lindsay's.
+- **The Cloudflare proxy stays off** — the edge's 100 MB body cap eats raid
+  backfills and it breaks HTTP-01 renewal.
+- **`siteconfig.py` owns the three request facts the proxies falsify** (client
+  address, scheme, public base URL). Never `request.client.host`/`base_url`.
+
+Sharing and visibility — `docs/sharing.md`:
+
 - **Sharing is set on the site, never by the uploader.** A device token sends
-  log lines and nothing else. v11 built the opposite (`session_shares`, a
-  `can_share` token scope); v12 removed it. Don't rebuild it.
-- **`groups.py` owns the one visibility predicate** — own / shared with a group
-  you're in / either STANDING share (a character's auto-share, a user's guild
-  tag) minus a per-run `hide` / published, decided at READ time. A standing
-  branch has FOUR query sites and all four are traps: `PERSONAL_RUN_IDS`
-  (missing it is a leak), `set_run_shares`'s `auto` set (it deletes explicit
-  shares, so a branch it doesn't know about survives the untick and revokes
-  nothing), `shared_via_for_runs`, and `shares_for_runs` — that last one looks
-  cosmetic and isn't: ShareDialog saves back what it returns, so an unreported
-  group gets a spurious `hide` and the raid is silently unshared. Every branch
-  that reaches a group must also carry `LIVE_GROUP` (deleting a group is a soft
-  delete — all its rows are still there).
-- **A guild share is matched on the UPLOADER's character's Census guild**, never
-  on the run's majority-vote `guild` tag, and it is a per-user rule rather than
-  a group-manager power (`PUT /groups/{id}/guild-shares` is member-gated).
-  `guild_checked = 1` only — 0 abstains, exactly like the raid-tag vote.
-- **Seeing is never changing** (`owned_zone_run`), and authorization is per
-  ENCOUNTER (`visible_encounters`), never per session — a shared raid must not
-  expose the other fights in the same uploaded file.
-- **Hiding is a SECOND predicate, beside the sharing one, never folded into
-  it.** Sharing asks who the owner sent a raid to; hiding asks whether they
-  meant anyone to read it at all, and the answer is the same for every viewer.
-  `VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS` rather than adding a
-  branch to it — that predicate stays the one auditable statement of the
-  sharing rule. Per fight, the choke point is `visible_encounters`: ids are
-  sequential, so "absent from the payload we sent" is not an access rule.
-  A hidden fight still SEGMENTS (dropping it would split a night at a gap that
-  only exists because it was hidden) and never COUNTS — `encounter_count` is
-  the visible count, `hidden_count` is the rest.
-- **Admin is operational, not omniscient.** `role='admin'` is absent from every
-  visibility decision; support is "ask them to share the raid".
-- **Private chat is stripped at INGEST, never at display** (`pipeline/redact.py`).
-  An EQ2 log is the whole client log; the server stores the fight plus the group
-  and raid talk around it, and the unredacted file never lands on disk at all —
-  the upload path filters the byte stream as it arrives and the live path filters
-  before writing each chunk. Dropped: tells, guild, officer, every named channel
-  (LFG/General/Auction/…) and local `/say`. The classifier is an ALLOWLIST, so an
-  unrecognised channel is dropped rather than kept — a chat type nobody thought of
-  has to fail closed. It governs exactly the set `classify_body` already returns
-  None for, and it imports `CHAT_PREFIXES`/`CHAT_RE` from `classify` rather than
-  restating them, because a drifting copy is how redaction would start eating real
-  events; that is also why redaction can never change a number. `trim_to_fights`
-  is the second pass — retained group/raid chat outside any encounter window
-  (±`FIGHT_MARGIN_S`) goes once the parse knows where the fights are, and it takes
-  the UNION of windows across every session sharing those bytes so trimming for
-  one uploader cannot cut chat out from under another. The content address stays
-  the sha256 of the ORIGINAL bytes, or two raiders' copies of one night stop
-  deduping. Logs stored before this existed are cleaned by
-  `backend/tools/redact_existing.py` (one-time, `--dry-run` first).
-- **A pet or proc label is a CLAIM, and only a human makes one.** The ladder is
-  `ability_rulings` > the curated seed > no label (`census/catalog.py`, the two
-  `*_ability_names` readers are the only doors). Inferring them cost 228
-  pet-flagged names, 108 of which Census knows as scribed player spells (`Ice
-  Comet`, `Harm Touch`, `Raging Blow`) — `observe_pet_abilities` took a label
-  from one sighting, and `refine_bare_pets` read that table back to decide what
-  a pet was, so the error fed itself. Necromancer looked right only because the
-  curated seed covered it. Everything the machine notices is a CANDIDATE
-  (`pet_seen`, `proc_candidate`), reviewed at `/admin/abilities`. `pet_definite`
-  (a possessive with a lowercase remainder) is grammar; `pet_guess` (a bare
-  capitalized name) is where every bad label came from — never treat them alike.
-- **`You prepare <X>` does NOT print for an AA activation**, so the log's proof
-  of a press is missing exactly where AAs live and a pressed AA is
-  indistinguishable from a gear proc. `Lifeburn` (a 5-minute recast) read as
-  gear, with 45 rows on the same silence. `gamewiki.activated` (a recast timer)
-  is the only evidence that settles it, which is why `suggest()` checks it
-  BEFORE the prepare-line test — the ordering is the fix. The wiki is also a
-  proc SOURCE (`Avast Ye` -> `Pirate Stab`), using the same grammar as Census.
-- **The wiki ingest is ERA-FILTERED and must stay that way** (`gamewiki.AA_TREES`,
-  `DEFAULT_ERAS = ("eof",)`). This is a level-70 TLE server; the expansion trees
-  don't overlap at all (1215 EoF pages vs 407 later, zero shared), and pulling
-  Heroic/Shadows/Dragon would label raids with content that does not exist here.
-  Adding RoK is one entry plus a re-sync. Run `tools/sync_wiki.py` BY HAND —
-  never on a schedule. Census stays authoritative for spells; the wiki covers
-  what Census was never asked for. Deities (`--what deity`, 139 blessings and
-  miracles) are always EoF — they arrived with it.
-- **A NAME is not a key, and a wiki match is the weakest join there is.**
-  `wiki_abilities` is keyed on (name, KIND) because one name really is two
-  abilities: the fury spell `Tempest` and Karana's miracle both print the same,
-  and 37 AA names collide with a blessing. A single-column key let the deity
-  sync silently overwrite them. The same AA on several classes (`Enhance: Cure`
-  x3) MERGES its tiers rather than overwriting — 66 pages were collapsing to
-  29 names. And a wiki row only speaks when Census does not contradict it: a
-  scribed spell record is the game naming the class, so `scribed_by` wins and
-  the wiki stays visible as evidence (`gamewiki.by_name` marks `ambiguous`,
-  `suggest` refuses to be confident about it). Disambiguation pages are skipped
-  outright — they are pointers, not abilities.
-- **Census answers "spell, AA, gear or deity" — read it, don't guess.** Spell
-  records carry `given_by`, `type`, `alternate_advancement` and `deity`, and a
-  proc's source spell is findable by its effect text: `Fae Fires` is `Fae Fire`,
-  a level 35 FURY spell, not "a gear proc". The gap is real and narrow —
-  `census_items` has 143 rows and 2 spells carry the deity flag. AAs and
-  deities are now covered by `gamewiki.py`, so "no cached spell casts it" means
-  GEAR — and gear is a closed question, not a pending pull (see Open). Self vs
-  granted is a per-ROW question against `grant_class`, never a property of the
-  ability.
-- **A grant is to a TIER of EQ2's class tree, not a class** (`classtree.py`).
-  AAs are handed out at every level — Predator is rangers AND assassins, a
-  Scout AA is all seven — so `expand()` is the one translation and a ruling
-  against `predator` groups under both without being written twice. Census
-  never needs it (it writes only subclass names, pre-expanded); this is for
-  what a PERSON types, which is why an unrecognized target is rejected rather
-  than dropped. Not the same thing as the ROLE map in `coach/descriptive.py` —
-  don't merge them.
-- **`role` is operational and now has three values** (`user|curator|admin`).
-  `curator` opens the Abilities console and nothing else; none of the three
-  reaches anybody's parse (`security.py`). A curator gets a ⚙ on every parsed
-  ability row into `/admin/abilities?q=<name>` — the wrong label gets noticed
-  on a raid page, not in the queue.
-- **Bump `PARSE_VERSION` (`pipeline/ingest_writer.py`) after ANY parser or
-  rollup semantics change** — the startup sweep reparses stale sessions.
-  Zone-run dedupe only matches equal `parse_version`, so duplicate marking
-  converges after that sweep, not during it.
-- **A segment is only a FIGHT if the raid engaged it** (`_ENGAGE_KINDS`: a
-  swarm pet is a proc, not a decision). Non-fights keep their name but are
-  `is_named` 0 / `success` NULL; the exception is an ally death, which makes a
-  no-damage segment a WIPE — `success` NULL renders exactly like a kill.
-- **Do NOT re-add trailing-event trimming.** It regresses cures/EncHPS; ACT
-  keeps idle-window heals and power inside the encounter.
-- **Everything that vetoes a mob reclassing is a claim that the name is a
-  PERSON** (`pipeline/refine.py`), so each one is a hole a mob can crawl
-  through. Owning a swarm pet is NOT proof — an encounter holding the raid's
-  dumbfires prints `Enynti's protoflame` for the boss, which put a mob in the
-  MMIS raider table with 872k damage. `roster_prescan` is the authority; the
-  softer signals no longer veto on their own.
-- **Census by NAME is ground truth for the whole raid**, not just people with
-  an account (`census/roster.py`, `roster_classes`). A raid page should not
-  show a "?" — 94% of raiders resolve, and a name Census has never heard of is
-  a pet or a mob, not an unknown player. Needs a real `CENSUS_SERVICE_ID`
-  (`s:example` throttles after ~6 requests); backfill with
-  `backend/tools/sync_roster.py --all`, guilds with `--guilds`.
-- **A raid's guild is a MAJORITY VOTE of its roster, and it abstains twice as
-  readily as it commits** (`census/guilds.py`, schema v20). No guild unless half
-  the roster resolved AND a strict majority of the resolved share one, with the
-  known-guildless counting against. `roster_classes.guild_checked` is why that
-  works: 1 + a name is a guild, 1 + NULL is known guildless (it votes), 0 is
-  never asked (it abstains) — collapse the last two and a backfill in progress
-  strips real tags. The tag is derived, so it is RECOMPUTED, never maintained:
-  `retag_runs` is pure SQL and every path that rewrites a roster calls it.
-- **Order of class authority per fight** (`classguess.resolve_class`): what the
-  fights on screen prove > the era the fight falls in > Census > the pooled
-  vote. Census says what someone is NOW; only the log is dated, so Census must
-  never relabel a raid from before a betrayal.
-- **A bare capitalized name is a raider, a boss OR a dumbfire** and only
-  behavior tells them apart (`pipeline/refine.py`). Nothing that a mob or a pet
-  can also produce is proof of personhood — not a self-heal, not owning a swarm
-  pet, and not `<Name> receives ...` (that one is a debuff as often as loot).
-- **A class change is a DATE, not a tie** (`pipeline/classguess.py`). Betrayal
-  deadlocks the pooled vote between two full spellbooks and blanks the class in
-  every raid the name appears in. When the vote deadlocks, check whether the
-  contenders' ability windows are disjoint before giving up.
+  log lines and nothing else (v11 built the opposite; v12 removed it).
+- **`groups.py` owns the one visibility predicate**, decided at READ time. A
+  standing-share branch has FOUR query sites and all four are traps; every
+  branch reaching a group must carry `LIVE_GROUP`.
+- **A guild share matches the UPLOADER's character's Census guild** (never the
+  run's majority-vote tag), per-user, member-gated; `guild_checked = 1` only.
+- **Seeing is never changing** (`owned_zone_run`); authorization is per
+  ENCOUNTER (`visible_encounters`), never per session.
+- **Hiding is a SECOND predicate beside sharing, never folded in** —
+  `VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS`. A hidden fight still
+  SEGMENTS and never COUNTS.
+- **Admin is operational, not omniscient** — `role='admin'` is absent from
+  every visibility decision.
+- **Private chat is stripped at INGEST, never at display** (`pipeline/redact.py`);
+  the classifier is an ALLOWLIST that fails closed and imports its patterns
+  from `classify`; the content address stays the sha256 of the ORIGINAL bytes.
+
+Ability knowledge, Census and the wiki — `docs/census-abilities.md`:
+
+- **A pet or proc label is a CLAIM, and only a human makes one** — the ladder
+  is `ability_rulings` > curated seed > no label; the machine only nominates
+  candidates for `/admin/abilities`.
+- **`You prepare <X>` does NOT print for an AA activation** — `gamewiki.activated`
+  settles pressed-vs-proc and is checked BEFORE the prepare-line test.
+- **The wiki ingest is ERA-FILTERED (EoF) and must stay that way**; run
+  `tools/sync_wiki.py` BY HAND, never on a schedule.
+- **A NAME is not a key** — `wiki_abilities` is keyed (name, KIND), same-name
+  AAs MERGE tiers, and a scribed Census record beats the wiki (`scribed_by` wins).
+- **Census answers "spell, AA, gear or deity" — read it, don't guess.** "No
+  cached spell casts it" means GEAR, and gear is CLOSED AS WONTFIX (see Open).
+- **A grant is to a TIER of EQ2's class tree, not a class** (`classtree.expand`);
+  not the same thing as the ROLE map in `coach/descriptive.py`.
+- **`role` is `user|curator|admin`**; curator opens the Abilities console and
+  nothing else; none of the three reaches anybody's parse.
+- **Census by NAME is ground truth for the whole raid** (`census/roster.py`);
+  needs a real `CENSUS_SERVICE_ID`; backfill via `tools/sync_roster.py`.
+- **A raid's guild is a MAJORITY VOTE of its roster** and abstains twice as
+  readily as it commits; the tag is derived, so it is RECOMPUTED (`retag_runs`),
+  never maintained.
+- **Census `crc=` silently rejects comma OR-lists** — one request per crc.
+  Tests never touch live Census (fixtures + `CENSUS_AUTO_REFRESH=0`).
+
+Parser and stats — `docs/parser.md` (read it BEFORE touching the parser or
+segmentation; the subject model is verified against a real raid log):
+
+- **Bump `PARSE_VERSION`** (`pipeline/ingest_writer.py`) after ANY parser or
+  rollup semantics change; the startup sweep reparses stale sessions.
+- **A segment is only a FIGHT if the raid engaged it** (`_ENGAGE_KINDS`); an
+  ally death makes a no-damage segment a WIPE.
+- **Do NOT re-add trailing-event trimming** — it regresses cures/EncHPS.
+- **Everything that vetoes a mob reclassing claims the name is a PERSON**;
+  `roster_prescan` is the authority, softer signals never veto alone.
+- **A bare capitalized name is a raider, a boss OR a dumbfire** — only
+  behavior tells them apart; nothing a mob or pet can also produce is proof.
+- **Order of class authority per fight**: screen > era > Census > pooled vote;
+  Census must never relabel a raid from before a betrayal.
+- **A class change is a DATE, not a tie** — on a deadlocked vote, check
+  whether the contenders' ability windows are disjoint.
+- **Ground truth is an ACT XML export**, one per fight — not screenshots.
+- GOTCHA `process_batch(token_row, char, …)`: `token_row` is an ACCOUNT token,
+  not a character row.
+
+Live, notes and replay — `docs/live.md`:
+
+- **The live meter is a VIEW, and writes nothing**; its arithmetic
+  deliberately matches `roll_encounter`.
+- **A finished fight on the dashboard is THE PARSE — the same component
+  `/zones/:id` renders** (`ParseView.jsx`), not a summary of it. The live
+  meter turns into it the moment the pull ends and it stays until the next one
+  opens. The cut-down "recap" (`RecordedFight.jsx`, two rate tables) is DELETED
+  — don't rebuild a second shape for a finished fight. The parse takes its
+  fights and its raid report as props; the dashboard's report comes from
+  `/api/encounters/report?ids=` because mid-night there is no run to ask for.
+- **The pull in progress is the rail's LAST ROW, never a button beside it**
+  (`EncounterTree`'s `live` prop). A fight only becomes a real row when the
+  writer commits it, so `Live.jsx` holds the just-ended pull on that row
+  (`saving`) until its `encounter` arrives — bounded by `HOLD_MS`, because a
+  segment the raid never engaged never commits at all. Between pulls that row
+  is an ELLIPSIS: no name, no clock, no dot.
+- **A fight ENDS at `GAP_S`, and only COMMITS at `CLOSE_S`** — the payload's
+  `ended` (from `now_ts`, the LOG clock, never the wall clock) is the
+  difference, and it is what stops the clock, the pulse and the rail row. Live
+  `elapsed_s` is damage-to-damage like `Segment.end_ts`, so the meter and the
+  card it becomes are the same length; trailing heals are still counted.
+- **`stale` means the UPLOADER is quiet, never "between pulls"** — a fight that
+  merely ended is what everyone is reading, so nothing dims. The mini rail is
+  handed the last pull rather than null, and the middle column can be switched
+  off (`Parse`: dimmed and paused) without switching off the page.
+- **The display switches live in the rail head, across from the character
+  name** (`headActions`: Mini, Parse, Overlay). The dashboard bar carries no
+  status — the site header owns "ACT connected" and idle/in-combat.
+- **Two clients is two live sessions, and the dashboard follows the one being
+  PLAYED** (`liveliest`) — `in_combat` first, then `last_ingest_ts`; never out
+  of a pull in progress; a hand-picked character holds it until its log goes
+  quiet (`QUIET_S`). Newest-created is not a signal. `in_combat` means an open
+  segment whose last DAMAGE was inside `GAP_S`, not merely an open segment.
+- **Resolving nothing is not the same as knowing nothing** — `livemeter.Names`
+  decides who a name is from `live.snapshot_context` (classes, mobs, players,
+  bare pets, read once per session) plus `refine_known_mobs` over the open
+  segment. A seeded mob outranks the roster and only CENSUS vetoes it; the
+  roster vetoes only what one segment INFERS.
+- **A meter row is a rate, never a total**, and the tail folds at 12 rows
+  (`SortableTable`'s `fold` cuts after the sort). The stream overlay keeps its
+  hard `max_rows` cap instead — nobody can click a stream. **Max hit is the
+  one exception** (`max_hit`/`max_heal`, by SOURCE): a nuke and a DoT with the
+  same DPS are not the same thing.
+- **The mini parse and the stream overlay are ONE component** (`MiniParse.jsx`);
+  `MiniRail` is only the dock. Don't give the overlay a meter of its own — a
+  change to the mini parse IS a change to the overlay.
+- **The parse does not ANIMATE; only its clocks move** (`lib/smooth.js`).
+  Figures and bars change when the payload changes them. Tweened numbers and
+  sliding bars were both built and both REMOVED — a rate counting up cannot be
+  read while it does it, and a pull's opening seconds became a slot machine.
+  The cure for numbers that feel stale is a shorter ingest cadence, never an
+  animation over the gap. What still moves is the two things that are functions
+  of TIME: the AoE countdowns, and the elapsed clock counting in the browser
+  (its correction is asymmetric — take a payload ahead of us, hold against
+  latency behind us — so it never repeats or skips a second). **A clock stops
+  when its fight does**: a frozen parse counting off seconds is the one thing
+  here that is actively wrong.
+- **The screen sees a hit in ~1s, and every term of that is written down**
+  (`docs/live.md` → "How fast the screen sees a hit"). Plugin cadence 0.5s,
+  `SNAPSHOT_MIN_S` 0.25s, and the SSE streams are WOKEN by `pipeline/livebus.py`
+  rather than polled. Subscribe around the whole read, not around the sleep, or
+  a push loses the update that lands mid-read; the timeout stays as the
+  fallback that keeps `mark_watched` alive. The remaining floor is the plugin
+  holding the newest log second, which is the dedupe contract, not a bug.
+- **An update pill only ever appears for somebody whose OWN uploads say they
+  are behind** (`device_tokens.client_version` v30, off the uploader's
+  User-Agent, vs `refdata/plugin/VERSION`). Never heard from is not behind, and
+  versions compare as numbers.
+- **Live AoE detection imports `aoes.py`'s constants**; the
+  ≥5-raiders-in-a-second anchor is the whole evidence that a cast HAPPENED.
+- **An audit's threshold is not a panel's** — five targets is a GROUP, and it
+  drew 10 rows for 3 real abilities on a Mayong kill. The Spell timers panel
+  additionally needs a reported timer OR `RAID_FRACTION` of the raid reached;
+  the recorded AoE tab still lists everything.
+- **The notes column collapses, and Enter files a note** (Shift+Enter is the
+  newline). The `File under X` button sits under the textarea, and the
+  screenshot drop is a strip — a paste needs no target.
+- **A note is keyed by (user, zone, named), NEVER by encounter** — encounter
+  ids all change on rebuild; `encounter_id` is provenance, not identity. The
+  zone is the BASE name (`zones.base_name`): "Castle Mistmoore 2" is a second
+  lockout, not a second castle. The dashboard column shows the whole zone
+  (`scope=zone`); the composer still writes to one subject.
+- **Which expansion a zone came from is REFERENCE DATA, never inferred**
+  (`backend/zones.py` ← `refdata/zone_eras.json` ← the wiki's zone infobox,
+  synced BY HAND with `tools/sync_zone_eras.py`). It is read at import and
+  never fetched at runtime; a zone with no entry groups under "Other" rather
+  than being dropped. An `introduced = LU22` zone resolves by that update's
+  DATE to the expansion that was live.
+- **The notes outline links every named out to eq2lexicon**
+  (`lib/raids.js: lexiconRaid` → `/raids/<zone>/<named>`, new tab). The
+  lexicon holds the strategy, the note holds what happened to us — don't
+  restate one on the other.
+- **The overlay token is a capability in a URL** — it reaches the live meter
+  and nothing else; revoked and never-existed answer the same. Its options live
+  on the DASHBOARD (beside Mini) and `enabled:false` is not revoked.
+- **A replay is the live meter fed from a file, and it is TWO gates**:
+  `require_curator` gates the TOOL, `visible_encounters` gates the FIGHT. It
+  writes NOTHING.
+- **A replay also feeds that account's stream overlay** (`replaybus.py`,
+  per-user slot, expires) — how the overlay gets worked on outside raid hours.
+  It publishes the LIVE payload; the `replay` block never crosses.
+
+Display and import — `docs/zoneruns.md`, `docs/compare-import.md`:
+
+- **A mob earns a Damage-tab row on what it TOOK, not what it dealt** — plenty
+  deal nothing (anything that dies before it swings), and requiring damage
+  dealt made the NPCs switch look broken exactly where it is easiest to test.
+  Raiders keep the old test: a raider with no damage there is noise.
 - **Rank coloring is PLACEMENT within the row's role**, never distance from a
-  median, and a row with no role (or a group under `MIN_PEERS`) gets no color.
-  Falling back to the whole raid put four yardsticks in one column.
-- **Ground truth is an ACT XML export** (`Import/Export` → XML), one per fight
-  — not screenshots.
-- **An imported screenshot is a CLAIM, and is kept out of everything that
-  aggregates** (`pipeline/actshot.py`, `imported_parses`, schema v27). It is
-  how the other half of a comparison arrives when all anybody has is an image
-  from Discord. It writes one row and creates no session, character, encounter
-  or zone run, so no rollup, ranking, class stat or raidmatch can reach it;
-  it is private to whoever imported it (no group predicate — `groups.py` keeps
-  the one visibility rule and does not get a weaker sibling); and the image is
-  kept as a RE-ENCODED copy plus a thumbnail (`PARSESHOTS_DIR`), never the
-  uploaded bytes, written only once the table has read and served by an
-  owner-checked endpoint rather than a static mount — some columns can't be
-  verified by arithmetic, and the picture is the only other evidence they have. Nothing about the table is assumed: the row ladder is
-  FITTED (rescaling makes the pitch fractional, so a fixed one walks off it
-  within twenty rows), the columns come from the header's separator ticks —
-  told from header lettering by variance down the band, not by darkness — and
-  the decimal mark is decided by ARITHMETIC, since `5.612.947` is five million
-  to a German client and 5.612 to an American one. **The FIGHT LENGTH is fitted
-  from the table too, never taken from the title bar**: `Damage / EncDPS` is the
-  same number on every row, so its mode is forty readings against the title's
-  one — and on ACT's `All` line the title is flatly wrong (a shot printing
-  `[00:12]` over a 654-second parse recomputed every EncDPS as damage/12 and
-  published the `All` row at 378,596 DPS against ACT's 6,946.73). The title is
-  used only when fewer than four rows agree, and a disagreement is noted on the
-  shot. That same redundancy is the audit: Damage, EncDPS, Average, Hits,
-  Swings and ToHit cross-check or recompute — `Hits <= Swings` is an invariant,
-  so a Swings cell that breaks it is rebuilt from ToHit rather than published as
-  a 1042.86% hit rate — while Median, MinHit, MaxHit and Crit% cannot. Those are
-  reported as read, and a cell that FAILS a check it was subject to is blanked
-  rather than published wrong. ACT prints EncDPS, Average, ToHit and AvgDelay
-  with two decimals ALWAYS, so a reading with no separator at all lost the mark
-  and not the digits (AvgDelay `461` is 4.61). There is deliberately no review
-  step (Lindsay's call): a confirm grid cannot make an unverifiable number true.
-- **The live meter is a VIEW, and writes nothing** (`pipeline/livemeter.py`).
-  The dashboard's in-flight parse is built from the open segment `_flush`
-  already computes, handed to SSE as a `partial`, and stored nowhere — no rows,
-  no entity resolution, no encounter. That is what keeps
-  `test_golden_equivalence` true, and it is why the fight's name is
-  `provisional_*` until it closes and arrives again as an `encounter` card. Its
-  arithmetic deliberately matches `roll_encounter` (self-damage excluded, DPS
-  over the fight's clock, the same overheal reconstruction) — a meter that
-  measured differently would disagree with itself thirty seconds later. Three
-  gates decide whether it is built at all: nobody watching (`mark_watched`),
-  `mode=backfill`, and log time far behind the clock (`LIVE_LAG_S`) — the last
-  is why `simulate_live.py` grew `--restamp`. Readers get an RCU pointer swap,
-  never a lock.
-- **Live AoE detection imports `aoes.py`'s constants rather than restating
-  them**, and filters on nothing else. Name grammar would drop the bosses worth
-  a countdown (live, `Venekor` reads as a raider), so the ≥5-raiders-in-a-second
-  anchor is the whole evidence; sourceless `is hit by` effects count, pooled
-  under `Unknown` exactly as the recorded tab pools them (bobby.txt's Stench of
-  Death is 17 targets on a 30s reported timer). Only casts inside the CURRENT
-  fight feed an observed period.
-- **A note is keyed by (user, zone, named), NEVER by encounter** (schema v28).
-  Encounter ids all change when a live session is rebuilt from raw, so a note
-  that identified itself by one would lose its subject overnight;
-  `encounter_id` is provenance and is never joined for identity. Trash files
-  under the zone, a named files under the boss, and the client decides which
-  because it is the thing that knows what is on screen. Private, with no group
-  predicate — same rule as an imported screenshot.
-- **The overlay token is a capability in a URL** (schema v29). A browser source
-  sends no cookies and EventSource cannot set a header, so it rides in the
-  path — which is exactly why it reaches the live meter and nothing else: no
-  session ids, no history, no account name. Revoked and never-existed answer
-  the same. The page renders before the app shell, and `transparent` means the
-  document paints nothing at all, because OBS composites it over the game.
-- **A replay is the live meter fed from a file, and it is TWO gates**
-  (`routers/replay_api.py`). It reads a recorded fight's raw lines back off
-  disk, parses them with the same `parse_lines` the live path calls, and walks
-  a cursor through them in wall-clock time — so the dashboard can be worked on
-  without waiting for a raid, and the page cannot tell the difference. It
-  writes NOTHING (no session, no encounter, no rows, no `LiveState`), which is
-  what makes pointing it at the back catalogue free. `simulate_live.py` is the
-  opposite tool on purpose: it goes through real ingest, which WRITES — that
-  one tests ingest, this one tests the screen. The gates are separate and must
-  stay so: `require_curator` gates the TOOL (a developer control is not
-  everyone's dashboard furniture), `visible_encounters` gates the FIGHT, so an
-  admin is still refused a stranger's raid. Reading is windowed by
-  `raw_chunks.first_ts/last_ts` (5.9s -> 0.03s on a real fight) and stops
-  `TAIL_GRACE_S` past the end rather than at the first later line, because
-  being wrong about log ordering would silently truncate a replay instead of
-  failing.
-- **Census**: `crc=` silently returns nothing for comma OR-lists (`id=` accepts
-  them), so `spells_by_crcs` is one request per crc. Tests never touch live
-  Census — recorded fixtures in `tests/fixtures/census/`, and conftest sets
-  `CENSUS_AUTO_REFRESH=0`.
-- **`siteconfig.py` owns the three request facts the proxies falsify** (real
-  client address, scheme, public base URL). Never go back to
-  `request.client.host` / `request.base_url`.
-- **The Cloudflare proxy stays off**: the edge caps a request body at 100 MB
-  (a raid backfill is bigger, and that 413 never reaches the app) and it breaks
-  HTTP-01 renewal.
+  median; no role or under `MIN_PEERS` = no color.
+- **An imported screenshot is a CLAIM, kept out of everything that
+  aggregates** (no session/character/encounter/run; private, no group
+  predicate). The row ladder is FITTED, the decimal mark is ARITHMETIC, the
+  fight length comes from the TABLE, never the title bar; a cell that fails a
+  check it was subject to is blanked, not published wrong.
 - **`/characters` is off the nav and must not be linked** — an upload derives
   the character from the FILE NAME.
-- **The roster cooperation graph was REJECTED** (moved 0 of 49 real runs; a
-  passing group hits the same mobs you do). Don't rebuild it without a log
-  where the presence rule demonstrably fails.
-- GOTCHA `process_batch(token_row, char, …)`: `token_row` is an ACCOUNT token,
-  not a character row — it used to be one.
-- Read `ARCHITECTURE.md` before touching the parser or segmentation. The
-  subject model (bare logger-name = their PET) and the possessive rules are
-  verified against a real raid log and covered by tests.
+- **eq2lexicon CANNOT be framed** (`X-Frame-Options: DENY`, browser-enforced,
+  every origin) — its top-bar link opens away, and reverse-proxying it through
+  this backend to strip the header is REJECTED. wikQ2 frames, and its tab is
+  HIDDEN rather than unmounted — unmounting or moving the iframe reloads it and
+  loses their place.
+- **The roster cooperation graph was REJECTED** (moved 0 of 49 real runs);
+  don't rebuild it without a log where the presence rule demonstrably fails.
 
 ## What the app is
 
-**Ingest.** `/import` is the whole onboarding: the ACT plugin download, the
-account API key, a drag-drop uploader, and the imported-log table. Logs arrive
-as uploads or as live batches from the plugin (`/api/ingest/hello|batch|
-backfill/done`, Bearer device token — a frozen contract shared with
-`improvmasta/eq2advanced-act`). A live session is rebuilt from raw at close, so
-it is provably identical to uploading the same file.
+Details per area live in the `docs/` file named beside it.
 
-**Navigation is zone runs, not files.** A run is one contiguous visit to one
-zone by one character, derived from encounter rows by `pipeline/zoneruns.py`
-(content dedupe → segmentation → id-preserving upsert). `/` is the raid list,
-`/zones/:id` the raid page, `/sessions/:id` survives as the per-file debug
-view. Raids are EDITABLE — hide, delete, merge, split — and every edit is keyed
-by encounter FINGERPRINT so it survives the reparse a backfill triggers.
-
-**Hiding is not deleting** (schema v26). Delete says the pull never happened;
-hide says it is not the raid's business. A hidden fight is still its OWNER'S —
-listed in the rail, struck through, with the switch that puts it back — and is
-absent from every payload anybody else gets, out of `encounter_count`, the
-roster, `combat_s`, the sparkline and the raid report. Hide a whole raid and it
-leaves everyone else's list entirely. It rides the same `run_edits` mechanism
-(`kind='hide'`), so it survives a reparse; the visibility half is
-`groups.VISIBLE_UNHIDDEN_RUN_IDS` for a whole run and
-`security.visible_encounters` for one fight. Edit mode is `✎ Edit`, left of
-Compare on the raid page, plus a pencil on your own rows in the list. Delete
-confirms in place — click, then click Yes — never in a dialog.
-
-**One raid can arrive from several people.** `raidmatch.py` says which runs are
-the same night (zone + overlapping windows + shared roster) and the list draws
-one row with a `Parse` switch. Yours wins; otherwise the site picks the parse
-with the widest coverage, the same one for everybody.
-
-**The raid page** opens on Damage, with Healing / Defense / AoEs / Timeline /
-Class beside it, a fight rail on the left and a drilldown panel on the right.
-**Insights is hidden for now** — one commented line in `TABS` (ZoneRun.jsx);
-the panel and `coach_api` are untouched and putting the entry back turns it on. **Pets** and **NPCs** are two switches beside the role chips, on every parse
-tab and off by default: a mob keeps its own credit, so the boss row is a real
-parse (damage, DPS, self-heals) and clicking it opens that parse in the panel.
-Columns are the reader's (drag to reorder, hide from the Columns menu,
-**Reset to defaults** to undo it all) and are remembered per TAB, per browser —
-not per run, so a layout set once holds on every raid you open next. Each parse
-tab also offers the other one's rate folded away: HPS is default-hidden on
-Damage and DPS on Healing. `defaultHidden` is a BASELINE the reader's own
-choices sit on top of, never a first guess a single menu click wipes out.
-Rank coloring is continuous distance from the peer median (`stats.js
-rankScale`/`rankColor`) and says nothing under four peers. **Deaths** is two
-columns: a **Tank deaths** report on the left (one tank death in detail — the
-killing blow, took/healed, a row per SECOND of damage taken beside healing
-received with NET as the verdict, then the raw log) and **Every death** on the
-right (`DeathList.jsx`) — fights separated, the clock to the second, deaths
-within 5s folded into one expandable moment captioned with what killed them,
-and the recap opening inside its own row. Windows are **5s for the tank, 3s for
-the raid list, one request** (a spike is over in two seconds); an EQ2 log stamps
-WHOLE seconds, so nothing here prints a tenth. Class chips abbreviate in the
-tight columns (`classShort`: SK, Necro, Troub, Illy…). No charts on the tab:
-the recap's per-row bars are gone and its stat tiles are one fact line. Opening a raider
-carries the page's tab into their parse (Damage → Damage, Healing → Heals) and
-heads it with who they are — class, plus the level and guild Census already
-cached for the class lookup, which are undated and so caption the name
-rather than feeding any number. The rail's head puts the raid's guild pill
-right of the character whose parse it is and ends its action row with Compare.
-
-**The Class tab** holds the stats only one class can answer — a troubador's
-buff uptime is not a column the other twenty-five can share. A rail of the
-classes actually in the raid, a panel each, fed by the `pipeline/classstats.py`
-registry: adding a class stat is one `@register`-decorated function declaring
-its columns (metrics live in `pipeline/classmetrics/<class>.py`), and a class
-with none written yet says "Coming soon" rather than being hidden. `blurb` is
-required on every metric and carries the stat's LIMIT, because these live at
-the edge of what a log proves. Troubador so far: **Jester's Cap uptime** and
-casts (off the curated buff lines in `parser/buffs.py`) and **Perfection of
-the Maestro** coverage (off its Precise Note proc — PotM logs nothing else),
-which carries the raid-wide "double-covered" column for RoK. See
-ARCHITECTURE.md → the Class tab.
-
-**The raid dashboard** (`/live`) is the second monitor during a raid: the
-night's fights in the rail on the left, the pull happening right now in the
-middle, notes and screenshots on the right. The meter is ACT-shaped — a
-class-coloured bar behind every row, because a number you have to compare
-against twenty-three others is a table and a bar you can read from three feet
-away is a meter — over a scrolling raid DPS/HPS chart, with AoE countdowns
-above it (ACT's reported timer where it knows one, the shortest gap that
-repeated this fight where it does not, and it says which). Clicking back
-through the rail draws the SAME meter for a finished pull; the depth is one
-click away on the raid page. It picks the raid up on its own, so it can be left
-open, and it says so when the night finalizes. **Notes** file against the zone
-on trash and the named on a pull, so a season of them reads as an outline of
-the zone; screenshots PASTE, because mid-raid nobody is naming a file.
-**Stream overlay**: /account mints a token URL for an OBS browser source
-showing just the meter — theme, which parses, how many rows. **Replay** (a
-curator or admin only) plays any fight you can already open back through the
-meter at raid speed, from the dashboard's own bar — the way this page gets
-worked on out of raid hours.
-
-**Compare** (`/compare`, in the nav, signed-out too) puts any parses side by
-side — whole raids or single players from different nights, matched by name.
-A column is the ACTUAL parse, like two ACT windows lined up: a player column
-is their ability breakdown, a raid column is the zone page's parse list, and
-the table is the shared `BreakdownTable.jsx` (drilldown, raid-page compare
-panel and this page all render it — comparing looks the same everywhere).
-Share/ToHit are hidden by default; the Columns menu brings them back. **A
-column is built like the drilldown and carries its OWN kind tabs** — the same
-`KIND_FILTERS`, drawn only for the kinds it has rows for (`availKinds`) —
-rather than one page-wide Damage|Healing pair ruling every column; the tab is
-component state, not part of the link. The whole comparison lives in
-`?c=<runId>:<sel>:<subject>,...` so a link IS the comparison. Compare chips on
-the raid page and the player drilldown seed the first column. **The picker is a
-BAND across the top of the page**, not a card beside the parses: one faceted
-live search — a magnifier-marked box over Zone/Named/Date/Guild/Player
-dropdowns, computed IN THE BROWSER from the visible list it already fetched
-(`?roster=1`, which also carries each night's named mobs and their encounter
-ids, hidden pulls excluded for everyone but the owner) — with the full width
-underneath for the parses. A dropdown reads its own name when it is off
-("Zone", not "Any zone"), and Guild/Player put yours at the top marked
-`(You)`. Each only offers values that leave results, so no combination strands
-you on an empty list; typing `freeth` finds Freethinker Hideout nights and
-Freethinkers-guild nights alike, and a mob name finds the nights that pulled
-it. Results appear only once you have asked, each ruled off from the next, and
-**one click adds the parse**, already scoped to the named mob (all its pulls)
-and to the player the search is about — the column's own fight and subject
-dropdowns, side by side, fix whatever that got wrong, and a ✕ at the end of its
-title line closes it. A row's own parts hang off it as chips on a vertical
-rule, each MARKED rather than tinted: a skull for a pull, a head for a person.
-**Every dropdown here is `Picker.jsx`, never `<select>`** — a native popup is
-OS chrome no rule of `base.css` reaches, an `<option>` cannot hold a class dot
-beside a name, and a closed select is as wide as its widest row. Its button is
-sized by the row it sits in, its panel by its content, and its rows carry an
-icon and a muted hint (a raider's class, a night's pull count). **The open
-panel renders into `document.body`**: every `.card` carries `backdrop-filter`,
-which is a containing block for `position: fixed` AND a stacking context, so a
-menu written inside a card is sealed into it and painted under the cards after
-it — the facet menus dropped down behind the parse columns. z-index cannot fix
-that; leaving the card is the fix, and it is the same trap that put the
-screenshot viewer under the next column.
-`GET /api/players` stays but the picker no longer calls it. It absorbed the old
-`RaidParseCompare` modal — don't rebuild it. **A screenshot is another way of
-naming a parse, and the slot where the next parse lands is the box that takes
-one**: `ShotDrop` is the last column (`.dropslot` — a + in a heavy dashed
-border, captioned *Search or add a screenshot to compare…*, over a dimmed real
-ACT window as its background), not a control in the search band and not a page
-of its own. Drop or paste (which is how an image
-leaves Discord) an ACT window, it becomes a column, and the slot slides one
-place right. An
-imported column is the SAME `BreakdownTable` as a real parse — that is the
-point of importing one — badged `imported`, tabless (an image is of one view),
-and NAMED who–where–which-fight (`shotTitle`: *Bobby — Halls of Fate — All*)
-rather than by ACT's title bar, which names the view and hands back a column
-called `All`. The screenshot rides in the column HEAD, right of that title
-block rather than under it — the two are each about three lines tall, and a
-band above the table is spent by every parse in the row — with the ✕ past the
-picture in the card's corner. Click it to enlarge: `ShotViewer.jsx` (shared
-with Import) opens FIT to the screen and offers `Full size` for reading a cell
-off it, closes on any click, and renders into `document.body` for the
-stacking-context reason above. It refuses rather than invents where it must: a
-title bar with no `[mm:ss]` says per-second numbers can't be worked out. Token grammar keeps three fields,
-`shot:<id>:parse`, so the CSV, ordering and remove logic never learn which
-kind a column is. See ARCHITECTURE.md → The Compare page.
-
-**Accounts** are username + password, no email anywhere; the only self-service
-recovery is a security question. Groups carry sharing: an invite by username, a
-6-digit join code, or a `/join/<code>` link — one credential to rotate. A
-character's auto-share carries raids only unless told otherwise, and can
-include or exclude the back catalogue (`since_ts`); connecting a guild TAG to a
-group is the same rule keyed on the guild Census says the uploading character
-wears, so a new alt is covered without a new switch.
-
-**Coach and Census** are intact behind `coach_api` (and the Insights tab, while
-it is hidden) —
-descriptive currencies, a Census-as-prior fit with per-ability coefficients,
-stat-marginal replay, calibration sessions, and the raid report (engagement
-timing, death cost, overheal/save estimates).
-
-**Manage pages** (Import / Sharing / Account / Admin) share one pattern:
-pagehead → cards with a small-caps h2 and one line of `.note` → `table.data` or
-ruled rows → `.formcol` forms, all inside the `.manage` type scope. A group is
-never a pill there — it is a `.settingrow`. Retune in the `.manage` block in
-`base.css`, not per component, and keep the type ladder intact: h1 > card h2 >
-card h3 > the subject of a row > the column labels over it. Headings own the
-heading font; a row's subject does not (Cinzel names set larger than the head
-above them turned the page into a stack of headlines).
-
-**The admin console** is five tabs (`?tab=`): Overview, Accounts, Content,
-Feedback, Audit — each fetching its own data. Two rules it now keeps. *An
-alert is something broken*: `receiving` is a plugin streaming RIGHT NOW, the
-healthiest state a session has, so Overview lists only errored sessions and
-parses stuck past `STUCK_PARSE_S`, each with the owner and an age, and counts
-the live ones separately. The old "jobs needing attention" listed every
-non-final session, which made a 24-raider night read as 24 failures. *The
-accounts table is searched, sorted and paged on the SERVER* (`q/sort/dir/
-limit/offset`, whitelisted sort columns, grouped joins rather than five
-correlated subqueries per row) — so it deliberately does NOT use
-`SortableTable`, which sorts in the browser and would sort one page while
-claiming to sort the set. Row actions live in a panel you open by clicking the
-row, not as four controls on every row. **Feedback** (schema v25) is a bug or
-suggestion filed from the topnav button on any page, carrying the path the
-reporter was on; admins triage it open → planned → closed.
-
-**Sharing** is two cards SIDE BY SIDE (`.sharegrid`, stacked under 1180px):
-*Groups* on the left — the create/join bar plus the master–detail (list,
-members, invite, leave/delete under a rule), with the join code in a
-field-shaped box rather than big gold type — and *Automatic sharing* on the
-right, holding the two standing rules as one ruled table each: by character,
-and by the guild tag Census says that character wears (`GET /api/guild-shares`,
-`PUT /groups/{id}/guild-shares`, both member-gated). Both tables draw
-`ShareRows` from `AutoShare.jsx`: a phone settings list, name left and switch
-right, with the share's two choices as indented rows of the same shape.
-Switches throughout — every row asks "is this on", which is not a checkbox's
-question. Rule weight carries the structure: heavy under a section head, full
-between subject blocks (six alts must read as six blocks), hairlines within
-one, and a vertical rule down the subject column.
+- **Ingest** (`docs/live.md`): `/import` is the whole onboarding — plugin
+  download, account API key, drag-drop uploader. Logs arrive as uploads or
+  live batches (`/api/ingest/*`, Bearer device token — a frozen contract with
+  `improvmasta/eq2advanced-act`). A live session is rebuilt from raw at close.
+- **Navigation is zone runs, not files** (`docs/zoneruns.md`): a run is one
+  contiguous visit to one zone by one character. `/` is the raid list,
+  `/zones/:id` the raid page, `/sessions/:id` the per-file debug view. Raids
+  are EDITABLE (hide/delete/merge/split), keyed by encounter FINGERPRINT so
+  edits survive reparses. Hiding is not deleting (v26). `raidmatch.py`
+  collapses the same night from several uploaders into one row with a Parse
+  switch.
+- **The raid page** (`docs/zoneruns.md`): Damage/Healing/Defense/AoEs/
+  Timeline/Class tabs (Insights hidden — one commented line in ParseView.jsx's
+  `TABS`), fight rail left, drilldown right. The tabs and tables ARE
+  `ParseView.jsx`, which the raid dashboard renders too; `ZoneRun.jsx` is the
+  page around it (title, rail, sharing, edit mode). Pets/NPCs switches; per-TAB
+  per-browser column memory; Deaths is two columns (tank report + every
+  death). The Class tab is the `pipeline/classstats.py` registry — one
+  `@register` function per class, `blurb` required on every metric.
+- **The raid dashboard** `/live` (`docs/live.md`): fight rail, ACT-shaped
+  live meter with AoE countdowns, ACT-style **mini overlays** docked to either
+  window edge (`MiniRail.jsx`), notes + pasted screenshots by zone/named,
+  OBS stream overlay by token URL — the same mini parse, configured from the
+  bar beside Mini — and curator replay of any visible fight, which the overlay
+  can watch too.
+- **Compare** `/compare` (`docs/compare-import.md`): any parses side by side,
+  signed-out too; the whole comparison lives in `?c=` so a link IS the
+  comparison; the picker is a faceted band computed in the browser; the last
+  column is the screenshot dropslot. Every dropdown is `Picker.jsx`, never
+  `<select>`; open panels render into `document.body` (backdrop-filter
+  stacking trap). Don't rebuild the old modal or page-wide kind tabs.
+- **The sibling TLE sites** (`docs/zoneruns.md`): the top bar carries plaques
+  out to wikQ2 and eq2lexicon, so this is the one door to the rest. wikQ2 opens
+  as a tab inside the shell (`/wiki`, an iframe kept mounted, so it keeps its
+  place) and follows this site's light/dark; eq2lexicon opens in a new tab
+  because it refuses to be framed.
+- **Accounts and sharing** (`docs/sharing.md`): username + password, no
+  email; security-question recovery. Groups via invite/join code/link;
+  auto-share by character or by Census guild tag. The Sharing page is two
+  cards side by side; manage pages share the pagehead → cards → `.formcol`
+  pattern inside the `.manage` type scope — retune in `base.css`, not per
+  component.
+- **The admin console** (`docs/zoneruns.md`): five tabs; an alert is
+  something BROKEN (`receiving` is healthy); the accounts table is
+  searched/sorted/paged on the SERVER, deliberately not `SortableTable`.
+  Feedback (v25) is triaged open → planned → closed.
+- **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`): intact
+  behind `coach_api` and the hidden Insights tab.
 
 ## The ACT plugin
 
-`backend/refdata/plugin/EQ2Advanced.dll` is committed and served by
-`routers/plugin_api.py` (`GET /api/plugin`, `/api/plugin/download`, both
-unauthenticated). The download is a **ZIP** — Chrome and Edge block a bare
-`.dll` — and the install steps say to Unblock it BEFORE extracting, because
-Explorer copies the mark-of-the-web onto what it unpacks and ACT won't load a
-marked plugin. It ships committed rather than linked because the source repo is
-private and Actions artifacts expire. Refresh with `bash scripts/update-plugin.sh`.
-Source: `/home/lindsay/eq2advanced-act` (`improvmasta/eq2advanced-act`), which
-builds on this host with `bash build.sh`.
+`backend/refdata/plugin/EQ2Advanced.dll` is committed (source repo is private,
+Actions artifacts expire) and served by `routers/plugin_api.py` as a ZIP —
+browsers block bare `.dll`, and the install steps say Unblock BEFORE
+extracting. Refresh with `bash scripts/update-plugin.sh`. Source:
+`/home/lindsay/eq2advanced-act` (`improvmasta/eq2advanced-act`), builds here
+with `bash build.sh`.
 
 ## Open
 
-- **Two dummy parses at different Ability Mod.** The abmod marginal is only
+- **Two dummy parses at different Ability Mod** — the abmod marginal is only
   real once Lindsay runs them and flags both (`POST /sessions/{id}/calibration`).
 - **Ascent of the Awakened drilldown cross-check** — the 2026-08-02 ACT
   screenshots were never diffed column-for-column; that log isn't uploaded.
 - **AA modeling** — a curated per-class `aa_effects` table, not a full tree
   ingest. Discuss with Lindsay before building it.
-- **Ability coverage: AAs and deities are done, GEAR IS CLOSED AS WONTFIX.**
-  `gamewiki.py` holds 1215 EoF-era AAs and 139 blessings/miracles. Gear was
-  investigated and **deliberately dropped** (2026-08-05) — do not reopen it
-  without new information. There are ~212,000 items, so a crawl is out;
-  `{{EquipmentEffect|<Ability>|}}` is a template PARAMETER rather than a link,
-  so backlinks give no reverse index; and full-text search plus verification
-  measured **13 of 60** on the largest unexplained abilities, two of those out
-  of era (a Level 90 crate item), leaving ~15% once item `level` is filtered.
-  ~1500 requests to answer maybe 55 of 381 is a far worse trade than the AA
-  pull, which was one clean crawl and corrected 11 wrong verdicts. The remedy
-  is the curator: an unresolved gear proc gets looked up by hand.
-  Reopen only if Fandom enables CirrusSearch — `insource:` would turn that
-  structured `effectlist` into a precise one-call reverse index.
-- **Buff attribution** — damage from another player's buff proccing on you is
-  entirely yours, and sourceless `is hit by <Effect>` lines pool under
-  "Unknown". Real utility DPS needs buff uptime windows in the parser.
-- **Third-person cast lines are still dropped, except the curated ones.**
-  `parser/buffs.py` takes the handful whose flavor names ONE ability (Jester's
-  Cap so far); `classify.py` otherwise handles only the logger's `You prepare
-  <flavor>`, so 822 `Tasrin begins a phantasmal enchantment.` lines a raid go
-  unread. A raid-wide cast timeline needs the generic form plus a
-  flavor -> ability-line map, and the map is the work: the flavor identifies a
-  whole spell line, and `You begin to breathe normally.` is not a cast at all.
-- **PotM coverage is proc-derived and cannot be anything else.** Nothing in
-  the log marks the cast, the landing or the fade, so `potm_coverage` reads
-  Precise Note (its proc, and Census knows no other source). Every number is a
-  floor — melee raiders with the buff up never proc — and the two constants
-  are calibrated against the stored procs, not guessed. Don't widen
-  `JOIN_GAP_S` to "find" more coverage; it manufactures double-cover instead.
-- ACT residuals, in size order: ACT opens an encounter ~3s earlier on a THREAT
-  pull, the boss's own Damage column reads ~10% light in `statsroll`, and ACT
-  counts deaths on mob rows.
+- **Gear proc coverage is CLOSED AS WONTFIX** (2026-08-05): ~212k items, no
+  reverse index (`EquipmentEffect` is a template parameter), 13/60 hit rate on
+  a full-text trial. The remedy is the curator looking one up by hand. Reopen
+  only if Fandom enables CirrusSearch (`insource:`).
+- **Buff attribution** — another player's buff proccing on you parses as
+  yours; sourceless `is hit by` pools under "Unknown". Real utility DPS needs
+  buff uptime windows in the parser.
+- **Third-person cast lines are dropped except the curated ones**
+  (`parser/buffs.py`). A raid-wide cast timeline needs the generic form plus
+  a flavor → ability-line map, and the map is the work.
+- **PotM coverage is proc-derived and cannot be anything else** — every
+  number is a floor; don't widen `JOIN_GAP_S` to "find" more coverage.
+- ACT residuals, in size order: ~3s earlier open on a THREAT pull, boss's own
+  Damage column ~10% light in `statsroll`, ACT counts deaths on mob rows.
 
 ## Ship log
 
+- 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE; fix pages shrink-wrapping instead of filling the shell
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
 - 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS, fix stale test count
@@ -602,4 +365,3 @@ builds on this host with `bash build.sh`.
 - 2026-08-03 (claude): Zone runs phase 2: zone-runs API, cross-session encounters/agg (name-keyed merge), run-scoped raid report
 - 2026-08-03 (claude): Zone runs phase 1: zone_runs table (schema v6), content dedupe + segmentation linker, parse/live/startup hooks
 - 2026-08-03 (claude): Phase 7b: Workspace UX (ACT-style tree + drilldown), stats v2 surfacing, pet knowledge refine pass
-- 2026-08-02 (claude): Phase 6: coach correctness (flavor cast ground truth, two-point calibration, debuff uplift, ability catalog + join gates, healer/utility estimates, engagement v2) + hardening (events pruning, frozen raid reports, multi-file backfill, live hints)

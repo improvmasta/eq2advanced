@@ -615,6 +615,16 @@ function RaidList({ agg, duration, kinds }) {
         ? `${Math.round((a.damage / raidDamage) * 100)}%` : ''),
       sortValue: (a) => a.damage || 0,
     },
+    /* ACT's Max Hit. An imported screenshot carries one per row, so this
+       column is computed the same way for a real parse and a pasted one —
+       which is the whole rule this page is built on. */
+    {
+      key: 'max_hit', label: 'Max hit',
+      render: (a) => { const v = derived[a.key]?.max; return v ? fmt.num(v) : '' },
+      sortValue: (a) => derived[a.key]?.max ?? null,
+      cellStyle: rankAgainst((a) => derived[a.key]?.max ?? null),
+      cellTitle: rankTitleAgainst((a) => derived[a.key]?.max ?? null),
+    },
     {
       key: 'crit', label: 'Crit %',
       render: (a) => { const v = critPct(derived[a.key]); return v != null ? `${Math.round(v)}%` : '' },

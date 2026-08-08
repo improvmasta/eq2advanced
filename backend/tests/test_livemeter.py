@@ -17,6 +17,7 @@ import pytest
 
 from parser.events import F_SELF_FOCUS, ParsedEvent, Subject
 from pipeline import livemeter
+from pipeline.encounters import GAP_S
 
 T0 = 1754500000
 RAIDERS = [f"Raider{i}" for i in range(1, 9)]
@@ -32,8 +33,10 @@ def heal(ts, src, tgt, amount=500, unit="unknown"):
                        ability="Healing Grove", amount=amount)
 
 
-def snap(events, logger="Bobby", zone="The Estate of Unrest", start_ts=T0, roster=None):
-    return livemeter.build_snapshot(events, logger, zone, start_ts, roster)
+def snap(events, logger="Bobby", zone="The Estate of Unrest", start_ts=T0,
+         roster=None, know=livemeter.NO_KNOWLEDGE, now_ts=None):
+    return livemeter.build_snapshot(events, logger, zone, start_ts, roster, know,
+                                    now_ts)
 
 
 def actor(fight, name):
@@ -66,6 +69,22 @@ def test_self_damage_is_not_damage_dealt():
     bobby = actor(fight, "Bobby")
     assert bobby["damage"] == 500
     assert bobby["damage_taken"] == 0
+
+
+def test_max_hit_is_the_biggest_single_line_either_way():
+    """The one number a rate cannot say: 3M in one nuke and 3M of ticks are the
+    same DPS. It is per SOURCE, so a pet's crit lands on its owner's row the
+    way its damage does, and a self-hit is not a hit."""
+    fight = snap([dmg(T0, "Bobby", "a training dummy", 1000, unit="player"),
+                  dmg(T0 + 1, "Bobby", "a training dummy", 4200, unit="player"),
+                  dmg(T0 + 2, "Bobby", "a training dummy", 900, unit="player"),
+                  dmg(T0 + 3, "Bobby", "Bobby", 9999, unit="player",
+                      flags=F_SELF_FOCUS),
+                  heal(T0 + 4, "Mendya", "Raider1", 700),
+                  heal(T0 + 5, "Mendya", "Raider1", 2500)])
+    assert actor(fight, "Bobby")["max_hit"] == 4200
+    assert actor(fight, "Mendya")["max_heal"] == 2500
+    assert actor(fight, "Mendya")["max_hit"] == 0
 
 
 def test_a_pet_credits_its_owner():
@@ -134,6 +153,48 @@ def test_class_comes_from_the_roster():
     assert actor(fight, "Zylphax")["class"] == "warlock"
 
 
+# --- how long the fight is, and when it is over ----------------------------
+
+def test_elapsed_ends_at_the_last_damage_not_the_last_event():
+    """The fight card this becomes measures damage to damage
+    (`encounters.Segment.end_ts` only advances on a damage line), so the meter
+    has to as well. Heals and deaths inside the idle window are part of the
+    pull and are counted — they just do not make it longer, or the live DPS
+    would read low against the parse it turns into."""
+    fight = snap([dmg(T0, "Bobby", "a training dummy", 1000, unit="player"),
+                  dmg(T0 + 9, "Bobby", "a training dummy", 1000, unit="player"),
+                  heal(T0 + 13, "Mendya", "Bobby", 500),
+                  ParsedEvent(T0 + 15, "death", tgt="Raider1")])
+    assert fight["elapsed_s"] == 9
+    assert fight["last_combat_ts"] == T0 + 9
+    assert fight["last_ts"] == T0 + 15          # the timeline still runs to here
+    assert actor(fight, "Mendya")["heals"] == 500
+    assert fight["raid"]["deaths"] == 1
+    assert actor(fight, "Bobby")["dps"] == pytest.approx(2000 / 9, abs=0.1)
+
+
+def test_a_pull_whose_damage_stopped_is_over():
+    """ACT calls a fight at its idle timeout; the writer cannot close the
+    segment for another ten seconds in case a late kill line joins it. `ended`
+    is the difference — the screen stops counting where ACT stops."""
+    events = [dmg(T0, "Bobby", "a training dummy", 1000, unit="player"),
+              dmg(T0 + 9, "Bobby", "a training dummy", 1000, unit="player")]
+    assert snap(events, now_ts=T0 + 9)["ended"] is False
+    assert snap(events, now_ts=T0 + 9 + GAP_S - 1)["ended"] is False
+    over = snap(events, now_ts=T0 + 9 + GAP_S)
+    assert over["ended"] is True
+    assert over["quiet_s"] == GAP_S
+    assert over["elapsed_s"] == 9              # and it stays where it stopped
+
+
+def test_without_a_log_clock_nothing_has_ended():
+    """No `now_ts` means the caller has nothing to judge quiet by — the old
+    behaviour, and the only honest answer."""
+    fight = snap([dmg(T0, "Bobby", "a training dummy", 1000, unit="player")])
+    assert fight["ended"] is False
+    assert fight["quiet_s"] == 0
+
+
 # --- naming the fight before it ends --------------------------------------
 
 def test_provisional_name_is_the_mob_taking_the_most_damage():
@@ -154,6 +215,104 @@ def test_a_wipe_with_no_damage_dealt_is_named_after_what_is_killing_you():
     assert fight["provisional_is_named"] is True
 
 
+# --- who these names are (livemeter.Names) --------------------------------
+
+def test_a_one_word_boss_is_the_enemy_and_not_a_raider():
+    """`Wuoshi` is grammatically a raider, so without help the boss sits in the
+    bar list, inflates the raider count, and — not being an enemy — cannot name
+    the fight, which then gets titled after whichever add IS multi-word. The
+    seed is what an earlier parse's behavioural pass already worked out."""
+    events = [dmg(T0, "Bobby", "Wuoshi", 9000, unit="player"),
+              dmg(T0 + 1, "Bobby", "an ancient grovebeast", 500, unit="player")]
+    know = livemeter.Knowledge(mobs=frozenset({"Wuoshi"}))
+    fight = snap(events, know=know)
+    assert fight["provisional_name"] == "Wuoshi"
+    assert fight["provisional_is_named"] is True
+    assert actor(fight, "Wuoshi")["kind"] == "mob"
+    assert fight["raid"]["raiders"] == 1
+
+
+def test_behaviour_finds_a_one_word_boss_the_seed_has_never_seen():
+    """Nothing seeded, but the thing trading damage with five raiders is not
+    one of them — `refine_known_mobs`, the recorded path's own rule, run over
+    the open segment."""
+    events = [dmg(T0 + i, "Venekor", f"Raider{i}", 900) for i in range(1, 6)]
+    events += [dmg(T0 + 6 + i, f"Raider{i}", "Venekor", 900, unit="player")
+               for i in range(1, 6)]
+    fight = snap(events)
+    assert actor(fight, "Venekor")["kind"] == "mob"
+    assert fight["provisional_name"] == "Venekor"
+
+
+def test_a_raider_the_boss_killed_is_still_a_raider():
+    """One segment of a wipe is the boss killing people and the raid landing
+    nothing, and refine's kill-victim rule reads that as eight mobs. A name
+    that has been a raider before is a raider — otherwise the meter empties out
+    at exactly the moment the raid wants to look at it."""
+    events = [dmg(T0, "Wuoshi", "Spades", 90000),
+              ParsedEvent(T0 + 1, "kill", src=Subject("Wuoshi", "unknown"),
+                          tgt="Spades")]
+    know = livemeter.Knowledge(mobs=frozenset({"Wuoshi"}),
+                               players=frozenset({"Spades"}))
+    fight = snap(events, know=know)
+    assert actor(fight, "Spades")["kind"] == "player"
+    assert actor(fight, "Spades")["deaths"] == 1
+    assert fight["raid"]["raiders"] == 1
+
+
+def test_a_possessive_pet_target_is_neither_a_raider_nor_an_enemy():
+    """`Tragedy's unswerving hammer` is multi-word, so damage into it used to
+    read as damage into an enemy — enough, early in a pull, to name the fight
+    after somebody's dumbfire."""
+    events = [dmg(T0, "Wuoshi", "Tragedy's unswerving hammer", 40000),
+              dmg(T0 + 1, "Bobby", "Wuoshi", 900, unit="player")]
+    fight = snap(events, know=livemeter.Knowledge(mobs=frozenset({"Wuoshi"})))
+    assert actor(fight, "Tragedy's unswerving hammer")["kind"] == "pet"
+    assert fight["provisional_name"] == "Wuoshi"
+    assert fight["raid"]["raiders"] == 1
+
+
+def test_a_bare_named_dumbfire_is_not_a_raider():
+    """EQ2 writes a dumbfire exactly like a raider and never prints an owner
+    for it, so only what an earlier parse concluded can say what `Knyi` is."""
+    events = [dmg(T0, "Bobby", "a mob", 100, unit="player"),
+              dmg(T0 + 1, "Knyi", "a mob", 900)]
+    fight = snap(events, know=livemeter.Knowledge(pets=frozenset({"Knyi"})))
+    assert actor(fight, "Knyi")["kind"] == "pet"
+    assert fight["raid"]["raiders"] == 1
+    assert fight["raid"]["damage"] == 100
+
+
+def test_the_logger_is_one_raider_under_both_spellings():
+    """Their own lines say YOU; everyone else's say their name."""
+    events = [dmg(T0, "a mob", "YOU", 300),
+              dmg(T0 + 1, "a mob", "Bobby", 200),
+              heal(T0 + 2, "Mendya", "YOURSELF", 100)]
+    fight = snap(events)
+    assert actor(fight, "Bobby")["damage_taken"] == 500
+    assert fight["raid"]["raiders"] == 2      # Bobby and Mendya
+
+
+def test_the_unknown_pool_is_not_a_raider():
+    """Sourceless `X is hit by <Effect>` pools under Unknown, which is one
+    capitalized token and so read as a person called Unknown."""
+    fight = snap([ParsedEvent(T0, "damage", src=None, tgt="Unknown",
+                              ability="Stench of Death", amount=500),
+                  dmg(T0 + 1, "Bobby", "a mob", 100, unit="player")])
+    assert actor(fight, "Unknown")["kind"] == "other"
+    assert fight["raid"]["raiders"] == 1
+
+
+def test_cures_are_counted_per_healer():
+    """One per line, credited to the caster whatever the target was — ACT's
+    Cures column, the way `roll_encounter` counts it."""
+    fight = snap([ParsedEvent(T0, "dispel", src=Subject("Mendya", "player"),
+                              tgt="Raider1", ability="Cure Curse"),
+                  ParsedEvent(T0 + 1, "dispel", src=Subject("Mendya", "player"),
+                              tgt="a mob", ability="Cure Curse")])
+    assert actor(fight, "Mendya")["cures"] == 2
+
+
 # --- AoE timers -----------------------------------------------------------
 
 def aoe_cast(ts, ability="Ruinous Slam", src="The Corsolander", targets=RAIDERS):
@@ -167,6 +326,18 @@ def test_one_second_touching_the_raid_is_a_cast():
     assert (row["source"], row["ability"]) == ("The Corsolander", "Ruinous Slam")
     assert row["casts"] == 2
     assert row["last_cast_ts"] == T0 + 45
+
+
+def test_the_logger_counts_toward_the_anchor_under_their_own_spelling():
+    """A raid-wide AoE reaches the person whose log this is as `YOU`. Counting
+    that as a different name misses the ≥5 anchor by exactly one — on the one
+    log that can see the cast at all."""
+    four = RAIDERS[:4]
+    events = (aoe_cast(T0, targets=four + ["YOU"])
+              + aoe_cast(T0 + 45, targets=four + ["YOU"]))
+    fight = snap(events)
+    assert [a["ability"] for a in fight["aoes"]] == ["Ruinous Slam"]
+    assert fight["aoes"][0]["last_targets"] == 5
 
 
 def test_a_cleave_on_four_people_is_not_a_raid_aoe():
@@ -245,6 +416,78 @@ def test_a_one_word_boss_still_gets_a_countdown():
     row = snap(events)["aoes"][0]
     assert row["source"] == "Venekor"
     assert row["period_s"] == pytest.approx(30, abs=1)
+
+
+def test_the_last_casts_outcome_says_who_ate_it_and_who_was_covered():
+    """The dashboard's mid-fight question is "is the raid handling this AoE",
+    so each row carries the freshest cast's split: hit vs blocked (avoided or
+    absorbed), the same three outcomes aoes.detect reports afterwards."""
+    from parser.events import F_ZERO
+    first = aoe_cast(T0)
+    second = [dmg(T0 + 45, "The Corsolander", p, 3000, ability="Ruinous Slam")
+              for p in RAIDERS[:5]]
+    second.append(ParsedEvent(T0 + 45, "avoid", src=Subject("The Corsolander", "unknown"),
+                              tgt=RAIDERS[5], ability="Ruinous Slam"))
+    second.append(dmg(T0 + 45, "The Corsolander", RAIDERS[6], 0,
+                      ability="Ruinous Slam", flags=F_ZERO))
+    row = snap(first + second)["aoes"][0]
+    assert row["casts"] == 2
+    assert row["last_hit"] == 5
+    assert row["last_blocked"] == 2        # one avoided + one absorbed
+    assert row["last_targets"] == 7
+
+
+def test_a_player_who_ate_the_cast_is_not_also_covered_by_it():
+    """A resist line and a damage line for the same player in one cast is one
+    person who got hit, not one hit and one block."""
+    events = aoe_cast(T0) + aoe_cast(T0 + 45)
+    events.append(ParsedEvent(T0 + 45, "avoid", src=Subject("The Corsolander", "unknown"),
+                              tgt=RAIDERS[0], ability="Ruinous Slam"))
+    row = snap(events)["aoes"][0]
+    assert row["last_hit"] == len(RAIDERS)
+    assert row["last_blocked"] == 0
+
+
+RAID = [f"Raider{i}" for i in range(1, 25)]
+
+
+def full_raid(ts):
+    """Enough raiders in the actor list for a fraction of them to mean
+    something — `RAIDERS` is eight, and five of eight is most of the raid."""
+    return [dmg(ts, p, "a mob", 100, unit="player") for p in RAID]
+
+
+def test_a_group_sized_hit_with_no_timer_is_not_a_spell_timer():
+    """The audit's threshold is not the panel's. Five people in one second is
+    an EQ2 GROUP, and on a real Mayong kill that let seven add cleaves and
+    one-off boss spells onto a screen showing three abilities worth calling
+    out. With no reported timer, a row has to have reached the RAID."""
+    events = (full_raid(T0)
+              + aoe_cast(T0 + 10, ability="Rampaging Blow", targets=RAID[:6])
+              + aoe_cast(T0 + 70, ability="Rampaging Blow", targets=RAID[:6]))
+    assert snap(events)["aoes"] == []
+
+
+def test_a_raid_wide_hit_earns_its_row_without_any_timer():
+    """The other half of the same rule, and why it is a fraction rather than a
+    ban on timerless rows: bobby.txt's sourceless `Overnuke` reaches the whole
+    raid and no timer list has ever heard of it."""
+    events = (full_raid(T0)
+              + aoe_cast(T0 + 10, ability="Overnuke", targets=RAID)
+              + aoe_cast(T0 + 70, ability="Overnuke", targets=RAID))
+    assert [a["ability"] for a in snap(events)["aoes"]] == ["Overnuke"]
+
+
+def test_a_reported_timer_keeps_its_row_however_few_it_reached():
+    """`Soul Paralysis` lands on one group in a long fight and on seventeen
+    people in a short one. ACT's list saying the raid was told to expect it is
+    the evidence, not tonight's reach."""
+    known = next((a for a, m in livemeter.reported_timers().items()
+                  if m.get("timer_s")), None)
+    if known is None:
+        pytest.skip("no reported timers shipped")
+    events = full_raid(T0) + aoe_cast(T0 + 10, ability=known, targets=RAID[:5])
+    assert [a["ability"] for a in snap(events)["aoes"]] == [known]
 
 
 # --- the payload wrapper --------------------------------------------------

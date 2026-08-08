@@ -21,7 +21,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import db as dbmod
-from parser.prefix import split_prefix
 from pipeline.redact import Redactor, StreamRedactor, channel_of, keep_line
 
 TS = 1722556800

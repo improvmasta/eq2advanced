@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSmoothSeconds } from '../lib/smooth.js'
 
 /* The fight rail — the navigation for a raid night, and the control surface
    for what the tables on the right are counting.
@@ -128,10 +129,67 @@ const HIDE_TITLE = "Hide this fight. It won't show when the raid is shared, "
   + "and it won't count in stats."
 const SHOW_TITLE = 'Hidden. Click to show it again.'
 
+/* The pull in progress, as a row in the list it belongs at the end of.
+
+   It used to be a button above the rail, and that is the bug: click back to an
+   earlier fight mid-pull and the fight you were IN was not in the encounter
+   list, because it does not exist yet — a fight becomes a row when the writer
+   commits it, seconds after it ends. So there was a window where the thing on
+   screen a moment ago was nowhere in the navigation for it.
+
+   The row is the answer, and it is never absent while a session is receiving.
+   It carries three states and the caller names which: `combat` is a pull
+   running, `saving` is one that has just ended and whose record has not landed
+   yet (`Live.jsx` holds it there until the `encounter` event arrives, so the
+   list never has a gap), and `idle` is between pulls.
+
+   No checkbox, because there is nothing to count yet: the numbers under it are
+   a view rebuilt every couple of seconds and stored nowhere, and a set of
+   "combined stats" that included one would change under the person reading it.
+
+   The clock TICKS (`useSmoothSeconds`) for the same reason it does on the
+   meter — elapsed is a function of time, not of the last payload — and stops
+   when the picture does. */
+function LiveRow({ live, active, onSelect }) {
+  const running = live.state === 'combat' && !live.stale
+  const elapsed = useSmoothSeconds(live.elapsed_s, running)
+  const idle = live.state === 'idle'
+  /* Between pulls the row is an ELLIPSIS and nothing else. It has to stay in
+     the list — it is where the next pull will appear, and the place you click
+     to get back to live from an earlier fight — but there is no fight to name
+     and no clock to run, and a row that said "Between pulls" in muted grey
+     with a dead clock beside it read as a broken fight rather than as a gap. */
+  const label = idle ? '···' : (live.name || 'Live')
+  return (
+    <div className={`railrow live ${live.state} ${active ? 'active' : ''}`}>
+      <span className="twistpad" />
+      <span className="railcheck empty" />
+      <button className="railbtn" onClick={onSelect}
+              title={live.state === 'saving'
+                ? 'This pull has ended — its record is being written'
+                : live.state === 'idle'
+                  ? 'The fight in progress shows here'
+                  : 'The pull happening now'}>
+        <span className="rt">{!idle && live.started_ts != null ? hhmm(live.started_ts) : ''}</span>
+        <span className="rl" title={live.name || undefined}>
+          {!idle && <i className={`livedot ${running ? 'on' : ''}`} />}
+          {label}
+        </span>
+        {live.state === 'saving' && <span className="rn">saving</span>}
+        <span className="rd">
+          {!idle && typeof elapsed === 'number'
+            ? clock(Math.max(0, Math.floor(elapsed))) : ''}
+        </span>
+      </button>
+    </div>
+  )
+}
+
 export default function EncounterTree({
   encounters, sel, onSelect, sessionLabel, sub, who, subTitle, actions, seenBy,
+  headActions = null,
   titled = false, hideZones = false, selectedIds, onToggle,
-  editing = false, editbar = null, onHide, onDelete,
+  editing = false, editbar = null, onHide, onDelete, live = null,
 }) {
   const blocks = useMemo(() => buildTree(encounters), [encounters])
   const attempts = useMemo(() => attemptNumbers(encounters), [encounters])
@@ -288,6 +346,12 @@ export default function EncounterTree({
           {titled
             ? <h1 className="railtitle" title={sessionLabel || undefined}>{sessionLabel || 'Fights'}</h1>
             : <span className="railtitle">{sessionLabel || 'Fights'}</span>}
+          {/* Across from the title, because on the dashboard the title is the
+              character whose night this is and these are the switches for how
+              that night is displayed — one line, one subject. They used to sit
+              in a bar over the middle column, next to a connection pill the
+              site header already carries. */}
+          {headActions && <span className="railacts">{headActions}</span>}
         </div>
         {/* Three captions, one per line, each a different kind of fact. WHEN
             the raid was is a timestamp; WHO it belongs to is a name; HOW BIG it
@@ -422,6 +486,12 @@ export default function EncounterTree({
               })}
             </div>
           ))}
+          {/* Last, because it is the newest fight — the list stays in the order
+              the night happened in, and the live row is simply its end. */}
+          {live && (
+            <LiveRow live={live} active={sel === 'live'}
+                     onSelect={() => onSelect('live')} />
+          )}
         </div>
       </div>
 

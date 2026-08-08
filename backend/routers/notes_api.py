@@ -36,6 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from PIL import Image
 from pydantic import BaseModel, Field
 
+import zones
 from db import NOTESHOTS_DIR, get_db, rows_to_dicts
 from security import require_user
 
@@ -71,6 +72,28 @@ class NotePatch(BaseModel):
 def _clean(value: str | None) -> str | None:
     value = (value or "").strip()
     return value or None
+
+
+def _zone(value: str | None) -> str | None:
+    """The zone a note is FILED under, which is the zone without the game's
+    instance number: "Castle Mistmoore 2" is a second lockout, not a second
+    castle, and a pile split across the numbers is not a pile. Falls back to
+    the name as given if stripping leaves nothing."""
+    name = _clean(value)
+    return zones.base_name(name) or name if name else None
+
+
+def _variants(conn, user_id: int, zone: str) -> list[str]:
+    """Every stored spelling of one zone for this user.
+
+    New notes are filed under the base name, but ones written before that was
+    true still carry the instance number, so a read matches on the base and the
+    old rows fold into the pile they always belonged to."""
+    base = zones.base_name(zone) or zone
+    found = [r["zone"] for r in conn.execute(
+        "SELECT DISTINCT zone FROM raid_notes WHERE user_id=?", (user_id,))
+        if (zones.base_name(r["zone"]) or r["zone"]) == base]
+    return found or [zone]
 
 
 def _encode(im, max_w, quality):
@@ -138,50 +161,99 @@ def _with_shots(conn, rows):
 
 @router.get("/notes")
 def list_notes(zone: str | None = None, mob: str | None = None,
-               user=Depends(require_user)):
-    """Every note on one subject, oldest night first.
+               scope: str = "subject", user=Depends(require_user)):
+    """Notes, newest night first.
 
-    No `zone` means everything you have written, which is what the outline
-    view lists from. `mob` absent means the ZONE's notes — the trash ones —
-    and that is a real filter, not a missing one: `mob_name IS NULL` is what
-    makes a zone note a zone note.
+    No `zone` means everything you have written. With one, `scope` decides how
+    wide the answer is, and the default is the narrow one the composer asks
+    for: `mob` absent means the ZONE's notes — the trash ones — which is a real
+    filter and not a missing one, because `mob_name IS NULL` is what makes a
+    zone note a zone note.
+
+    `scope=zone` is the other question, and it is the one the dashboard's
+    column asks: everything filed anywhere in this zone, the nameds included.
+    Standing in a zone, what you want beside the meter is the whole outline of
+    the place, not the one subject the meter happens to be showing.
     """
     conn = get_db()
     sql = "SELECT * FROM raid_notes WHERE user_id=?"
-    args = [user["id"]]
+    args: list = [user["id"]]
     if zone:
-        sql += " AND zone=?"
-        args.append(zone)
-        sql += " AND mob_name IS NULL" if not mob else " AND mob_name=?"
-        if mob:
-            args.append(mob)
+        names = _variants(conn, user["id"], zone)
+        sql += f" AND zone IN ({','.join('?' * len(names))})"
+        args += names
+        if scope != "zone":
+            sql += " AND mob_name IS NULL" if not mob else " AND mob_name=?"
+            if mob:
+                args.append(mob)
     sql += " ORDER BY created_ts DESC, id DESC"
     return {"notes": _with_shots(conn, conn.execute(sql, args).fetchall())}
 
 
 @router.get("/notes/outline")
 def outline(user=Depends(require_user)):
-    """The pile so far: every zone you have notes on, and the nameds inside it.
+    """The pile so far: every zone you have notes on, and the nameds inside it,
+    grouped by the expansion the zone came from.
 
-    This is the raid outline in its first form — a table of contents that
-    wrote itself out of what got filed during pulls."""
+    This is the raid outline in its first form — a table of contents that wrote
+    itself out of what got filed during pulls. It is grouped by ERA because
+    that is the order a TLE server unlocks content in, so it is the order the
+    zones already sit in in a raider's head; the era comes from `zones.py`,
+    which reads it off the wiki rather than off anything in a parse.
+
+    A zone the reference data has never heard of still appears — under "Other",
+    at the bottom. An outline that silently dropped notes would be worse than
+    one with a ragged last section.
+    """
     conn = get_db()
-    return {"zones": rows_to_dicts(conn.execute(
-        "SELECT n.zone, n.mob_name, COUNT(*) AS notes, "
-        "  (SELECT COUNT(*) FROM raid_note_shots s "
-        "     JOIN raid_notes n2 ON n2.id = s.note_id "
-        "    WHERE n2.user_id = n.user_id AND n2.zone = n.zone "
-        "      AND n2.mob_name IS n.mob_name) AS shots, "
-        "  MAX(n.updated_ts) AS updated_ts "
-        "FROM raid_notes n WHERE n.user_id=? "
-        "GROUP BY n.zone, n.mob_name "
-        "ORDER BY n.zone, (n.mob_name IS NULL) DESC, n.mob_name",
-        (user["id"],)))}
+    rows = rows_to_dicts(conn.execute(
+        "SELECT n.zone, n.mob_name, COUNT(DISTINCT n.id) AS notes, "
+        "  COUNT(s.id) AS shots, MAX(n.updated_ts) AS updated_ts "
+        "FROM raid_notes n LEFT JOIN raid_note_shots s ON s.note_id = n.id "
+        "WHERE n.user_id=? GROUP BY n.zone, n.mob_name",
+        (user["id"],)))
+
+    # Fold the instance numbers together first — "Castle Mistmoore 2" is the
+    # same castle — then hang the subjects off the zone they were filed in.
+    by_zone: dict[str, dict] = {}
+    for row in rows:
+        name = zones.base_name(row["zone"]) or row["zone"]
+        z = by_zone.get(name)
+        if z is None:
+            info = zones.info(name) or {}
+            z = by_zone[name] = {
+                "zone": name, "era": info.get("era"),
+                "raid": info.get("instance") == "Raid", "size": info.get("size"),
+                "notes": 0, "shots": 0, "updated_ts": 0, "subjects": [],
+            }
+        by_subject = {s["mob"]: s for s in z["subjects"]}
+        s = by_subject.get(row["mob_name"])
+        if s is None:
+            s = {"mob": row["mob_name"], "notes": 0, "shots": 0, "updated_ts": 0}
+            z["subjects"].append(s)
+        for holder in (z, s):
+            holder["notes"] += row["notes"]
+            holder["shots"] += row["shots"]
+            holder["updated_ts"] = max(holder["updated_ts"], row["updated_ts"] or 0)
+
+    for z in by_zone.values():
+        # The zone's own notes first — they are the trash and the run-up, which
+        # is what you read before the boss list — then the nameds by name.
+        z["subjects"].sort(key=lambda s: (s["mob"] is not None, (s["mob"] or "").lower()))
+
+    eras: dict[str | None, dict] = {}
+    for z in sorted(by_zone.values(), key=lambda z: z["zone"].lower()):
+        era = eras.setdefault(z["era"], {
+            "era": z["era"], "label": zones.era_label(z["era"]), "zones": [],
+        })
+        era["zones"].append(z)
+    return {"eras": sorted(eras.values(),
+                           key=lambda e: (zones.era_rank(e["era"]), e["label"]))}
 
 
 @router.post("/notes")
 def add_note(body: NoteIn, user=Depends(require_user)):
-    zone = _clean(body.zone)
+    zone = _zone(body.zone)
     if not zone:
         raise HTTPException(422, "a note needs a zone")
     text = body.body.strip()
@@ -211,7 +283,7 @@ def edit_note(note_id: int, patch: NotePatch, user=Depends(require_user)):
         sets.append("body=?")
         args.append(patch.body.strip())
     if patch.zone is not None:
-        zone = _clean(patch.zone)
+        zone = _zone(patch.zone)
         if not zone:
             raise HTTPException(422, "a note needs a zone")
         sets.append("zone=?")

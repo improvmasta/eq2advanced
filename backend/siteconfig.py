@@ -41,10 +41,6 @@ def public_base_url() -> str:
     return (os.environ.get("PUBLIC_BASE_URL") or DEFAULT_PUBLIC_BASE_URL).rstrip("/")
 
 
-def public_url(path: str) -> str:
-    return f"{public_base_url()}/{path.lstrip('/')}"
-
-
 def _trusted_networks() -> list:
     raw = os.environ.get("TRUSTED_PROXIES", DEFAULT_TRUSTED_PROXIES)
     nets = []

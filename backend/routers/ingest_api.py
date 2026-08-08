@@ -52,7 +52,10 @@ def _token_lock(token_id: int) -> threading.Lock:
 def require_device(request: Request):
     header = request.headers.get("authorization", "")
     token = header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else None
-    row = device_token_row(get_db(), token)
+    # The User-Agent is how the site knows which plugin build a raider is on —
+    # it is the only thing the plugin volunteers about itself, and an old one
+    # is exactly who the update pill is for (auth.client_version).
+    row = device_token_row(get_db(), token, request.headers.get("user-agent"))
     if row is None:
         raise HTTPException(401, "invalid or revoked device token")
     get_db().commit()  # persist the last_seen_ts touch
@@ -71,13 +74,6 @@ def _character(token_row, name):
                                  "(eq2log_<name>.txt) with the batch")
     conn.commit()
     return char
-
-
-def _open_session_id(character_id: int) -> int | None:
-    row = get_db().execute(
-        "SELECT id FROM sessions WHERE character_id=? AND source='live' "
-        "AND status='receiving' ORDER BY id DESC LIMIT 1", (character_id,)).fetchone()
-    return row["id"] if row else None
 
 
 @router.get("/ingest/hello")

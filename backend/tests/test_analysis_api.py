@@ -278,3 +278,36 @@ def test_run_list_carries_sparkline(client, run):
     mist = next(r for r in runs if r["zone"] == "Castle Mistmoore")
     assert len(mist["spark"]) == 2                # one raid-DPS point per fight
     assert all(isinstance(v, int) and v >= 0 for v in mist["spark"])
+
+
+# ----------------------------------------------------------------- report ---
+
+def test_encounter_report_matches_the_run_report(client, run):
+    """The dashboard reads the raid report by FIGHT, because mid-night it holds
+    the fights the live writer has committed and not a run. Same report, same
+    numbers — the parse on the dashboard and the parse on the raid page must
+    not be able to disagree about who was dead and for how long."""
+    ids = run["ids"]
+    by_fight = client.get(f"/api/encounters/report?ids={ids}").json()
+    by_run = client.get(f"/api/zone-runs/{run['run']['id']}/report").json()
+
+    assert [e["encounter"]["id"] for e in by_fight["encounters"]] \
+        == [e["encounter"]["id"] for e in by_run["encounters"]]
+    dead = {(e["encounter"]["id"], p["name"]): p["time_dead_s"]
+            for e in by_fight["encounters"] for p in e["players"]}
+    assert dead == {(e["encounter"]["id"], p["name"]): p["time_dead_s"]
+                    for e in by_run["encounters"] for p in e["players"]}
+    assert any(v > 0 for v in dead.values())     # somebody did die
+
+
+def test_encounter_report_is_scoped_to_the_fights_asked_for(client, run):
+    """One fight is one fight: the between-pulls view is about the pull that
+    just ended, not the night around it."""
+    first = run["ids"].split(",")[0]
+    one = client.get(f"/api/encounters/report?ids={first}").json()
+    assert [e["encounter"]["id"] for e in one["encounters"]] == [int(first)]
+
+
+def test_encounter_report_takes_the_same_id_rules(client, run):
+    assert client.get("/api/encounters/report?ids=999999").status_code == 404
+    assert client.get("/api/encounters/report?ids=nope").status_code == 422

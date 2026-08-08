@@ -23,7 +23,7 @@ NOTESHOTS_DIR = DATA_DIR / "noteshots"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -80,7 +80,11 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   label TEXT,
   created_ts INTEGER NOT NULL,
   last_seen_ts INTEGER,
-  revoked_ts INTEGER
+  revoked_ts INTEGER,
+  client_version TEXT     -- the plugin version this token last sent (v30), off
+                          -- its User-Agent; NULL until one does, which is what
+                          -- keeps the update pill quiet for people who have
+                          -- never paired
 );
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY,
@@ -1059,6 +1063,12 @@ def init_db() -> None:
         # gets them empty and behaves exactly as it did.
         # v29: `overlay_tokens` — the stream overlay's URL credential. Same
         # reasoning again: new table, nothing else reads it.
+        # v30: which plugin build each pairing is running, so the site can
+        # offer an update to the people who need one and nobody else. NULL is
+        # "never told us", which every pre-v30 row is until its next batch —
+        # and NULL never produces a pill, because "unknown" is not "old".
+        if "client_version" not in token_cols:
+            conn.execute("ALTER TABLE device_tokens ADD COLUMN client_version TEXT")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

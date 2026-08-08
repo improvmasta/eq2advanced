@@ -1,0 +1,6891 @@
+{
+ "zones": [
+  {
+   "zone": "A Back Room",
+   "page_title": "A Back Room",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "A Buried Hideout",
+   "page_title": "A Buried Hideout",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU09"
+  },
+  {
+   "zone": "A Clockwork Apocalypse",
+   "page_title": "A Clockwork Apocalypse",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "A Collection of Dreams",
+   "page_title": "A Collection of Dreams",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Dark Cave",
+   "page_title": "A Dark Cave",
+   "era": "Tears of Veeshan",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Dream of Clockwork",
+   "page_title": "A Dream of Clockwork",
+   "era": "Tinkerfest",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Hidden Meeting",
+   "page_title": "A Hidden Meeting",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "A Maj'Dul Residence",
+   "page_title": "A Maj'Dul Residence",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Meeting of the Minds",
+   "page_title": "A Meeting of the Minds",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x3",
+   "update": "LU03"
+  },
+  {
+   "zone": "A Memory of Echoes",
+   "page_title": "A Memory of Echoes",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Memory of Nothingness",
+   "page_title": "A Memory of Nothingness",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Memory of Sand",
+   "page_title": "A Memory of Sand",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Memory of Scale",
+   "page_title": "A Memory of Scale",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Memory of Sky",
+   "page_title": "A Memory of Sky",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "A Pirate's Hidden Stash",
+   "page_title": "A Pirate's Hidden Stash",
+   "era": "LU02",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Planar Fragment",
+   "page_title": "A Planar Fragment",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Samiel Pirate Ship",
+   "page_title": "A Samiel Pirate Ship",
+   "era": "Desert of Flames",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "A Sinister Place in the Emerald Jungle",
+   "page_title": "A Sinister Place in the Emerald Jungle",
+   "era": "Bristlebane Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Spiritual Pocket",
+   "page_title": "A Spiritual Pocket (Adventurer)",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A Temple chamber",
+   "page_title": "A Temple chamber",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "A Thexian Hideout",
+   "page_title": "A Thexian Hideout",
+   "era": "The Shadow Odyssey",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "A Young Nobleman's Residence",
+   "page_title": "A Young Nobleman's Residence",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "A decrepit crypt",
+   "page_title": "A decrepit crypt",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Abandoned Island",
+   "page_title": "Abandoned Island",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Aboard the Smarmy Sprocket",
+   "page_title": "Aboard the Smarmy Sprocket",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Abyssal Aqueduct",
+   "page_title": "Abyssal Aqueduct (Challenge Duo)",
+   "era": "LU66",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Accursed Sanctum",
+   "page_title": "Accursed Sanctum (Raid)",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Acquisition",
+   "page_title": "Acquisition",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Admin Level Access",
+   "page_title": "Admin Level Access",
+   "era": "Tinkerfest",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Aether Wroughtlands",
+   "page_title": "Aether Wroughtlands",
+   "era": "Ballads of Zimara",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Aether Wroughtlands: Chaotic Currents",
+   "page_title": "Aether Wroughtlands: Chaotic Currents (Event Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aether Wroughtlands: Ferric Fields",
+   "page_title": "Aether Wroughtlands: Ferric Fields (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aether Wroughtlands: Tarnished Oasis",
+   "page_title": "Aether Wroughtlands: Tarnished Oasis (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Akashic Neverthere: Ballentree Repository",
+   "page_title": "Akashic Neverthere: Ballentree Repository",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Altar of Abhorrence",
+   "page_title": "Altar of Abhorrence (Raid)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "An Ethereal Rift",
+   "page_title": "An Ethereal Rift",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "An Open Grave",
+   "page_title": "An Open Grave",
+   "era": "LU02",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "An Unfinished Mine",
+   "page_title": "An Unfinished Mine (Solo Tradeskill)",
+   "era": "Chaos Descending",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU109"
+  },
+  {
+   "zone": "Ancestral Crypt of D'Ryil",
+   "page_title": "Ancestral Crypt of D'Ryil",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ancestral Crypt of Vyl'Tayne",
+   "page_title": "Ancestral Crypt of Vyl'Tayne",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ancestral Crypt of X'Aphon",
+   "page_title": "Ancestral Crypt of X'Aphon",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ancestral Crypt of Z'Tozia",
+   "page_title": "Ancestral Crypt of Z'Tozia",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Anchor of Bazzul",
+   "page_title": "Anchor of Bazzul",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ancient's Table",
+   "page_title": "Ancient's Table",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Another Plane of Reality",
+   "page_title": "Another Plane of Reality",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Antechamber of Fate",
+   "page_title": "Antechamber of Fate",
+   "era": "Fallen Dynasty",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Antechamber of the Automaton",
+   "page_title": "Antechamber of the Automaton (Challenge Duo)",
+   "era": "LU66",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Antonia Bayle's Chambers",
+   "page_title": "Antonia Bayle's Chambers",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Antonica",
+   "page_title": "Antonica",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Ar'ticae's Lair",
+   "page_title": "Ar'ticae's Lair",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Arcanna'se Spire: Forgotten Sanctum",
+   "page_title": "Arcanna'se Spire: Forgotten Sanctum (Expert)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Arcanna'se Spire: Into The Spire",
+   "page_title": "Arcanna'se Spire: Into The Spire (Tradeskill)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Arcanna'se Spire: Order and Chaos",
+   "page_title": "Arcanna'se Spire: Order and Chaos (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Arcanna'se Spire: Repository of Secrets",
+   "page_title": "Arcanna'se Spire: Repository of Secrets (Expert)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Arcanna'se Spire: Revealed",
+   "page_title": "Arcanna'se Spire: Revealed",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Arcanna'se Spire: Vessel of the Sorceress",
+   "page_title": "Arcanna'se Spire: Vessel of the Sorceress (Advanced Solo)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Archive of Valeein",
+   "page_title": "Archive of Valeein",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Arena of the Gods",
+   "page_title": "Arena of the Gods (Raid)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU67"
+  },
+  {
+   "zone": "Asadel Yasurbah's Residence",
+   "page_title": "Asadel Yasurbah's Residence",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ascent of the Awakened",
+   "page_title": "Ascent of the Awakened",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Ascent of the Awakened: Audience with the Guardian",
+   "page_title": "Ascent of the Awakened: Audience with the Guardian",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Astra, the Dreamscape",
+   "page_title": "Astra, the Dreamscape",
+   "era": "LU42",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast",
+   "page_title": "Aurelian Coast",
+   "era": "Blood of Luclin",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast's Runestone Isle",
+   "page_title": "Aurelian Coast's Runestone Isle (Public Quest)",
+   "era": "Blood of Luclin",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast: Maiden's Eye",
+   "page_title": "Aurelian Coast: Maiden's Eye (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast: Reishi Rumble",
+   "page_title": "Aurelian Coast: Reishi Rumble (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast: Sambata Village",
+   "page_title": "Aurelian Coast: Sambata Village (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Aurelian Coast: The Emergent Eclipse",
+   "page_title": "Aurelian Coast: The Emergent Eclipse (Challenge Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Awuidor: Marr's Ascent",
+   "page_title": "Awuidor: Marr's Ascent (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Awuidor: Reef of Coirnav",
+   "page_title": "Awuidor: Reef of Coirnav (Raid)",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Awuidor: The Adumbral Depths",
+   "page_title": "Awuidor: The Adumbral Depths (Contested Raid)",
+   "era": "Chaos Descending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Awuidor: The Nebulous Deep",
+   "page_title": "Awuidor: The Nebulous Deep (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Awuidor: The Veiled Precipice",
+   "page_title": "Awuidor: The Veiled Precipice (Event Heroic)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": "Event Heroic"
+  },
+  {
+   "zone": "Azhar's Penitence",
+   "page_title": "Azhar's Penitence",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Azhub's Ship",
+   "page_title": "Azhub's Ship",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Baker Voleen's Storeroom",
+   "page_title": "Baker Voleen's Storeroom",
+   "era": "LU42",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Bar of Brell",
+   "page_title": "Bar of Brell",
+   "era": "Brew Day",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Bar of Brell: Private Lounge",
+   "page_title": "Bar of Brell: Private Lounge",
+   "era": "Brew Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Bastion of Thunder: Lightning Strikes",
+   "page_title": "Bastion of Thunder: Lightning Strikes (Tradeskill)",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Battlefield of Cauldron Hollow",
+   "page_title": "Battlefield of Cauldron Hollow",
+   "era": "Kingdom of Sky",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU28"
+  },
+  {
+   "zone": "Befallen: Cavern of the Afflicted",
+   "page_title": "Befallen: Cavern of the Afflicted",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Befallen: Halls of the Forsaken",
+   "page_title": "Befallen: Halls of the Forsaken",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Befallen: Necrotic Asylum",
+   "page_title": "Befallen: Necrotic Asylum",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Beggar's Court: Sweat-Stained Cobbles",
+   "page_title": "Beggar's Court: Sweat-Stained Cobbles",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Big Bend: Sanctum of Spirits",
+   "page_title": "Big Bend: Sanctum of Spirits",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Blackburrow",
+   "page_title": "Blackburrow",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Blackhook Spiral: Corrupted Caldera",
+   "page_title": "Blackhook Spiral: Corrupted Caldera (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Blackhook Spiral: Fort Sunder",
+   "page_title": "Blackhook Spiral: Fort Sunder (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Blackhook Spiral: Stonebrunt Defile",
+   "page_title": "Blackhook Spiral: Stonebrunt Defile (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Blades' Arena",
+   "page_title": "Blades' Arena",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Bloodskull Valley: The Excavation Site",
+   "page_title": "Bloodskull Valley: The Excavation Site",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Bloodskull Valley: The Training Grounds",
+   "page_title": "Bloodskull Valley: The Training Grounds",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Blumble's Halfling Hole",
+   "page_title": "Blumble's Halfling Hole",
+   "era": "LU02",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Bobby Kritchat's House",
+   "page_title": "Bobby Kritchat's House",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Brackish Vaults: Realm of the Triumvirate",
+   "page_title": "Brackish Vaults: Realm of the Triumvirate (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Bristlebane's Basin",
+   "page_title": "Bristlebane's Basin",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU38"
+  },
+  {
+   "zone": "Brokenskull Bay: Bilgewater Falls",
+   "page_title": "Brokenskull Bay: Bilgewater Falls (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Brokenskull Bay: Bosun's Private Stock",
+   "page_title": "Brokenskull Bay: Bosun's Private Stock (Event Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Brokenskull Bay: Fury of the Cursed",
+   "page_title": "Brokenskull Bay: Fury of the Cursed (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Brokenskull Bay: Hoist the Yellow Jack",
+   "page_title": "Brokenskull Bay: Hoist the Yellow Jack (Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Brokenskull Bay: Spoils of Maraud",
+   "page_title": "Brokenskull Bay: Spoils of Maraud (Contested)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Buccaneers' Hideout",
+   "page_title": "Buccaneers' Hideout",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Buried Takish'Hiz: Emergence from Stone",
+   "page_title": "Buried Takish'Hiz: Emergence from Stone (Raid)",
+   "era": "Renewal of Ro",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Buried Takish'Hiz: Empire of Antiquity",
+   "page_title": "Buried Takish'Hiz: Empire of Antiquity (Contested)",
+   "era": "Renewal of Ro",
+   "instance": null,
+   "size": null,
+   "update": "LU122"
+  },
+  {
+   "zone": "Buried Takish'Hiz: Foundation of Knowledge",
+   "page_title": "Buried Takish'Hiz: Foundation of Knowledge (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Buried Takish'Hiz: Terrene Threshold",
+   "page_title": "Buried Takish'Hiz: Terrene Threshold (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Buried Takish'Hiz: The Sacred Gift",
+   "page_title": "Buried Takish'Hiz: The Sacred Gift (Event Heroic II)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Butcherblock Mountains",
+   "page_title": "Butcherblock Mountains",
+   "era": "Echoes of Faydwer",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Castle Highhold",
+   "page_title": "Castle Highhold (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Highhold: Insider Treachery",
+   "page_title": "Castle Highhold: Insider Treachery (Event Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Highhold: No Quarter",
+   "page_title": "Castle Highhold: No Quarter (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Castle Highhold: Thresinet's Den",
+   "page_title": "Castle Highhold: Thresinet's Den (Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Mischief",
+   "page_title": "Castle Mischief (Raid)",
+   "era": "Chaos Descending",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU109"
+  },
+  {
+   "zone": "Castle Mistmoore",
+   "page_title": "Castle Mistmoore",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Castle Vacrul: Caverns of the Forsaken",
+   "page_title": "Castle Vacrul: Caverns of the Forsaken (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Vacrul: Haunting Presence",
+   "page_title": "Castle Vacrul: Haunting Presence (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU119"
+  },
+  {
+   "zone": "Castle Vacrul: Rosy Reverie",
+   "page_title": "Castle Vacrul: Rosy Reverie (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Vacrul: Suite of Screams",
+   "page_title": "Castle Vacrul: Suite of Screams (Event Heroic II)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Castle Vacrul: Thirst for Power",
+   "page_title": "Castle Vacrul: Thirst for Power (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Castle Vacrul: Throne of the Ydal",
+   "page_title": "Castle Vacrul: Throne of the Ydal",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Castleview Hamlet: Cloister of Purity",
+   "page_title": "Castleview Hamlet: Cloister of Purity",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Cathedral of Bone: The Grand Inquisitor's Chapel",
+   "page_title": "Cathedral of Bone: The Grand Inquisitor's Chapel",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Cave of Illboding Dark",
+   "page_title": "Cave of Illboding Dark",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU56"
+  },
+  {
+   "zone": "Cave of Illboding Dark: The Source",
+   "page_title": "Cave of Illboding Dark: The Source",
+   "era": "Sentinel's Fate",
+   "instance": null,
+   "size": null,
+   "update": "LU56"
+  },
+  {
+   "zone": "Cave of Shrines",
+   "page_title": "Cave of Shrines",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Cavern of Tangled Weeds",
+   "page_title": "Cavern of Tangled Weeds",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Cavern of the Crustaceans",
+   "page_title": "Cavern of the Crustaceans",
+   "era": "Fallen Dynasty",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Cazel's Mesa",
+   "page_title": "Cazel's Mesa",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ceremony in The Wastes",
+   "page_title": "Ceremony in The Wastes",
+   "era": "LU100",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Chamber of Immortality",
+   "page_title": "Chamber of Immortality",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Champion's Court: Jazeel's Challenge",
+   "page_title": "Champion's Court: Jazeel's Challenge",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Champion's Court: Setting the House in Order",
+   "page_title": "Champion's Court: Setting the House in Order",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Charasis: Maiden's Chamber",
+   "page_title": "Charasis: Maiden's Chamber",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Charasis: Vault of Eternal Sleep",
+   "page_title": "Charasis: Vault of Eternal Sleep",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Chardok",
+   "page_title": "Chardok",
+   "era": "Rise of Kunark",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Chelsith",
+   "page_title": "Chelsith",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Chelsith: The Ancient Vault",
+   "page_title": "Chelsith: The Ancient Vault (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Citadel of V'uul",
+   "page_title": "Citadel of V'uul",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x2",
+   "update": "LU60"
+  },
+  {
+   "zone": "City of Fordel Midst",
+   "page_title": "City of Fordel Midst",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "City of Shar Vahl",
+   "page_title": "City of Shar Vahl",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Clackwhinge's Cellar",
+   "page_title": "Clackwhinge's Cellar",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Cleansing of the Cove",
+   "page_title": "Cleansing of the Cove (Zone)",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU09"
+  },
+  {
+   "zone": "Clefts of Rujark: Dorn's Sanctuary",
+   "page_title": "Clefts of Rujark: Dorn's Sanctuary",
+   "era": "Desert of Flames",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Cobalt Scar",
+   "page_title": "Cobalt Scar",
+   "era": "LU66",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Cobalt Scar: The Plague",
+   "page_title": "Cobalt Scar: The Plague",
+   "era": "LU66",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Coliseum of Valor",
+   "page_title": "Coliseum of Valor",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Coliseum of Valor: Hero's Devotion",
+   "page_title": "Coliseum of Valor: Hero's Devotion",
+   "era": "Planes of Prophecy",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Court of Innovation",
+   "page_title": "Court of Innovation",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Court of Korucust",
+   "page_title": "Court of Korucust",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Court of Tears: The Dark One",
+   "page_title": "Court of Tears: The Dark One",
+   "era": "Desert of Flames",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Court of Truth: Riddle of the Sphinx",
+   "page_title": "Court of Truth: Riddle of the Sphinx",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Covenant District",
+   "page_title": "Covenant District",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Crow's Resting Place, Thieves Guild",
+   "page_title": "Crow's Resting Place, Thieves Guild",
+   "era": "Echoes of Faydwer",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Crushbone Keep",
+   "page_title": "Crushbone Keep",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Crypt of Dalnir: Baron's Workshop",
+   "page_title": "Crypt of Dalnir: Baron's Workshop (Expert)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Crypt of Dalnir: Ritual Chamber",
+   "page_title": "Crypt of Dalnir: Ritual Chamber (Expert)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Crypt of Dalnir: The Kly Stronghold",
+   "page_title": "Crypt of Dalnir: The Kly Stronghold (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Crypt of Dalnir: Wizard's Den",
+   "page_title": "Crypt of Dalnir: Wizard's Den (Advanced Solo)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Crypt of Valdoon",
+   "page_title": "Crypt of Valdoon",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Crystal Caverns: Collapse",
+   "page_title": "Crystal Caverns: Collapse",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU60"
+  },
+  {
+   "zone": "Crystalline Breaks",
+   "page_title": "Crystalline Breaks",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "D'Morte Burial Chambers",
+   "page_title": "D'Morte Burial Chambers (Zone)",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "D'Morte Burial Chambers: Veiled Hollow",
+   "page_title": "D'Morte Burial Chambers: Veiled Hollow",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Darklight Wood",
+   "page_title": "Darklight Wood",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null,
+   "update": "LU35"
+  },
+  {
+   "zone": "Darkpaw Dugout",
+   "page_title": "Darkpaw Dugout",
+   "era": "Ballads of Zimara",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Darkpaw Warrens",
+   "page_title": "Darkpaw Warrens (Solo)",
+   "era": "Darkpaw Rising",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Daylia's Office",
+   "page_title": "Daylia's Office",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Deathfist Citadel",
+   "page_title": "Deathfist Citadel",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null,
+   "update": "LU33"
+  },
+  {
+   "zone": "Deathtoll",
+   "page_title": "Deathtoll",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Demitrik's Bastion",
+   "page_title": "Demitrik's Bastion",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Detroxxulous, the Plaguelands",
+   "page_title": "Detroxxulous, the Plaguelands",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Dharr's Residence",
+   "page_title": "Dharr's Residence",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Dire Hollow",
+   "page_title": "Dire Hollow",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Dire Hollow: Barrow Ruins",
+   "page_title": "Dire Hollow: Barrow Ruins",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Dire Hollow: Grim Tidings",
+   "page_title": "Dire Hollow: Grim Tidings",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Dire Hollow: Infernal Echoes",
+   "page_title": "Dire Hollow: Infernal Echoes",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Doomfire, the Burning Lands",
+   "page_title": "Doomfire, the Burning Lands",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Doomfire: Elements of Rage",
+   "page_title": "Doomfire: Elements of Rage (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Doomfire: Ro's Sweatshop",
+   "page_title": "Doomfire: Ro's Sweatshop (Heroic)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Doomfire: The Enkindled Towers",
+   "page_title": "Doomfire: The Enkindled Towers (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Doomfire: The Molten Caldera",
+   "page_title": "Doomfire: The Molten Caldera (Raid)",
+   "era": "Chaos Descending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Doomfire: Vengeance of Ro",
+   "page_title": "Doomfire: Vengeance of Ro (Event Heroic)",
+   "era": "Chaos Descending",
+   "instance": "Event Heroic",
+   "size": null
+  },
+  {
+   "zone": "Dracur Prime",
+   "page_title": "Dracur Prime",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Dracur Prime: Sevalak Awakened",
+   "page_title": "Dracur Prime: Sevalak Awakened",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU63"
+  },
+  {
+   "zone": "Dracur Prime: Vyskudra the Ancient",
+   "page_title": "Dracur Prime: Vyskudra the Ancient",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU63"
+  },
+  {
+   "zone": "Dragon Necropolis: Chetari Warrens",
+   "page_title": "Dragon Necropolis: Chetari Warrens (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Dragon Necropolis: Tombs of Enlightenment",
+   "page_title": "Dragon Necropolis: Tombs of Enlightenment (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Dragon Necropolis: Vaults of Veneration",
+   "page_title": "Dragon Necropolis: Vaults of Veneration (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Drowned Caverns: Brutal Acts of War",
+   "page_title": "Drowned Caverns: Brutal Acts of War",
+   "era": "Splitpaw Saga",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Dythra's Lair",
+   "page_title": "Dythra's Lair",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Eastern Wastes",
+   "page_title": "Eastern Wastes",
+   "era": "Destiny of Velious",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns",
+   "page_title": "Echo Caverns",
+   "era": "Reign of Shadows",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns: Expedition Composition",
+   "page_title": "Echo Caverns: Expedition Composition (Tradeskill)",
+   "era": "Reign of Shadows",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns: Expedition Precarious",
+   "page_title": "Echo Caverns: Expedition Precarious (Raidventure)",
+   "era": "Reign of Shadows",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Echo Caverns: Fungal Foray",
+   "page_title": "Echo Caverns: Fungal Foray (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns: Quarry Quandary",
+   "page_title": "Echo Caverns: Quarry Quandary (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns: Recuso Digsite",
+   "page_title": "Echo Caverns: Recuso Digsite (Tradeskill)",
+   "era": "Reign of Shadows",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Echo Caverns: Zelmie Sortie",
+   "page_title": "Echo Caverns: Zelmie Sortie (Event Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Echoes of Time: Epic",
+   "page_title": "Echoes of Time: Epic",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2",
+   "update": "LU03"
+  },
+  {
+   "zone": "Edgewater Drains",
+   "page_title": "Edgewater Drains",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Elements of War",
+   "page_title": "Elements of War",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU61"
+  },
+  {
+   "zone": "Elfin Wonderland",
+   "page_title": "Elfin Wonderland",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU18"
+  },
+  {
+   "zone": "Emerald Halls: Guardian of Growth",
+   "page_title": "Emerald Halls: Guardian of Growth",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Emperor Atrebe's Laboratory: The Fabled City of Kor-sha",
+   "page_title": "Emperor Atrebe's Laboratory: The Fabled City of Kor-sha",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Emperor's Athenaeum",
+   "page_title": "Emperor's Athenaeum",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Enchanted Brownie Grotto",
+   "page_title": "Enchanted Brownie Grotto",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Enchanted Dryad Grotto",
+   "page_title": "Enchanted Dryad Grotto",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Enchanted Fay Grotto",
+   "page_title": "Enchanted Fay Grotto",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Enchanted Naiad Grotto",
+   "page_title": "Enchanted Naiad Grotto",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Enchanted Zygomyd Grotto",
+   "page_title": "Enchanted Zygomyd Grotto",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Erudin Research Halls",
+   "page_title": "Erudin Research Halls",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Eryslai, the Kingdom of Wind",
+   "page_title": "Eryslai, the Kingdom of Wind",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Eryslai: The Bixel Hive",
+   "page_title": "Eryslai: The Bixel Hive (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Eryslai: The Empyrean Steppes",
+   "page_title": "Eryslai: The Empyrean Steppes (Raid)",
+   "era": "Chaos Descending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Eryslai: The Midnight Aerie",
+   "page_title": "Eryslai: The Midnight Aerie (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Eryslai: Trials of Air",
+   "page_title": "Eryslai: Trials of Air (Event Heroic)",
+   "era": "Chaos Descending",
+   "instance": "Event Heroic",
+   "size": null
+  },
+  {
+   "zone": "Everling's Lost Chamber",
+   "page_title": "Everling's Lost Chamber",
+   "era": "Sentinel's Fate",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Evernight Abbey",
+   "page_title": "Evernight Abbey",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "F.S. Distillery: Beggars and Blighters",
+   "page_title": "F.S. Distillery: Beggars and Blighters (Raid)",
+   "era": "Rum Cellar Campaign",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "F.S. Distillery: Distill or Be Killed",
+   "page_title": "F.S. Distillery: Distill or Be Killed (Heroic)",
+   "era": "Rum Cellar Campaign",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "F.S. Distillery: Stowaways",
+   "page_title": "F.S. Distillery: Stowaways (Advanced Solo)",
+   "era": "Rum Cellar Campaign",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "F.S. Distillery: The Rum Cellar",
+   "page_title": "F.S. Distillery: The Rum Cellar (Solo)",
+   "era": "Rum Cellar Campaign",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Fabled Deathtoll",
+   "page_title": "Fabled Deathtoll",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Fabled Kael Drakkel",
+   "page_title": "Fabled Kael Drakkel",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null,
+   "update": "LU111"
+  },
+  {
+   "zone": "Fabled Runnyeye: The Gathering",
+   "page_title": "Fabled Runnyeye: The Gathering (Heroic)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null,
+   "update": "LU109"
+  },
+  {
+   "zone": "Fallen Gate",
+   "page_title": "Fallen Gate",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Fens of Nathsar",
+   "page_title": "Fens of Nathsar",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Firemyst Gully: Shattered Stillness",
+   "page_title": "Firemyst Gully: Shattered Stillness",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU03"
+  },
+  {
+   "zone": "Firemyst Gully: Supply Shortage",
+   "page_title": "Firemyst Gully: Supply Shortage",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Flooded Scar: Abyssal Assault",
+   "page_title": "Flooded Scar: Abyssal Assault (Raid)",
+   "era": "Scars of Destruction",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU128"
+  },
+  {
+   "zone": "Flooded Scar: Abyssal Attack",
+   "page_title": "Flooded Scar: Abyssal Attack (Signature)",
+   "era": "Scars of Destruction",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Fordel Midst: Bizarre Bazaar",
+   "page_title": "Fordel Midst: Bizarre Bazaar (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Fordel Midst: Remembrance",
+   "page_title": "Fordel Midst: Remembrance (Challenge Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Fordel Midst: The Listless Spires",
+   "page_title": "Fordel Midst: The Listless Spires (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Fordel Midst: Wayward Manor",
+   "page_title": "Fordel Midst: Wayward Manor (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Forest Ruins: the Burrows",
+   "page_title": "Forest Ruins: the Burrows",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Forgotten Pools",
+   "page_title": "Forgotten Pools",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Forlorn Gist",
+   "page_title": "Forlorn Gist",
+   "era": "Visions of Vetrovia",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Forlorn Gist: Akashic Incursion",
+   "page_title": "Forlorn Gist: Akashic Incursion (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU119"
+  },
+  {
+   "zone": "Forlorn Gist: Emerging Deceit",
+   "page_title": "Forlorn Gist: Emerging Deceit (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Forlorn Gist: Nightmares of Old",
+   "page_title": "Forlorn Gist: Nightmares of Old (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Fowlumbra, the Ever Duck",
+   "page_title": "Fowlumbra, the Ever Duck",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Freethinker Hideout",
+   "page_title": "Freethinker Hideout",
+   "era": "Echoes of Faydwer",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Frostfang Sea",
+   "page_title": "Frostfang Sea",
+   "era": "Sentinel's Fate",
+   "instance": "Public",
+   "size": null,
+   "update": "LU56"
+  },
+  {
+   "zone": "Frostfell Wonderland Village",
+   "page_title": "Frostfell Wonderland Village",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Frostfell Wonderland's Icy Mines",
+   "page_title": "Frostfell Wonderland's Icy Mines",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Frostfell Workshop",
+   "page_title": "Frostfell Workshop",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Furnace of Ages",
+   "page_title": "Furnace of Ages (Challenge Duo)",
+   "era": "LU66",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Gerion, Hold of D'Lere",
+   "page_title": "Gerion, Hold of D'Lere",
+   "era": "Rage of Cthurath",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Gerion: Ark of Ascension",
+   "page_title": "Gerion: Ark of Ascension (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Gerion: Dominion of Pain",
+   "page_title": "Gerion: Dominion of Pain (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Gerion: Rage of Cthurath",
+   "page_title": "Gerion: Rage of Cthurath (Signature)",
+   "era": "Rage of Cthurath",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Gerion: Realm of Conquest",
+   "page_title": "Gerion: Realm of Conquest (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ghoulinda's Lair",
+   "page_title": "Ghoulinda's Lair",
+   "era": "Visions of Vetrovia",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Gigglegibber Gifty Storehouse",
+   "page_title": "Gigglegibber Gifty Storehouse",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "Gigglegibber Hideout",
+   "page_title": "Gigglegibber Hideout (Frostfell 2006)",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU18"
+  },
+  {
+   "zone": "Gnip Gnopp's Gizmo Shop",
+   "page_title": "Gnip Gnopp's Gizmo Shop",
+   "era": "The Shadow Odyssey",
+   "instance": null,
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "Gnoll Cave",
+   "page_title": "Gnoll Cave",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU08"
+  },
+  {
+   "zone": "Gobblerock's Hideout",
+   "page_title": "Gobblerock's Hideout",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null,
+   "update": "LU01"
+  },
+  {
+   "zone": "Graystone Yard: Herald of Rage",
+   "page_title": "Graystone Yard: Herald of Rage",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Great Divide",
+   "page_title": "Great Divide",
+   "era": "Destiny of Velious",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Great Divide: Fina's Retreat",
+   "page_title": "Great Divide: Fina's Retreat",
+   "era": "Scars of Destruction",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Greater Faydark",
+   "page_title": "Greater Faydark",
+   "era": "Echoes of Faydwer",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Grozmag's Trial",
+   "page_title": "Grozmag's Trial",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Halls of Discipline",
+   "page_title": "Halls of Discipline",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Halls of the Seeing",
+   "page_title": "Halls of the Seeing",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU23"
+  },
+  {
+   "zone": "Halls of the Unseen",
+   "page_title": "Halls of the Unseen",
+   "era": "The Shadow Odyssey",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Halls of the Unseen: The Takeover",
+   "page_title": "Halls of the Unseen: The Takeover",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Hammerhall Barrel Chambers",
+   "page_title": "Hammerhall Barrel Chambers",
+   "era": "Brew Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Harrow's End",
+   "page_title": "Harrow's End (Raid)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Harrow's End: Baleful Dominion",
+   "page_title": "Harrow's End: Baleful Dominion (Heroic)",
+   "era": "Chains of Eternity",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Harrow's End: On the Trail of Ryizz",
+   "page_title": "Harrow's End: On the Trail of Ryizz",
+   "era": "Tears of Veeshan",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Harrow's End: The Deathtoll Tower",
+   "page_title": "Harrow's End: The Deathtoll Tower",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Haunted Mansion",
+   "page_title": "Haunted Mansion",
+   "era": "Nights of the Dead",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Haven",
+   "page_title": "Haven",
+   "era": "Kingdom of Sky",
+   "instance": "Public",
+   "size": null,
+   "update": "LU24"
+  },
+  {
+   "zone": "Heroic: Cavern of Tangled Weeds",
+   "page_title": "Heroic: Cavern of Tangled Weeds",
+   "era": "LU02",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Heroic: Rumbler Caves",
+   "page_title": "Heroic: Rumbler Caves",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Heroic: The Darkened Den",
+   "page_title": "Heroic: The Darkened Den",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Heroic: The Sullon Mines",
+   "page_title": "Heroic: The Sullon Mines",
+   "era": "LU02",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Hidden Chapel",
+   "page_title": "Hidden Chapel",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "High Keep",
+   "page_title": "High Keep (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "High Keep: The Bloodless Incursion",
+   "page_title": "High Keep: The Bloodless Incursion (Contested)",
+   "era": "Tears of Veeshan",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "High Keep: The Pickclaw Depths",
+   "page_title": "High Keep: The Pickclaw Depths (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Hold of Prexus",
+   "page_title": "Hold of Prexus",
+   "era": "The Shadow Odyssey",
+   "instance": "Public",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Hold of Rime: The Ascent",
+   "page_title": "Hold of Rime: The Ascent",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Hold of Rime: The Fortress Spire",
+   "page_title": "Hold of Rime: The Fortress Spire",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Iceshard Keep",
+   "page_title": "Iceshard Keep",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Iceshard Keep: Agent Provocateur",
+   "page_title": "Iceshard Keep: Agent Provocateur",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Icy Keep: Retribution",
+   "page_title": "Icy Keep: Retribution",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU56"
+  },
+  {
+   "zone": "Imperiled Druid Ring",
+   "page_title": "Imperiled Druid Ring (Instance)",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Imprinted Memory: Origins of the Felfeather",
+   "page_title": "Imprinted Memory: Origins of the Felfeather (Event Solo)",
+   "era": "Renewal of Ro",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Invaders of The Unknown",
+   "page_title": "Invaders of The Unknown",
+   "era": "Rage of Cthurath",
+   "instance": "Public Raid Instance",
+   "size": null
+  },
+  {
+   "zone": "Ironforge Catacombs",
+   "page_title": "Ironforge Catacombs",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ironforge Family Catacombs",
+   "page_title": "Ironforge Family Catacombs",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ironforge Storehouse",
+   "page_title": "Ironforge Storehouse",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Isle of Refuge",
+   "page_title": "Isle of Refuge",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Isle of Vul",
+   "page_title": "Isle of Vul",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Isle of Vul: Bellengere's Dark Spire",
+   "page_title": "Isle of Vul: Bellengere's Dark Spire",
+   "era": "Chaos Descending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Izshrash'Khar: Stratum of the Protectors",
+   "page_title": "Izshrash'Khar: Stratum of the Protectors (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Jade Tiger's Den Cellar",
+   "page_title": "Jade Tiger's Den Cellar",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Jarsath Wastes",
+   "page_title": "Jarsath Wastes",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Juggernaut Gymnasium",
+   "page_title": "Juggernaut Gymnasium",
+   "era": "LU42",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Kael Drakkel",
+   "page_title": "Kael Drakkel",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Kaesora: Tomb of the Venerated",
+   "page_title": "Kaesora: Tomb of the Venerated (Advanced Solo)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Kaesora: Xalgozian Stronghold",
+   "page_title": "Kaesora: Xalgozian Stronghold (Heroic)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Kaladim",
+   "page_title": "Kaladim",
+   "era": "Echoes of Faydwer",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Karnor's Castle",
+   "page_title": "Karnor's Castle",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Karuupa Jungle",
+   "page_title": "Karuupa Jungle",
+   "era": "Visions of Vetrovia",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Karuupa Jungle: Dedraka's Descent",
+   "page_title": "Karuupa Jungle: Dedraka's Descent (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Karuupa Jungle: Heart of Conflict",
+   "page_title": "Karuupa Jungle: Heart of Conflict (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Karuupa Jungle: Predator's Perch",
+   "page_title": "Karuupa Jungle: Predator's Perch (Event Heroic II)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Karuupa Jungle: The Fading Light",
+   "page_title": "Karuupa Jungle: The Fading Light (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Kerrath Palace: Royal Audience",
+   "page_title": "Kerrath Palace: Royal Audience",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "King Grikbar Caverns",
+   "page_title": "King Grikbar Caverns",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Klak'Anon",
+   "page_title": "Klak'Anon",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Klak'Anon: Redd's Request",
+   "page_title": "Klak'Anon: Redd's Request",
+   "era": "Tinkerfest",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Klak'Anon: Ulterior Mechanica",
+   "page_title": "Klak'Anon: Ulterior Mechanica",
+   "era": "Tinkerfest",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra",
+   "page_title": "Kralet Penumbra (Contested)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: Rise to Power",
+   "page_title": "Kralet Penumbra: Rise to Power (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: Submerged Lair",
+   "page_title": "Kralet Penumbra: Submerged Lair (Event Heroic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: Temple of the Ill-Seen",
+   "page_title": "Kralet Penumbra: Temple of the Ill-Seen (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: Tepid Depths",
+   "page_title": "Kralet Penumbra: Tepid Depths (Agnostic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: The Hive Mind",
+   "page_title": "Kralet Penumbra: The Hive Mind (Raid)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Kralet Penumbra: The Master's Chosen",
+   "page_title": "Kralet Penumbra: The Master's Chosen (Agnostic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Kralet Penumbra: Uzulu Deep",
+   "page_title": "Kralet Penumbra: Uzulu Deep (Event Heroic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Kraytoc's Fortress of Rime",
+   "page_title": "Kraytoc's Fortress of Rime",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Kunark Expedition",
+   "page_title": "Kunark Expedition",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU38"
+  },
+  {
+   "zone": "Kunzar Jungle",
+   "page_title": "Kunzar Jungle",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Kurn's Tower",
+   "page_title": "Kurn's Tower (Zone)",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x2",
+   "update": "LU52"
+  },
+  {
+   "zone": "Kurn's Tower: Breaching the Void",
+   "page_title": "Kurn's Tower: Breaching the Void",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null,
+   "update": "LU52"
+  },
+  {
+   "zone": "Kurn's Tower: Saving Dolas",
+   "page_title": "Kurn's Tower: Saving Dolas",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Kurn's Tower: The Locket",
+   "page_title": "Kurn's Tower: The Locket",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Kylong Plains",
+   "page_title": "Kylong Plains",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Lair of the Dragon Queen",
+   "page_title": "Lair of the Dragon Queen",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Lair of the Haunts",
+   "page_title": "Lair of the Haunts",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Lair of the Necromancer",
+   "page_title": "Lair of the Necromancer",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU08"
+  },
+  {
+   "zone": "Legends of Norrath Museum",
+   "page_title": "Legends of Norrath Museum",
+   "era": "The Shadow Odyssey",
+   "instance": null,
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "Library of Erudin",
+   "page_title": "Library of Erudin",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Library of Light: Showdown with the Vizier",
+   "page_title": "Library of Light: Showdown with the Vizier",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Lockjaw's Lair",
+   "page_title": "Lockjaw's Lair",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Longshadow Alley: Daeneth Cloister",
+   "page_title": "Longshadow Alley: Daeneth Cloister",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Loping Plains",
+   "page_title": "Loping Plains",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Lost City of Torsis: Ashiirian Court",
+   "page_title": "Lost City of Torsis: Ashiirian Court (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Lost City of Torsis: Reaver's Remnants",
+   "page_title": "Lost City of Torsis: Reaver's Remnants (Challenge Heroic)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Lost City of Torsis: The Shrouded Temple",
+   "page_title": "Lost City of Torsis: The Shrouded Temple (Advanced Solo)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Lost City of Torsis: The Spectral Market",
+   "page_title": "Lost City of Torsis: The Spectral Market (Heroic)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Lost Temple of Cabilis",
+   "page_title": "Lost Temple of Cabilis",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Lyceum of the Recondite",
+   "page_title": "Lyceum of the Recondite",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Mahngavi Wastes",
+   "page_title": "Mahngavi Wastes",
+   "era": "Visions of Vetrovia",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Mahngavi Wastes: Phantasmal Shades",
+   "page_title": "Mahngavi Wastes: Phantasmal Shades (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Mahngavi Wastes: The Engulfing Night",
+   "page_title": "Mahngavi Wastes: The Engulfing Night (Raid)",
+   "era": "Visions of Vetrovia",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Mahngavi Wastes: Warpwood Cairn",
+   "page_title": "Mahngavi Wastes: Warpwood Cairn (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Maj'Dul",
+   "page_title": "Maj'Dul",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Maldura",
+   "page_title": "Maldura",
+   "era": "Terrors of Thalumbra",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Maldura Steamworks Sublevel",
+   "page_title": "Maldura Steamworks Sublevel",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Maldura: Algorithm For Destruction",
+   "page_title": "Maldura: Algorithm For Destruction (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Maldura: Bar Brawl",
+   "page_title": "Maldura: Bar Brawl (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Maldura: Bhoughbh's Folly",
+   "page_title": "Maldura: Bhoughbh's Folly (X2 Raid)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Maldura: District of Ash",
+   "page_title": "Maldura: District of Ash (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Maldura: Forge of Ashes",
+   "page_title": "Maldura: Forge of Ashes",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Maldura: Palace Foray",
+   "page_title": "Maldura: Palace Foray (Event Heroic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Maldura: Unveiled Palace",
+   "page_title": "Maldura: Unveiled Palace",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "McScroogle Corp. HQ",
+   "page_title": "McScroogle Corp. HQ",
+   "era": "Rise of Kunark",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU41"
+  },
+  {
+   "zone": "McScroogle's Past",
+   "page_title": "McScroogle's Past",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Mines of Meldrath: Hollowed Halls",
+   "page_title": "Mines of Meldrath: Hollowed Halls",
+   "era": "Ballads of Zimara",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU126"
+  },
+  {
+   "zone": "Miragul's Immeasurable Menagerie",
+   "page_title": "Miragul's Immeasurable Menagerie (Duo)",
+   "era": "Ballads of Zimara",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Miragul's Phylactery: Scion of Ice",
+   "page_title": "Miragul's Phylactery: Scion of Ice",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Miragul's Phylactery: The Anathema",
+   "page_title": "Miragul's Phylactery: The Anathema",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Miragul's Phylactery: The Crucible",
+   "page_title": "Miragul's Phylactery: The Crucible",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Miragul's Planar Shard",
+   "page_title": "Miragul's Planar Shard",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU53"
+  },
+  {
+   "zone": "Mistmoore Catacombs",
+   "page_title": "Mistmoore Catacombs",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Mistmoore's Inner Sanctum",
+   "page_title": "Mistmoore's Inner Sanctum",
+   "era": "Echoes of Faydwer",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Mistmyr Manor",
+   "page_title": "Mistmyr Manor",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Mjolni's Lair",
+   "page_title": "Mjolni's Lair",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Moors of Ykesha",
+   "page_title": "Moors of Ykesha",
+   "era": "The Shadow Odyssey",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Mr. McScroogle's Boudoir",
+   "page_title": "Mr. McScroogle's Boudoir",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Munzok's Material Bastion",
+   "page_title": "Munzok's Material Bastion",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU51"
+  },
+  {
+   "zone": "Myrist, the Great Library",
+   "page_title": "Myrist, the Great Library",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Nabil's Cave",
+   "page_title": "Nabil's Cave",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Najena's Hollow Tower",
+   "page_title": "Najena's Hollow Tower",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Native Mettle",
+   "page_title": "Native Mettle",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": "Heroic III"
+  },
+  {
+   "zone": "Naya'Patel: Realm of the Dead",
+   "page_title": "Naya'Patel: Realm of the Dead",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Nektropos Castle",
+   "page_title": "Nektropos Castle",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Nektropos Castle: Craftsman Errands",
+   "page_title": "Nektropos Castle: Craftsman Errands",
+   "era": "LU42",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Nektropos Castle: Love's Errand",
+   "page_title": "Nektropos Castle: Love's Errand",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "Nektropos Castle: Tribulation",
+   "page_title": "Nektropos Castle: Tribulation",
+   "era": "Kingdom of Sky",
+   "instance": "Group",
+   "size": null,
+   "update": "LU26"
+  },
+  {
+   "zone": "Neriak, City of Hate",
+   "page_title": "Neriak, City of Hate",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null,
+   "update": "LU35"
+  },
+  {
+   "zone": "Nest of the Great Egg: Outfitter Errands",
+   "page_title": "Nest of the Great Egg: Outfitter Errands",
+   "era": "Kingdom of Sky",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Nettleville: Strange Tidings",
+   "page_title": "Nettleville: Strange Tidings",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "New Tunaria",
+   "page_title": "New Tunaria",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Nizara, City of the Nayad",
+   "page_title": "Nizara, City of the Nayad",
+   "era": "Fallen Dynasty",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Nu'roga",
+   "page_title": "Nu'roga",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Oakmyst Forest",
+   "page_title": "Oakmyst Forest",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
+   "zone": "Obelisk of Ahkzul",
+   "page_title": "Obelisk of Ahkzul",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Obol Plains",
+   "page_title": "Obol Plains",
+   "era": "Chains of Eternity",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Obulus Frontier",
+   "page_title": "Obulus Frontier",
+   "era": "Kunark Ascending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Oogothl Sprawl: Coral Roost",
+   "page_title": "Oogothl Sprawl: Coral Roost (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Oogothl Sprawl: Ver'Bohten Atoll",
+   "page_title": "Oogothl Sprawl: Ver'Bohten Atoll (Heroic)",
+   "era": "rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Oogothl Sprawl: Zruul's Dominion",
+   "page_title": "Oogothl Sprawl: Zruul's Dominion (Heroic)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null,
+   "update": "LU131"
+  },
+  {
+   "zone": "Oratorium of Thyr: Allim's Fate",
+   "page_title": "Oratorium of Thyr: Allim's Fate",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Orinox's Hideout",
+   "page_title": "Orinox's Hideout",
+   "era": "LU42",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ossuary of Malevolence",
+   "page_title": "Ossuary of Malevolence (Contested)",
+   "era": "Altar of Malice",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Ossuary: Cathedral of Bones",
+   "page_title": "Ossuary: Cathedral of Bones (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Ossuary: Choir of T'Vyl",
+   "page_title": "Ossuary: Choir of T'Vyl (Event Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ossuary: Resonance of Malice",
+   "page_title": "Ossuary: Resonance of Malice (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Ossuary: Sanguine Fountains",
+   "page_title": "Ossuary: Sanguine Fountains (Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ossuary: The Altar of Malice",
+   "page_title": "Ossuary: The Altar of Malice (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Outer Kael",
+   "page_title": "Outer Kael",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Outpost of the Overlord",
+   "page_title": "Outpost of the Overlord",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null,
+   "update": "LU19"
+  },
+  {
+   "zone": "Palace of the Ancient One",
+   "page_title": "Palace of the Ancient One",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Palace of the Awakened",
+   "page_title": "Palace of the Awakened",
+   "era": "Kingdom of Sky",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Perah'Celsis' Abominable Laboratory",
+   "page_title": "Perah'Celsis' Abominable Laboratory",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Permafrost",
+   "page_title": "Permafrost",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Permafrost Crypt: Decorating Retribution",
+   "page_title": "Permafrost Crypt: Decorating Retribution",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "Phantom Sea",
+   "page_title": "Phantom Sea",
+   "era": "Altar of Malice",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Plane of Disease: Crypt of Decay",
+   "page_title": "Plane of Disease: Crypt of Decay (Tradeskill)",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Plane of Disease: Infested Mesa",
+   "page_title": "Plane of Disease: Infested Mesa (Duo)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Disease: Outbreak",
+   "page_title": "Plane of Disease: Outbreak (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Disease: The Source",
+   "page_title": "Plane of Disease: The Source (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Disease: Virulent Insurrection",
+   "page_title": "Plane of Disease: Virulent Insurrection (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Plane of Innovation: Gears in the Machine",
+   "page_title": "Plane of Innovation: Gears in the Machine (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Innovation: Masks of the Marvelous",
+   "page_title": "Plane of Innovation: Masks of the Marvelous (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Innovation: Parts Not Included",
+   "page_title": "Plane of Innovation: Parts Not Included (Event Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Plane of Innovation: Parts not Included",
+   "page_title": "Plane of Innovation: Parts not Included (Duo)",
+   "era": "Planes of Prophecy",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Plane of Innovation: The Wasteyards",
+   "page_title": "Plane of Innovation: The Wasteyards (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Plane of Justice: Eternal Prisons",
+   "page_title": "Plane of Justice: Eternal Prisons",
+   "era": "Chaos Descending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Plane of Magic",
+   "page_title": "Plane of Magic",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Plane of War",
+   "page_title": "Plane of War",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU61"
+  },
+  {
+   "zone": "Portal to the Past: Guk",
+   "page_title": "Portal to the Past: Guk",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Nagafen's Lair",
+   "page_title": "Portal to the Past: Nagafen's Lair",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Ocean of Tears",
+   "page_title": "Portal to the Past: Ocean of Tears",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Plains of Karana",
+   "page_title": "Portal to the Past: Plains of Karana",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Qeynos Hills",
+   "page_title": "Portal to the Past: Qeynos Hills",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Qeynos Ruins",
+   "page_title": "Portal to the Past: Qeynos Ruins",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Portal to the Past: Southern Desert of Ro",
+   "page_title": "Portal to the Past: Southern Desert of Ro (Public Quest)",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Portal to the Past: Steamfont",
+   "page_title": "Portal to the Past: Steamfont",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Precipice of Power",
+   "page_title": "Precipice of Power",
+   "era": "Altar of Malice",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Prison of Admiral Grimgadget",
+   "page_title": "Prison of Admiral Grimgadget",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Prison of Thir'Slaa",
+   "page_title": "Prison of Thir'Slaa",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Prize of Prexus",
+   "page_title": "Prize of Prexus",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Qeynos Capitol District",
+   "page_title": "Qeynos Capitol District",
+   "era": "LU64",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Qeynos Guard Barracks: Ceremonial Chamber",
+   "page_title": "Qeynos Guard Barracks: Ceremonial Chamber",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Qeynos Province District",
+   "page_title": "Qeynos Province District",
+   "era": "LU64",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Queen Antonia's Chambers",
+   "page_title": "Queen Antonia's Chambers",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Queen's Colony",
+   "page_title": "Queen's Colony",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null,
+   "update": "LU19"
+  },
+  {
+   "zone": "Raj'Dur Plateaus",
+   "page_title": "Raj'Dur Plateaus",
+   "era": "Renewal of Ro",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Raj'Dur Plateaus: Blood and Sand",
+   "page_title": "Raj'Dur Plateaus: Blood and Sand (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Raj'Dur Plateaus: The Hunt",
+   "page_title": "Raj'Dur Plateaus: The Hunt (Raid)",
+   "era": "Renewal of Ro",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Raj'Dur Plateaus: The Sultan's Dagger",
+   "page_title": "Raj'Dur Plateaus: The Sultan's Dagger (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Rath'Mana: Mission Most Heated",
+   "page_title": "Rath'Mana: Mission Most Heated",
+   "era": "Renewal of Ro",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ravenscale Repository",
+   "page_title": "Ravenscale Repository",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Realm of the Air Turtle",
+   "page_title": "Realm of the Air Turtle",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Realm of the Earth Turtle",
+   "page_title": "Realm of the Earth Turtle",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Realm of the Fire Turtle",
+   "page_title": "Realm of the Fire Turtle",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Realm of the Water Turtle",
+   "page_title": "Realm of the Water Turtle",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Redd's Abode",
+   "page_title": "Redd's Abode",
+   "era": "Tinkerfest",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Reet Resistance Caves",
+   "page_title": "Reet Resistance Caves",
+   "era": "LU42",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Renfry's Basement",
+   "page_title": "Renfry's Basement",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Research Hall of Mayong Mistmoore",
+   "page_title": "Research Hall of Mayong Mistmoore",
+   "era": "Sentinel's Fate",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Research Library of Mayong Mistmoore",
+   "page_title": "Research Library of Mayong Mistmoore",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Rilgor Plegnog's Chambers",
+   "page_title": "Rilgor Plegnog's Chambers",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Ring of Karana",
+   "page_title": "Ring of Karana",
+   "era": "Destiny of Velious",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Roekillik Den",
+   "page_title": "Roekillik Den",
+   "era": "Sentinel's Fate",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Royal Palace of Erudin",
+   "page_title": "Royal Palace of Erudin",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ruins of Kaesora: Ancient Xalgozian Temple",
+   "page_title": "Ruins of Kaesora: Ancient Xalgozian Temple (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Runnyeye",
+   "page_title": "Runnyeye",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Runnyeye Hoard Pits",
+   "page_title": "Runnyeye Hoard Pits",
+   "era": "Brew Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Runnyeye: The Gathering",
+   "page_title": "Runnyeye: The Gathering",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null,
+   "update": "LU46"
+  },
+  {
+   "zone": "Sacred Temple: Drusella's Time",
+   "page_title": "Sacred Temple: Drusella's Time",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sanctorium of Brell",
+   "page_title": "Sanctorium of Brell",
+   "era": "Brew Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sanctorium of the Trials",
+   "page_title": "Sanctorium of the Trials",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU06"
+  },
+  {
+   "zone": "Sanctuary of Divine Unity",
+   "page_title": "Sanctuary of Divine Unity",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sanctum of the Scaleborn",
+   "page_title": "Sanctum of the Scaleborn",
+   "era": "Kingdom of Sky",
+   "instance": "Public",
+   "size": "Heroic"
+  },
+  {
+   "zone": "Sanctus Seru",
+   "page_title": "Sanctus Seru (City)",
+   "era": "Blood of Luclin",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Sanctus Seru: Arx Aeturnus",
+   "page_title": "Sanctus Seru: Arx Aeturnus (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sanctus Seru: Echelon of Divinity",
+   "page_title": "Sanctus Seru: Echelon of Divinity (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sanctus Seru: Echelon of Order",
+   "page_title": "Sanctus Seru: Echelon of Order (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sanctus Seru: Fabrication Hall",
+   "page_title": "Sanctus Seru: Fabrication Hall",
+   "era": "Blood of Luclin",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sanctus Seru: The Fading Arches",
+   "page_title": "Sanctus Seru: The Fading Arches (Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sandstone Delta",
+   "page_title": "Sandstone Delta",
+   "era": "Renewal of Ro",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Sandstone Delta: Eye of Night",
+   "page_title": "Sandstone Delta: Eye of Night (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sandstone Delta: Eye of the Storm",
+   "page_title": "Sandstone Delta: Eye of the Storm (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sandstone Delta: Grave Grange",
+   "page_title": "Sandstone Delta: Grave Grange (Event Heroic III)",
+   "era": "Renewal of Ro",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sandstone Delta: The Standing Storm",
+   "page_title": "Sandstone Delta: The Standing Storm (Raid)",
+   "era": "Renewal of Ro",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sang'Huuu Parliament Chambers",
+   "page_title": "Sang'Huuu Parliament Chambers",
+   "era": "Ballads of Zimara",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Savage Weald",
+   "page_title": "Savage Weald",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Savage Weald: Backwood's Brawl",
+   "page_title": "Savage Weald: Backwood's Brawl (Challenge)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Savage Weald: Chaotic Caverns",
+   "page_title": "Savage Weald: Chaotic Caverns (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Savage Weald: Fort Grim",
+   "page_title": "Savage Weald: Fort Grim (Event Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Savage Weald: Grimling War",
+   "page_title": "Savage Weald: Grimling War (Challenge)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Savage Weald: Shadow's Hold",
+   "page_title": "Savage Weald: Shadow's Hold (Raid)",
+   "era": "Reign of Shadows",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Scale Yard: Traitors' End",
+   "page_title": "Scale Yard: Traitors' End",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Scornfeather Roost",
+   "page_title": "Scornfeather Roost",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Scourge Keep",
+   "page_title": "Scourge Keep (Advanced Solo)",
+   "era": "LU100",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Sebilis",
+   "page_title": "Sebilis",
+   "era": "Rise of Kunark",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Secret Scriptorium",
+   "page_title": "Secret Scriptorium",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Sellok's Broken Hideout",
+   "page_title": "Sellok's Broken Hideout",
+   "era": "Rise of Kunark",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sellok's Hovel",
+   "page_title": "Sellok's Hovel",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU67"
+  },
+  {
+   "zone": "Sepulcher of Zan Fi",
+   "page_title": "Sepulcher of Zan Fi",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Serilian Bar",
+   "page_title": "Serilian Bar",
+   "era": "Brew Day",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Shadeweaver's Thicket",
+   "page_title": "Shadeweaver's Thicket",
+   "era": "Reign of Shadows",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Shadeweaver's Thicket: Feral Reserve",
+   "page_title": "Shadeweaver's Thicket: Feral Reserve (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Shadeweaver's Thicket: Loda Kai Isle",
+   "page_title": "Shadeweaver's Thicket: Loda Kai Isle (Event Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Shadeweaver's Thicket: Spirit Harvest",
+   "page_title": "Shadeweaver's Thicket: Spirit Harvest (Raid)",
+   "era": "Reign of Shadows",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Shadeweaver's Thicket: Untamed Lands",
+   "page_title": "Shadeweaver's Thicket: Untamed Lands (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Shar Vahl: Siege Break",
+   "page_title": "Shar Vahl: Siege Break (Heroic)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Shard of Fear",
+   "page_title": "Shard of Fear",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null,
+   "update": "LU39"
+  },
+  {
+   "zone": "Shard of Hate",
+   "page_title": "Shard of Hate",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU44"
+  },
+  {
+   "zone": "Shard of Hate: Eye Spy",
+   "page_title": "Shard of Hate: Eye Spy (Tradeskill)",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Shard of Hate: Reignited Hatred",
+   "page_title": "Shard of Hate: Reignited Hatred (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU106"
+  },
+  {
+   "zone": "Shard of Hate: Udder Contempt",
+   "page_title": "Shard of Hate: Udder Contempt (Herd Mode)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU106"
+  },
+  {
+   "zone": "Shard of Hate: Utter Contempt",
+   "page_title": "Shard of Hate: Utter Contempt (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU106"
+  },
+  {
+   "zone": "Shard of Love: A Moment of Valor",
+   "page_title": "Shard of Love: A Moment of Valor",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null,
+   "update": "LU53"
+  },
+  {
+   "zone": "Shard of Love: Seeding Corruption",
+   "page_title": "Shard of Love: Seeding Corruption",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Shard of Love: Weeding Corruption",
+   "page_title": "Shard of Love: Weeding Corruption",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Shattered Unrest",
+   "page_title": "Shattered Unrest (Heroic I)",
+   "era": "Update 2023.09.12",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Shattered Vale",
+   "page_title": "Shattered Vale",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU04"
+  },
+  {
+   "zone": "Shimmering Citadel: Inside the Bottle",
+   "page_title": "Shimmering Citadel: Inside the Bottle",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Shimmering Citadel: Lost Inside the Bottle",
+   "page_title": "Shimmering Citadel: Lost Inside the Bottle",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Silent City: The Delving Dead",
+   "page_title": "Silent City: The Delving Dead",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU61"
+  },
+  {
+   "zone": "Siren's Grotto: Alluring Embrace",
+   "page_title": "Siren's Grotto: Alluring Embrace (Advanced Solo)",
+   "era": "LU66",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Siren's Grotto: Dissension",
+   "page_title": "Siren's Grotto: Dissension (Raid)",
+   "era": "LU66",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Siren's Grotto: Tavalan Abyss",
+   "page_title": "Siren's Grotto: Tavalan Abyss (Advanced Solo)",
+   "era": "LU66",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Siren's Grotto: Tear in the Grotto",
+   "page_title": "Siren's Grotto: Tear in the Grotto",
+   "era": "LU66",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Skyshrine Tower: Age's End",
+   "page_title": "Skyshrine Tower: Age's End",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Skyshrine: Betrayal in the Underdepths",
+   "page_title": "Skyshrine: Betrayal in the Underdepths",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU63"
+  },
+  {
+   "zone": "Skyshrine: The City of Dracur",
+   "page_title": "Skyshrine: The City of Dracur",
+   "era": "Destiny of Velious",
+   "instance": "Public",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Skyshrine: The Forbidden City of Dracur",
+   "page_title": "Skyshrine: The Forbidden City of Dracur",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Skyshrine: The Underdepths",
+   "page_title": "Skyshrine: The Underdepths",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Sleeper's Tomb",
+   "page_title": "Sleeper's Tomb (Contested)",
+   "era": "Chains of Eternity",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sleeper's Tomb: A Frostfell Visit",
+   "page_title": "Sleeper's Tomb: A Frostfell Visit",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": "Raid x4"
+  },
+  {
+   "zone": "Sleeper's Tomb: A Temporal Leap",
+   "page_title": "Sleeper's Tomb: A Temporal Leap",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU63"
+  },
+  {
+   "zone": "Sleeper's Tomb: The Awakening",
+   "page_title": "Sleeper's Tomb: The Awakening",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Sleeper's Tomb: The Forgotten Catacombs",
+   "page_title": "Sleeper's Tomb: The Forgotten Catacombs",
+   "era": "Chains of Eternity",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sleeper's Tomb: Unearthed",
+   "page_title": "Sleeper's Tomb: Unearthed (Raid)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sodden Archipelago",
+   "page_title": "Sodden Archipelago",
+   "era": "Scars of Destruction",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Sodden Archipelago: Blackhook Badlands",
+   "page_title": "Sodden Archipelago: Blackhook Badlands (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sodden Archipelago: Operation Cooperation",
+   "page_title": "Sodden Archipelago: Operation Cooperation (Raid)",
+   "era": "Scars of Destruction",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sodden Archipelago: Return to Deepwater Watch",
+   "page_title": "Sodden Archipelago: Return to Deepwater Watch (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sodden Archipelago: Thawed Marshes",
+   "page_title": "Sodden Archipelago: Thawed Marshes (Raid)",
+   "era": "Scars of Destruction",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sodden Archipelago: The Forsaken Isle",
+   "page_title": "Sodden Archipelago: The Forsaken Isle (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Solusek Ro's Tower: Citadel of the Sun",
+   "page_title": "Solusek Ro's Tower: Citadel of the Sun (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Solusek Ro's Tower: From the Ashes",
+   "page_title": "Solusek Ro's Tower: From the Ashes (Tradeskill)",
+   "era": "Planes of Prophecy",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Solusek Ro's Tower: Monolith of Fire",
+   "page_title": "Solusek Ro's Tower: Monolith of Fire (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Solusek Ro's Tower: Monolith of Fire (Solo)",
+   "page_title": "Solusek Ro's Tower: Monolith of Fire (Solo) (Instance)",
+   "era": "Planes of Prophecy",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Solusek Ro's Tower: Radiance",
+   "page_title": "Solusek Ro's Tower: Radiance (Event Challenge)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Solusek Ro's Tower: The Obsidian Core",
+   "page_title": "Solusek Ro's Tower: The Obsidian Core (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Solusek's Eye",
+   "page_title": "Solusek's Eye",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Solusek's Eye: The Calling",
+   "page_title": "Solusek's Eye: The Calling (Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Soulbound Chamber",
+   "page_title": "Soulbound Chamber",
+   "era": "Planes of Prophecy",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Spiral of Vul",
+   "page_title": "Spiral of Vul (Contested)",
+   "era": "Scars of Destruction",
+   "instance": null,
+   "size": null,
+   "update": "LU128"
+  },
+  {
+   "zone": "Spire of Rage",
+   "page_title": "Spire of Rage",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU60"
+  },
+  {
+   "zone": "Spirit's Resonance",
+   "page_title": "Spirit's Resonance",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Spirits of the Lost",
+   "page_title": "Spirits of the Lost (Raid)",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU09"
+  },
+  {
+   "zone": "Spiritual Wound",
+   "page_title": "Spiritual Wound (Fens of Nathsar)",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Splendor Sky Aerie",
+   "page_title": "Splendor Sky Aerie",
+   "era": "Ballads of Zimara",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Splendor Sky Aerie: Marshlands Miasma",
+   "page_title": "Splendor Sky Aerie: Marshlands Miasma (Event Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Splendor Sky Aerie: Vale Invasion",
+   "page_title": "Splendor Sky Aerie: Vale Invasion (Event Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ssraeshza Temple",
+   "page_title": "Ssraeshza Temple (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Ssraeshza Temple: Echoes of Time",
+   "page_title": "Ssraeshza Temple: Echoes of Time (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Ssraeshza Temple: Inner Sanctum",
+   "page_title": "Ssraeshza Temple: Inner Sanctum (Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ssraeshza Temple: Shadow of Luclin",
+   "page_title": "Ssraeshza Temple: Shadow of Luclin",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ssraeshza Temple: Taskmaster's Echo",
+   "page_title": "Ssraeshza Temple: Taskmaster's Echo (Event Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Ssrez'Ras: Chamber of Stasis",
+   "page_title": "Ssrez'Ras: Chamber of Stasis (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Ssrez'Ras: Ruins of Stasis",
+   "page_title": "Ssrez'Ras: Ruins of Stasis",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ssrez'Ras: The Final Confrontation",
+   "page_title": "Ssrez'Ras: The Final Confrontation",
+   "era": "Tears of Veeshan",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Starcrest Commune: Shattered Sanctum",
+   "page_title": "Starcrest Commune: Shattered Sanctum",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Steamfont Mountains",
+   "page_title": "Steamfont Mountains",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Stormhold",
+   "page_title": "Stormhold",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Strategist's Stonghold",
+   "page_title": "Strategist's Stonghold",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU60"
+  },
+  {
+   "zone": "Strategist's Stronghold",
+   "page_title": "Strategist's Stronghold",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU60"
+  },
+  {
+   "zone": "Stygian Threshold",
+   "page_title": "Stygian Threshold (Agnostic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Stygian Threshold: Edge of Underfoot",
+   "page_title": "Stygian Threshold: Edge of Underfoot",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Stygian Threshold: The Howling Gateway",
+   "page_title": "Stygian Threshold: The Howling Gateway (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Stygian Threshold: The Toxic Pools",
+   "page_title": "Stygian Threshold: The Toxic Pools (Event Heroic)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sullon's Sanctum",
+   "page_title": "Sullon's Sanctum",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU61"
+  },
+  {
+   "zone": "Sullon's Spire",
+   "page_title": "Sullon's Spire",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU60"
+  },
+  {
+   "zone": "Sultan's Mahala: Daggers Drawn",
+   "page_title": "Sultan's Mahala: Daggers Drawn (Raid)",
+   "era": "Renewal of Ro",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Sundered Splitpaw: Alone in the Dark",
+   "page_title": "Sundered Splitpaw: Alone in the Dark",
+   "era": "Splitpaw Saga",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Anvilpaw's Grotto",
+   "page_title": "Sundered Splitpaw: Anvilpaw's Grotto",
+   "era": "Splitpaw Saga",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Sundered Splitpaw: Captive Audience",
+   "page_title": "Sundered Splitpaw: Captive Audience",
+   "era": "Splitpaw Saga",
+   "instance": "Solo-Group",
+   "size": "Scales"
+  },
+  {
+   "zone": "Sundered Splitpaw: Crawler Nest",
+   "page_title": "Sundered Splitpaw: Crawler Nest",
+   "era": "Splitpaw Saga",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Delving into the Darkness",
+   "page_title": "Sundered Splitpaw: Delving into the Darkness",
+   "era": "Splitpaw Saga",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Gladiator's Triumph",
+   "page_title": "Sundered Splitpaw: Gladiator's Triumph",
+   "era": "Splitpaw Saga",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Hideout",
+   "page_title": "Sundered Splitpaw: Hideout",
+   "era": "Splitpaw Saga",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Splitpaw Den",
+   "page_title": "Sundered Splitpaw: Splitpaw Den",
+   "era": "Splitpaw Saga",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Trial of Harclave",
+   "page_title": "Sundered Splitpaw: Trial of Harclave",
+   "era": "Splitpaw Saga",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Sundered Splitpaw: Upper Tunnels",
+   "page_title": "Sundered Splitpaw: Upper Tunnels",
+   "era": "Splitpaw Saga",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Sunken City",
+   "page_title": "Sunken City",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
+   "zone": "Svarni Expanse",
+   "page_title": "Svarni Expanse",
+   "era": "Visions of Vetrovia",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Svarni Expanse: Carrion Crag",
+   "page_title": "Svarni Expanse: Carrion Crag (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Takish Badlands",
+   "page_title": "Takish Badlands",
+   "era": "Renewal of Ro",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Takish Badlands: Kigathor's Glade",
+   "page_title": "Takish Badlands: Kigathor's Glade (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Takish Badlands: Overgrowth",
+   "page_title": "Takish Badlands: Overgrowth (Heroic I)",
+   "era": "Renewal of Ro",
+   "instance": "Heroic",
+   "size": null
+  },
+  {
+   "zone": "Takish Badlands: The Boundless Gulf",
+   "page_title": "Takish Badlands: The Boundless Gulf (Raid)",
+   "era": "Renewal of Ro",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Takish'Hiz Arena: Renewal of Ro",
+   "page_title": "Takish'Hiz Arena: Renewal of Ro (Solo)",
+   "era": "Renewal of Ro",
+   "instance": "Solo",
+   "size": "solo"
+  },
+  {
+   "zone": "Tallon's Cloister",
+   "page_title": "Tallon's Cloister",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU61"
+  },
+  {
+   "zone": "Tallon's Stronghold",
+   "page_title": "Tallon's Stronghold",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU60"
+  },
+  {
+   "zone": "Talthallas's Hidden Chamber",
+   "page_title": "Talthallas's Hidden Chamber",
+   "era": "LU64",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Temple Street: Vault of Necromechanica",
+   "page_title": "Temple Street: Vault of Necromechanica",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "Temple of Rallos Zek: Foundations of Stone",
+   "page_title": "Temple of Rallos Zek: Foundations of Stone",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Temple of Veeshan",
+   "page_title": "Temple of Veeshan",
+   "era": "Tears of Veeshan",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Temple of Veeshan: Guardian's Edifice",
+   "page_title": "Temple of Veeshan: Guardian's Edifice (Raid)",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Temple of Veeshan: Halls of the Betrayer",
+   "page_title": "Temple of Veeshan: Halls of the Betrayer (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Temple of Veeshan: Laboratory of Mutation",
+   "page_title": "Temple of Veeshan: Laboratory of Mutation (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Temple of Veeshan: The Dreadscale's Maw",
+   "page_title": "Temple of Veeshan: The Dreadscale's Maw (Raid)",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Temple of Veeshan: Vulak'Aerr's Dominion",
+   "page_title": "Temple of Veeshan: Vulak'Aerr's Dominion (Heroic)",
+   "era": "Tears of Veeshan",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Temple of the Faceless",
+   "page_title": "Temple of the Faceless (Agnostic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Temple of the Faceless: Imprisonment",
+   "page_title": "Temple of the Faceless: Imprisonment (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Tenebrous Tangle",
+   "page_title": "Tenebrous Tangle",
+   "era": "Kingdom of Sky",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Thalumbra, the Ever Deep",
+   "page_title": "Thalumbra, the Ever Deep",
+   "era": "Terrors of Thalumbra",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Acadechism",
+   "page_title": "The Acadechism",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Anchorage",
+   "page_title": "The Anchorage (Public Tradeskill)",
+   "era": "Chaos Descending",
+   "instance": "Public",
+   "size": null,
+   "update": "LU109"
+  },
+  {
+   "zone": "The Arbiter's Master",
+   "page_title": "The Arbiter's Master",
+   "era": "Kingdom of Sky",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Arena",
+   "page_title": "The Arena (Instance)",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Ashen Elite Training Grounds",
+   "page_title": "The Ashen Elite Training Grounds",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Barren Sky",
+   "page_title": "The Barren Sky",
+   "era": "Kingdom of Sky",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Blackscale Sepulcher",
+   "page_title": "The Blackscale Sepulcher",
+   "era": "Kingdom of Sky",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Blinding",
+   "page_title": "The Blinding",
+   "era": "Blood of Luclin",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Blinding: Twisted Vista",
+   "page_title": "The Blinding: Twisted Vista (Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Bloodskull Valley: A Noble Confrontation",
+   "page_title": "The Bloodskull Valley: A Noble Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Bonemire",
+   "page_title": "The Bonemire",
+   "era": "Kingdom of Sky",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Burning Cauldron",
+   "page_title": "The Burning Cauldron",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Capsized Klicknik",
+   "page_title": "The Capsized Klicknik",
+   "era": "LU42",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Cave of Knowledge",
+   "page_title": "The Cave of Knowledge",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Caves",
+   "page_title": "The Caves",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Caves of Wonder",
+   "page_title": "The Caves of Wonder",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Celestial Conveyance",
+   "page_title": "The Celestial Conveyance",
+   "era": "Ballads of Zimara",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Chamber of Destiny",
+   "page_title": "The Chamber of Destiny",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Chamber of the Claymore",
+   "page_title": "The Chamber of the Claymore (Zone)",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "The Chamber of the Keeper",
+   "page_title": "The Chamber of the Keeper",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Chamber of the Truthbringer",
+   "page_title": "The Chamber of the Truthbringer",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Chronoweave",
+   "page_title": "The Chronoweave",
+   "era": "Chronoportal Phenomenon",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Circle of Elders",
+   "page_title": "The Circle of Elders",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU19"
+  },
+  {
+   "zone": "The City of Freeport",
+   "page_title": "The City of Freeport",
+   "era": "Age of Discovery",
+   "instance": "Public",
+   "size": null,
+   "update": "LU62"
+  },
+  {
+   "zone": "The Clefts of Rujark",
+   "page_title": "The Clefts of Rujark",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Clockwork Menace Factory",
+   "page_title": "The Clockwork Menace Factory",
+   "era": "Echoes of Faydwer",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Clockwork Workshop",
+   "page_title": "The Clockwork Workshop",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Commonlands",
+   "page_title": "The Commonlands",
+   "era": "Shattered Lands",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Community Lounge",
+   "page_title": "The Community Lounge",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Condemned Catacomb",
+   "page_title": "The Condemned Catacomb",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU01"
+  },
+  {
+   "zone": "The Court of Al'Afaz",
+   "page_title": "The Court of Al'Afaz",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Court of Tears",
+   "page_title": "The Court of Tears",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Court of Truth",
+   "page_title": "The Court of Truth",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Court of Truth: The Debate",
+   "page_title": "The Court of Truth: The Debate",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Court of the Blades",
+   "page_title": "The Court of the Blades",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Court of the Blades: Dukarem's Assault",
+   "page_title": "The Court of the Blades: Dukarem's Assault",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Court of the Coin",
+   "page_title": "The Court of the Coin",
+   "era": "Desert of Flames",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Court of the Coin: Imminent Danger",
+   "page_title": "The Court of the Coin: Imminent Danger",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Cove of Decay: A Heroic Confrontation",
+   "page_title": "The Cove of Decay: A Heroic Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Cove of Decay: Epic Angler",
+   "page_title": "The Cove of Decay: Epic Angler",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU03"
+  },
+  {
+   "zone": "The Crypt of Agony",
+   "page_title": "The Crypt of Agony",
+   "era": "Rise of Kunark",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Crypt of Betrayal",
+   "page_title": "The Crypt of Betrayal",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Crypt of T'Haen: Vengeance",
+   "page_title": "The Crypt of T'Haen: Vengeance",
+   "era": "Bloodline Chronicles",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Crypt of T'haen",
+   "page_title": "The Crypt of T'haen",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Crypt of T'haen: Endless Twilight",
+   "page_title": "The Crypt of T'haen: Endless Twilight",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Crypt of the Imprisoned",
+   "page_title": "The Crypt of the Imprisoned",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The D'Vinnian Throne",
+   "page_title": "The D'Vinnian Throne",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Darkened Den",
+   "page_title": "The Darkened Den",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Deep Forge",
+   "page_title": "The Deep Forge",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Den of the Devourer",
+   "page_title": "The Den of the Devourer",
+   "era": "Kingdom of Sky",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Deserted Mine",
+   "page_title": "The Deserted Mine",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU04"
+  },
+  {
+   "zone": "The Destroyer's Refuge",
+   "page_title": "The Destroyer's Refuge",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Djinn Master's Prism",
+   "page_title": "The Djinn Master's Prism",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Dreadcutter",
+   "page_title": "The Dreadcutter (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Dreadcutter: The Pirate Kings",
+   "page_title": "The Dreadcutter: The Pirate Kings (Raid)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Drowned Caverns: Acts of War",
+   "page_title": "The Drowned Caverns: Acts of War",
+   "era": "Splitpaw Saga",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Drowned Caverns: Arena of Heroes",
+   "page_title": "The Drowned Caverns: Arena of Heroes",
+   "era": "Splitpaw Saga",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Drowned Caverns: Flammable Fur",
+   "page_title": "The Drowned Caverns: Flammable Fur",
+   "era": "Splitpaw Saga",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Drowned Caverns: Hot Water",
+   "page_title": "The Drowned Caverns: Hot Water",
+   "era": "Splitpaw Saga",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Drowned Caverns: Outer Grotto",
+   "page_title": "The Drowned Caverns: Outer Grotto",
+   "era": "Splitpaw Saga",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Duality's Vigilant Sanctum",
+   "page_title": "The Duality's Vigilant Sanctum",
+   "era": "Sentinel's Fate",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Egg's Blessing",
+   "page_title": "The Egg's Blessing",
+   "era": "Kingdom of Sky",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Eidolon Jungle",
+   "page_title": "The Eidolon Jungle",
+   "era": "Chains of Eternity",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Emerald Halls",
+   "page_title": "The Emerald Halls",
+   "era": "Echoes of Faydwer",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Emerald Halls: Sanctum of Growth",
+   "page_title": "The Emerald Halls: Sanctum of Growth",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU56"
+  },
+  {
+   "zone": "The Emerald Halls: Wuoshi\u2019s Fate",
+   "page_title": "The Emerald Halls: Wuoshi\u2019s Fate",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Empowered Fountain of Life",
+   "page_title": "The Empowered Fountain of Life",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Estate of Unrest",
+   "page_title": "The Estate of Unrest",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null,
+   "update": "LU32"
+  },
+  {
+   "zone": "The Eternal Gorge: A Daring Confrontation",
+   "page_title": "The Eternal Gorge: A Daring Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Execution Throne Room",
+   "page_title": "The Execution Throne Room",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Explosion",
+   "page_title": "The Explosion",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Acadechism",
+   "page_title": "The Fabled Acadechism (Advanced Solo)",
+   "era": "Update 2015.06.23",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Antechamber of Fate",
+   "page_title": "The Fabled Antechamber of Fate (Raid)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU101"
+  },
+  {
+   "zone": "The Fabled Cavern of the Crustaceans",
+   "page_title": "The Fabled Cavern of the Crustaceans (Raid)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x2",
+   "update": "LU101"
+  },
+  {
+   "zone": "The Fabled Chamber of Immortality",
+   "page_title": "The Fabled Chamber of Immortality",
+   "era": "LU100",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Clefts of Rujark",
+   "page_title": "The Fabled Clefts of Rujark",
+   "era": "Chains of Eternity",
+   "instance": "Public",
+   "size": null,
+   "update": "LU67"
+  },
+  {
+   "zone": "The Fabled Court of Innovation",
+   "page_title": "The Fabled Court of Innovation (Advanced Solo)",
+   "era": "Update 2015.06.23",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Crypt of Valdoon",
+   "page_title": "The Fabled Crypt of Valdoon (Advanced Solo)",
+   "era": "Update 2015.06.23",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Deathtoll",
+   "page_title": "The Fabled Deathtoll",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Den of the Devourer",
+   "page_title": "The Fabled Den of the Devourer",
+   "era": "Tears of Veeshan",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Djinn Master's Prism",
+   "page_title": "The Fabled Djinn Master's Prism",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Freethinker Hideout",
+   "page_title": "The Fabled Freethinker Hideout (Challenge Raid)",
+   "era": "Update 2015.06.23",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Halls of Fate",
+   "page_title": "The Fabled Halls of Fate",
+   "era": "Tears of Veeshan",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Kurn's Tower",
+   "page_title": "The Fabled Kurn's Tower (x2 Raid)",
+   "era": "Update 2022.08.09",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Fabled Kurn's Tower: Breaching the Void",
+   "page_title": "The Fabled Kurn's Tower: Breaching the Void (Heroic I)",
+   "era": "Update 2022.08.09",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Laboratory of Lord Vyemm",
+   "page_title": "The Fabled Laboratory of Lord Vyemm",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Mutagenic Outcast",
+   "page_title": "The Fabled Mutagenic Outcast",
+   "era": "Tears of Veeshan",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Nizara, City of the Nayad",
+   "page_title": "The Fabled Nizara, City of the Nayad (Advanced Solo)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU101"
+  },
+  {
+   "zone": "The Fabled Plane of War",
+   "page_title": "The Fabled Plane of War (Raid)",
+   "era": "Blood of Luclin",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fabled Ruins of Guk: Halls of the Fallen",
+   "page_title": "The Fabled Ruins of Guk: Halls of the Fallen (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU107"
+  },
+  {
+   "zone": "The Fabled Ruins of Guk: The Lower Corridors",
+   "page_title": "The Fabled Ruins of Guk: The Lower Corridors (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU107"
+  },
+  {
+   "zone": "The Fabled Ruins of Guk: Ykesha's Outer Stronghold",
+   "page_title": "The Fabled Ruins of Guk: Ykesha's Outer Stronghold (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU107"
+  },
+  {
+   "zone": "The Fabled Ruins of Varsoon",
+   "page_title": "The Fabled Ruins of Varsoon",
+   "era": "LU100",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Sanctum of Fear",
+   "page_title": "The Fabled Sanctum of Fear",
+   "era": "LU100",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Sanctum of the Scaleborn",
+   "page_title": "The Fabled Sanctum of the Scaleborn",
+   "era": "Tears of Veeshan",
+   "instance": "Public",
+   "size": "Heroic"
+  },
+  {
+   "zone": "The Fabled Scornfeather Roost",
+   "page_title": "The Fabled Scornfeather Roost",
+   "era": "Chains of Eternity",
+   "instance": "Group",
+   "size": null,
+   "update": "LU67"
+  },
+  {
+   "zone": "The Fabled Temple of Cazic-Thule",
+   "page_title": "The Fabled Temple of Cazic-Thule",
+   "era": "LU100",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Vaults of El'Arad",
+   "page_title": "The Fabled Vaults of El'Arad",
+   "era": "Tears of Veeshan",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Fabled Xux'laio's Roost",
+   "page_title": "The Fabled Xux'laio's Roost (Raid)",
+   "era": "Terrors of Thalumbra",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU101"
+  },
+  {
+   "zone": "The Fabled Ykesha's Inner Stronghold",
+   "page_title": "The Fabled Ykesha's Inner Stronghold (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": null,
+   "update": "LU107"
+  },
+  {
+   "zone": "The False Sepulchre",
+   "page_title": "The False Sepulchre",
+   "era": "Sentinel's Fate",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Far Pelican",
+   "page_title": "The Far Pelican (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Feerrott",
+   "page_title": "The Feerrott",
+   "era": "Shattered Lands",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Firemyst Gully",
+   "page_title": "The Firemyst Gully",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Firemyst Gully: A Gallant Confrontation",
+   "page_title": "The Firemyst Gully: A Gallant Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Forbidden Sepulcher",
+   "page_title": "The Forbidden Sepulcher",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU09"
+  },
+  {
+   "zone": "The Forest Ruins",
+   "page_title": "The Forest Ruins",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
+   "zone": "The Fortress of Drunder",
+   "page_title": "The Fortress of Drunder",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null,
+   "update": "LU60"
+  },
+  {
+   "zone": "The Fountain of Life",
+   "page_title": "The Fountain of Life",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Fractured Hive",
+   "page_title": "The Fractured Hive (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Frillik Tide",
+   "page_title": "The Frillik Tide",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Future",
+   "page_title": "The Future",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "The Gates of Ahket Aken",
+   "page_title": "The Gates of Ahket Aken",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Gathering",
+   "page_title": "The Gathering (Instance)",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Gigglegibber Hideout",
+   "page_title": "The Gigglegibber Hideout",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU38"
+  },
+  {
+   "zone": "The Greenmist",
+   "page_title": "The Greenmist",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Grender's Lair",
+   "page_title": "The Grender's Lair",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Halls of Fate",
+   "page_title": "The Halls of Fate",
+   "era": "Kingdom of Sky",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Haunted Vaults",
+   "page_title": "The Haunted Vaults",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Hedge Hollow",
+   "page_title": "The Hedge Hollow",
+   "era": "Nights of the Dead",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Hidden Cache",
+   "page_title": "The Hidden Cache",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Hidden Village of Kugup",
+   "page_title": "The Hidden Village of Kugup",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null,
+   "update": "LU09"
+  },
+  {
+   "zone": "The Hole",
+   "page_title": "The Hole",
+   "era": "Sentinel's Fate",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The House of Endings",
+   "page_title": "The House of Endings",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Icy Dig",
+   "page_title": "The Icy Dig",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null,
+   "update": "LU12"
+  },
+  {
+   "zone": "The Icy Keep",
+   "page_title": "The Icy Keep",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo-Group",
+   "size": null,
+   "update": "LU30"
+  },
+  {
+   "zone": "The Icy Keep: The Return",
+   "page_title": "The Icy Keep: The Return (Heroic)",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "The Ironforge Exchange",
+   "page_title": "The Ironforge Exchange",
+   "era": "Shattered Lands",
+   "instance": "Tradeskill",
+   "size": null
+  },
+  {
+   "zone": "The Keep",
+   "page_title": "The Keep",
+   "era": "Kunark Ascending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The LMS Intruder",
+   "page_title": "The LMS Intruder",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Laboratory of Lord Vyemm",
+   "page_title": "The Laboratory of Lord Vyemm",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Lesser Faydark",
+   "page_title": "The Lesser Faydark",
+   "era": "Echoes of Faydwer",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Library of Light",
+   "page_title": "The Library of Light",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Library of Light: Diversion",
+   "page_title": "The Library of Light: Diversion",
+   "era": "Desert of Flames",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Library of Vatheel",
+   "page_title": "The Library of Vatheel",
+   "era": "LU64",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Living Tombs",
+   "page_title": "The Living Tombs",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Lost Village of Kugup",
+   "page_title": "The Lost Village of Kugup",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU09"
+  },
+  {
+   "zone": "The Lyceum of Abhorrence",
+   "page_title": "The Lyceum of Abhorrence",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU22"
+  },
+  {
+   "zone": "The Maid for the Mist",
+   "page_title": "The Maid for the Mist",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Mediation Chamber",
+   "page_title": "The Mediation Chamber",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Merchant's Den",
+   "page_title": "The Merchant's Den (Heroic I)",
+   "era": "Visions of Vetrovia",
+   "instance": "Group",
+   "size": null,
+   "update": "LU119"
+  },
+  {
+   "zone": "The Mines of Meldrath",
+   "page_title": "The Mines of Meldrath",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Molten Throne: Hate's Essences",
+   "page_title": "The Molten Throne: Hate's Essences (Tradeskill)",
+   "era": "Planes of Prophecy",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Moppet Shoppe",
+   "page_title": "The Moppet Shoppe",
+   "era": "Rise of Kunark",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Moppet Shoppe: Into the Bowels of the Beast",
+   "page_title": "The Moppet Shoppe: Into the Bowels of the Beast",
+   "era": "Rise of Kunark",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Mysterious Mine",
+   "page_title": "The Mysterious Mine",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null,
+   "update": "LU12"
+  },
+  {
+   "zone": "The Mystic Lake",
+   "page_title": "The Mystic Lake",
+   "era": "Fallen Dynasty",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Nest of the Great Egg",
+   "page_title": "The Nest of the Great Egg",
+   "era": "Kingdom of Sky",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Nexus Core",
+   "page_title": "The Nexus Core (Advanced Solo)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Nexus Core: The Shattered Heart",
+   "page_title": "The Nexus Core: The Shattered Heart",
+   "era": "Tears of Veeshan",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Obelisk of Blight",
+   "page_title": "The Obelisk of Blight",
+   "era": "Echoes of Faydwer",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Outer Vault",
+   "page_title": "The Outer Vault",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Overlord's Office",
+   "page_title": "The Overlord's Office",
+   "era": "Altar of Malice",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Palace of Ferzhul",
+   "page_title": "The Palace of Ferzhul",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Palace of Roehn Theer",
+   "page_title": "The Palace of Roehn Theer",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Palace of Sabaron",
+   "page_title": "The Palace of Sabaron",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null,
+   "update": "LU61"
+  },
+  {
+   "zone": "The Peacock Club",
+   "page_title": "The Peacock Club",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Peacock Club Tavern",
+   "page_title": "The Peacock Club Tavern",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Peat Bog",
+   "page_title": "The Peat Bog",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
+   "zone": "The Pedestal of Sky",
+   "page_title": "The Pedestal of Sky",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Pillars of Flame",
+   "page_title": "The Pillars of Flame",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Poets Palace",
+   "page_title": "The Poets Palace",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Poets Palace: Return",
+   "page_title": "The Poets Palace: Return",
+   "era": "Desert of Flames",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Presence of Kaldrahir",
+   "page_title": "The Presence of Kaldrahir",
+   "era": "Age of Discovery",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Protector's Realm",
+   "page_title": "The Protector's Realm",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The QSS Bootstrutter",
+   "page_title": "The QSS Bootstrutter",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Qeynos Mage Tower",
+   "page_title": "The Qeynos Mage Tower",
+   "era": "Kingdom of Sky",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU24"
+  },
+  {
+   "zone": "The Roekillik Excavation",
+   "page_title": "The Roekillik Excavation",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null,
+   "update": "LU12"
+  },
+  {
+   "zone": "The Ruins",
+   "page_title": "The Ruins",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Heroic"
+  },
+  {
+   "zone": "The Ruins of Cabilis",
+   "page_title": "The Ruins of Cabilis (Heroic)",
+   "era": "Kunark Ascending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Ruins of Cabilis: The Necromancer's Den",
+   "page_title": "The Ruins of Cabilis: The Necromancer's Den",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Ruins of Guk: Halls of the Fallen",
+   "page_title": "The Ruins of Guk: Halls of the Fallen",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": "Heroic"
+  },
+  {
+   "zone": "The Ruins of Guk: The Lower Corridors",
+   "page_title": "The Ruins of Guk: The Lower Corridors",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Ruins of Guk: Ykesha's Outer Stronghold",
+   "page_title": "The Ruins of Guk: Ykesha's Outer Stronghold",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Ruins of Ssraeshza",
+   "page_title": "The Ruins of Ssraeshza (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Ruins of Varsoon",
+   "page_title": "The Ruins of Varsoon",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Rumbler Caves",
+   "page_title": "The Rumbler Caves",
+   "era": "LU02",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Sanctorium",
+   "page_title": "The Sanctorium",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Sanctum of Fear",
+   "page_title": "The Sanctum of Fear",
+   "era": "Shattered Lands",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Sepulcher of Jahnda",
+   "page_title": "The Sepulcher of Jahnda",
+   "era": "Shattered Lands",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Serpent Sewer",
+   "page_title": "The Serpent Sewer",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Shattered Vale: A Bold Confrontation",
+   "page_title": "The Shattered Vale: A Bold Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Shimmering Citadel",
+   "page_title": "The Shimmering Citadel",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Shipyard Cove",
+   "page_title": "The Shipyard Cove",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Silent Cavern",
+   "page_title": "The Silent Cavern",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Silent City",
+   "page_title": "The Silent City",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Sinking Sands",
+   "page_title": "The Sinking Sands",
+   "era": "Desert of Flames",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Source of Evil",
+   "page_title": "The Source of Evil (Zone)",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU19"
+  },
+  {
+   "zone": "The Spellweave",
+   "page_title": "The Spellweave",
+   "era": "Terrors of Thalumbra",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Sprawl",
+   "page_title": "The Sprawl",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
+   "zone": "The Stonebrunt Highlands",
+   "page_title": "The Stonebrunt Highlands",
+   "era": "Sentinel's Fate",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "The Sullon Mines",
+   "page_title": "The Sullon Mines",
+   "era": "LU02",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Summoning Chamber",
+   "page_title": "The Summoning Chamber",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Sundered Frontier",
+   "page_title": "The Sundered Frontier",
+   "era": "Sentinel's Fate",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Tallon Hording Halls",
+   "page_title": "The Tallon Hording Halls",
+   "era": "LU02",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Temple of Anashti Sul's",
+   "page_title": "The Temple of Anashti Sul's",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Temple of Cazic-Thule",
+   "page_title": "The Temple of Cazic-Thule",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Temple of Kor-Sha",
+   "page_title": "The Temple of Kor-Sha",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Temple of Rallos Zek",
+   "page_title": "The Temple of Rallos Zek",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Temple of Scale",
+   "page_title": "The Temple of Scale",
+   "era": "Kingdom of Sky",
+   "instance": "Public Raid Zone",
+   "size": null
+  },
+  {
+   "zone": "The Temple of Scale: Pedestal of the Priestess",
+   "page_title": "The Temple of Scale: Pedestal of the Priestess",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Temple of Scale: Vision of the Priestess",
+   "page_title": "The Temple of Scale: Vision of the Priestess",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Thexian Meeting",
+   "page_title": "The Thexian Meeting",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Thieves' Way",
+   "page_title": "The Thieves' Way",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Throne of New Tunaria: Operation Overlord",
+   "page_title": "The Throne of New Tunaria: Operation Overlord",
+   "era": "Echoes of Faydwer",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU36"
+  },
+  {
+   "zone": "The Tomb of Thuuga",
+   "page_title": "The Tomb of Thuuga",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "The Tombs of Night",
+   "page_title": "The Tombs of Night",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Tombs of Night: A Search For Answers",
+   "page_title": "The Tombs of Night: A Search For Answers",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Tombs of Night: Retribution",
+   "page_title": "The Tombs of Night: Retribution",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Tower of the Drafling: Elite Bixie Hive",
+   "page_title": "The Tower of the Drafling: Elite Bixie Hive",
+   "era": "LU42",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Tower of the Drafling: Tradeskill",
+   "page_title": "The Tower of the Drafling: Tradeskill",
+   "era": "LU42",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Tower of the Moon",
+   "page_title": "The Tower of the Moon",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Tower of the Moon: Bronze Scepter",
+   "page_title": "The Tower of the Moon: Bronze Scepter",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Tower of the Moon: In the Service of the Master",
+   "page_title": "The Tower of the Moon: In the Service of the Master",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Tribunal: Sacred Temple of the Hammer",
+   "page_title": "The Tribunal: Sacred Temple of the Hammer",
+   "era": "Rise of Kunark",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Underdepths",
+   "page_title": "The Underdepths (Proving Ground)",
+   "era": "Kunark Ascending",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU103"
+  },
+  {
+   "zone": "The Underrot Caverns: Fetid Halls",
+   "page_title": "The Underrot Caverns: Fetid Halls",
+   "era": "Bloodline Chronicles",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Underrot Caverns: Moldy Crypt",
+   "page_title": "The Underrot Caverns: Moldy Crypt",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Unkempt Vale: A Lordly Confrontation",
+   "page_title": "The Unkempt Vale: A Lordly Confrontation",
+   "era": "Shattered Lands",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Unknown",
+   "page_title": "The Unknown",
+   "era": "Rage of Cthurath",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Unknown: Edge of Oblivion",
+   "page_title": "The Unknown: Edge of Oblivion (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Unknown: Sacrificial Pursuits",
+   "page_title": "The Unknown: Sacrificial Pursuits (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Unknown: The Obliviwrought Conclusion",
+   "page_title": "The Unknown: The Obliviwrought Conclusion (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Unknown: Void Incursion",
+   "page_title": "The Unknown: Void Incursion",
+   "era": "Rage of Cthurath",
+   "instance": "Public Raid Instance",
+   "size": null
+  },
+  {
+   "zone": "The Vasty Deep",
+   "page_title": "The Vasty Deep",
+   "era": "Sentinel's Fate",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Vault of Dust",
+   "page_title": "The Vault of Dust",
+   "era": "Desert of Flames",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Vault of Ssraeshza",
+   "page_title": "The Vault of Ssraeshza (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Vaults of El'Arad",
+   "page_title": "The Vaults of El'Arad",
+   "era": "Kingdom of Sky",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "The Venom of Ssraeshza",
+   "page_title": "The Venom of Ssraeshza (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Vigilant: Final Destruction",
+   "page_title": "The Vigilant: Final Destruction",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "The Vigilant: Incursion",
+   "page_title": "The Vigilant: Incursion",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Vigilant: Infiltration",
+   "page_title": "The Vigilant: Infiltration",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Vigilant: Rescue",
+   "page_title": "The Vigilant: Rescue",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Village of Shin",
+   "page_title": "The Village of Shin",
+   "era": "Fallen Dynasty",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "The Wailing Caves",
+   "page_title": "The Wailing Caves",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo-Group"
+  },
+  {
+   "zone": "The Willow Wood: Besieged Hamlet",
+   "page_title": "The Willow Wood: Besieged Hamlet",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "The Withered Lands",
+   "page_title": "The Withered Lands",
+   "era": "Destiny of Velious",
+   "instance": "Public",
+   "size": null,
+   "update": "LU63"
+  },
+  {
+   "zone": "Thexian Hideaway",
+   "page_title": "Thexian Hideaway",
+   "era": "The Shadow Odyssey",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU54"
+  },
+  {
+   "zone": "Throne of Fear",
+   "page_title": "Throne of Fear (Heroic)",
+   "era": "Chains of Eternity",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Throne of Fear: Ascension",
+   "page_title": "Throne of Fear: Ascension (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Throne of Fear: The Fear Gate",
+   "page_title": "Throne of Fear: The Fear Gate",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Throne of New Tunaria",
+   "page_title": "Throne of New Tunaria",
+   "era": "Echoes of Faydwer",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU36"
+  },
+  {
+   "zone": "Throne of Storms",
+   "page_title": "Throne of Storms",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Throne of Storms: Hall of Legends",
+   "page_title": "Throne of Storms: Hall of Legends",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Thurgadin, City of the Coldain",
+   "page_title": "Thurgadin, City of the Coldain",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Timorous Deep",
+   "page_title": "Timorous Deep",
+   "era": "Rise of Kunark",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Tin Soldier Practice Rooms",
+   "page_title": "Tin Soldier Practice Rooms",
+   "era": "LU64",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Tipple's Focus",
+   "page_title": "Tipple's Focus",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Tomb of the Mad Crusader",
+   "page_title": "Tomb of the Mad Crusader",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Tomb of the Seeress",
+   "page_title": "Tomb of the Seeress",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Torden, Bastion of Thunder: Storm Chase",
+   "page_title": "Torden, Bastion of Thunder: Storm Chase (Duo)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Torden, Bastion of Thunder: Storm Surge",
+   "page_title": "Torden, Bastion of Thunder: Storm Surge (Raid)",
+   "era": "Planes of Prophecy",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Torden, Bastion of Thunder: Tower Breach",
+   "page_title": "Torden, Bastion of Thunder: Tower Breach (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Torden, Bastion of Thunder: Winds of Change",
+   "page_title": "Torden, Bastion of Thunder: Winds of Change (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Tower of Frozen Shadow",
+   "page_title": "Tower of Frozen Shadow",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Tower of Frozen Shadow: Cursed Vaults",
+   "page_title": "Tower of Frozen Shadow: Cursed Vaults",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Tower of Frozen Shadow: Haunt of Syl'Tor",
+   "page_title": "Tower of Frozen Shadow: Haunt of Syl'Tor",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Tower of Frozen Shadow: Shadowed Corridors",
+   "page_title": "Tower of Frozen Shadow: Shadowed Corridors",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Tower of Frozen Shadow: Umbral Halls",
+   "page_title": "Tower of Frozen Shadow: Umbral Halls",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Tower of Tactics",
+   "page_title": "Tower of Tactics",
+   "era": "Destiny of Velious",
+   "instance": "Group",
+   "size": "Heroic",
+   "update": "LU60"
+  },
+  {
+   "zone": "Tower of the Moon:Infiltration",
+   "page_title": "Tower of the Moon:Infiltration",
+   "era": "Desert of Flames",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trakanon's Lair",
+   "page_title": "Trakanon's Lair",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Tranquil Sea",
+   "page_title": "Tranquil Sea",
+   "era": "Altar of Malice",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Treasury of Claw",
+   "page_title": "Treasury of Claw",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Triad of Elements",
+   "page_title": "Triad of Elements (Solo)",
+   "era": "Renewal of Ro",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Bo Fen: Heroic",
+   "page_title": "Trial of Bo Fen: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Bo Fen: Solo",
+   "page_title": "Trial of Bo Fen: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Hua Mei",
+   "page_title": "Trial of Hua Mei",
+   "era": "Sentinel's Fate",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Jiang Anlan: Heroic",
+   "page_title": "Trial of Jiang Anlan: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Jiang Anlan: Solo",
+   "page_title": "Trial of Jiang Anlan: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Li Zhong: Heroic",
+   "page_title": "Trial of Li Zhong: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Lin Vo: Heroic",
+   "page_title": "Trial of Lin Vo: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Lin Vo: Solo",
+   "page_title": "Trial of Lin Vo: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Qin Lo: Heroic",
+   "page_title": "Trial of Qin Lo: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Qin Lo: Solo",
+   "page_title": "Trial of Qin Lo: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Sagacious Ting: Heroic",
+   "page_title": "Trial of Sagacious Ting: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Sagacious Ting: Solo",
+   "page_title": "Trial of Sagacious Ting: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trial of Sun Kai: Heroic",
+   "page_title": "Trial of Sun Kai: Heroic (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trial of Sun Kai: Solo",
+   "page_title": "Trial of Sun Kai: Solo (Instance)",
+   "era": "Fallen Dynasty",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Trials of the Awakened",
+   "page_title": "Trials of the Awakened",
+   "era": "Kingdom of Sky",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Trials of the Awakened: Trial of Leadership",
+   "page_title": "Trials of the Awakened: Trial of Leadership",
+   "era": "Kingdom of Sky",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Underfoot Depths",
+   "page_title": "Underfoot Depths",
+   "era": "Sentinel's Fate",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU56"
+  },
+  {
+   "zone": "Underrot Caverns",
+   "page_title": "Underrot Caverns",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Unearthing",
+   "page_title": "Unearthing",
+   "era": "Bloodline Chronicles",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "User:Morgaloth/Sandbox002",
+   "page_title": "User:Morgaloth/Sandbox002",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vaashkaani: Alcazar Crescendo",
+   "page_title": "Vaashkaani: Alcazar Crescendo",
+   "era": "Ballads of Zimara",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Vaashkaani: Argent Sanctuary",
+   "page_title": "Vaashkaani: Argent Sanctuary (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vaashkaani: Every Which Way",
+   "page_title": "Vaashkaani: Every Which Way (Event Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vaashkaani: Golden Rule",
+   "page_title": "Vaashkaani: Golden Rule (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vaedenmoor, Heart of Nightmares",
+   "page_title": "Vaedenmoor, Heart of Nightmares (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Vaedenmoor, Realm of Despair",
+   "page_title": "Vaedenmoor, Realm of Despair (Raid)",
+   "era": "Kunark Ascending",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Valley of the Rogue Magi",
+   "page_title": "Valley of the Rogue Magi",
+   "era": "Shattered Lands",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU04"
+  },
+  {
+   "zone": "Vallon's Retreat",
+   "page_title": "Vallon's Retreat",
+   "era": "Destiny of Velious",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU61"
+  },
+  {
+   "zone": "Vallon's Tower",
+   "page_title": "Vallon's Tower",
+   "era": "Destiny of Velious",
+   "instance": "Raid",
+   "size": "x4",
+   "update": "LU60"
+  },
+  {
+   "zone": "Vasty Deep: The Abandoned Labs",
+   "page_title": "Vasty Deep: The Abandoned Labs",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vasty Deep: The Conservatory",
+   "page_title": "Vasty Deep: The Conservatory",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vasty Deep: The Vestigial Cella",
+   "page_title": "Vasty Deep: The Vestigial Cella",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vasty Deep: Toil and Trouble",
+   "page_title": "Vasty Deep: Toil and Trouble (Heroic II)",
+   "era": "Reign of Shadows",
+   "instance": null,
+   "size": null,
+   "update": "LU118"
+  },
+  {
+   "zone": "Veeshan's Peak",
+   "page_title": "Veeshan's Peak",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Vegarlson, the Earthen Badlands",
+   "page_title": "Vegarlson, the Earthen Badlands",
+   "era": "Chaos Descending",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Vegarlson: Council's Stronghold",
+   "page_title": "Vegarlson: Council's Stronghold (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vegarlson: Ruins of Rathe",
+   "page_title": "Vegarlson: Ruins of Rathe (Expert)",
+   "era": "Chaos Descending",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vegarlson: The Terrene Rift",
+   "page_title": "Vegarlson: The Terrene Rift (Event Heroic)",
+   "era": "Chaos Descending",
+   "instance": "Event Heroic",
+   "size": null
+  },
+  {
+   "zone": "Veksar: The Invasion",
+   "page_title": "Veksar: The Invasion",
+   "era": "LU48",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Veksar: The Sunken Theater",
+   "page_title": "Veksar: The Sunken Theater",
+   "era": "The Shadow Odyssey",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Venril Sathir's Lair",
+   "page_title": "Venril Sathir's Lair",
+   "era": "Rise of Kunark",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Vermin's Snye",
+   "page_title": "Vermin's Snye",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Vesspyr Isles",
+   "page_title": "Vesspyr Isles",
+   "era": "Tears of Veeshan",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Vestibule of the Sacred Temple",
+   "page_title": "Vestibule of the Sacred Temple",
+   "era": "Rise of Kunark",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Vex Thal: Beyond the Veil",
+   "page_title": "Vex Thal: Beyond the Veil (Raid)",
+   "era": "Reign of Shadows",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Vex Thal: Den of Shadows",
+   "page_title": "Vex Thal: Den of Shadows (Heroic I)",
+   "era": "Reign of Shadows",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Vex Thal: Labyrinth of Solace",
+   "page_title": "Vex Thal: Labyrinth of Solace (Raid)",
+   "era": "Reign of Shadows",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Vex Thal: Shadow Citadel",
+   "page_title": "Vex Thal: Shadow Citadel (Solo)",
+   "era": "Reign of Shadows",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Vex Thal: Throne of Oscuris",
+   "page_title": "Vex Thal: Throne of Oscuris",
+   "era": "LU117",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Vigilant Sanctum",
+   "page_title": "Vigilant Sanctum",
+   "era": "Tears of Veeshan",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Vision of the Past",
+   "page_title": "Vision of the Past",
+   "era": "Destiny of Velious",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Ward of Chaos Elements",
+   "page_title": "Ward of Chaos Elements (Solo)",
+   "era": "Chaos Descending",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Ward of Elements",
+   "page_title": "Ward of Elements",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x2",
+   "update": "LU51"
+  },
+  {
+   "zone": "Western Wastes",
+   "page_title": "Western Wastes",
+   "era": "Scars of Destruction",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Western Wastes: Charnel Scar",
+   "page_title": "Western Wastes: Charnel Scar (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Western Wastes: Darkened Passages",
+   "page_title": "Western Wastes: Darkened Passages (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Western Wastes: The Warming Warfields",
+   "page_title": "Western Wastes: The Warming Warfields (Heroic I)",
+   "era": "Scars of Destruction",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Where The Minotaurs Go",
+   "page_title": "Where The Minotaurs Go",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Wracklands",
+   "page_title": "Wracklands",
+   "era": "Blood of Luclin",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Wracklands: Diaku Corral",
+   "page_title": "Wracklands: Diaku Corral (Challenge)",
+   "era": "Blood of Luclin",
+   "instance": "Heroic",
+   "size": null
+  },
+  {
+   "zone": "Wurmbone Crag",
+   "page_title": "Wurmbone Crag (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Wurmbone's End",
+   "page_title": "Wurmbone's End (Advanced Solo)",
+   "era": "Chains of Eternity",
+   "instance": "Solo",
+   "size": null
+  },
+  {
+   "zone": "Wurmbone's End: Nox Incessit",
+   "page_title": "Wurmbone's End: Nox Incessit (x2 Raid Challenge)",
+   "era": "Chains of Eternity",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Xux'laio's Roost",
+   "page_title": "Xux'laio's Roost",
+   "era": "Fallen Dynasty",
+   "instance": "Raid",
+   "size": "x2"
+  },
+  {
+   "zone": "Yelinak's Fall",
+   "page_title": "Yelinak's Fall (Instance)",
+   "era": "Tears of Veeshan",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Ykesha's Inner Stronghold",
+   "page_title": "Ykesha's Inner Stronghold",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Yon Gorroth",
+   "page_title": "Yon Gorroth",
+   "era": "Rage of Cthurath",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Zarrakon's Abyssal Chamber",
+   "page_title": "Zarrakon's Abyssal Chamber",
+   "era": "The Shadow Odyssey",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Zavith'loa: The Hidden Caldera",
+   "page_title": "Zavith'loa: The Hidden Caldera (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Zavith'loa: The Hunt",
+   "page_title": "Zavith'loa: The Hunt (Event Heroic)",
+   "era": "Altar of Malice",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zavith'loa: The Lost Caverns",
+   "page_title": "Zavith'loa: The Lost Caverns (Advanced Solo)",
+   "era": "Altar of Malice",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
+   "zone": "Zavith'loa: The Molten Pools",
+   "page_title": "Zavith'loa: The Molten Pools (Raid)",
+   "era": "Altar of Malice",
+   "instance": "Raid",
+   "size": "x4"
+  },
+  {
+   "zone": "Zek, the Orcish Wastes",
+   "page_title": "Zek, the Orcish Wastes",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Zek, the Scourge Wastes",
+   "page_title": "Zek, the Scourge Wastes (Heroic)",
+   "era": "LU100",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zek, the Scourge Wastes: The Siege",
+   "page_title": "Zek, the Scourge Wastes: The Siege (Raid)",
+   "era": "LU100",
+   "instance": "Raid",
+   "size": "| x4"
+  },
+  {
+   "zone": "Zimara Breadth",
+   "page_title": "Zimara Breadth",
+   "era": "Ballads of Zimara",
+   "instance": null,
+   "size": null
+  },
+  {
+   "zone": "Zimara Breadth: Razing the Razelands",
+   "page_title": "Zimara Breadth: Razing the Razelands (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zimara Breadth: Strungstone Ascent",
+   "page_title": "Zimara Breadth: Strungstone Ascent (Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zimara Breadth: Wisdom's Plight",
+   "page_title": "Zimara Breadth: Wisdom's Plight (Event Heroic I)",
+   "era": "Ballads of Zimara",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zon Zobboz",
+   "page_title": "Zon Zobboz",
+   "era": "Rage of Cthurath",
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Zon Zobboz: The Chimeric Chain",
+   "page_title": "Zon Zobboz: The Chimeric Chain (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zon Zobboz: The Graftwerk",
+   "page_title": "Zon Zobboz: The Graftwerk (Heroic)",
+   "era": "Rage of Cthurath",
+   "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "Zon Zobboz: The Oculeum",
+   "page_title": "Zon Zobboz: The Oculeum (Solo)",
+   "era": "Scars of Destruction",
+   "instance": "Solo",
+   "size": null,
+   "update": "LU131"
+  },
+  {
+   "zone": "Zraxth's Fabled Unseen Arcanum",
+   "page_title": "Zraxth's Fabled Unseen Arcanum (Heroic)",
+   "era": "Planes of Prophecy",
+   "instance": "Group",
+   "size": null,
+   "update": "LU107"
+  },
+  {
+   "zone": "Zraxth's Unseen Arcanum",
+   "page_title": "Zraxth's Unseen Arcanum",
+   "era": "Sentinel's Fate",
+   "instance": "Group",
+   "size": null,
+   "update": "LU58"
+  }
+ ]
+}

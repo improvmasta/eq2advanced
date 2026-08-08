@@ -117,7 +117,7 @@ function ApiKey({ tokens, reload }) {
             </button>
             {confirm ? (
               <>
-                <button className="chip danger" disabled={busy} onClick={generate}>
+                <button className="chip danger armed" disabled={busy} onClick={generate}>
                   refresh — old key stops working
                 </button>
                 <button className="chip" onClick={() => setConfirm(false)}>cancel</button>
@@ -161,6 +161,7 @@ function PluginSetup({ plugin, tokens, reloadTokens }) {
           </a>
           {plugin?.available && (
             <span className="meta">
+              {plugin.version && <>v{plugin.version} · </>}
               {fmt.bytes(plugin.download_size ?? plugin.size)} · built {fmt.date(plugin.built_ts)}
             </span>
           )}
@@ -273,12 +274,29 @@ export default function Import() {
                 </p>
               )}
 
+              {/* What the header pill was pointing at. It says what the new
+                  build DOES, because "a version is available" is not a reason
+                  to reinstall anything — and it names the version they are on,
+                  so somebody with two machines can tell which one this is
+                  about. Uploading keeps working on the old one; nothing here
+                  is an error. */}
+              {plugin?.update_available && (
+                <p className="pluginupdate">
+                  <b>Plugin {plugin.version} is ready.</b> You are uploading with{' '}
+                  {plugin.your_version}, which sends every 2 seconds; the new one
+                  sends four times as often, so the live meter keeps up with ACT&apos;s
+                  own. Download it below and re-add the DLL in ACT — your key and
+                  your settings stay as they are.
+                </p>
+              )}
+
               {/* The download folds away with the steps, which the old layout
                   refused to do. Someone coming back for a rebuilt DLL is
                   looking for the same drawer the steps are in, and the summary
                   names it — one click, and the box stays about whether the
-                  plugin is talking to us. */}
-              <details className="setupfold">
+                  plugin is talking to us. An update is the one time it opens
+                  itself: they followed a pill here to get at exactly this. */}
+              <details className="setupfold" open={!!plugin?.update_available}>
                 <summary>Setup, download &amp; API key</summary>
                 <PluginSetup plugin={plugin} tokens={tokens} reloadTokens={loadTokens} />
               </details>
@@ -374,7 +392,7 @@ export default function Import() {
                       )}
                       {confirmDel === s.id ? (
                         <>
-                          <button className="chip danger" disabled={busy}
+                          <button className="chip danger armed" disabled={busy}
                                   onClick={() => remove(s.id)}>delete for good</button>
                           <button className="chip" onClick={() => setConfirmDel(null)}>cancel</button>
                         </>
@@ -480,7 +498,7 @@ function Parseshots() {
                     {confirm === s.id ? (
                       <>
                         <span className="muted">Delete? </span>
-                        <button className="chip danger" onClick={() => remove(s.id)}>Yes</button>
+                        <button className="chip danger armed" onClick={() => remove(s.id)}>Yes</button>
                         <button className="chip" onClick={() => setConfirm(null)}>No</button>
                       </>
                     ) : (

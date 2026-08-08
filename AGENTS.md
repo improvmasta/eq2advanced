@@ -5,10 +5,11 @@ Raid-parsing and coaching site for EverQuest II TLE, at https://eq2advanced.com
 
 ## Read first
 
-- `CLAUDE.md` / `codex.md` — the same context for either assistant: commands,
-  the rules that must not be relitigated, what the app is, and what's open.
-  Keep the two in sync.
-- `ARCHITECTURE.md` — how it is wired and why, in detail.
+- `CLAUDE.md` — commands, the rules that must not be relitigated (one line
+  each, pointing into `docs/`), what the app is, and what's open. `codex.md`
+  is a pointer to it — context lives in ONE place.
+- `ARCHITECTURE.md` — the index of the design reference in `docs/*.md`. Read
+  only the topic file for the area you're changing, not the whole set.
 
 ## Working style
 

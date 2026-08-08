@@ -238,6 +238,24 @@ def test_a_replay_writes_nothing(client, fight):
     assert before == after
 
 
+def test_a_replay_feeds_the_stream_overlay(client, fight):
+    """The other reader. A replay publishes its frames so an OBS source can
+    show them (`pipeline/replaybus.py`) — otherwise the overlay could only ever
+    be positioned and tuned during a raid. What it publishes is the LIVE
+    payload: the `replay` block names the fight and the night it came from, and
+    an overlay token is not allowed to hold either."""
+    from pipeline import replaybus
+    login(client)
+    me = client.get("/api/auth/me").json()["user"]["id"]
+    replaybus.clear(me)
+    assert replay(client, fight["id"]).status_code == 200
+    frame = replaybus.latest(me)
+    assert frame is not None
+    assert "replay" not in frame
+    assert frame["fight"]["provisional_name"]
+    replaybus.clear(me)
+
+
 def test_speed_is_clamped(client, fight):
     """A speed of a million would hand back the finished parse in one frame and
     call it a replay."""

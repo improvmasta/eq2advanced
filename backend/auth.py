@@ -163,9 +163,28 @@ def mint_device_token(conn, user_id: int, label: str | None) -> tuple[int, str]:
     return row_id, token
 
 
-def device_token_row(conn, token: str | None):
+# The plugin says who it is in its User-Agent and always has:
+# `eq2advanced-act/0.2.0` (Net/ApiClient.cs). Nothing was reading it, which is
+# why an OLD plugin can still be recognised as old — the fact was already on
+# the wire before there was anywhere to put it.
+_UA_RE = re.compile(r"^eq2advanced-act/([0-9]{1,3}(?:\.[0-9]{1,4}){0,3})$")
+
+
+def client_version(user_agent: str | None) -> str | None:
+    """The plugin version from a User-Agent, or None for anything else.
+
+    Deliberately strict. This decides whether somebody is shown "update your
+    plugin", so a curl, a browser, or a header somebody made up has to come out
+    as "no idea" rather than as a version — the pill's whole promise is that it
+    only appears for people who really are behind."""
+    m = _UA_RE.match((user_agent or "").strip())
+    return m.group(1) if m else None
+
+
+def device_token_row(conn, token: str | None, user_agent: str | None = None):
     """The live (un-revoked) device-token row, else None. Touches last_seen_ts —
-    the 'uploader online' badge reads it.
+    the 'uploader online' badge reads it — and the plugin version, which is what
+    the update pill is decided from (v30).
 
     Carries `user_id` (the account), and `character_id`, which is NULL for
     v13-and-later tokens and only set on ones minted when tokens still belonged
@@ -173,12 +192,21 @@ def device_token_row(conn, token: str | None):
     if not token:
         return None
     row = conn.execute(
-        "SELECT t.id AS token_id, t.user_id, t.character_id, t.label "
+        "SELECT t.id AS token_id, t.user_id, t.character_id, t.label, t.client_version "
         "FROM device_tokens t WHERE t.token_hash=? AND t.revoked_ts IS NULL",
         (_sha(token),)).fetchone()
     if row is not None:
-        conn.execute("UPDATE device_tokens SET last_seen_ts=? WHERE id=?",
-                     (int(time.time()), row["token_id"]))
+        seen = client_version(user_agent)
+        # Only ever written when this request KNOWS: a plugin that stopped
+        # sending a recognisable agent must not silently clear what the last
+        # one said, or an old install would look like a new one.
+        if seen is not None and seen != row["client_version"]:
+            conn.execute(
+                "UPDATE device_tokens SET last_seen_ts=?, client_version=? WHERE id=?",
+                (int(time.time()), seen, row["token_id"]))
+        else:
+            conn.execute("UPDATE device_tokens SET last_seen_ts=? WHERE id=?",
+                         (int(time.time()), row["token_id"]))
     return row
 
 

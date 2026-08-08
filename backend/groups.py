@@ -160,9 +160,6 @@ VISIBLE_UNHIDDEN_RUN_IDS = f"""
       WHERE z.encounter_count = 0 AND c.user_id IS NOT :uid
 """
 
-MEMBER_GROUP_IDS = "SELECT group_id FROM group_members WHERE user_id = :uid"
-
-
 def is_member(conn, group_id: int, user_id: int) -> bool:
     """Membership in a DELETED group is not membership — the rows are only kept
     so a restore can put everyone back where they were."""
@@ -338,11 +335,6 @@ def shared_via_for_runs(conn, user_id: int, run_ids: list[int]) -> dict[int, lis
         out.setdefault(r["run_id"], []).append(
             {"group_id": r["group_id"], "name": r["name"]})
     return out
-
-
-def character_auto_shares(conn, character_id: int) -> list[int]:
-    return sorted(r["group_id"] for r in conn.execute(
-        "SELECT group_id FROM character_shares WHERE character_id=?", (character_id,)))
 
 
 def set_character_auto_shares(conn, character_id: int, owner_user_id: int,

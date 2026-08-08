@@ -104,12 +104,6 @@ def decompose(subj: str, logger: str,
     return Subject(owner, unit), remainder
 
 
-def resolve_target(tgt: str, logger: str) -> str:
-    if tgt in ("YOU", "YOURSELF"):
-        return logger
-    return tgt
-
-
 def classify_entity_kind(name: str, unit: str, logger: str,
                          known_mobs: frozenset[str] = frozenset(),
                          known_pets: frozenset[str] = frozenset()) -> str:

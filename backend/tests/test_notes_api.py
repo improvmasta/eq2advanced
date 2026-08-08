@@ -65,6 +65,18 @@ def add(c, body, mob=None, zone=ZONE):
     return r.json()
 
 
+def one_zone(eras, name):
+    """The outline nests zones under their expansion; the tests want one zone."""
+    found = [z for e in eras for z in e["zones"] if z["zone"] == name]
+    assert len(found) == 1, f"{name} appears {len(found)} times"
+    return found[0]
+
+
+def era_of(eras, zone):
+    return next((e["era"], e["label"])
+                for e in eras if any(z["zone"] == zone for z in e["zones"]))
+
+
 @pytest.fixture(scope="module")
 def owner(client):
     sign_in(client, "noteowner", fresh=True)
@@ -97,11 +109,53 @@ def test_notes_accumulate_under_one_boss_across_nights(client, owner):
     assert notes[0]["body"].startswith("second attempt")
 
 
-def test_the_outline_lists_the_zone_and_its_nameds(client, owner):
-    zones = client.get("/api/notes/outline").json()["zones"]
-    keyed = {(z["zone"], z["mob_name"]): z for z in zones}
-    assert keyed[(ZONE, None)]["notes"] == 1
-    assert keyed[(ZONE, "Garanel Rucksif")]["notes"] == 2
+def test_the_outline_lists_the_zone_and_its_nameds_under_its_expansion(client, owner):
+    eras = client.get("/api/notes/outline").json()["eras"]
+    zone = one_zone(eras, ZONE)
+    assert zone["notes"] == 3                      # the zone's one plus the boss's two
+    subjects = {s["mob"]: s["notes"] for s in zone["subjects"]}
+    assert subjects == {None: 1, "Garanel Rucksif": 2}
+    # the zone's own notes lead — the trash is what you read before the bosses
+    assert zone["subjects"][0]["mob"] is None
+    # ...and the era is the wiki's, not anything a parse could have said
+    assert era_of(eras, ZONE) == ("Echoes of Faydwer", "EoF")
+
+
+def test_the_outline_folds_the_games_instance_numbers_together(client, owner):
+    """"Castle Mistmoore 2" is a second lockout, not a second castle. A pile
+    split across the numbers is not a pile."""
+    add(client, "first visit", zone="The Emerald Halls")
+    add(client, "second lockout, same zone", zone="The Emerald Halls 2")
+    add(client, "and on the boss", mob="Vashi", zone="The Emerald Halls 3")
+
+    zone = one_zone(client.get("/api/notes/outline").json()["eras"], "The Emerald Halls")
+    assert zone["notes"] == 3
+    assert {s["mob"] for s in zone["subjects"]} == {None, "Vashi"}
+    # and reading it back asks for the zone by any of its spellings
+    for asked in ("The Emerald Halls", "The Emerald Halls 2"):
+        got = client.get("/api/notes", params={"zone": asked, "scope": "zone"})
+        assert len(got.json()["notes"]) == 3, asked
+
+
+def test_scope_zone_is_the_whole_zone_and_the_default_is_one_subject(client, owner):
+    """The dashboard column asks the wide question — standing in a zone you
+    want the pull coming up as well as the one that just ended."""
+    narrow = client.get("/api/notes", params={"zone": ZONE}).json()["notes"]
+    assert [n["mob_name"] for n in narrow] == [None]
+
+    wide = client.get(
+        "/api/notes", params={"zone": ZONE, "scope": "zone"}).json()["notes"]
+    assert len(wide) == 3
+    assert {n["mob_name"] for n in wide} == {None, "Garanel Rucksif"}
+
+
+def test_a_zone_the_reference_data_never_heard_of_still_appears(client, owner):
+    """Dropping notes because a zone is not on the wiki would be worse than a
+    ragged last section."""
+    add(client, "wherever this was", zone="A Zone Nobody Has Heard Of")
+    eras = client.get("/api/notes/outline").json()["eras"]
+    assert era_of(eras, "A Zone Nobody Has Heard Of") == (None, "Other")
+    assert eras[-1]["label"] == "Other"             # last, never first
 
 
 def test_a_note_can_be_moved_off_a_boss_it_was_not_about(client, owner):
@@ -169,7 +223,7 @@ def test_notes_are_private_to_whoever_wrote_them(client, owner):
     assert client.get(
         f"/api/notes/{mine['id']}/shots/{shot_id}/image").status_code == 404
     assert client.get("/api/notes", params={"zone": ZONE}).json()["notes"] == []
-    assert client.get("/api/notes/outline").json()["zones"] == []
+    assert client.get("/api/notes/outline").json()["eras"] == []
     sign_in(client, "noteowner")
 
 

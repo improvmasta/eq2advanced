@@ -40,11 +40,12 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from census.roster import known_classes
 from db import get_db
 from parser import parse_lines, petnames
 from parser.prefix import split_prefix
-from pipeline import livemeter
+from pipeline import livemeter, replaybus
+from pipeline.live import snapshot_context
+from pipeline.refine import roster_prescan
 # `_iter_lines` is private by convention and shared here rather than copied:
 # a second gzip-and-decode loop is a second place for the encoding argument to
 # drift, and this one is what the parser itself reads through.
@@ -87,9 +88,12 @@ def _load_fight(session_id: int, logger: str, start_ts: int, end_ts: int):
     """The fight's raw lines, parsed the way a live batch is parsed.
 
     Runs in a worker thread and opens its own connection (`get_db` is
-    thread-local). Returns the parsed events, or None when the raw source is
-    gone — a session can be uploaded parse-only, or have had its log dropped,
-    and stats alone cannot be replayed.
+    thread-local). Returns `(events, proven_players)`, or None when the raw
+    source is gone — a session can be uploaded parse-only, or have had its log
+    dropped, and stats alone cannot be replayed. The second half is what a live
+    session accumulates over the night (`live.LiveState.proven_players`); one
+    fight's worth of lines is less evidence, which is the honest amount a
+    replay of one fight has.
     """
     conn = get_db()
     paths = _raw_paths(conn, session_id, start_ts, end_ts)
@@ -111,11 +115,11 @@ def _load_fight(session_id: int, logger: str, start_ts: int, end_ts: int):
             continue
         entered = True
         lines.append(raw.rstrip("\r\n"))
-    # the same pet knowledge the live path starts a session with (the
-    # behavioural refine passes are a whole-file job the live path skips too).
+    # the same pet knowledge the live path starts a session with.
     # `parse_lines` is a generator; the cursor walks the result repeatedly, so
     # it has to be a sequence
-    return list(parse_lines(iter(lines), logger, petnames.load(conn)))
+    return (list(parse_lines(iter(lines), logger, petnames.load(conn))),
+            roster_prescan(lines, logger))
 
 
 @router.get("/replay/{encounter_id}/stream")
@@ -139,12 +143,17 @@ async def replay_stream(encounter_id: int, speed: float = Query(1.0),
     speed = max(MIN_SPEED, min(MAX_SPEED, speed))
     logger = sess["character_name"]
     t0, end = enc["started_ts"], enc["ended_ts"]
-    events = await asyncio.to_thread(
+    loaded = await asyncio.to_thread(
         _load_fight, enc["session_id"], logger, t0, end)
-    if events is None:
+    if loaded is None:
         raise HTTPException(409, "the raw log for that night is no longer stored")
+    events, proven = loaded
 
-    zone, roster = enc["zone"], known_classes(conn)
+    # the same knowledge a live session starts with, so a replay draws what the
+    # raid would have seen rather than a better-informed hindsight version
+    zone = enc["zone"]
+    roster, mobs, players, pets = snapshot_context(conn)
+    know = livemeter.Knowledge(mobs, players | proven, pets, petnames.load(conn))
     span = max(end - t0, 1)
     stamps = [ev.ts for ev in events]
     head = {
@@ -165,7 +174,16 @@ async def replay_stream(encounter_id: int, speed: float = Query(1.0),
             window = events[:bisect_right(stamps, t0 + elapsed)]
             done = elapsed >= span
             payload = livemeter.snapshot_payload(
-                window, logger, zone, t0 if window else None, roster)
+                window, logger, zone, t0 if window else None, roster, know,
+                # the cursor IS this replay's log clock, so a replayed fight
+                # ends on screen where the real one did
+                now_ts=t0 + int(elapsed))
+            # The stream overlay reads the live snapshot, which is why it could
+            # only ever be worked on during a raid. Publishing the frame here
+            # (before the `replay` block, which names the fight and the session
+            # it came from and is dashboard-only) lets an OBS source show a
+            # replay exactly as a viewer would see the real thing.
+            replaybus.publish(user["id"], dict(payload))
             payload["replay"] = {**head, "elapsed_s": min(int(elapsed), span),
                                  "done": done}
             yield f"event: partial\ndata: {json.dumps(payload)}\n\n"

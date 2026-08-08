@@ -17,6 +17,7 @@ import json
 import logging
 import threading
 import time
+from typing import NamedTuple
 from pathlib import Path
 
 from db import RAW_DIR, get_db, json_dumps
@@ -24,17 +25,24 @@ from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
-from pipeline import livemeter
+from pipeline import livebus, livemeter
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.redact import keep_line
+from pipeline.refine import roster_prescan
 from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT, ability_rows,
                                 actor_rows, roll_encounter)
 
 LIVE_IDLE_S = 30 * 60        # receiving session quiet this long -> close it (reaped, or on the next batch)
 CLOSE_S = GAP_S + TRAIL_GRACE_S  # nothing can join a segment once this much log time has passed
-WATCH_TTL_S = 30             # a dashboard asks again every stream poll; this outlives one gap
+WATCH_TTL_S = 30             # a dashboard says so again on every stream tick; this outlives one gap
 LIVE_LAG_S = 120             # log time this far behind the clock is history, not a raid in progress
-SNAPSHOT_MIN_S = 1.0         # floor between rebuilds; the stream polls slower than this anyway
+# Floor between rebuilds. It used to be 1.0s because the stream could not show
+# more than it polled; now the stream is pushed (pipeline/livebus.py) and the
+# plugin sends twice a second, so the floor is what would actually be thrown
+# away rather than a rate limit on the screen. A rebuild is 65ms on the biggest
+# fight ever measured (46k events), so four a second is affordable, and only
+# while somebody is watching (`watch_until`).
+SNAPSHOT_MIN_S = 0.25
 
 
 class LiveState:
@@ -50,8 +58,9 @@ class LiveState:
         self.seq_base = 0
         self.chunk_seq = 0
         self.last_line_ts: int | None = None
-        # named-pet knowledge at session start; no prescan/refine live (the
-        # close-time rebuild through parse_session applies both to everything)
+        # named-pet knowledge at session start. The close-time rebuild through
+        # parse_session is still what applies the full refine passes to
+        # everything; what the dashboard gets here is the cheap half of them.
         self.pet_names: frozenset[str] = frozenset()
         # --- the dashboard's in-flight view (pipeline/livemeter.py) ----------
         # The open segment as `_flush` last saw it: the fight in progress, held
@@ -59,8 +68,19 @@ class LiveState:
         # flush that computes it also renumbers that list.
         self.open_events: list = []
         self.open_start_ts: int | None = None
+        # the open segment's last DAMAGE line (`Segment.end_ts`), which is when
+        # the fight in it actually stopped — see `in_combat`
+        self.open_end_ts: int | None = None
         self.open_zone: str | None = None
         self.roster: dict[str, str] = {}   # name_lower -> class, for the bars
+        self.known_mobs: frozenset[str] = frozenset()   # see snapshot_context
+        # Names known to be people: what earlier parses saw, plus what THIS log
+        # proves as the night goes on (chat, loot, a raid join, a rez). It
+        # accumulates because the evidence usually arrives before the fight
+        # does — somebody zones in and says hello, and from then on nothing can
+        # file them as a mob.
+        self.known_players: frozenset[str] = frozenset()
+        self.known_pets: frozenset[str] = frozenset()    # see snapshot_context
         # Replaced whole, never mutated: the SSE generators read this attribute
         # from the event loop while a batch is being processed in a worker
         # thread, and swapping one reference is the only thing they can observe
@@ -89,10 +109,87 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
                 "ORDER BY ts DESC, seq DESC LIMIT 1", (session_id,)).fetchone()
             if zrow and zrow["extra"]:
                 state.zone = json.loads(zrow["extra"]).get("zone")
-            from census.roster import known_classes
-            state.roster = known_classes(conn)
+            (state.roster, state.known_mobs, state.known_players,
+             state.known_pets) = snapshot_context(conn)
             _states[session_id] = state
     return state
+
+
+class SnapshotContext(NamedTuple):
+    """What the meter is allowed to assume about NAMES."""
+    classes: dict[str, str]        # lowercased name -> class, for the bars
+    mobs: frozenset[str]           # single-token names that are enemies
+    players: frozenset[str]        # names an earlier parse counted as raiders
+    pets: frozenset[str]           # single-token names that are summoned pets
+
+
+def snapshot_context(conn) -> SnapshotContext:
+    """Everything the in-flight view knows about who a name belongs to.
+
+    The live path resolves nothing — that is the whole design — so this has to
+    arrive as data, and all of it comes from parses that already finished.
+    That is what makes the first second of a pull as accurate as the fortieth:
+
+    - **classes**: Census first (`census/roster.py` is ground truth), and under
+      it the class the log itself proved on an earlier night. Census does not
+      have everybody — three of the raiders on Lindsay's Wuoshi pull came back
+      `found=0` and sat in the meter with no class at all, while their parses
+      had said conjuror, illusionist and guardian for weeks. Census still WINS
+      where it answers, which is the standing order of class authority.
+    - **mobs**: names an earlier parse's behavioural pass filed as enemies. A
+      one-word boss ("Wuoshi", "Venekor") is grammatically a raider, so without
+      this the meter counts it as one and names the pull after an add. Only
+      single-token names are seeded — the grammar already gets every other
+      shape right — and only CENSUS vetoes a seeded name, because a name that
+      resolves to a real character on the server is a person whatever some
+      parse decided. A weaker veto would undo the seed's whole purpose:
+      `Dixie` and `Mixie` are Emerald Halls nameds that an early parse filed as
+      raiders before the behavioural pass caught them, and they still carry
+      that stale player row.
+    - **players**: every name that has ever been a raider, which is what
+      `refine_known_mobs` gets as its roster. That pass reads one open segment
+      here instead of a whole night, and one segment of a WIPE is 200 events in
+      which the boss kills eight people and the raid lands nothing: its
+      kill-victim rule then reads those eight raiders as mobs, and the meter
+      empties out at exactly the moment the raid wants to look at it. This is
+      evidence ABOUT the inference, not about the seed — the seed is the
+      stronger finding and outranks it.
+    - **pets**: bare-named dumbfires (`refine_bare_pets`). EQ2 writes one
+      exactly like a raider, with no owner possessive anywhere in the file, so
+      `Knyi` stood in the meter all night as a 25th raider with no class. The
+      pass that catches them needs a whole file and a Census answer; the live
+      path just reads what it already concluded.
+    """
+    from census.roster import known_classes
+
+    census = known_classes(conn)
+    classes: dict[str, str] = {}
+    players: set[str] = set()
+    for row in conn.execute(
+            "SELECT name, class_guess FROM entities WHERE kind='player'"
+            " ORDER BY id"):
+        players.add(row["name"])
+        if not row["class_guess"]:
+            continue
+        try:
+            guess = json.loads(row["class_guess"])
+        except (TypeError, ValueError):
+            continue
+        if guess.get("class"):
+            classes[row["name"].lower()] = guess["class"]
+    classes.update(census)
+    players |= {row["name"] for row in conn.execute(
+        "SELECT name FROM roster_classes WHERE found=1 AND name IS NOT NULL")}
+
+    def seed(kind: str) -> frozenset[str]:
+        return frozenset(
+            row["name"] for row in conn.execute(
+                "SELECT DISTINCT name FROM entities WHERE kind=?", (kind,))
+            if " " not in row["name"] and row["name"][:1].isupper()
+            and row["name"].lower() not in census)
+
+    return SnapshotContext(classes, seed("mob"), frozenset(players),
+                           seed("swarm_pet") | seed("named_pet"))
 
 
 def drop_state(session_id: int) -> None:
@@ -108,6 +205,30 @@ def mark_watched(session_id: int, ttl_s: int = WATCH_TTL_S) -> None:
         state = _states.get(session_id)
     if state is not None:
         state.watch_until = time.time() + ttl_s
+
+
+def in_combat(session_id: int) -> bool:
+    """Whether this session has an open fight segment right now. Reads a
+    reference the flush thread swaps atomically, so no per-session lock; costs
+    nothing and never triggers snapshot building (unlike `live_snapshot`, this
+    answers even when nobody is watching — it is the nav's status light)."""
+    with _states_lock:
+        state = _states.get(session_id)
+    if state is None or state.open_start_ts is None or state.last_line_ts is None:
+        return False
+    # a plugin that stopped sending mid-fight would leave the segment open
+    # forever (only a later batch can close it); live log time tracks the wall
+    # clock, so a tail this far behind is an abandoned fight, not a running one
+    if time.time() - state.last_line_ts > LIVE_LAG_S:
+        return False
+    # An open segment is not the same as a fight in progress. Combat stops at
+    # GAP_S; the segment stays open for CLOSE_S in case a late kill line joins
+    # it, and a light reading In Combat through that gap is saying it about a
+    # pull ACT has already ended. It is also what picks WHICH live session the
+    # dashboard follows when two clients are logging at once, so it has to mean
+    # "being fought right now" and nothing looser.
+    return (state.open_end_ts is None
+            or state.last_line_ts - state.open_end_ts < GAP_S)
 
 
 def live_snapshot(session_id: int) -> dict | None:
@@ -247,6 +368,9 @@ def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -
             if last:
                 state.last_line_ts = max(state.last_line_ts or 0, last[0])
             state.pending.extend(parse_lines(iter(accepted), logger, state.pet_names))
+            # the personhood evidence in this batch, kept for the rest of the
+            # night (see LiveState.known_players)
+            state.known_players |= roster_prescan(accepted, logger)
 
         if _flush(conn, state):
             from pipeline.zoneruns import rebuild_zone_runs
@@ -300,7 +424,16 @@ def _publish_snapshot(state: LiveState, mode: str, now: int) -> None:
     try:
         state.snapshot = livemeter.snapshot_payload(
             state.open_events, state.logger, state.open_zone,
-            state.open_start_ts, state.roster)
+            state.open_start_ts, state.roster,
+            livemeter.Knowledge(state.known_mobs, state.known_players,
+                                state.known_pets, state.pet_names),
+            # the newest line the plugin has sent: the log clock that says
+            # whether the open segment is still a fight (livemeter.build_snapshot)
+            now_ts=state.last_line_ts)
+        # ring every stream parked on this session. Cheap and non-blocking:
+        # nobody watching is an empty dict lookup, and a waiter is woken on its
+        # own event loop rather than here on the ingest thread.
+        livebus.publish(state.session_id)
     except Exception:
         # a view is never worth failing an ingest batch over
         logging.getLogger("live").exception(
@@ -315,6 +448,7 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     events = state.pending
     if not events:
         state.open_events, state.open_start_ts, state.open_zone = [], None, None
+        state.open_end_ts = None
         return False
     latest = max(state.last_line_ts or 0, events[-1].ts)
     segs = segment_events(events, state.logger, initial_zone=state.zone)
@@ -331,6 +465,7 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     # shows is the one the writer just made.
     state.open_events = [events[i] for i in open_seg.event_indices] if open_seg else []
     state.open_start_ts = open_seg.start_ts if open_seg else None
+    state.open_end_ts = open_seg.end_ts if open_seg else None
     state.open_zone = open_seg.zone if open_seg else None
 
     enc_of_idx: dict[int, int] = {}          # event index -> encounter id

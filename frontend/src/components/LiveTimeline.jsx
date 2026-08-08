@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fmt } from '../lib/api.js'
 
 /* The pull's shape, drawn behind the headline numbers.
 
@@ -40,23 +39,32 @@ function smooth(values, window) {
   return out
 }
 
+/* The top of the drawn line, for whoever prints it. It is the SMOOTHED peak,
+   not the raw one, so the number and the shape agree — a label reading higher
+   than anything on the chart under it is a label nobody trusts twice. The
+   headline prints this (LiveMeter), because a figure floated over the chart's
+   corner had nowhere to go once the numbers row got long. */
+export function peakRate(values = []) {
+  const vals = smooth(values, SMOOTH_S)
+  return vals.length ? Math.max(0, ...vals) : 0
+}
+
 export default function LiveTimeline({ dmg = [], heal = [], metric = 'damage' }) {
   const ref = useRef(null)
   const width = useWidth(ref)
 
-  const { area, line, peak } = useMemo(() => {
+  const { area, line } = useMemo(() => {
     const raw = metric === 'heal' ? heal : dmg
     const vals = smooth(raw, SMOOTH_S)
     const n = vals.length
     const top = Math.max(1, ...vals)
-    if (n < 2) return { area: null, line: null, peak: top }
+    if (n < 2) return { area: null, line: null }
     const x = (i) => (i / (n - 1)) * width
     const y = (v) => H - (v / top) * (H - 8) - 2
     const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L')
     return {
       line: `M${pts}`,
       area: `M0,${H}L${pts}L${width.toFixed(1)},${H}Z`,
-      peak: top,
     }
   }, [dmg, heal, metric, width])
 
@@ -68,7 +76,6 @@ export default function LiveTimeline({ dmg = [], heal = [], metric = 'damage' })
           <path d={line} className="liveline" fill="none" />
         </svg>
       )}
-      {area && <span className="peak">peak {fmt.num(peak)}/s</span>}
     </div>
   )
 }

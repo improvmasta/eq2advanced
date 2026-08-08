@@ -12,3 +12,19 @@
 export const RAID_MIN_RAIDERS = 7
 
 export const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
+
+/* eq2lexicon's raid pages, which are the strategy half of what this site's
+   notes are the other half of: a zone is `/raids/<zone>` and a named inside it
+   is `/raids/<zone>/<named>`. Deep-linking there rather than restating any of
+   it is the point — the note says what happened to US on that pull, the
+   lexicon says what the encounter does.
+
+   `away` is not decoration: eq2lexicon sends `X-Frame-Options: DENY` to every
+   origin (see App.jsx), so every one of these opens in a new tab. */
+export const LEXICON = 'https://wuoshi.eq2lexicon.com'
+
+export const lexiconRaid = (zone, mob) => {
+  if (!zone) return null
+  const path = [zone, mob].filter(Boolean).map(encodeURIComponent).join('/')
+  return `${LEXICON}/raids/${path}`
+}

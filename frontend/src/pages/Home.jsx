@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import ErrorBoundary from '../components/ErrorBoundary.jsx'
+import NotesOutline from '../components/NotesOutline.jsx'
 import RaidCompare from '../components/RaidCompare.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import SortableTable from '../components/SortableTable.jsx'
@@ -21,6 +23,7 @@ import { RAID_MIN_RAIDERS, isRaid } from '../lib/raids.js'
 const DAY_MS = 86_400_000
 
 const SIZE_KEY = 'eq2advanced-run-size'
+const NOTES_KEY = 'eq2advanced-notes-open'
 
 /* How much of a night a parse holds — the same order the backend ranks them in
    (`raidmatch._score`), so the row you land on is the one the site would have
@@ -111,6 +114,12 @@ export default function Home({ user }) {
     return new Set(saved.length ? saved : ['raid'])
   })
   const [sharing, setSharing] = useState(null)   // run id whose share panel is open
+  /* The notes outline is a SECOND thing to read, not part of the list, so it
+     is off until asked for: standing open it takes 300px the table was using
+     and pushes the raid columns into a sideways scroll. Remembered, because
+     someone who wants it open wants it open every night. */
+  const [notesOpen, setNotesOpen] = useState(
+    () => localStorage.getItem(NOTES_KEY) === '1')
   /* Per-row editing: one row open at a time, and the delete inside it armed
      separately. Both are ids rather than booleans, so opening another row's
      controls closes the first one's — two rows offering "Yes" at once is how
@@ -134,6 +143,7 @@ export default function Home({ user }) {
   const [parseOf, setParseOf] = useState(() => ({}))
 
   useEffect(() => { localStorage.setItem(SIZE_KEY, [...sizes].join(',')) }, [sizes])
+  useEffect(() => { localStorage.setItem(NOTES_KEY, notesOpen ? '1' : '0') }, [notesOpen])
 
   /* Always everything you can see; narrowing is the source filter's job, in
      the browser, so flipping it back is instant and never refetches. */
@@ -595,6 +605,10 @@ export default function Home({ user }) {
           />
         )}
 
+        {/* Everything on the right of the line is about something OTHER than
+            which raids are listed: what you can do to the ones you checked,
+            and whether the notes outline is open. */}
+        <span className="toolsright">
         {pickedRuns.length > 0 && (
           <span className="seltools">
             <span className="sl">{pickedRuns.length} selected</span>
@@ -639,6 +653,17 @@ export default function Home({ user }) {
             <button className="chip" onClick={() => setPicked(new Set())}>Clear</button>
           </span>
         )}
+        {user && (
+          <button className={`chip ${notesOpen ? 'on' : ''}`}
+                  aria-expanded={notesOpen}
+                  title={notesOpen
+                    ? 'Close the notes outline'
+                    : 'Everything written down during raids, by zone and named'}
+                  onClick={() => setNotesOpen((v) => !v)}>
+            Notes
+          </button>
+        )}
+        </span>
       </div>
 
       {sharing && (
@@ -684,6 +709,16 @@ export default function Home({ user }) {
         </div>
       )}
 
+      {/* The list, and beside it the pile of notes those raids produced. The
+          outline is the only place the whole pile can be read — the dashboard
+          can only ever show the zone you are standing in — and this is the
+          page you are on when you are looking back at raids rather than
+          running one. Signed out there is nothing to show: notes are private,
+          with no group predicate (backend/routers/notes_api.py) — and it opens
+          from the Notes button on the tools line, so the list has the page to
+          itself the rest of the time. */}
+      <div className={`listpage ${user && notesOpen ? 'withnotes' : ''}`}>
+      <div className="listmain">
       {runs === null && !error && <p className="muted">Loading…</p>}
       {runs?.length === 0 && (
         <p className="muted">
@@ -812,6 +847,14 @@ export default function Home({ user }) {
         )}
         </div>
       )}
+      </div>
+
+      {user && notesOpen && (
+        <ErrorBoundary resetKey="notesoutline">
+          <NotesOutline onClose={() => setNotesOpen(false)} />
+        </ErrorBoundary>
+      )}
+      </div>
     </>
   )
 }

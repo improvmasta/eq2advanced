@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import FeedbackDialog from './components/FeedbackDialog.jsx'
@@ -6,6 +6,7 @@ import Home from './pages/Home.jsx'
 import Import from './pages/Import.jsx'
 import ZoneRun from './pages/ZoneRun.jsx'
 import Compare from './pages/Compare.jsx'
+import Features from './pages/Features.jsx'
 import Live from './pages/Live.jsx'
 import Overlay from './pages/Overlay.jsx'
 import Workspace from './pages/Workspace.jsx'
@@ -20,6 +21,7 @@ import AdminAbilities from './pages/AdminAbilities.jsx'
 import JoinGroup from './pages/JoinGroup.jsx'
 import Login from './pages/Login.jsx'
 import { api } from './lib/api.js'
+import { LEXICON } from './lib/raids.js'
 import { SessionContext } from './lib/session.jsx'
 import { currentTheme, toggleTheme } from './theme.js'
 
@@ -31,17 +33,98 @@ function NeedsAccount({ user, children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
+/* The sibling TLE sites, in the gap the nav leaves. The point is one door: a
+   raider lands here and reaches the rest without hunting bookmarks.
+
+   The two are NOT the same kind of link, and the bar has to say so. wikQ2 is
+   ours and permits framing, so it opens as a tab inside this shell — the header
+   stays put and the frame is never unmounted, so coming back lands you exactly
+   where you left. eq2lexicon answers every request with `X-Frame-Options: DENY`,
+   which the BROWSER enforces against every origin; no markup here can change
+   that, so it opens away and wears the arrow that admits it. If they ever add
+   `frame-ancestors https://eq2advanced.com`, deleting `away: true` is the whole
+   change. */
+const SITES = [
+  { key: 'wiki', label: 'wikQ2', to: '/wiki',
+    src: 'https://wikq2.jupiterns.org/', origin: 'https://wikq2.jupiterns.org',
+    title: 'wikQ2 — EQ2 quest waypoints (opens here)' },
+  { key: 'lexicon', label: 'EQ2 Lexicon', away: true,
+    href: `${LEXICON}/`,
+    title: 'EQ2 Lexicon — opens in a new tab' },
+]
+const WIKI = SITES.find((s) => s.key === 'wiki')
+
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
   // undefined = not asked yet, null = the plugin has never been here
   const [live, setLive] = useState(undefined) // | 'idle' | 'parsing' | 'on'
+  // whether any receiving live session has an open fight RIGHT NOW — the
+  // Live tab's own light, distinct from "connected"
+  const [combat, setCombat] = useState(false)
   const [feedback, setFeedback] = useState(null) // the page they were on, or null
+  /* The plugin build this account is uploading with, if it is behind the one
+     the site is serving. null covers everybody else, which is most people:
+     never paired, up to date, or a pairing that has not sent since v30 and so
+     has never said what it runs. See routers/plugin_api.py. */
+  const [pluginUpdate, setPluginUpdate] = useState(null)
   const location = useLocation()
+  const header = useRef(null)
+  /* Latched, never cleared: the wikQ2 frame is created the first time somebody
+     opens that tab and then lives for the rest of the visit. Leaving the page
+     HIDES it (`display:none` keeps the document alive) instead of unmounting
+     it, which is the whole trick — React removing the node, or merely moving it
+     in the tree, reloads the frame and loses their search. Nothing renders it
+     until it is asked for, so a raider who never presses wikQ2 never pays for
+     it. */
+  const [wikiSrc, setWikiSrc] = useState(null)
+  const wikiFrame = useRef(null)
+  const onWiki = location.pathname === WIKI.to
+  /* The theme rides in on the URL so wikQ2's pre-paint script has it before it
+     draws anything — a frame that opens white inside a dark shell and corrects
+     itself a moment later is worse than no syncing at all. FROZEN once set
+     (`?? `): `src` is a prop, so re-rendering a changed one reloads the frame
+     and throws away the place this tab exists to keep. Later toggles travel as
+     a message instead. */
+  useEffect(() => {
+    if (onWiki) setWikiSrc((s) => s ?? `${WIKI.src}?theme=${currentTheme()}`)
+  }, [onWiki])
+
+  /* wikQ2 ignores anything from an origin it does not know, and we name the one
+     window we are talking to — a wildcard target would hand the theme (and the
+     fact that this frame exists) to whatever happened to load there. */
+  useEffect(() => {
+    wikiFrame.current?.contentWindow
+      ?.postMessage({ type: 'theme', theme }, WIKI.origin)
+  }, [theme])
+
+  /* The framed tab is pinned under the header rather than laid out after it —
+     a percentage height inside normal flow gives an iframe nothing to resolve
+     against, and it collapses. So the header measures itself: it WRAPS on
+     narrow screens, which makes its height a live value and not a constant. */
+  useEffect(() => {
+    const el = header.current
+    if (!el) return undefined
+    const measure = () => document.documentElement.style
+      .setProperty('--topnav-h', `${el.offsetHeight}px`)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
   }, [])
+
+  /* Asked once per sign-in, not polled: a plugin release happens a few times a
+     year and the answer cannot change while somebody sits on a page. */
+  useEffect(() => {
+    if (!user) { setPluginUpdate(null); return }
+    api.plugin()
+      .then((p) => setPluginUpdate(p?.update_available ? p : null))
+      .catch(() => {})
+  }, [user])
 
   /* The on-air light. 'on' while the plugin is streaming, 'parsing' while any
      import is still chewing, 'idle' once you have ever streamed, and null if
@@ -62,6 +145,8 @@ export default function App() {
           s.some((x) => x.source === 'live' && x.status === 'receiving') ? 'on'
             : s.some((x) => x.status === 'parsing' || x.status === 'receiving') ? 'parsing'
               : s.some((x) => x.source === 'live') ? 'idle' : null)
+        setCombat(s.some((x) => x.source === 'live'
+          && x.status === 'receiving' && x.in_combat))
       })
       .catch(() => {})
     check()
@@ -84,73 +169,125 @@ export default function App() {
 
   return (
     <SessionContext.Provider value={user ?? null}>
-      <header className="topnav">
-        <Link to="/" className="brand">EQ2 Advanced</Link>
-        <nav>
-          <NavLink to="/">Raid Parses</NavLink>
-          {/* signed-out too: published runs compare like they read */}
-          <NavLink to="/compare">Compare</NavLink>
-          {user && <>
-            <NavLink to="/groups">Sharing</NavLink>
-            <NavLink to="/import">Import</NavLink>
-            {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
-            {/* a curator's only door — they have no /admin to reach it from */}
-            {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
-          </>}
-          {user === null && <NavLink to="/login">Sign in</NavLink>}
-        </nav>
-        {/* One slot, one question about the plugin, answered for whoever is
-            asking it. Somebody who has never installed it gets the way in;
-            somebody streaming right now gets the light that says so. Between
-            those is a raider with the plugin sitting idle at 2pm, who needs
-            neither — they know they have it, and they are not raiding. */}
-        <div className="navtools">
-          {user && (live === 'on' || live === 'parsing') && (
-            /* A status light, not an alarm: the green dot carries the state
-               because the connection working is the GOOD case. */
-            <NavLink to="/live" className={`actpill ${live}`}
-                     title={live === 'on' ? 'Streaming from ACT right now'
-                       : 'A log is being parsed'}>
-              <i className="dot" />
-              Connected to ACT
-            </NavLink>
-          )}
-          {/* Points at Import rather than straight at the download, so the
-              install steps and the sharing settings arrive with the file. */}
-          {/* `undefined` is "we haven't asked yet" and shows nothing: a raider
-              who has the plugin should not watch a Get-the-plugin pill flash
-              past on every page load while the first check comes back. */}
-          {live === null && (
-            <Link to="/import" className="navpill" title="Get the ACT plugin">
-              ACT plugin
-            </Link>
-          )}
-          {/* Everywhere, because a bug is noticed on the raid page and not on
-              whatever page a form would otherwise live on. Signed in only —
-              the report is worth much more with a name attached to it. */}
-          {user && (
+      <header className="topnav" ref={header}>
+        <div className="topnavinner">
+          <Link to="/" className="brand">EQ2 Advanced</Link>
+          <nav>
+            <NavLink to="/">Raid Parses</NavLink>
+            {/* signed-out too: published runs compare like they read */}
+            <NavLink to="/compare">Compare</NavLink>
+            {user && <>
+              <NavLink to="/groups">Sharing</NavLink>
+              <NavLink to="/import">Import</NavLink>
+              {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
+              {/* a curator's only door — they have no /admin to reach it from */}
+              {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
+              {/* Last, and dressed differently on purpose: every other tab is a
+                  place, this one is a state. The label answers the question a
+                  raider actually has — is the raid in a pull right now — before
+                  they click. */}
+              <NavLink to="/live"
+                       className={`navlive ${combat ? 'combat' : 'idle'}`}
+                       title={combat ? 'A fight is in progress'
+                         : live === 'on' ? 'Connected — between pulls'
+                           : 'The live raid dashboard'}>
+                Live
+                <em>{combat ? 'In Combat' : 'Idle'}</em>
+              </NavLink>
+            </>}
+            {/* Signed-out only. A raider who already uploads does not need the
+                pitch in their nav every night; the URL still works for them, and
+                it is the one they hand to somebody else. */}
+            {user === null && <NavLink to="/features">What it does</NavLink>}
+            {user === null && <NavLink to="/login">Sign in</NavLink>}
+          </nav>
+          {/* Sibling sites, not tabs of this one: a plaque rather than an
+              underlined tab, so the bar reads as "here" and "next door" and
+              nobody wonders why Compare and wikQ2 look alike. Signed out too —
+              somebody who has never uploaded a log still came for the wiki. */}
+          <div className="navsites">
+            {SITES.map((s) => (s.away ? (
+              <a key={s.key} className="sitebtn" href={s.href} title={s.title}
+                 target="_blank" rel="noopener noreferrer">
+                {s.label}<IconExternal />
+              </a>
+            ) : (
+              <NavLink key={s.key} className="sitebtn" to={s.to} title={s.title}>
+                {s.label}
+              </NavLink>
+            )))}
+          </div>
+          {/* One slot, one question about the plugin, answered for whoever is
+              asking it. Somebody who has never installed it gets the way in;
+              somebody streaming right now gets the light that says so. Between
+              those is a raider with the plugin sitting idle at 2pm, who needs
+              neither — they know they have it, and they are not raiding. */}
+          <div className="navtools">
+            {user && (live === 'on' || live === 'parsing') && (
+              /* A status light, not an alarm: the green dot carries the state
+                 because the connection working is the GOOD case. Just "ACT" —
+                 the Live tab owns the raid's state now, this only says the
+                 plugin's line is up. */
+              <NavLink to="/live" className={`actpill ${live}`}
+                       title={live === 'on' ? 'Connected to ACT — streaming'
+                         : 'A log is being parsed'}>
+                <IconSignal />
+                ACT
+                <i className="dot" />
+              </NavLink>
+            )}
+            {/* Points at Import rather than straight at the download, so the
+                install steps and the sharing settings arrive with the file. */}
+            {/* `undefined` is "we haven't asked yet" and shows nothing: a raider
+                who has the plugin should not watch a Get-the-plugin pill flash
+                past on every page load while the first check comes back. */}
+            {live === null && (
+              <Link to="/import" className="navpill" title="Get the ACT plugin">
+                ACT plugin
+              </Link>
+            )}
+            {/* The other half of that slot: somebody who HAS the plugin, on a
+                build older than the one being served. It is the only way to
+                reach those people — the plugin has no updater and nobody
+                re-reads an install page they finished with months ago — and it
+                is deliberately the same shape as the get-it link rather than a
+                banner, because it is an offer and not a problem. It cannot
+                appear for anyone who has never paired: the version it compares
+                came off their own uploads. */}
+            {pluginUpdate && (
+              <Link to="/import" className="navpill upd"
+                    title={`ACT plugin ${pluginUpdate.version} is ready — you are `
+                      + `uploading with ${pluginUpdate.your_version}`}>
+                Plugin {pluginUpdate.version}
+              </Link>
+            )}
+            {/* Everywhere, because a bug is noticed on the raid page and not on
+                whatever page a form would otherwise live on. Signed in only —
+                the report is worth much more with a name attached to it. */}
+            {user && (
+              <button className="iconbtn"
+                      onClick={() => setFeedback(location.pathname + location.search)}
+                      title="Report a bug or suggest something"
+                      aria-label="Send feedback">
+                <IconFeedback />
+              </button>
+            )}
+            {user && (
+              <NavLink to="/account" className="iconbtn" title="Account"
+                       aria-label="Account">
+                <IconAccount />
+              </NavLink>
+            )}
             <button className="iconbtn"
-                    onClick={() => setFeedback(location.pathname + location.search)}
-                    title="Report a bug or suggest something"
-                    aria-label="Send feedback">
-              <IconFeedback />
+                    onClick={() => setTheme(toggleTheme())}
+                    title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+                    aria-label="Toggle light/dark theme">
+              {theme === 'dark' ? <IconSun /> : <IconMoon />}
             </button>
-          )}
-          {user && (
-            <NavLink to="/account" className="iconbtn" title="Account"
-                     aria-label="Account">
-              <IconAccount />
-            </NavLink>
-          )}
-          <button className="iconbtn"
-                  onClick={() => setTheme(toggleTheme())}
-                  title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-                  aria-label="Toggle light/dark theme">
-            {theme === 'dark' ? <IconSun /> : <IconMoon />}
-          </button>
+          </div>
         </div>
       </header>
-      <main className="container">
+      <main className={`container${onWiki ? ' away' : ''}`}>
         {feedback !== null && (
           <FeedbackDialog page={feedback} onClose={() => setFeedback(null)} />
         )}
@@ -159,8 +296,15 @@ export default function App() {
           <ErrorBoundary resetKey={location.key}>
           <Routes>
             <Route path="/" element={<Home user={user} />} />
+            {/* the wikQ2 tab is a real route so the URL and the back button
+                work, but it renders nothing here — the frame lives outside
+                <Routes> so that navigating away cannot unmount it */}
+            <Route path="/wiki" element={null} />
             <Route path="/zones/:id" element={<ZoneRun user={user} />} />
             <Route path="/compare" element={<Compare />} />
+            {/* Signed-out, like /compare and for a stronger reason: this is the
+                page you send to somebody who has no account yet. */}
+            <Route path="/features" element={<Features />} />
             <Route path="/encounters/:id" element={<EncounterRedirect />} />
             {/* an invite link works signed out — it offers sign-up and joins
                 the group as soon as the account exists */}
@@ -193,6 +337,33 @@ export default function App() {
           </ErrorBoundary>
         )}
       </main>
+      {/* Hidden on the wiki tab, where the frame owns the viewport and a bar
+          under it would be a second page's furniture on somebody else's site.
+          The overlay never reaches here at all — it returns before the shell. */}
+      {!onWiki && (
+        <footer className="sitefoot">
+          <span><b>EQ2 Advanced</b> — a parse site for EverQuest II TLE</span>
+          <nav>
+            {SITES.map((s) => (s.away ? (
+              <a key={s.key} href={s.href} target="_blank" rel="noopener noreferrer">
+                {s.label}
+              </a>
+            ) : (
+              <Link key={s.key} to={s.to}>{s.label}</Link>
+            )))}
+          </nav>
+          <span className="muted">
+            Not affiliated with Daybreak Game Company.
+          </span>
+        </footer>
+      )}
+      {/* Outside <Routes> on purpose. A route element is unmounted the moment
+          you navigate off it, and an unmounted frame is a reloaded frame. */}
+      {wikiSrc && (
+        <div className={`siteframe${onWiki ? '' : ' away'}`}>
+          <iframe ref={wikiFrame} src={wikiSrc} title="wikQ2" />
+        </div>
+      )}
     </SessionContext.Provider>
   )
 }
@@ -205,6 +376,23 @@ const iconProps = {
   viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none', stroke: 'currentColor',
   strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true,
 }
+
+const IconSignal = () => (
+  <svg {...iconProps} width={12} height={12}>
+    <path d="M8 13.2v.1" strokeWidth={2.2} />
+    <path d="M5.2 10.4a4 4 0 0 1 5.6 0" />
+    <path d="M2.9 7.8a7.2 7.2 0 0 1 10.2 0" />
+  </svg>
+)
+
+/* Only on the link that actually leaves. The one that opens in place gets no
+   glyph, and the difference between them is the message. */
+const IconExternal = () => (
+  <svg {...iconProps} width={11} height={11} strokeWidth={1.7}>
+    <path d="M7.2 3H3v10h10V8.8" />
+    <path d="M9.6 3H13v3.4M13 3L7.8 8.2" />
+  </svg>
+)
 
 const IconFeedback = () => (
   <svg {...iconProps}>

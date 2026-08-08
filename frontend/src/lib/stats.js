@@ -21,11 +21,15 @@ export function damageDerived(abilities) {
     if (!k) continue
     const d = by[k] ??= {
       total: 0, hits: 0, crits: 0, casts: 0, auto: 0, proc: 0, cast: 0,
-      pet: 0, swings: 0, avoided: 0, resists: 0,
+      pet: 0, swings: 0, avoided: 0, resists: 0, max: null,
     }
     const amt = r.total || 0
     d.total += amt
     d.hits += r.hits || 0
+    // the biggest single line the player landed, whichever ability it was on.
+    // A per-ability max is what the rollers store, so an actor's is the max of
+    // theirs — and a pet's counts, the way its damage does.
+    if (r.max != null) d.max = d.max == null ? r.max : Math.max(d.max, r.max)
     d.crits += r.crits || 0
     d.casts += r.casts || 0
     d.swings += r.swings || 0
@@ -39,10 +43,26 @@ export function damageDerived(abilities) {
   return by
 }
 
+/* The biggest single line per actor, for a kind `damageDerived` does not do.
+   The rollers store a max per ABILITY, so an actor's is the max over theirs;
+   the healing tab reads this the way the damage tab reads `derived[k].max`.
+
+   It is the one column a rate cannot stand in for — a 3M nuke and 3M of DoT
+   ticks are the same DPS — which is why it is worth a column of its own. */
+export function maxByActor(abilities, kind = 'heal') {
+  const by = {}
+  for (const r of abilities || []) {
+    if (r.kind !== kind || r.max == null) continue
+    const k = r.rollup_key || r.source_key
+    if (!k) continue
+    by[k] = by[k] == null ? r.max : Math.max(by[k], r.max)
+  }
+  return by
+}
+
 export const critPct = (d) => (d && d.hits ? (100 * d.crits) / d.hits : null)
 export const autoPct = (d) => (d && d.total ? (100 * d.auto) / d.total : null)
 export const procPct = (d) => (d && d.total ? (100 * d.proc) / d.total : null)
-export const castsPerMin = (d, duration) => (d && d.casts && duration ? d.casts / (duration / 60) : null)
 
 /* Where a value PLACES among its peers, as a signed strength in [-1, 1]:
    positive is good, negative is bad, 0 is the middle of the field.

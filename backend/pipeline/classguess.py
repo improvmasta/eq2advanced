@@ -108,12 +108,6 @@ def _classes(raw: str | None) -> set[str]:
     return {p.strip().lower() for p in raw.split(",") if p.strip()} & VALID_CLASSES
 
 
-def _single_class(raw: str | None) -> str | None:
-    """The ONE class a class string identifies, or None if it names several."""
-    parts = _classes(raw)
-    return next(iter(parts)) if len(parts) == 1 else None
-
-
 def _catalog(conn) -> tuple[set[str], dict[str, set[str]]]:
     """-> (ability names that may never vote, ability name -> its classes)."""
     muted: set[str] = set()

@@ -63,11 +63,6 @@ DEFAULT_ERAS = ("eof",)
 # no later-expansion set to filter out the way there is for AAs.
 DEITY_TREES = ("Category:Blessings", "Category:Miracles")
 
-# A page that only disambiguates is not an ability, and taking it as one is how
-# a deity page would claim a class spell: `Tempest` is a fury spell AND a
-# disambiguation page here, `Incinerate` likewise. The name collides; the
-# ability does not.
-SKIP_CATEGORIES = ("Disambiguation",)
 
 
 class WikiError(RuntimeError):
@@ -253,6 +248,98 @@ def collect_deity_titles() -> dict[str, set[str]]:
             time.sleep(PAUSE_S)
         time.sleep(PAUSE_S)
     return titles
+
+
+# ---------- zones ----------
+#
+# The other thing the wiki knows that nothing here does: which expansion a zone
+# arrived with, and whether it is a raid. A log line says "Castle Mistmoore"
+# and nothing else, so grouping notes by era is a question only reference data
+# can answer — and answering it from memory is how The Emerald Halls ends up
+# filed under Kingdom of Sky. See `backend/zones.py` for the read side.
+
+ZONE_CATEGORY = "Category:Zones"
+
+
+def collect_zone_titles() -> list[str]:
+    """Every zone page on the wiki. One category, no subcategory walk: the
+    per-expansion categories hold only the overland zones, so the raid
+    instances — which is all this is for — are not in them."""
+    return category_members(ZONE_CATEGORY)
+
+
+def parse_zone(page_title: str, wikitext: str) -> dict | None:
+    """The four facts an `IZoneInformation` box carries that we want.
+
+    `introduced` is the expansion, and a page without one is not a zone record
+    we can use — better absent than guessed. `instance` says Raid/Group/Solo
+    and `zdiff` says x2/x4, which together are how "raid zones only" is decided
+    without a second list to maintain."""
+    if is_disambiguation(wikitext):
+        return None
+    text = _COMMENT.sub("", wikitext or "")
+    era = _field(text, "introduced")
+    if not era:
+        return None
+    return {
+        "zone": log_name(page_title),
+        "page_title": page_title,
+        "era": era,
+        "instance": _field(text, "instance") or None,
+        "size": _field(text, "zdiff") or None,
+    }
+
+
+# A zone the wiki files under a live update rather than an expansion — the
+# infobox says `introduced = LU22`, and the update's own page carries the date
+# that places it. `{{LU|22|date=April 13, 2006}}`.
+_LU_ERA = re.compile(r"^LU\s*(\d+)$", re.I)
+_LU_DATE = re.compile(r"\{\{\s*LU\s*\|[^|}]*\|\s*date\s*=\s*([^|}]+)", re.I)
+_MONTHS = ("january", "february", "march", "april", "may", "june", "july",
+           "august", "september", "october", "november", "december")
+# Six years of patch notes typed by different hands: "April 13, 2006",
+# "December 20th 2006", "April 17,2011", "2/28/2007". All four are in there.
+_WRITTEN = re.compile(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})")
+_NUMERIC = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+
+
+def live_update_number(era: str) -> int | None:
+    m = _LU_ERA.match((era or "").strip())
+    return int(m.group(1)) if m else None
+
+
+def parse_date(text: str) -> str | None:
+    """A wiki date in any of the forms above -> ISO, or None."""
+    m = _NUMERIC.search(text or "")
+    if m:
+        return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+    m = _WRITTEN.search(text or "")
+    if not m or m.group(1).lower() not in _MONTHS:
+        return None
+    return (f"{m.group(3)}-{_MONTHS.index(m.group(1).lower()) + 1:02d}"
+            f"-{int(m.group(2)):02d}")
+
+
+def live_update_dates(numbers) -> dict[str, str]:
+    """{"LU22": "2006-04-13"} for the updates asked about.
+
+    ISO because it is compared against expansion launch dates as text, and
+    "April 13, 2006" sorts alphabetically, which is not a date order."""
+    titles = {f"Update:{n:02d}": n for n in sorted(set(numbers))}
+    out: dict[str, str] = {}
+    names = list(titles)
+    for i in range(0, len(names), BATCH):
+        for title, text in fetch_wikitext(names[i:i + BATCH]).items():
+            m = _LU_DATE.search(text or "")
+            date = parse_date(m.group(1)) if m else None
+            if not date:
+                continue
+            n = titles.get(title)
+            if n is None:            # a redirect landed us on another title
+                n = int(re.sub(r"\D", "", title) or 0)
+            out[f"LU{n:02d}"] = date
+        time.sleep(PAUSE_S)
+    return out
 
 
 def _merge(rows: list[dict]) -> list[dict]:

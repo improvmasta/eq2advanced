@@ -54,18 +54,41 @@ a { color: var(--gold); text-decoration: none; }
 a:hover { color: var(--gold-bright); }
 p + p { margin-top: 8px; }
 
-.container { max-width: var(--shell); margin: 0 auto; padding: 0 20px 48px; }
+/* `width: 100%` is load-bearing, not belt-and-braces: #root is a COLUMN flex
+   container (see the footer block at the bottom of this file), so the `auto`
+   side margins here are CROSS-axis margins. An auto cross margin eats the free
+   space and cancels the default stretch, which left the page shrink-wrapped to
+   its widest child and centred — a full-width raid table hid it, but Admin
+   collapsed to the width of its stat strip and Compare to its picker band.
+   With an explicit width the margins have no free space to eat and the cap is
+   the shell again. Same reason .sitefoot carries it. */
+.container { max-width: var(--shell); width: 100%; margin: 0 auto; padding: 0 20px 48px; }
 
 /* ---------- top nav ---------- */
 
 /* centred, not baseline-aligned: the nav is a bar of padded tabs now, and a
    shared text baseline between it and the wordmark left the tabs riding high */
+/* The bar is a BAND across the window, and its contents are a shell-width row
+   inside it. Two elements rather than one because the band has to reach both
+   edges while the wordmark still lines up with the page title under it — a
+   single centred element can do one or the other. Without the band the tabs sat
+   on the page's own background and the site had no header, only some links
+   above the content. */
 .topnav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topnavinner {
   display: flex; align-items: center; gap: 20px;
-  padding: 12px 20px 10px;
+  padding: 14px 20px 12px;
   max-width: var(--shell); margin: 0 auto;
 }
-.topnav .brand { font-family: var(--font-heading); font-size: 1rem; color: var(--gold-bright); }
+/* Set against the page's h1 rather than against the tabs: it is the only other
+   thing on screen at heading size, and at 1rem it read as one more tab. */
+.topnav .brand {
+  font-family: var(--font-heading); font-size: 1.22rem; letter-spacing: 0.01em;
+  color: var(--gold-bright);
+}
 
 /* The header links are the site's top-level switch and they now have to look
    like one — there are six of them, and as plain running text the only thing
@@ -81,6 +104,65 @@ p + p { margin-top: 8px; }
 }
 .topnav nav a:hover { color: var(--text); background: var(--row-hover); text-decoration: none; }
 .topnav nav a.active { color: var(--gold-bright); border-bottom-color: var(--gold); }
+
+/* The Live tab: last in the bar and deliberately not dressed like the others —
+   every other tab is a place, this one is a state. It carries its own answer
+   ("Idle" / "In Combat") so the question is settled before anyone clicks. The
+   combat state is colour, not motion: this sits in the corner of the eye for a
+   whole raid night. */
+.topnav nav a.navlive {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-left: 10px; padding: 3px 10px 4px;
+  border: 1px solid var(--border); border-radius: 999px;
+  border-bottom-width: 1px;
+}
+.topnav nav a.navlive em {
+  font-style: normal; font-size: 0.85em; letter-spacing: 0.06em;
+  color: var(--text-muted); text-transform: uppercase;
+}
+.topnav nav a.navlive.combat { border-color: var(--danger); }
+.topnav nav a.navlive.combat em { color: var(--danger); font-weight: 700; }
+.topnav nav a.navlive.active { color: var(--gold-bright); border-bottom-color: var(--border); }
+.topnav nav a.navlive.combat.active { border-bottom-color: var(--danger); }
+
+/* The sibling TLE sites, sitting in the gap the nav leaves. TWO auto margins —
+   one here, one on .navtools — so the slack splits evenly and the plaques ride
+   in the middle of the bar rather than crowding either end.
+
+   A plaque, not a tab: bordered, filled, no underline. Everything in `nav` is
+   somewhere in THIS app, and these are somewhere else; the shapes have to say
+   which is which before anybody reads the words. Heading face and gold because
+   that is the dress code of the row of sites they belong to. */
+.topnav .navsites { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.sitebtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px 5px;
+  border: 1px solid var(--gold-dim); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--gold); font-family: var(--font-heading);
+  font-size: var(--fs-label); font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.sitebtn:hover {
+  color: var(--gold-bright); border-color: var(--gold); text-decoration: none;
+}
+/* the framed one can be the current page; the one that opens away never is */
+.sitebtn.active {
+  color: var(--gold-bright); border-color: var(--gold); background: var(--row-hover);
+}
+.sitebtn svg { display: block; opacity: 0.6; }
+
+/* A framed sibling site. Pinned under the header instead of laid out after it:
+   inside normal flow a percentage height has nothing to resolve against and the
+   frame collapses to nothing. `--topnav-h` is measured in App.jsx, because the
+   bar wraps on narrow screens.
+
+   `away` is display:none and NOT unmounting. A hidden iframe keeps its document
+   alive — scroll, search box, results — so coming back is coming back to the
+   tab you left, not to a reload. */
+.siteframe { position: fixed; inset: var(--topnav-h, 56px) 0 0; }
+.siteframe iframe { display: block; width: 100%; height: 100%; border: 0; }
+.siteframe.away, .container.away { display: none; }
 
 /* the tools on the right: a plugin pill when there is something to say about
    the plugin, then the three icon controls */
@@ -111,10 +193,12 @@ p + p { margin-top: 8px; }
    animation. Colour carries the state instead. */
 .topnav .actpill {
   display: inline-flex; align-items: center; gap: 5px; align-self: center;
-  padding: 1px 8px; border-radius: 999px;
-  border: 1px solid var(--border); color: var(--text);
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-muted);
   font-size: var(--fs-label); line-height: 1.5; white-space: nowrap;
+  font-family: var(--font-data); letter-spacing: 0.06em;
 }
+.topnav .actpill svg { display: block; opacity: 0.75; }
 .topnav .actpill .dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--success);
   flex-shrink: 0;
@@ -153,7 +237,6 @@ p + p { margin-top: 8px; }
    the line, so it drops under the subtitle it belongs to */
 .pagehead .sub .pitch { display: block; margin-top: 3px; max-width: 60ch; }
 .pagehead .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-.crumbs { font-size: var(--fs-xs); font-family: var(--font-data); margin-top: 12px; }
 /* a heading inside a card — smaller than a page h1, still the title of the block */
 .cardtitle { font-family: var(--font-heading); font-size: 1rem; color: var(--gold-bright); }
 
@@ -194,16 +277,6 @@ p + p { margin-top: 8px; }
   text-transform: uppercase; letter-spacing: 0.09em;
   margin-top: 1px;
 }
-.metric.wide { grid-column: span 2; }
-
-/* legacy aliases so nothing renders unstyled mid-refactor */
-.tiles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.tile {
-  background: var(--surface-raised); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 7px 12px; min-width: 104px;
-}
-.tile .v { font-size: var(--fs-figure); color: var(--gold-bright); font-family: var(--font-data); font-variant-numeric: tabular-nums; }
-.tile .k { font-size: var(--fs-label); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.09em; }
 
 /* ---------- tables ---------- */
 
@@ -436,9 +509,6 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 /* characters + device tokens */
 .charhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .charactions { margin-left: auto; display: flex; gap: 8px; }
-.mintrow { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.mintrow input { margin-right: 0; }
-.tokenpanel { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
 /* the API key, presented the way Sonarr/Radarr present theirs: a persistent
    masked field with Show / Copy / Refresh beside it */
 .apikey { margin-top: 12px; }
@@ -537,7 +607,18 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
   display: grid; gap: 4px;
   padding: 11px 11px 8px; border-bottom: 1px solid var(--border);
 }
-.railtop { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+/* wraps, so the switches below drop under a long character name rather than
+   squeezing it — with one child (the raid page) nothing changes */
+.railtop { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
+/* The dashboard's display switches, across from the character name: which
+   parse is showing where, which is the one thing on this page that is about
+   the night rather than about a fight. Centred on their own line rather than
+   sat on the title's baseline — a chip has a border and a baseline-aligned
+   border reads as a chip that has slipped. */
+.railacts {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin-left: auto; align-self: center;
+}
 .railtitle {
   margin: 0; font-family: var(--font-heading); font-weight: 700;
   font-size: 1.1rem; letter-spacing: 0.02em; line-height: 1.2;
@@ -770,9 +851,6 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
    two lines that matter. */
 .railrow.won .rl { color: var(--success); font-weight: 600; }
 .railrow.wiped .rl { color: var(--danger); }
-/* excluded by the wipes switch: still listed, visibly not counted */
-.railrow.dropped { opacity: 0.45; }
-.railrow.dropped .rd { text-decoration: line-through; }
 /* Hidden by hand: the same "listed, not counted" language the wipes switch
    already speaks, one step further — this row is not in anybody else's copy of
    the raid at all, so its name is struck through rather than merely dimmed. */
@@ -897,31 +975,9 @@ table.data th.sortable { cursor: pointer; user-select: none; }
 table.data th.sortable:hover { color: var(--text); }
 .sortmark { margin-left: 3px; font-size: 0.65rem; color: var(--gold); }
 
-.sharecell { display: inline-flex; align-items: center; gap: 6px; }
-.sharecell .pctnum { font-size: var(--fs-label); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-
 .drillhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .drillhead .chips { margin-left: auto; display: flex; gap: 4px; }
 .drillhead .chip { cursor: pointer; }
-
-/* ACT-style footer bar chart, pure divs */
-.dpsbars {
-  display: flex; align-items: flex-end; gap: 6px;
-  height: 150px; margin-top: 12px; padding: 10px 12px 4px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-md); overflow-x: auto;
-}
-.dpsbars .col {
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-  flex: 1; min-width: 44px; height: 100%;
-  font-family: var(--font-data);
-}
-.dpsbars .col i { display: block; width: 100%; background: var(--bar); border-radius: 2px 2px 0 0; }
-.dpsbars .col .v { font-size: var(--fs-label); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.dpsbars .col .n {
-  font-size: var(--fs-label); color: var(--text-muted);
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 
 /* ---------- zone page: tabs + right-hand actor panel ---------- */
 
@@ -1032,6 +1088,21 @@ table.data tr.allrow td {
   .workspace.withpanel .panelcol { grid-column: 1 / -1; position: static; }
   .workspace.withpanel .panelcol .actorpanel { position: static; }
 }
+
+/* THE PARSE WITHOUT ITS OWN RAIL — the raid dashboard (`Live.jsx`), which
+   already has a fight rail in the column to its left and a notes column to its
+   right. Same component, one column: a drilldown opens UNDER the table instead
+   of beside it, because the middle of a three-column dashboard has nowhere to
+   put a second column of its own. The rules that place `wsmain` and `panelcol`
+   into a two-column grid are overridden here rather than skipped — a
+   `grid-column: 2` with only one track declared invents a second one. */
+.workspace.norail,
+.workspace.norail.withpanel,
+.workspace.norail.withpanel.withcmp { grid-template-columns: minmax(0, 1fr); }
+.workspace.norail { margin-top: 0; }
+.workspace.norail.withpanel .wsmain,
+.workspace.norail.withpanel .panelcol { grid-column: 1; grid-row: auto; }
+.workspace.norail .panelcol { position: static; }
 
 /* compare panel: each checked raider's ACTUAL parse (the drilldown's
    breakdown table), side by side like screenshots of two ACT windows. The
@@ -1249,7 +1320,10 @@ table.data.raidlist { font-size: var(--fs-base); }
   font-family: var(--font-body); font-weight: 600; color: var(--gold-bright);
   font-size: 0.95rem;
 }
-.raidlist td { padding-top: 7px; padding-bottom: 7px; }
+/* Looser than the data tables inside a parse: this list is scanned, not
+   compared, and a night's worth of rows at the parse's density reads as one
+   block. A couple of pixels is all it takes for the rows to separate. */
+.raidlist td { padding-top: 9px; padding-bottom: 9px; }
 .raidlist .spark { vertical-align: middle; }
 
 /* Whose parse of a shared night you are reading. It has to look like a control
@@ -1294,8 +1368,15 @@ table.data.raidlist { font-size: var(--fs-base); }
 .listtools .muted { font-size: var(--fs-data); }
 /* the boundary between one question and the next — quieter than a gap alone */
 .listtools .vr { width: 1px; height: 15px; background: var(--border); }
+/* The right end of the line: the selection's verbs, then the Notes toggle. One
+   `margin-left: auto` on the group rather than one per member — two of them
+   would SPLIT the free space and leave the selection tools stranded mid-line. */
+.listtools .toolsright {
+  margin-left: auto; display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
+}
 .listtools .seltools {
-  margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   font-family: var(--font-data); font-size: var(--fs-data);
 }
 .listtools .seltools .sl { color: var(--gold-bright); font-weight: 600; }
@@ -1305,11 +1386,8 @@ table.data.raidlist { font-size: var(--fs-base); }
 .raidpage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .raidpage.withcmp { grid-template-columns: minmax(0, 1fr) minmax(240px, auto); }
 .raidpage > .card { margin-top: 0; }
-/* clears the sticky toolbar rather than sliding under it */
-.raidpage .cmpcol { top: 52px; max-height: calc(100vh - 64px); }
 @media (max-width: 1100px) {
   .raidpage.withcmp { grid-template-columns: 1fr; }
-  .raidpage.withcmp .cmpcol { position: static; max-height: none; }
 }
 
 /* the raid head-to-head reuses the compare table language */
@@ -1368,8 +1446,6 @@ table.data.raidlist { font-size: var(--fs-base); }
   color: var(--text-muted); font-size: 0.8rem; line-height: 1;
 }
 .gearlink:hover { color: var(--gold-bright); background: rgba(var(--gold-rgb), 0.14); }
-.badge.clearpill { color: var(--text-muted); border-color: var(--border); }
-.badge.clearpill:hover { color: var(--danger); border-color: var(--danger); background: none; }
 .badge.grouppill:hover { background: rgba(var(--gold-rgb), 0.12); }
 /* On is INVERTED, not tinted: a filled pill reading dark-on-gold is legible as
    "this one" from across the row, where a slightly brighter background of the
@@ -1714,6 +1790,10 @@ table.data tr.grouphead th {
   background: var(--row-hover);
 }
 table.data tr.grouphead:first-child th { padding-top: 4px; }
+/* The raid list's bands carry the same extra air its rows do, so a new night
+   still starts further from the last row than the rows are from each other. */
+table.data.raidlist tr.grouphead th { padding-top: 14px; padding-bottom: 5px; }
+table.data.raidlist tr.grouphead:first-child th { padding-top: 5px; }
 
 /* The column the headings are drawn FROM. Its cells hold whatever is left once
    the heading has said the shared part — for the raid list's Date column, that
@@ -1731,9 +1811,19 @@ table.data th.folded, table.data td.folded { width: 1px; white-space: nowrap; }
 }
 .daygroup .muted { font-size: var(--fs-label); }
 
-/* Destructive actions never share a look with ordinary ones. */
-.chip.danger { color: var(--danger); border-color: var(--danger); cursor: pointer; }
-.chip.danger:hover { background: rgba(248, 113, 113, 0.12); }
+/* Destructive actions never share a look with ordinary ones — but they earn
+   the colour on APPROACH, not at rest. A `delete` sitting red on every row of a
+   list reads as a warning about the row rather than as one about the click, and
+   a column of them turns the page into an alarm. So it wears the ordinary chip
+   until the pointer (or the keyboard) is on it, and turns the moment it is the
+   thing you are about to press. */
+.chip.danger { cursor: pointer; }
+.chip.danger:hover, .chip.danger:focus-visible {
+  color: var(--danger); border-color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+}
+/* except when it is the confirm step: "Yes" is the click itself */
+.chip.danger.armed { color: var(--danger); border-color: var(--danger); }
 
 .confirmcard { border-color: var(--gold-dim); }
 .confirmcard p { margin: 0 0 10px; }
@@ -1774,7 +1864,6 @@ a.btnlink:hover { background: rgba(var(--gold-rgb), 0.12); text-decoration: none
    ordinary 12px margin is a gap between siblings, not a break between
    sections, which ran the imported-log table straight into the boxes above. */
 .methods { margin-bottom: 10px; }
-.method.soon { opacity: 0.82; }
 .methodhead { display: flex; align-items: baseline; gap: 8px; }
 .methodhead h2 { margin: 0; }
 .methodhead .badge { margin-left: auto; }
@@ -2291,6 +2380,14 @@ tr.recaprow:hover td { background: var(--row-hover); }
   font-size: var(--fs-label); text-decoration: none; white-space: nowrap;
 }
 .navpill:hover { background: var(--surface-raised); text-decoration: none; }
+/* The update offer. Filled rather than outlined so it reads as new next to the
+   quiet pills, and gold rather than red because nothing is broken — the old
+   plugin keeps uploading, it is just slower. */
+.navpill.upd {
+  background: color-mix(in oklab, var(--gold) 18%, transparent);
+  border-color: var(--gold); color: var(--gold-bright); font-weight: 600;
+}
+.navpill.upd:hover { background: color-mix(in oklab, var(--gold) 28%, transparent); }
 /* Numbered install steps. Terse on purpose — someone installing a plugin wants
    the four things to press, not prose about them. */
 .steps { margin: 8px 0 6px; padding-left: 20px; }
@@ -2401,7 +2498,6 @@ tr.recaprow:hover td { background: var(--row-hover); }
 .togglerow .switch { font-size: var(--fs-data); gap: 10px; flex: 1; }
 .togglerow .gname { font-weight: 600; color: var(--text); }
 .togglerow .switch.on .gname { color: var(--gold-bright); }
-.togglerow .gmeta { color: var(--text-muted); font-size: var(--fs-label); }
 .togglerow > input[type="checkbox"] { accent-color: var(--gold); cursor: pointer; }
 label.togglerow { cursor: pointer; }
 
@@ -2596,12 +2692,6 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
 /* a sub-section head inside a card, ruled like the pane's */
 .cardsec { margin-top: 12px; margin-bottom: 6px; }
 .card > h2 + .cardsec { margin-top: 2px; }
-.quietacts {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  color: var(--text-muted); font-size: var(--fs-xs);
-}
-.quietacts .linklike { color: var(--text-muted); font-size: var(--fs-xs); }
-.quietacts .linklike:hover { color: var(--gold-bright); }
 
 /* Deleting a group: the sentence and the field it asks you to fill in, boxed
    in the danger colour so it reads as a different kind of control from the
@@ -2631,6 +2721,14 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
 }
 .pluginstatus b { color: var(--success); font-weight: 600; }
 .livecta { margin: 8px 0 0; }
+/* The same offer, said properly, on the page the pill points at. */
+.pluginupdate {
+  margin: 10px 0 0; padding: 8px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--gold-dim);
+  background: color-mix(in oklab, var(--gold) 8%, transparent);
+  font-size: var(--fs-sm); line-height: 1.55;
+}
+.pluginupdate b { color: var(--gold-bright); }
 /* Setup, after it is done: a drawer under a rule, quiet enough that the status
    above it stays the thing the card is about. */
 .setupfold { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
@@ -2817,7 +2915,6 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .rulerow input { flex: 1 1 220px; min-width: 0; padding: 4px 8px; font-size: var(--fs-data); }
-.rulerow input.clsin { flex: 0 0 130px; }
 .rulerow.acts { margin-top: 4px; }
 .rulerow.acts > .btn { margin-left: 88px; }
 .rulerow.acts > .btn + .btn { margin-left: 0; }
@@ -2862,7 +2959,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .fixability { transition: none; }
 }
-.rolepick { font-family: var(--font-data); font-size: var(--fs-label); }
 
 @media (max-width: 780px) {
   .abgrid { grid-template-columns: 1fr; }
@@ -2889,18 +2985,28 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .dashmain > :first-child { margin-top: 0; }
 .dashside { min-width: 0; position: sticky; top: 12px; }
 
-/* Back to now. It sits above the rail rather than inside it because it is not
-   one of the night's fights — it is the way out of them. */
-.liveswitch {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 9px 11px; text-align: left;
-  font-family: var(--font-data); font-size: var(--fs-data);
+/* The pull in progress, as the rail's last row. It used to be a button ABOVE
+   the rail, on the reasoning that it is not one of the night's fights — but
+   that is exactly why it was missed: clicking back to an earlier fight mid-pull
+   left the fight you were in with no row to return to. It is the newest fight
+   in the list, so it is the last row of the list. */
+.railrow.live .rl { display: flex; align-items: center; gap: 6px; }
+.railrow.live.combat .rl { color: var(--gold-bright); }
+.railrow.live.idle .railbtn, .railrow.live.saving .railbtn { color: var(--text-muted); }
+/* Between pulls the row is an ellipsis: the place the next fight will appear,
+   and the click that gets you back to live. It is a GAP in the list, so it is
+   drawn as one — no name, no clock, no dot, and quiet enough that the eye
+   passes over it on the way to the last real fight. */
+.railrow.live.idle .railbtn { opacity: 0.55; letter-spacing: 0.12em; }
+.railrow.live.idle.active .railbtn { opacity: 1; }
+.railrow.live .rn { color: var(--text-muted); }
+/* The row's own dot, sized for a line of the rail rather than for the bar. */
+.livedot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--text-muted);
 }
-.liveswitch.on { border-color: var(--gold); color: var(--gold-bright); }
-.liveswitch em {
-  margin-left: auto; font-style: normal; font-size: var(--fs-label);
-  color: var(--text-muted);
-}
+.livedot.on { background: var(--success); animation: livepulse 2s ease-in-out infinite; }
+
 .dashbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-bottom: 10px; font-size: var(--fs-label);
@@ -2921,10 +3027,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* Replay: a recorded fight playing through the live meter, for a curator
    working on this page out of raid hours. It has to be unmistakable — a
    dashboard that cannot say whether it is showing tonight or last Tuesday is
-   worse than one that cannot replay at all — so the switch changes colour and
-   the bar wears the same warning tone the badge does. */
-.liveswitch.replaying, .liveswitch.replaying.on { border-color: var(--warning); color: var(--warning); }
-.liveswitch.replaying .dot.on { background: var(--warning); animation: none; }
+   worse than one that cannot replay at all — so the bar wears the warning tone
+   the badge does, and the rail drops its live row entirely while one plays. */
 .badge.warn { color: var(--warning); border-color: var(--warning); }
 .replaybar { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .replaybar .picker { min-width: 190px; }
@@ -2937,6 +3041,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   overflow: hidden;
 }
 .livemeter.stale { opacity: 0.72; }
+/* Switched off from the rail head: the meter is still there and still says
+   what the last payload said, it has simply stopped. Dimmed hard rather than
+   hidden, because a panel that vanished would read as a close button and
+   because the point of the switch is to leave the mini overlay the only moving
+   thing on the monitor. Nothing in it is clickable while it is off — a control
+   you cannot see is not a control you should be able to press. */
+.livemeter.off { opacity: 0.16; filter: saturate(0.35); pointer-events: none; }
 .livemeter.idle { padding: 22px 14px; text-align: center; }
 
 /* The headline sits ON the chart: the shape of the pull is context for the
@@ -2948,20 +3059,51 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .liveline { stroke: color-mix(in oklab, var(--gold) 45%, transparent); stroke-width: 1.5; }
 .livechart.heal .livearea { fill: color-mix(in oklab, var(--fam-priest) 14%, transparent); }
 .livechart.heal .liveline { stroke: color-mix(in oklab, var(--fam-priest) 55%, transparent); }
-.livechart .peak {
-  position: absolute; right: 8px; bottom: 4px;
-  font-family: var(--font-data); font-size: var(--fs-label); color: var(--text-muted);
-}
+/* The chart's peak is NOT written on the chart. It lived in the bottom-right
+   corner, which is also where `.lhnums` ends once the window is narrow enough
+   to wrap it — so it reads as a stat in the headline row instead, where the
+   flexbox guarantees it a place. */
+/* …which is exactly where a 1.9rem gold figure stops being readable, because
+   the chart under it is a gold area fill. So the text gets its own scrim: the
+   meter's surface again under the words, gone by the right edge — where the
+   chart's newest seconds are and nothing is written — plus a halo on the
+   figures themselves. Dimming the chart instead was tried and lost the shape,
+   which is the only thing the chart is there for. */
 .lhtext { position: relative; }
+/* Scoped to "there is a chart under this text" by the adjacency, not by a
+   flag: the stream overlay draws the same headline with `showChart={false}`
+   over a TRANSPARENT document, and a scrim there is a rectangle over the
+   raid. */
+.livechart + .lhtext::before {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  inset: -12px -14px -10px -14px;
+  background: linear-gradient(95deg, var(--scrim) 0 46%, transparent 86%);
+}
+.lhtext > * { position: relative; z-index: 1; }
+.lhname h2, .lhnums b, .lhnums .big i {
+  text-shadow: 0 1px 3px var(--scrim-ink);
+}
 .lhname { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .lhname h2 { margin: 0; font-size: var(--fs-h2); color: var(--gold-bright); }
 .lhname .zone { font-size: var(--fs-label); color: var(--text-muted); }
 .lhnums { display: flex; align-items: flex-end; gap: 18px; margin-top: 6px; flex-wrap: wrap; }
 .lhnums span { display: flex; flex-direction: column; font-family: var(--font-data); }
 .lhnums b { font-size: 1.15rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.lhnums .big b { font-size: 1.9rem; color: var(--gold-bright); }
 .lhnums i { font-style: normal; font-size: var(--fs-label); color: var(--text-muted); }
 .lhnums .bad b { color: var(--danger); }
+/* The two raid rates are the headline, and their labels have to be readable
+   from a second monitor: beside the number rather than stacked under it (a
+   0.66rem key under a 1.9rem figure reads as a caption on nothing), and in
+   --gold rather than muted grey. */
+.lhnums .big {
+  flex-direction: row; align-items: baseline; gap: 7px;
+  padding-right: 4px;
+}
+.lhnums .big b { font-size: 1.9rem; color: var(--gold-bright); }
+.lhnums .big i {
+  font-size: var(--fs-data); color: var(--gold); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
 
 .metertabs {
   display: flex; align-items: center; gap: 6px;
@@ -2972,6 +3114,17 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-size: var(--fs-label); color: var(--text-muted);
 }
 
+/* Several meters at once: each active metric is its own stack of bars with a
+   small caption saying which statistic the bars are. */
+.meterrows + .meterrows { border-top: 1px solid var(--border); }
+.meterlabel {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 6px 14px 2px; font-family: var(--font-data);
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.meterlabel em { font-style: normal; }
+
 /* A row is a bar first and a table row second. The number is there to be read
    once you have already found the row by its length. */
 .meterrows { padding: 4px 0 8px; }
@@ -2979,10 +3132,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   position: relative; display: flex; align-items: center; gap: 8px;
   padding: 5px 14px; font-family: var(--font-data); font-size: var(--fs-data);
 }
+/* No transition, deliberately. The bar changes when the payload changes it,
+   in the same frame as the figure beside it — a bar easing toward a length
+   while its own number already reads the new one is two answers to the same
+   question. Sliding bars were built and removed with the tweened figures; the
+   fix for a meter that feels stale is a shorter ingest cadence. */
 .meterrow .fill {
   position: absolute; left: 0; top: 2px; bottom: 2px;
   border-radius: 0 2px 2px 0; z-index: 0;
-  transition: width 400ms ease-out;
 }
 .meterrow > :not(.fill) { position: relative; z-index: 1; }
 .meterrow .rank {
@@ -3001,9 +3158,27 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .meterrow .val em {
   font-style: normal; color: var(--gold); min-width: 5.5em; text-align: right;
 }
+/* the numbers a rate cannot say: the biggest single hit, and cures on the
+   healing stack. Muted and small — they sit beside the rate, never over it. */
+.meterrow .val .side { font-size: var(--fs-label); color: var(--text-muted); }
 .meterrow.mob .who b { color: var(--text-muted); }
+
+/* The fold. A raid is 24 people and twelve bars is what a meter can be read
+   at a glance; the rest is one line you click, in the row grid so it lines up
+   under the bars rather than floating. */
+.metermore {
+  display: block; width: 100%; text-align: left;
+  padding: 5px 14px 5px 38px; margin: 2px 0 0;
+  background: none; border: 0; cursor: pointer;
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); letter-spacing: 0.04em;
+}
+.metermore:hover { color: var(--gold); background: var(--row-hover); }
+/* Nothing in the meter transitions any more, so there is nothing here to
+   reduce but the decoration. The AoE countdown does keep draining under
+   reduced motion — it is a clock, and a clock that stops is not a calmer
+   clock, it is the wrong time. */
 @media (prefers-reduced-motion: reduce) {
-  .meterrow .fill { transition: none; }
   .dot.on { animation: none; }
 }
 
@@ -3021,10 +3196,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-bottom: 1px solid var(--row-line);
 }
 .aoerow:last-child { border-bottom: 0; }
+/* No CSS transition: the drain is driven per frame off the shared ticker
+   (lib/smooth.js) now, and a transition chasing a value that moves 20 times a
+   second is a second animation lagging behind the first. */
 .aoerow .fill {
   position: absolute; left: 0; top: 1px; bottom: 1px; z-index: 0;
   background: color-mix(in oklab, var(--warning) 16%, transparent);
-  transition: width 500ms linear;
 }
 .aoerow > :not(.fill) { position: relative; z-index: 1; }
 .aoerow.due .fill { background: color-mix(in oklab, var(--danger) 22%, transparent); }
@@ -3038,18 +3215,225 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .aoerow .cd em.reported { color: var(--gold); }
 .aoerow.due .cd { color: var(--danger); }
-@media (prefers-reduced-motion: reduce) { .aoerow .fill { transition: none; } }
+/* the countdown proper: big tabular digits, readable from across the room */
+.aoerow .cd .digits {
+  font-size: 1.1rem; font-weight: 700; line-height: 1.1;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  min-width: 3em; text-align: right;
+}
+.aoerow .cd .digits.over { color: var(--danger); }
+.aoerow .cd .overlabel {
+  color: var(--danger); text-transform: uppercase; letter-spacing: 0.06em;
+}
+/* the last cast's outcome: who ate it, who was covered */
+.aoerow .split {
+  margin-left: auto; font-size: var(--fs-label); color: var(--text-muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.aoerow .split b { font-weight: 700; color: var(--text); }
+.aoerow .split .blkn { color: var(--success); }
+.aoerow .split + .cd { margin-left: 14px; }
+
+/* ---- the mini overlays (MiniRail) ---- */
+
+/* ACT's mini overlays: the timers and the parse docked flush to one edge of
+   the window, narrow enough that the game gets the rest of the monitor. The
+   whole design constraint is HORIZONTAL — vertical space is free on a 1440p
+   panel and every pixel of width is taken from the game — so the rank, the
+   name and the rate survive and everything else goes.
+   Which edge is a per-browser setting (MiniRail.jsx): the game is on one side
+   of the desk, and a rail on the wrong side is a rail in the way. */
+.minirail {
+  position: fixed; z-index: 40; top: 62px; bottom: 10px; width: 244px;
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none; font-family: var(--font-data);
+}
+.minirail.left { left: 0; }
+.minirail.right { right: 0; }
+.minipanel {
+  pointer-events: auto; background: var(--surface-raised);
+  border: 1px solid var(--border); box-shadow: 0 6px 20px var(--shadow-color);
+  border-radius: var(--radius-md); min-height: 0;
+}
+/* squared off against the window edge it is docked to, so it reads as
+   attached to the frame rather than floating near it */
+.minirail.left .minipanel {
+  border-left: 0; border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.minirail.right .minipanel {
+  border-right: 0; border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.minipanel.minihead {
+  display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 9px;
+  font-size: var(--fs-data);
+}
+.minihead b {
+  color: var(--gold-bright); font-weight: 600; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.minibtn {
+  margin-left: auto; flex: none; width: 20px; height: 20px; padding: 0;
+  display: grid; place-items: center; line-height: 1;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); cursor: pointer;
+}
+.minibtn + .minibtn { margin-left: 0; }
+.minibtn:hover { color: var(--gold); border-color: var(--gold-dim); }
+
+.minipanel.mininums {
+  display: flex; justify-content: space-between; gap: 4px; padding: 6px 9px;
+}
+.mininums span { display: flex; flex-direction: column; min-width: 0; }
+.mininums b { font-size: 0.95rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.mininums i {
+  font-style: normal; font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.mininums .bad b { color: var(--danger); }
+
+/* The parse is the one thing allowed to run out of vertical room. Everything
+   above it holds its height — a countdown that got squeezed off the bottom of
+   a short window is the one row that had to be visible. */
+.minipanel.minihead, .minipanel.mininums,
+.minipanel.minitimers, .minipanel.minidle { flex: none; }
+.miniparse { flex: 1 1 auto; overflow: auto; padding: 4px 0; }
+.miniparse.stale { opacity: 0.72; }
+.minipanel.minidle {
+  padding: 12px 10px; text-align: center;
+  font-size: var(--fs-label); color: var(--text-muted);
+}
+.minilabel {
+  padding: 4px 9px 2px; font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.minirows + .minirows { border-top: 1px solid var(--row-line); }
+.minirow {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  padding: 3px 9px; font-size: var(--fs-data); line-height: 1.35;
+}
+.minirow .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; z-index: 0;
+  border-radius: 0 2px 2px 0;
+}
+.minirow > :not(.fill) { position: relative; z-index: 1; }
+.minirow .rank {
+  color: var(--text-muted); font-size: var(--fs-label); width: 1.4em; flex: none;
+}
+/* Name and class are one cell and it is the cell that takes the leftover
+   width — so the class sits AGAINST the name (a caption, 5px off it) and the
+   row's slack falls between that pair and the numbers, where slack belongs.
+   The name gives width back first: at 244px something has to be cut, and a
+   clipped name is still the row you were looking for. */
+.minirow .who {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: baseline; gap: 5px;
+}
+.minirow .who b {
+  min-width: 0; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The class, short form. Muted and un-tinted on purpose — the bar behind the
+   row already carries the archetype hue, and a second color on four characters
+   of text is decoration nobody decoded. */
+.minirow .cls {
+  flex: none; font-style: normal; font-size: var(--fs-label);
+  color: var(--text-muted); letter-spacing: 0.01em;
+}
+/* Max hit. The only number besides the rate that survives the condensing,
+   because it is the only one the rate cannot imply — it rides in front of the
+   rate, muted and captioned, so the ranking still reads down one column. */
+.minirow .best {
+  flex: none; font-size: var(--fs-label);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.minirow .best i {
+  margin-left: 3px; font-style: normal; font-size: 0.9em;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+.minirow .val {
+  margin-left: auto; flex: none; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.minirow .best + .val { margin-left: 0; }
+
+/* Two stacks, side by side instead of one under the other: the same parse in a
+   wide OBS scene rather than a tall one (the overlay's Layout setting). */
+.miniparse.horizontal { display: flex; }
+.miniparse.horizontal .minirows { flex: 1 1 0; min-width: 0; }
+.miniparse.horizontal .minirows + .minirows {
+  border-top: 0; border-left: 1px solid var(--row-line);
+}
+
+/* The timers lose the source and the hit/blocked split — at 244px the name
+   and the countdown are the row, and the split is what the dashboard's own
+   panel is for. */
+.aoetimers.mini { padding: 4px 0; border-top: 0; }
+.aoetimers.mini .aoerow { padding: 3px 9px; gap: 6px; }
+.aoetimers.mini .src, .aoetimers.mini .split { display: none; }
+.aoetimers.mini .ab {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.aoetimers.mini .cd { margin-left: auto; }
+.aoetimers.mini .cd .digits { font-size: 0.95rem; min-width: 2.8em; }
+.aoetimers.mini .cd em.overlabel { display: none; }
+
+/* a narrow window has no side to spare */
+@media (max-width: 900px) { .minirail { display: none; } }
+
+/* ---- a finished fight on the dashboard (Live.jsx's DashParse) ---- */
+
+/* A record, not a meter: the parse itself in the dashboard's main column, with
+   a line above it saying which pull it is. The head reuses the meter's
+   headline classes so the name sits where the eye already knows it, but
+   nothing here moves. */
+.dashfight { display: grid; gap: 12px; }
+.dashfight > .card { margin: 0; }
+.recnote {
+  font-size: var(--fs-label); font-family: var(--font-data);
+  letter-spacing: 0.04em;
+}
 
 /* ---- notes ---- */
 
 .card.notes { margin-top: 0; max-height: calc(100vh - 24px); overflow: auto; }
+/* The heading IS the collapse control: the switch sits across from it and the
+   word itself takes the click, because a title with a switch beside it that
+   only answers to the switch is a target people miss. Collapsed, the card is
+   this row and nothing else — a header the width of the column, holding the
+   count so it still says whether there is anything in there. */
+.notehead { display: flex; align-items: center; gap: 8px; }
+.notehead h2 { margin: 0; cursor: pointer; }
+.notehead .n {
+  font-family: var(--font-data); font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.notehead .switch { margin-left: auto; }
+.card.notes.closed { padding-top: 10px; padding-bottom: 10px; overflow: visible; }
+.card.notes > .notehead + * { margin-top: 8px; }
 .notetarget { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .notetarget .zonename, .notetarget .mobname {
   font-family: var(--font-data); font-size: var(--fs-data); min-width: 0; flex: 1;
 }
 .notetarget .zonename { color: var(--text-muted); }
 .notebody { width: 100%; resize: vertical; font-size: var(--fs-data); }
-.noteactions { display: flex; gap: 8px; margin-top: 8px; }
+/* Under the box it files, which is where a text box's button goes. */
+.noteactions {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;
+}
+.noteactions .staged {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-xs); color: var(--text-muted);
+}
+/* Pasting needs no target, so the drop box only has to be big enough to say
+   so. Full size it was a third of the column, under the note it belongs to. */
+.notes .shotdrop {
+  flex-direction: row; justify-content: center; gap: 8px;
+  padding: 7px 10px; margin-top: 8px; border-width: 1px;
+}
+.notes .shotdrop .plus { width: 20px; height: 20px; font-size: 0.95rem; }
 .notelist { margin-top: 12px; display: grid; gap: 10px; }
 .noteitem { border-top: 1px solid var(--row-line); padding-top: 8px; }
 .noteitem p { margin: 4px 0 0; white-space: pre-wrap; font-size: var(--fs-data); }
@@ -3060,6 +3444,83 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .noteitem .nh .when { font-family: var(--font-data); }
 .noteitem .nh button { margin-left: auto; }
 .noteshots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* The dashboard column shows the whole zone, so its notes need headings: which
+   subject this run of notes is about, and which one the composer above is
+   writing to. */
+.notegroup + .notegroup { margin-top: 14px; }
+.notesubject {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: var(--fs-data); padding-bottom: 2px;
+  border-bottom: 1px solid var(--row-line);
+}
+.notesubject.current { border-bottom-color: var(--gold-dim); }
+.notesubject .muted, .notesubject .n {
+  font-size: var(--fs-label); color: var(--text-muted);
+}
+.notesubject .n { margin-left: auto; font-family: var(--font-data); }
+.notesubject .badge { font-size: var(--fs-label); }
+.notesubject .chip.offsite { padding: 0 5px; }
+
+/* ---- the notes outline (the raid list's right column) ---- */
+
+/* Two columns on the raid list: the raids, and what got written down during
+   them — but only once the Notes button on the tools line asks for the second
+   one. It gives way first — a raid table that has to scroll sideways to make
+   room for a table of contents has the priority backwards. */
+.listpage {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
+  align-items: start;
+}
+.listpage.withnotes { grid-template-columns: minmax(0, 1fr) 300px; }
+.listmain { min-width: 0; }
+@media (max-width: 1400px) {
+  .listpage.withnotes { grid-template-columns: minmax(0, 1fr); }
+}
+
+.card.notesoutline {
+  margin-top: 0; position: sticky; top: 12px;
+  max-height: calc(100vh - 24px); overflow: auto;
+}
+/* The panel closes from its own corner as well as from the button that opened
+   it — whichever end of the page your eye is at. */
+.notesoutline .outhead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+.notesoutline .outhead h2 { margin: 0; }
+.notesoutline h3 {
+  margin: 14px 0 4px; font-size: var(--fs-label); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--row-line); padding-bottom: 3px;
+}
+.notesoutline h3:first-of-type { margin-top: 10px; }
+.outzone { margin: 6px 0 10px; }
+.outzonehead {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: var(--fs-data);
+}
+.outzonehead .n { margin-left: auto; font-family: var(--font-data); }
+.outzonehead .badge { font-size: var(--fs-label); }
+/* A row is a button because it opens something; it is styled as a line of text
+   because a column of thirty buttons reads as a toolbar, not an outline. */
+.outrow {
+  display: flex; align-items: baseline; gap: 6px; width: 100%;
+  background: none; border: 0; padding: 2px 0 2px 4px; margin: 0;
+  color: var(--text); font: inherit; font-size: var(--fs-label);
+  text-align: left; cursor: pointer;
+}
+.outrow:hover .nm { color: var(--gold); }
+.outrow:focus-visible { outline: 1px solid var(--gold-dim); }
+.outrow .tw { color: var(--text-muted); width: 9px; flex-shrink: 0; }
+.outrow .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.outrow .n, .outrow .sh {
+  margin-left: auto; font-family: var(--font-data); color: var(--text-muted);
+}
+.outrow .sh { margin-left: 0; }
+.outsubject.open .outrow .nm { color: var(--gold); }
+.outnotes { padding: 2px 0 6px 13px; border-left: 1px solid var(--row-line); }
+.outnotes .noteitem:first-of-type { border-top: 0; padding-top: 2px; }
+.outnotes .chip.offsite { margin-bottom: 4px; }
 
 @media (max-width: 1500px) {
   .dashgrid { grid-template-columns: 260px minmax(0, 1fr); }
@@ -3092,11 +3553,68 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .overlaypage.theme-transparent .lhnums i,
 .overlaypage.theme-transparent .meterrow .who em,
 .overlaypage.theme-transparent .meterrow .rank { color: #c7cade; }
+/* The overlay draws the MINI parse (MiniParse.jsx), the same object the
+   dashboard docks to the window edge — so the panels are the rail's panels,
+   given the transparent theme's treatment and the full width of the OBS
+   source instead of a 244px strip. */
+/* A pinned width comes in as an inline `width` (the Width setting); this keeps
+   one that is wider than the browser source inside the scene rather than
+   spilling a scrollbar across somebody's stream. */
+.overlaypage.mini {
+  display: grid; gap: 6px; font-family: var(--font-data); max-width: 100%;
+}
+.overlaypage.theme-transparent .minipanel {
+  background: rgba(12, 13, 20, 0.62);
+  border-color: rgba(255, 255, 255, 0.14);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  color: #f2f3f8;
+}
+/* Every muted thing in a row has to be re-lit for the transparent theme:
+   --text-muted is picked against a known surface and the surface here is
+   somebody's raid. The class short-name is in this list for the same reason
+   the rank and the max hit are — it is the caption on the name, and a caption
+   that dissolves into the game behind it is not one. */
+.overlaypage.theme-transparent .minirow .rank,
+.overlaypage.theme-transparent .minirow .cls,
+.overlaypage.theme-transparent .minirow .best,
+.overlaypage.theme-transparent .mininums i,
+.overlaypage.theme-transparent .minilabel { color: #c7cade; }
+.overlaypage.mini .miniparse.stale { opacity: 0.72; }
 .overlaypage.theme-dark { background: var(--bg); }
 .overlaypage.theme-light { background: #fffefb; }
 /* The headline chart is off on an overlay (no room, and it is the numbers
    people are watching), so the head does not need the space it reserved. */
 .overlaypage .liveheadline { padding-bottom: 8px; }
+/* Out of combat the meter stays on screen — last fight or the sample parse —
+   dimmed, with one quiet line saying why the numbers are not moving. */
+.overlaypage.idle .livemeter { opacity: 0.72; }
+.overlaytag {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.overlaypage.theme-transparent .overlaytag {
+  color: #c7cade; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* The options window, opened from the dashboard bar beside Mini
+   (OverlayPanel.jsx). Fixed and rendered into `document.body`, because every
+   card on that page carries backdrop-filter — see Picker.jsx. */
+.overlaybtn { display: inline-flex; }
+.overlaybtn .chip { display: inline-flex; align-items: center; gap: 6px; }
+.overlaypop {
+  position: fixed; z-index: 60; width: 360px; max-width: calc(100vw - 16px);
+  max-height: var(--pop-cap, 70vh); overflow: auto;
+  padding: 10px 12px 12px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px var(--shadow-color);
+}
+.overlaypop .pophead {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 2px;
+}
+.overlaypop .pophead b { color: var(--gold-bright); }
+.overlaypop .pophead .minibtn { margin-left: auto; }
+.overlaypop .note { margin: 4px 0 0; }
+.overlaypop .overlayrow { margin-top: 8px; }
 
 /* the settings card on /account */
 .overlayrow { margin-top: 10px; }
@@ -3107,3 +3625,84 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .overlayrow .rowsnum { width: 5em; font-family: var(--font-data); }
 .overlayrow .settingrow .chips { display: flex; gap: 4px; }
+
+/* ---- /features — the page you link at somebody ------------------------- */
+/* Eight features in balanced columns, so the whole set is visible at once
+   rather than read down. Wider than a prose measure on purpose. */
+.features { max-width: 1400px; margin: 0 auto; padding: 0 4px 64px; }
+
+.feathero { padding: 24px 0 26px; }
+.feathero h1 { margin: 0 0 10px; }
+.featlede { font-size: 1.08rem; max-width: 62ch; margin: 0 0 18px; line-height: 1.55; }
+.featcta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0; }
+.featcta .muted { font-size: 0.85rem; }
+
+/* Columns fill by width rather than by count: the items are uneven (one has
+   three screenshots, three have none), so a fixed 3-up leaves a short column
+   on most screens. break-inside keeps a feature and its pictures together. */
+.featgrid { columns: 3 330px; column-gap: 26px; }
+.featitem { break-inside: avoid; display: inline-block; width: 100%; margin: 0 0 24px; }
+.featitem h2 {
+  margin: 0 0 6px; font-size: 1.02rem; color: var(--gold-bright);
+}
+.featitem p { margin: 0; color: var(--text-muted); line-height: 1.5; font-size: 0.94rem; }
+
+/* Sized by how many a feature has: one takes the column, three share it.
+   Cropped to the TOP either way — a parse is a table with its head at the top,
+   and a whole 1900px window scaled into a card is a grey rectangle. */
+.featthumbs { display: grid; gap: 8px; margin: 12px 0 0; }
+.featthumbs.multi { grid-template-columns: repeat(3, 1fr); }
+.featthumb {
+  display: block; padding: 0; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); overflow: hidden; cursor: pointer; text-align: left;
+  width: 100%;
+}
+.featthumb:hover { border-color: var(--gold-dim); }
+.featthumb img { display: block; width: 100%; height: 128px; object-fit: cover; object-position: top; }
+.featthumbs.multi .featthumb img { height: 76px; }
+.featthumb span {
+  display: block; padding: 6px 8px; font-size: 0.78rem; color: var(--text-muted);
+  line-height: 1.35;
+}
+/* Three captions across one column is four words a line; the viewer names
+   each shot when it opens. */
+.featthumbs.multi .featthumb span { display: none; }
+
+.featstart { padding-top: 18px; border-top: 1px solid var(--border); margin-top: 6px; }
+.featstart h2 { margin: 0 0 12px; }
+.featstart p { max-width: 74ch; line-height: 1.6; margin: 0 0 16px; }
+.featstart code { font-family: var(--font-data); font-size: 0.94em; }
+
+@media (max-width: 720px) {
+  .featgrid { columns: 1; }
+  .featlede { font-size: 1rem; }
+}
+
+/* ---- site footer ------------------------------------------------------- */
+/* Quiet by design: it is the same three facts on every page, so it sits at
+   label size and never competes with the page above it. */
+/* Pinned to the bottom of the PAGE, not the window: #root is a column and
+   <main> is the growing item, so on a short page the footer sits at the
+   bottom of the viewport and on a long one it stays below the content. A
+   fixed bar would cost every parse table a strip of height it needs more. */
+#root { display: flex; flex-direction: column; min-height: 100vh; }
+#root > .topnav { flex: 0 0 auto; }
+.container { flex: 1 0 auto; }
+
+/* Lines up with .container: same measure, same gutters. */
+.sitefoot {
+  max-width: var(--shell); width: 100%; margin: 32px auto 0;
+  padding: 14px 20px 26px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  font-size: 0.8rem; color: var(--text-muted);
+}
+.sitefoot b { color: var(--text); font-weight: 600; }
+.sitefoot nav { display: flex; flex-wrap: wrap; gap: 14px; }
+.sitefoot a { color: var(--text-muted); text-decoration: none; }
+.sitefoot a:hover { color: var(--gold); }
+.sitefoot .muted { margin-left: auto; }
+
+@media (max-width: 860px) {
+  .sitefoot .muted { margin-left: 0; }
+}

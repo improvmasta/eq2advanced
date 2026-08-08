@@ -230,9 +230,3 @@ def press_inputs(conn) -> tuple[dict[str, float], frozenset[str]]:
     return periods, frozenset(proc_ability_names(conn))
 
 
-def scribed_classes(conn) -> dict[str, str]:
-    """ability name -> the classes that scribe it, for rows where `class`
-    actually means that. Everything else is a proc's owning class."""
-    return {r[0]: r[1] for r in conn.execute(
-        "SELECT ability_name, class FROM ability_catalog "
-        "WHERE scribed=1 AND class IS NOT NULL AND class != ''")}

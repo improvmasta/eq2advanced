@@ -106,10 +106,11 @@ function useFitViewport(enabled) {
 export default function SortableTable({
   columns, rows, defaultSort, rowKey, onRowClick, selectedKey, className = '',
   checkable, checkedKeys, onCheck, childrenOf, rowClass, wrapClass = '', groupBy,
-  prefsKey, topRows, defaultHidden, onRowHover, fitViewport, tools,
+  prefsKey, topRows, defaultHidden, onRowHover, fitViewport, tools, fold,
 }) {
   const wrapRef = useFitViewport(fitViewport)
   const [sort, setSort] = useState(defaultSort || null) // {key, dir: 'asc'|'desc'}
+  const [unfolded, setUnfolded] = useState(false)
   const [prefs, setPrefs] = useState(() => loadPrefs(prefsKey))
   const [menuOpen, setMenuOpen] = useState(false)
   const [drag, setDrag] = useState(null)          // {key, over}
@@ -216,11 +217,18 @@ export default function SortableTable({
     })
   }, [rows, active, cols])
 
+  /* `fold` folds the tail away behind one clickable line. It cuts AFTER the
+     sort, never before: a table folded on the caller's side would keep showing
+     the top twelve by the DEFAULT column no matter what you then sorted by,
+     which is a table quietly lying about what it holds. */
+  const tailHidden = fold && !unfolded ? Math.max(0, sorted.length - fold) : 0
+  const body = tailHidden ? sorted.slice(0, fold) : sorted
+
   /* topRows are pinned above the sorted body (the ACT "All" line): sorting
      never moves them and grouping never claims them. */
   const expanded = useMemo(
-    () => [...(topRows || []), ...sorted.flatMap((r) => [r, ...(childrenOf?.(r) || [])])],
-    [sorted, childrenOf, topRows])
+    () => [...(topRows || []), ...body.flatMap((r) => [r, ...(childrenOf?.(r) || [])])],
+    [body, childrenOf, topRows])
 
   /* A heading only means something while the table is ordered by the thing it
      groups on; sorted by DPS, the same date would head half the rows. */
@@ -384,6 +392,11 @@ export default function SortableTable({
           })}
         </tbody>
       </table>
+      {!!fold && (tailHidden > 0 || unfolded) && (
+        <button className="metermore" onClick={() => setUnfolded(!unfolded)}>
+          {unfolded ? `⋯ show the top ${fold}` : `⋯ ${tailHidden} more`}
+        </button>
+      )}
       </div>
     </>
   )

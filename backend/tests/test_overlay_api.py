@@ -169,6 +169,36 @@ def test_the_stream_needs_no_cookie_and_carries_only_the_meter(client, overlay):
         assert leak not in body, leak
 
 
+def test_a_replay_reaches_the_overlay(client, overlay):
+    """The overlay reads the LIVE snapshot, which made it the one surface that
+    could only be worked on during a raid — the scene had to be positioned and
+    the options judged against a real pull. A replay the account is running
+    feeds it instead (`pipeline/replaybus.py`), so an OBS source shows exactly
+    what a viewer would see, on a Tuesday afternoon."""
+    from pipeline import replaybus
+    me = client.get("/api/auth/me").json()["user"]["id"]
+    frame = {"computed_ts": 4242, "fight": {
+        "provisional_name": "Mayong Mistmoore", "elapsed_s": 30, "aoes": [],
+        "raid": {"damage": 900, "dps": 30, "heals": 0, "hps": 0,
+                 "deaths": 0, "raiders": 2},
+        "actors": [{"name": "Bobby", "kind": "player", "damage": 900,
+                    "dps": 30, "max_hit": 700}]}}
+    replaybus.publish(me, frame)
+    try:
+        client.cookies.clear()
+        body = read_stream(overlay["token"], "provisional_name")
+        assert '"live": true' in body
+        payload = json.loads(body.split("event: partial\ndata: ")[1].split("\n")[0])
+        assert payload["fight"]["provisional_name"] == "Mayong Mistmoore"
+        # a stale frame is a replay that ended (or a tab that was closed): the
+        # overlay lets go of it on its own, with no stop message to lose
+        replaybus.MAX_AGE_S = -1
+        assert replaybus.latest(me) is None
+    finally:
+        replaybus.MAX_AGE_S = 8.0
+        replaybus.clear(me)
+
+
 def test_an_overlay_with_nothing_streaming_says_so_and_stays_open(client):
     """An OBS source is opened once and left running for hours. A stream that
     ended between raids would be a scene that goes blank for good."""
@@ -197,14 +227,31 @@ def test_minting_configuring_and_revoking_need_an_account(client):
 
 
 def test_config_is_cleaned_not_trusted(client):
-    r = client.post("/api/overlay-tokens", json={
-        "config": {"theme": "neon", "metrics": ["dps", "nonsense"], "max_rows": 8}})
-    cfg = r.json()["config"]
+    made = client.post("/api/overlay-tokens", json={
+        "config": {"theme": "neon", "metrics": ["dps", "nonsense"],
+                   "max_rows": 8, "layout": "diagonal"}}).json()
+    cfg = made["config"]
     assert cfg["theme"] == "transparent"          # an unknown theme is not a theme
     assert cfg["metrics"] == ["dps"]
+    assert cfg["layout"] == "vertical"            # nor is an unknown layout
+    assert cfg["enabled"] is True                 # a new link is on
+    assert cfg["width_px"] is None                # and fills its OBS source
     # and a config with no metric left still shows something
     r = client.post("/api/overlay-tokens", json={"config": {"metrics": []}})
     assert r.json()["config"]["metrics"] == ["dps"]
+    # a width is CLAMPED, not rejected — it is a number typed into a box on a
+    # dashboard, and a 422 mid-raid is worse than a sane one
+    for typed, kept in ((900, 900), (5, 160), (99999, 1920), (0, None)):
+        r = client.patch(f"/api/overlay-tokens/{made['id']}",
+                         json={"config": {"width_px": typed}})
+        assert r.json()["config"]["width_px"] == kept, typed
+    # off is a setting, not a revocation: the token still resolves
+    r = client.patch(f"/api/overlay-tokens/{made['id']}",
+                     json={"config": {"enabled": False, "layout": "horizontal"}})
+    assert r.json()["config"]["enabled"] is False
+    assert r.json()["config"]["layout"] == "horizontal"
+    client.cookies.clear()
+    assert client.get(f"/api/overlay/{made['token']}").status_code == 200
 
 
 def test_a_revoked_overlay_leaves_the_list(client):

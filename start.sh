@@ -16,5 +16,14 @@ if [ "${BUILD_WEB:-0}" = "1" ] || [ ! -f frontend/dist/index.html ]; then
 fi
 RELOAD_ARGS=""
 [ "${RELOAD:-1}" = "1" ] && RELOAD_ARGS="--reload --reload-dir backend"
+# --timeout-graceful-shutdown is NOT optional here. The overlay and dashboard
+# SSE streams are `while True` loops that never end on purpose (an OBS browser
+# source is opened once and left for hours), so uvicorn's default shutdown —
+# wait for every open connection to close — waits forever. It keeps the listen
+# socket bound while it waits, so requests pile into the backlog unanswered and
+# the site HANGS rather than failing. One editor save on a backend file took
+# the site down that way. The cap makes every restart, reload and deploy
+# terminate whether or not anyone is streaming.
 exec .venv/bin/python -m uvicorn main:app --app-dir backend \
-  --host "${HOST:-0.0.0.0}" --port "${PORT:-8450}" $RELOAD_ARGS
+  --host "${HOST:-0.0.0.0}" --port "${PORT:-8450}" \
+  --timeout-graceful-shutdown "${GRACEFUL_S:-10}" $RELOAD_ARGS

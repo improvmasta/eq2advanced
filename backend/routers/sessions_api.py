@@ -5,9 +5,12 @@ no group-share and no admin path. Sharing operates on zone runs (the raids you
 were in), so a shared night exposes those fights' derived stats and never the
 log, the other fights in the same file, or its parse plumbing.
 
-The /stream endpoint is SSE for the dashboard: it polls the DB and pushes fight
-cards as the live ingest path finalizes encounters, plus a `partial` view of
-the fight still in progress (pipeline/livemeter.py)."""
+The /stream endpoint is SSE for the dashboard: fight cards as the live ingest
+path finalizes encounters, plus a `partial` view of the fight still in progress
+(pipeline/livemeter.py). It is PUSHED — `pipeline/livebus.py` wakes it the
+moment a snapshot is built, rather than the loop asking on a timer — with
+`STREAM_POLL_S` left as the fallback tick that keeps `mark_watched` alive and
+notices everything the bell does not ring for."""
 
 import asyncio
 import json
@@ -17,12 +20,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from db import get_db, row_to_dict, rows_to_dicts
-from pipeline import live
+from pipeline import live, livebus
 from security import owned_session, require_user
 
 router = APIRouter(tags=["sessions"])
 
+# The fallback tick, not the update rate: a `partial` arrives when the ingest
+# path rings the bell (pipeline/livebus.py). This is only how long the loop
+# will sit before coming round anyway.
 STREAM_POLL_S = 1.5
+STATUS_HEARTBEAT_S = 15   # re-send an unchanged status this often, to prove the pipe
 ONLINE_S = 60          # device token seen this recently = uploader online
 
 
@@ -35,7 +42,11 @@ def list_sessions(user=Depends(require_user)):
     conn = get_db()
     where, params = "WHERE c.user_id = ?", (user["id"],)
     rows = conn.execute(
+        # `last_ingest_ts` is how the dashboard tells a session that is being
+        # played from one that is merely still open: two EQ2 clients logging at
+        # once means two receiving sessions, and the newest is not the live one
         "SELECT s.id, s.source, s.status, s.error, s.started_ts, s.ended_ts, s.line_count, "
+        "s.last_ingest_ts, "
         "s.upload_name, s.created_ts, s.calibration, s.pinned, s.pruned, "
         "s.src_bytes, s.raw_bytes, s.raw_deleted_ts, s.redacted_lines, "
         "c.name AS character_name, "
@@ -55,7 +66,13 @@ def list_sessions(user=Depends(require_user)):
         "FROM sessions s JOIN characters c ON c.id = s.character_id "
         f"{where} ORDER BY s.created_ts DESC",
         params).fetchall()
-    return {"sessions": rows_to_dicts(rows)}
+    sessions = rows_to_dicts(rows)
+    # the nav's Idle / In Combat light: answered from the in-memory tail, so
+    # it costs nothing and never turns snapshot building on
+    for s in sessions:
+        if s["source"] == "live" and s["status"] == "receiving":
+            s["in_combat"] = live.in_combat(s["id"])
+    return {"sessions": sessions}
 
 
 @router.get("/sessions/{session_id}")
@@ -209,37 +226,56 @@ async def session_stream(session_id: int, user=Depends(require_user)):
     async def gen():
         last_enc_id = 0
         last_partial = None
-        while True:
-            # asking is what turns snapshots on: nobody watching, nothing built
-            live.mark_watched(session_id)
-            conn = get_db()
-            sess = conn.execute(
-                "SELECT s.*, c.name AS character_name, c.id AS char_id FROM sessions s "
-                "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
-                (session_id,)).fetchone()
-            if sess is None:
-                break
-            for e in _encounter_cards(conn, session_id, sess["character_name"], last_enc_id):
-                last_enc_id = e["id"]
-                yield f"event: encounter\ndata: {json.dumps(dict(e))}\n\n"
-            online = conn.execute(
-                "SELECT 1 FROM device_tokens t JOIN characters c ON c.user_id = t.user_id "
-                "WHERE c.id=? AND t.revoked_ts IS NULL AND t.last_seen_ts > ?",
-                (sess["char_id"], int(time.time()) - ONLINE_S)
-            ).fetchone() is not None
-            status = {
-                "status": sess["status"], "line_count": sess["line_count"],
-                "last_ingest_ts": sess["last_ingest_ts"], "started_ts": sess["started_ts"],
-                "ended_ts": sess["ended_ts"], "uploader_online": online,
-            }
-            yield f"event: status\ndata: {json.dumps(status)}\n\n"
-            snap = live.live_snapshot(session_id)
-            if snap is not None and snap["computed_ts"] != last_partial:
-                last_partial = snap["computed_ts"]
-                yield f"event: partial\ndata: {json.dumps(snap)}\n\n"
-            if sess["status"] in ("ready", "error"):
-                break
-            await asyncio.sleep(STREAM_POLL_S)
+        last_status = None
+        status_at = 0.0
+        # Subscribed around the whole body, not just around the wait: a
+        # snapshot published while this is reading the database has to leave
+        # the doorbell rung, or the push drops exactly the update that arrived
+        # under load — see pipeline/livebus.py.
+        with livebus.subscribe(session_id) as bell:
+            while True:
+                # asking is what turns snapshots on: nobody watching, nothing built
+                live.mark_watched(session_id)
+                conn = get_db()
+                sess = conn.execute(
+                    "SELECT s.*, c.name AS character_name, c.id AS char_id FROM sessions s "
+                    "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
+                    (session_id,)).fetchone()
+                if sess is None:
+                    break
+                for e in _encounter_cards(conn, session_id, sess["character_name"], last_enc_id):
+                    last_enc_id = e["id"]
+                    yield f"event: encounter\ndata: {json.dumps(dict(e))}\n\n"
+                online = conn.execute(
+                    "SELECT 1 FROM device_tokens t JOIN characters c ON c.user_id = t.user_id "
+                    "WHERE c.id=? AND t.revoked_ts IS NULL AND t.last_seen_ts > ?",
+                    (sess["char_id"], int(time.time()) - ONLINE_S)
+                ).fetchone() is not None
+                status = {
+                    "status": sess["status"], "line_count": sess["line_count"],
+                    "last_ingest_ts": sess["last_ingest_ts"], "started_ts": sess["started_ts"],
+                    "ended_ts": sess["ended_ts"], "uploader_online": online,
+                }
+                # Once the loop is pushed it runs several times a second during
+                # a pull, and status is the same six fields nearly every time.
+                # It goes out when it CHANGES, plus a slow heartbeat so a quiet
+                # session still proves the connection is alive.
+                now = time.monotonic()
+                if status != last_status or now - status_at >= STATUS_HEARTBEAT_S:
+                    last_status = status
+                    status_at = now
+                    yield f"event: status\ndata: {json.dumps(status)}\n\n"
+                snap = live.live_snapshot(session_id)
+                if snap is not None and snap["computed_ts"] != last_partial:
+                    last_partial = snap["computed_ts"]
+                    yield f"event: partial\ndata: {json.dumps(snap)}\n\n"
+                if sess["status"] in ("ready", "error"):
+                    break
+                # The bell is a shortcut, never the contract: this still has to
+                # come round on its own to refresh `mark_watched`, to notice a
+                # fight card or a finalized session, and to survive a publish
+                # going missing. STREAM_POLL_S is that fallback now.
+                await bell.wait(STREAM_POLL_S)
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",

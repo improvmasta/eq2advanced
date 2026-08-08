@@ -23,8 +23,6 @@
    selection order instead, since two raiders of the same class would otherwise
    draw the same line. */
 
-export const FAMILIES = ['fighter', 'priest', 'mage', 'scout']
-
 export const CLASS_FAMILY = {
   guardian: 'fighter', berserker: 'fighter', paladin: 'fighter',
   shadowknight: 'fighter', monk: 'fighter', bruiser: 'fighter',
@@ -109,7 +107,19 @@ export const CLASS_SHORT = {
   beastlord: 'BL',
 }
 export const classShort = (cls) => (cls ? CLASS_SHORT[cls] || classLabel(cls) : null)
-export const familyOf = (cls) => CLASS_FAMILY[cls] || null
+
+/* The bar behind a meter row, in ONE place because two surfaces draw it (the
+   dashboard meter and the mini parse) and a meter whose bars are two different
+   weights on one screen reads as two different meters.
+
+   It is deliberately faint. The bar is a LENGTH — you find the row by how far
+   it reaches — and the tint is only there to say which archetype reached that
+   far. At the fuller mix this used to be, the fill competed with the name and
+   the rate sitting on top of it, which is the text the row is actually for. */
+export const barFill = (cls) => {
+  const tint = familyColor(cls)
+  return tint ? `color-mix(in oklab, ${tint} 24%, transparent)` : 'var(--bar-track)'
+}
 export const roleOf = (actor) => actor?.archetype || CLASS_ROLE[actor?.class] || null
 export const classColor = (cls) => CLASS_COLOR[cls] || null
 export const familyColor = (cls) => FAMILY_COLOR[CLASS_FAMILY[cls]] || null

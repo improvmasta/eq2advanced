@@ -11,9 +11,9 @@ FastAPI + SQLite (`backend/`), Vite + React SPA (`frontend/`). See `ARCHITECTURE
 ## Dev
 
 ```bash
-bash restart.sh                     # http://localhost:8450
-pytest backend/tests/ -q            # 311 tests
-npm --prefix frontend run build     # SPA → frontend/dist
+bash restart.sh                            # http://localhost:8450
+.venv/bin/python -m pytest backend/tests/ -q
+npm --prefix frontend run build            # SPA → frontend/dist
 ```
 
 ## Deploy

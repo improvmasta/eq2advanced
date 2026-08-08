@@ -4,7 +4,6 @@
 row with your logs, and it neither blocks nor reveals anyone else's Bobby. The
 only conflict left is claiming the same name twice on one account."""
 
-import time
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel

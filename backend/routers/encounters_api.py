@@ -14,6 +14,10 @@ pruned session contributes nothing — its events are gone — and says so).
 by class, each class holding whatever metrics `pipeline/classstats.py` has
 registered for it.
 
+`GET /encounters/report?ids=…` is the raid report over the same selection —
+what `/zone-runs/{id}/report` gives the raid page, for callers that have
+fights rather than a run (the dashboard, mid-night).
+
 Everything here takes the same `ids` list and the same visibility rule: every
 session touched must be visible to the caller, unknown ids 404, junk 422."""
 
@@ -848,6 +852,28 @@ def encounters_class_stats(ids: str = Query(...), user=Depends(optional_user)):
     payload["pruned_encounters"] = len(enc_ids) - len(live)
     payload["pruned"] = not live
     return payload
+
+
+@router.get("/encounters/report")
+def encounters_report(ids: str = Query(...), user=Depends(optional_user)):
+    """The raid report for an arbitrary encounter set — the same payload
+    `/zone-runs/{id}/report` returns, scoped to the fights asked for.
+
+    The zone-run form is what the raid page reads, because there the selection
+    is always a subset of one run. The dashboard has no run to ask about while
+    the night is still arriving: it holds the fights the live writer has
+    committed, and the columns the report feeds (overheal, time dead, damage
+    lost dead, engage) are the difference between the parse there and the parse
+    on `/zones/:id`. Memoized on the id set like every other selection payload,
+    so the fight that just ended is built once however many people are looking
+    at it."""
+    from coach.raidreport import build_for_encounters
+
+    conn = get_db()
+    enc_ids, encs, _session_ids, _sess_of = _selection(conn, user, ids)
+    return memo.get_or_build(
+        ("enc-report", tuple(enc_ids)),
+        lambda: build_for_encounters(conn, encs))
 
 
 def _detail(conn, enc) -> dict:

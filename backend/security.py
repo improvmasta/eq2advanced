@@ -70,14 +70,6 @@ def require_curator(user=Depends(require_user)):
     return user
 
 
-def is_admin(user) -> bool:
-    return user["role"] == "admin"
-
-
-def is_curator(user) -> bool:
-    return user is not None and user["role"] in ("admin", "curator")
-
-
 def owned_character(conn, user, character_id: int):
     """Character row if the user owns it, else 404."""
     char = conn.execute("SELECT * FROM characters WHERE id=?", (character_id,)).fetchone()
