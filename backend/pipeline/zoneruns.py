@@ -272,6 +272,9 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
             if old in gone and new is not None and old != new:
                 successor.setdefault(old, new)
         groups.carry_shares(conn, successor)
+        # the survivor has its copy; the originals still point at a row that is
+        # about to go, and foreign_keys=ON refuses the delete while they do
+        groups.drop_shares_for_runs(conn, stale)
         ph = ",".join("?" * len(stale))
         conn.execute(f"DELETE FROM zone_runs WHERE id IN ({ph})", stale)
         groups.drop_orphan_shares(conn)

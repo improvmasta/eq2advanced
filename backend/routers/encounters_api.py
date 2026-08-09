@@ -27,14 +27,16 @@ import statistics
 from bisect import bisect_left
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 
+import items
 import memo
 from census import catalog
 from census.roster import DEFAULT_WORLD
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
 from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
-from pipeline import aoes, classstats
+from pipeline import aoes, classstats, loot
 from pipeline import classmetrics  # noqa: F401 — importing registers the metrics
 from pipeline.classguess import (backfill_session, parse_class_guess, resolve_class,
                                  strong_classes_here)
@@ -825,6 +827,128 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
         "pruned_encounters": pruned_encounters,
         "pruned": False,
     }
+
+
+# --------------------------------------------------------------------- loot ---
+
+@router.get("/encounters/loot")
+def encounters_loot(ids: str = Query(...), user=Depends(optional_user)):
+    """What the chests in this selection gave, and who took it.
+
+    Chest loot only — body drops are shards and vendor coin and the parser
+    never records them (`pipeline/loot.py`). Each row is one item off one
+    chest, carrying the fight it belonged to, the mob whose chest it was, and
+    the raider who won or took it.
+
+    **Drops with no fight are included, bounded by the selection's CLOCK.** A
+    chest is looted after the pull and sometimes the mob it names is not the
+    one the fight was named for, so `attribution='none'` is a real outcome
+    (~12% of the archive, mostly sessions whose events have been pruned). Those
+    still belong to the raid, so they are returned when they fall inside the
+    span of the fights being looked at — which is bounded by what the caller
+    was already authorized to see, never by a whole session.
+
+    The item CARD (icon, rarity, wiki page) is whatever has already been
+    resolved; see backend/items.py. Nothing is fetched on a page load, so an
+    unresolved item renders as the name the log wrote and nothing is missing
+    from the answer except its picture."""
+    conn = get_db()
+    enc_ids, encs, session_ids, sess_of = _selection(conn, user, ids)
+
+    eph = ",".join("?" * len(enc_ids))
+    sph = ",".join("?" * len(session_ids))
+    # The window an unattributed chest may sit in: the selection's own span,
+    # plus the tail pipeline/loot.py allows between a fight and its chest.
+    lo = min(e["started_ts"] for e in encs)
+    hi = max(e["ended_ts"] for e in encs) + loot.NEAREST_S
+    rows = conn.execute(
+        f"SELECT * FROM loot_drops "
+        f"WHERE encounter_id IN ({eph}) "
+        f"   OR (encounter_id IS NULL AND session_id IN ({sph}) "
+        f"       AND ts BETWEEN ? AND ?) "
+        f"ORDER BY ts, id",
+        (*enc_ids, *session_ids, lo, hi)).fetchall()
+    if not rows:
+        return {"loot": [], "unresolved": 0}
+
+    cards = items.cards(conn, {r["item_id"] for r in rows})
+    name_of = {e["id"]: e["name"] for e in encs}
+    out = []
+    for r in rows:
+        card = cards.get(r["item_id"]) or {}
+        out.append({
+            "id": r["id"],
+            "ts": r["ts"],
+            "encounter_id": r["encounter_id"],
+            "fight": name_of.get(r["encounter_id"]),
+            "attribution": r["attribution"],
+            "chest": r["chest"],
+            "mob": r["mob"],
+            "item_id": r["item_id"],
+            # Census's name when we have it, the log's when we don't — they
+            # agree, and the log's is never missing.
+            "name": card.get("name") or r["item_name"],
+            "qty": r["qty"],
+            "looter": r["looter"],
+            "method": r["method"],
+            # Census tier is the rarity a raider reads; the log's `looted the
+            # Fabled ...` line only prints for people standing near you, so it
+            # is the fallback rather than the source. See backend/items.py.
+            "rarity": (card.get("tier") or r["rarity"] or "").title() or None,
+            "confirmed": bool(r["confirmed"]),
+            # Who else wanted it: the lotto's NEED/GREED block, or the /random
+            # dice when the raid used those. Already in resolution order.
+            "rolls": json.loads(r["rolls_json"]) if r["rolls_json"] else None,
+            "icon": card.get("icon"),
+            "wiki": card.get("wiki"),
+            "type": card.get("type"),
+            "slot": card.get("slot"),
+            "level": card.get("level"),
+            "tier": items.tier_of(card.get("level")),
+            # The examine window, prebuilt at resolve time — the hover card is
+            # a read of this, never a request (backend/items.py: stat_block).
+            "stats": card.get("stats"),
+            # The item's own proc — name, tier and its indented description.
+            # From the WIKI: Census has no field for it.
+            "effects": card.get("effects"),
+        })
+    return {
+        "loot": out,
+        # How many of these items nobody has looked up yet — the Loot tab says
+        # so rather than silently showing a shorter card.
+        "unresolved": len(items.unresolved(conn, {r["item_id"] for r in rows})),
+    }
+
+
+IMAGE_CACHE = {"Cache-Control": "public, max-age=604800, immutable"}
+
+
+@router.get("/items/icon/{iconid}.png")
+def item_icon(iconid: int):
+    """One item icon, cached from the wiki (`backend/items.py`).
+
+    Keyed by Census's ICON id rather than by item: one 42x42 picture serves
+    every item that uses it, and there is no account, session or raid behind
+    it — this is a fact about the game, so it needs no visibility check and it
+    is `public` in every cache between here and the browser."""
+    path = items.icon_path(iconid)
+    if not path.exists():
+        raise HTTPException(404, "no icon")
+    return Response(path.read_bytes(), media_type=items.image_type(path),
+                    headers=IMAGE_CACHE)
+
+
+@router.get("/items/adorn/{color}.png")
+def adorn_gem(color: str):
+    """One adornment-slot gem. A fixed set of ten, the same on every item, so
+    it is cached once and shared like the icons."""
+    if color not in items.ADORN_COLORS:
+        raise HTTPException(404, "no such slot colour")
+    path = items.adorn_path(color)
+    if not path.exists():
+        raise HTTPException(404, "no gem")
+    return Response(path.read_bytes(), media_type=items.image_type(path),
+                    headers=IMAGE_CACHE)
 
 
 # -------------------------------------------------------------- class stats ---

@@ -6,6 +6,7 @@ import ComparePanel from './ComparePanel.jsx'
 import DeathList from './DeathList.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import { ActorName } from './Identity.jsx'
+import LootPanel from './LootPanel.jsx'
 import SelectionBar from './SelectionBar.jsx'
 import SortableTable from './SortableTable.jsx'
 import TankDeaths, { hasTankDeath } from './TankDeaths.jsx'
@@ -65,6 +66,12 @@ const TABS = [
   /* The stats only one class can answer — a troubador's buff uptime is not a
      column the other twenty-five classes can share. See ClassPanel.jsx. */
   { key: 'class', label: 'CLASS REPORT' },
+  /* What the chests gave. Not a rate and not a column on anybody's row — it
+     is the other thing a raid did that night, so it gets a tab rather than a
+     corner of one, and it sits LAST because every tab before it is the parse.
+     Always present, because "did this fight drop anything" is a question, and
+     a tab that appears and disappears under the selection cannot answer it. */
+  { key: 'loot', label: 'LOOT' },
   /* Insights is HIDDEN, not removed — the panel, the coach endpoint and the
      `tab === 'insights'` render below are all intact, and putting the entry
      back here is the whole of turning it on again. An old ?tab=insights
@@ -140,6 +147,8 @@ export default function ParseView({
   const [timelineErr, setTimelineErr] = useState(null)
   const [aoeData, setAoeData] = useState(null)
   const [aoeErr, setAoeErr] = useState(null)
+  const [lootData, setLootData] = useState(null)
+  const [lootErr, setLootErr] = useState(null)
   const [classData, setClassData] = useState(null)
   const [classErr, setClassErr] = useState(null)
   const [recaps, setRecaps] = useState(null)
@@ -183,6 +192,19 @@ export default function ParseView({
     api.encountersAoes(selIds)
       .then((d) => { if (!gone) setAoeData(d) })
       .catch((e) => { if (!gone) setAoeErr(e.message) })
+    return () => { gone = true }
+  }, [tab, idKey])
+
+  useEffect(() => {
+    if (tab !== 'loot' || !selIds?.length) return
+    let gone = false
+    const hit = peek(url.loot(selIds))
+    setLootData(hit)
+    setLootErr(null)
+    if (hit) return
+    api.encountersLoot(selIds)
+      .then((d) => { if (!gone) setLootData(d) })
+      .catch((e) => { if (!gone) setLootErr(e.message) })
     return () => { gone = true }
   }, [tab, idKey])
 
@@ -969,6 +991,11 @@ export default function ParseView({
               rowKey={(a) => a.key}
               selectedKey={selectedActor}
               wrapClass={currentRows.length > 14 ? 'sticky' : ''}
+              /* The name column and the header hold still: reading Crit % off
+                 row nineteen of a raid table means carrying a name across ten
+                 columns and a label down nineteen rows, and a table that
+                 scrolls both of them away is read from memory. */
+              frozen
               /* Click a raider to READ them — the panel switches to that one
                  parse, whatever was in it. Their box is what builds a
                  comparison. Mobs and pets have no checkbox, so theirs stays a
@@ -994,6 +1021,12 @@ export default function ParseView({
           <ErrorBoundary resetKey={`aoes:${idKey}`}>
             <AoePanel data={aoeData} err={aoeErr}
                       base={enc?.started_ts ?? span?.started_ts} />
+          </ErrorBoundary>
+        )}
+
+        {detail && tab === 'loot' && (
+          <ErrorBoundary resetKey={`loot:${idKey}`}>
+            <LootPanel data={lootData} err={lootErr} />
           </ErrorBoundary>
         )}
 

@@ -458,6 +458,12 @@ keys by **fingerprint** — `<started_ts>|<zone>|<name>`, the dedupe key minus
 | `join` | never start a run here (merge) | `POST /api/zone-runs/merge` |
 | `break` | always start a run here (unmerge/split) | `POST /api/zone-runs/{id}/split` |
 
+A reader sweeping a shared raid off their list is NOT one of these: `run_edits`
+is keyed by the owner's character, and rebuilding somebody else's runs from a
+reader's decision is exactly the copy of the visibility rule this file spends
+its length avoiding. It is a row keyed by run id in `run_dismissals`, carried
+across rebuilds by `groups.carry_shares` — see `docs/sharing.md`.
+
 `rebuild_zone_runs` is the only writer of run membership, so every edit is
 applied by re-running it: deletes re-stamp `encounters.deleted_ts` (a derived
 mark — `run_edits` is the truth) and drop out before dedupe, and `_segment`
@@ -531,8 +537,18 @@ fights deleted -> "this log has nothing left in it, delete it too?"
   above the table and not in a bar pinned to the bottom. A selection with
   nothing you own says "shared with you — read only" rather than showing an
   empty row of buttons.
+- **Somebody else's raid opens the same pencil onto ONE button**: off my list,
+  or back onto it (`api.dismissZoneRun`, `docs/sharing.md` → `run_dismissals`).
+  Same column, same gesture, and the wording is "off your list", never
+  "hidden" — hiding is the owner's and it reaches everybody. The sweep is the
+  only narrowing on this page that OUTLIVES the page, so it is the only one
+  that has to announce itself: an `N off your list` chip beside the source
+  filter lists them again (a refetch, `?dismissed=1`, because the filter is the
+  server's), each wearing an `off your list` badge. A raid that just stopped
+  appearing, with nothing on screen about it, is indistinguishable from a share
+  that was revoked.
 - **One raid is edited from its own row**, without checking anything first: a
-  pencil in the last column, on your rows only, opening Hide and Delete
+  pencil in the last column, on your own rows opening Hide and Delete
   SIDEWAYS beside it (`.rowedits`, a max-width reveal that degrades to a
   cross-fade under `prefers-reduced-motion`). Sideways because a menu dropping
   out of a table cell covers the raids underneath, and the row you are editing
@@ -836,6 +852,229 @@ second troubador's cast landing on someone already buffed. The arithmetic is
 the same in both eras, so there is no era switch: the column is quiet today
 because the waste is not happening yet.
 
+### `GET /api/encounters/loot?ids=…` — the Loot tab
+
+What the chests in the selection gave, and who ended up with it. One row per
+item off one chest: the fight it belonged to, the mob whose chest it was, the
+raider who won or took it, and the item's own card (icon, rarity, wiki page).
+The tab is LAST, after Class Report — everything before it is the parse.
+
+**Chest loot only, and that is the feature.** The log writes chest drops and
+corpse drops with the same verbs, and only the source clause tells them apart:
+
+```
+Buls wins the lotto for <ITEM> from the Exquisite Chest of Zylphax the Shredder.
+Buls wins the lotto for <ITEM> from the corpse of a doomed visitant.
+```
+
+A corpse gives shards, body parts and vendor coin — a couple of hundred lines a
+night that bury the eight items a raid remembers. So the source clause is
+REQUIRED and must name one of the four chests (`Exquisite`, `Ornate`,
+`Treasure`, `Small`); a line with no source at all — `wins the lotto for a
+<ITEM>.` — is dropped too, because "probably a chest" is not evidence.
+
+**Loot is not an event, and it must never become one.** It is written beside
+the parse into `loot_drops` and never into `events`. A looter is a bare NAME on
+a line, and pushing it through `EntityResolver` would mint an entity — putting
+somebody who only walked past the chest into the fight's roster, its class vote
+and its ACT parity. `pipeline/loot.py` resolves nothing, rolls up nothing and
+segments nothing; `test_loot.py` pins that `Buls`, who only ever appears on a
+loot line, never reaches `/agg`.
+
+**Two lines say what happened and only one knows where it came from.** The
+lotto/loot line names the chest and the mob; a second line confirms the winner
+actually took it — `Buls looted the Fabled <ITEM>.` — and it names no chest, so
+it can never CREATE a drop. It is matched back by (item, looter) and enriches
+one. A win nobody confirmed is kept and flagged: declining an item you rolled
+for happens, and the raid remembers the roll either way.
+
+**The rarity is Census's, not the log's.** The `looted the Fabled …` line only
+prints for people standing near you — 15 of the 43 in the golden fixture — so
+reading rarity off it would leave two thirds of a night blank. Census has the
+tier for every id.
+
+**The fight is found by the mob's name, not by the clock** — a ladder, most
+exact first, because a chest is opened after the pull and sometimes after the
+next one has started (median 26s in the archive, tail past twenty minutes):
+
+1. the fight was NAMED for that mob (`encounters.name`) — 69% of the archive;
+2. that mob was IN the fight, from the events — 29%, and the case a chain pull
+   needs: the pull is labelled for one mob and the chest belongs to another;
+3. the last fight before it, within `NEAREST_S` (900s) — 2%, and marked
+   `attribution: 'nearest'` so the table can say `approx` rather than claim it.
+
+Rung 2 reads `events`, which pruning eventually removes, so an old session
+falls to rung 3 or to nothing rather than to a WRONG fight. A drop with no
+fight keeps `encounter_id` NULL and is returned when it falls inside the
+selection's own span — bounded by fights the caller was already authorized to
+see, never by a whole session.
+
+**Who else wanted it** — hovering the looter shows the contest, and the card
+says which of two very different records it is looking at:
+
+- **The lotto** (`source: 'lotto'`) is the game's own, and it prints the whole
+  thing against the item BY NAME, so it cannot be wrong. `Now rolling on
+  <ITEM>...` opens a block, `- Khael chooses GREED and rolls 43.` fills it, the
+  `wins the lotto` line closes it. Blocks INTERLEAVE — several chests roll at
+  once — so they are keyed by item, never by "the last block we saw".
+  Resolution order is NEED before GREED and highest first inside each, because
+  a NEED of 12 beats a GREED of 98; checked against **752 real blocks and the
+  winner is the top line in every one**.
+  `- Beaux chose GREED.` with no number is 3,919 lines in the archive and is
+  KEPT as a roll with no value: they wanted it, and that is most of what a
+  loot list is for.
+- **`/random` dice** are a raid running loot by hand — announce the item,
+  everyone rolls, loot it to the winner. `Random: Reyfiler rolls from 1 to 100
+  on the magic dice...and scores a 2!`. Nothing in that line says WHICH item,
+  so attribution is a ladder: an announcement that linked that exact item
+  (`announced`), else the nearest burst (`nearby`, a proximity claim the panel
+  and a dotted underline both admit to). The window is TWO-SIDED — on the raid
+  this was built against, 22 of 39 drops had their burst before the loot line
+  and 12 after — and dice are NEVER mixed in beside a lotto block.
+- GOTCHA: the dice line's `Random: ` prefix is the channel tag, not the
+  roller. A survey that normalised the first token read it as the name and the
+  pattern matched nothing on real data.
+- Two logs of the same night can disagree completely about this. Vestigial's
+  MMIS raid used the dice and has no lotto block anywhere in the zone; Bobby's
+  raid the same evening used the lotto for all 51 items. Neither log is wrong
+  — the roll list is a property of how that raid ran loot, and of whose client
+  was listening.
+
+**History came from the archive, not from a re-upload** (`tools/
+backfill_loot.py`). Every session's raw is still on disk, so one pass over the
+same bytes filled 1,809 drops across 23 nights. Deliberately **not** a
+`PARSE_VERSION` bump: loot changes no stat, no segment, no roster and no
+rollup, so making the startup sweep re-derive every session to pick up a table
+nothing else reads would be work for nothing. `clear_derived` still drops loot
+with the encounters it points at and the parse writes it back, so a reparse
+neither loses it nor leaves it pointing at ids that no longer exist.
+
+### Items as reference data (`backend/items.py`, schema v32)
+
+The display record for an item a log named. Census answers what it IS, the wiki
+answers what it LOOKS like — one row and one file serve every account forever,
+because this is a fact about the game and not about anybody's raid.
+
+**The log's item id IS the Census item id**, written signed. `\aITEM
+-1813422462 -590025310:Hoop of War\/a` off the raid log is Census item
+2481544834 — verified against Census's own `gamelink`, which it returns in the
+log's notation. So this is an exact lookup and **none of the reasons gear procs
+are closed as wontfix apply** (`docs/census-abilities.md`: 212k items, no
+reverse index, 13/60 on a full-text trial). There is nothing to search for.
+
+**EQ2i hosts the game's icons as `File:Item <iconid>.png`.** Census hands out an
+`iconid` and no image; the wiki has the picture. One file per ICON, not per
+item — 952 items in the archive resolve to 489 pictures, 2.2 MB, served from
+`/api/items/icon/<iconid>.png` with no visibility check because there is no
+raid behind it.
+
+- GOTCHA: **`format=original` is not optional.** The wikia CDN re-encodes to
+  WebP on the way out — a URL ending `.png` answers with RIFF/WebP whatever
+  `Accept` asks for. The parameter turns the optimiser off, and the bytes are
+  then verified by magic number rather than trusted.
+- GOTCHA: an item page is often a **disambiguation** (`Hoop of War` is two
+  lines pointing at `(Version 1)` and `(Version 2)`), so it resolves to the
+  version the wiki lists first. `gamewiki.fetch_wikitext` cannot be reused for
+  this: it asks for `redirects=1` and then discards the mapping, and here the
+  mapping IS the answer.
+- Coverage on the real archive: 949/952 rarities, 948/952 icons, 752/952 wiki
+  pages. The misses are spell scrolls (`Tyrant's Pact V (Adept)`), which EQ2i
+  has no per-tier page for; they still show a name, an icon and a rarity.
+
+**The examine window is a REPLICA of EQ2i's item box, not a screenshot of it**
+(`stat_block()`, hovering an item name in the Loot tab). EQ2i's box is itself a
+replica of the in-game examine window — black, Times, a glowing rarity word,
+yellow uppercase flags, a green block of flat stats and a light-blue one of
+property modifiers — and it is built out of **the same Census record we already
+hold**. So the card is our data in the wiki's clothes: the `.ew-*` / `.xqc-*`
+class names and every colour in `base.css` are copied from
+`MediaWiki:ExamineWindow.css`, and the content comes from `items.stats_json`.
+
+That beats both alternatives outright. Against screenshotting: crisp at any
+zoom, selectable, one cached row instead of a headless browser. Against
+embedding EQ2i's rendered HTML: no third-party markup in the page, no
+sanitiser to get wrong, and it still works for the ~200 items whose wiki page
+does not exist.
+
+- **Green is everything flat, blue is everything that modifies a property**,
+  which is the wiki's own split (`.ew-stats` / `.ew-effectlist`). The green
+  block reads attributes → resistances → skills, EQ2i's order and NOT by size:
+  sorting it as one list put a big `All` above the primary attributes.
+  Percentages are the blue block only, less DPS and Haste.
+- Census's `ac` entries are per resist school; matching values read as one
+  `Resistances` line the way the game shows them, and disagreeing ones are
+  listed rather than summed into a wrong number. A modifier type the card has
+  no place for is DROPPED, never guessed at.
+- **`all` / "All" IS Ability Modifier**, and this one is a correction rather
+  than a rename. Census's display name reads as "+68 to all something" and is
+  nothing of the kind; the wiki settles it — Bee Sting's `EquipInformation`
+  carries `abmod = +62` and Census's record for the same item carries
+  `all: 62`, beside its own separate `strength` and `stamina`. Ability Mod is
+  one of the two stats that matter on this server, and "All" hid it in plain
+  sight on 200 items.
+- **A stat this server does not have yet is not shown** (`ERA_HIDDEN`).
+  Census describes the item as it stands on LIVE, so a TLE raider was being
+  shown a **Crit Bonus** their character cannot use — worse than showing
+  nothing, because it invites comparing two items on a stat neither one
+  grants. Crit Bonus is the whole list today; Fervor is the other of its kind
+  and belongs there the moment an item turns up carrying it. Delete an entry
+  when the server gets the stat and re-resolve; nothing else changes.
+- **A weapon leads with Damage and Delay**, using the BASE range and the
+  rating (`72 - 216  One-Handed Piercing` over `4.0 seconds  (72.15 Rating)`)
+  — EQ2i's own choice. Census carries the mastery range too; that is what the
+  weapon does with the skill capped, a different claim from the one the item
+  box makes. All 98 weapons in the archive resolve.
+- **The item's own proc comes from the WIKI, not Census** — `effectlist=
+  {{EquipmentEffect|Mind Shatter|VII}}` and the asterisk-indented `effectdesc`
+  bullets, whose DEPTH is kept because `*When Equipped:` is the condition and
+  `**Increases mental damage…` is what it then does. This is the FORWARD
+  direction and it costs nothing: the page is already in hand for the wiki
+  link. It is why the gear-proc wontfix does not apply — that one is *ability
+  name → which item casts it*, a reverse lookup with no index. A disambig
+  resolves to a version page, and the effect lives on the version page, so
+  those are fetched in a second batched pass rather than left without one.
+- The ten **adornment-slot gems** are cached from the wiki like the icons — a
+  fixed set, the same picture on every item, served from
+  `/api/items/adorn/<colour>.png`. Some are uploaded `.png` and some `.jpg`,
+  so the format is decided by MAGIC NUMBER and the file is named to match.
+- One line is ours and not EQ2i's: **Dropped by**, the mob whose chest it was.
+  The wiki cannot know that; the raid log does.
+- The block is built at RESOLVE time and stored, so the hover card is a read.
+  Widening the card therefore means re-resolving:
+  `backfill_loot.py --refresh-census`.
+- 605 of the archive's 952 items have one. The rest are spell scrolls,
+  patterns and harvestables, which genuinely have no equipment stats — those
+  get no card rather than an empty one pretending to be an examine window.
+- **It does not theme.** An examine window is black in a light client too;
+  recolouring it is the one change that would stop it looking like the thing
+  it is quoting.
+- The card is `position: fixed` in `document.body`, placed from the name's
+  rect, for the same reason `.pickermenu` is: the table scrolls sideways
+  inside `.tablewrap` and a card parented to a cell is clipped by it. It is
+  `pointer-events: none`, so it can never sit between the cursor and the link
+  it describes.
+- Its height is **MEASURED, not guessed**. These cards are not one size — a
+  weapon with a proc and a four-line description is more than twice a
+  pattern's — so a fixed "does it fit below" threshold cut the tall ones off
+  at the bottom of the window. Below if it fits, above if it fits there, else
+  pinned to the top edge with a cap that makes it scrollable (and only THAT
+  card takes the pointer back, because one nobody can reach cannot be
+  scrolled). It renders hidden for the frame it is measured in, so a tall
+  card never flashes at the wrong spot.
+- CAVEAT worth knowing: Census returns the item as it stands on LIVE, and the
+  wiki's `EquipInformation` template holds much the same numbers (checked
+  against `Hoop of War (Version 1)`), so there is no era-correct source that
+  differs. What TLE actually grants may not match, and no source here can
+  tell us.
+
+**Nothing else is fetched on a page load.** Resolution runs after a parse (outside
+the write transaction, like the roster sync — failing costs a raid its pictures,
+never its parse) and in `backfill_loot.py --resolve`. The endpoint serves what
+is already known, and an unresolved item renders as the name the log wrote with
+`unresolved` counting how many. CI never reaches either source:
+`items.network_allowed()` reads the same `CENSUS_AUTO_REFRESH` switch conftest
+turns off.
+
 ### Frontend
 
 - `lib/classes.js` owns identity. **Color is assigned by EQ2 archetype
@@ -892,6 +1131,32 @@ because the waste is not happening yet.
 - **Decomposition** (`stats.decompose`): DPS split into activity × hit size ×
   crit × alive%, each against the best peer, naming the biggest gap — the
   difference between "you're 20% behind" and "you cast 30% less".
+- **A parse table is FROZEN: row one and column one hold still**
+  (`SortableTable`'s `frozen` prop + `useFrozen`, `.tablewrap.frozen` in
+  base.css). Reading Crit % off row nineteen means carrying a name across ten
+  columns and a header down nineteen rows, and a table that scrolls both away
+  is read from memory. Every parse surface is frozen: the raid table, the
+  drilldown, both comparison surfaces (`BreakdownTable` turns it on for
+  itself — a parse looks the same wherever it is rendered). A checkable table
+  pins the checkbox WITH the name, at a measured offset (`--fzleft`), because
+  the box is part of the name column's job rather than a column of its own.
+
+  Two things the stylesheet cannot decide, so JS measures them. The divider
+  down the frozen column only draws once the table is actually scrolled
+  sideways (`.xscrolled`) — on a table that fits it is a line for no reason.
+  And the pinned cells are **opaque** (`--frozen-bg` / `--frozen-head`, the
+  translucent surfaces already composited over the page): a name column at 82%
+  with figures sliding under it is worse than no freeze at all. Row tints
+  (hover, selected, the All line, a hover-linked row) go back on top as a
+  gradient LAYER, since `background` alone can only be tinted or solid.
+- **A long ability name is shortened only when the table cannot fit**
+  (`.overflowing` + `.abname`). Not when there is room, not when the name is
+  short, and never the badges/⚙/expander beside it — those are controls. The
+  full name is on the cell's `title`, so an ellipsis is never the end of it.
+  Un-shortening is asymmetric ON PURPOSE: asking "does it fit?" of a table
+  that fits BECAUSE it is clamped oscillates, so the width the table wanted
+  before the clamp is remembered and the names only come back when there is
+  room for that.
 - **A default-hidden column is a BASELINE, not a first guess**
   (`SortableTable`, `localStorage` under `eq2adv:cols:<prefsKey>`). Stored
   prefs are TWO lists — `hidden` (what the reader turned off) and `shown` (what

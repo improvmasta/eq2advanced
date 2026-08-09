@@ -526,11 +526,153 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 
 /* ---------- character page ---------- */
 
+/* Also the loot tab's item names — the same five tiers mean the same five
+   things whether the item is on somebody's character or in tonight's chest. */
 .rarity-common { color: var(--rarity-common); }
 .rarity-treasured { color: var(--rarity-treasured); }
 .rarity-legendary { color: var(--rarity-legendary); }
 .rarity-fabled { color: var(--rarity-fabled); }
 .rarity-mythical { color: var(--rarity-mythical); }
+
+/* ---------- loot tab ---------- */
+
+/* Icon and name on one baseline, with the icon column a FIXED width so the
+   names line up down the table whether or not a picture resolved. */
+.lootitem { display: inline-flex; align-items: center; gap: 8px; }
+.looticon {
+  flex: 0 0 24px; width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.looticon img {
+  width: 24px; height: 24px; display: block;
+  /* EQ2's icons are cut out on transparency and read as floating dirt on a
+     pale surface; a hairline seats them on the row without boxing them in. */
+  border-radius: 3px; box-shadow: 0 0 0 1px var(--row-line);
+}
+/* The wiki link is the item name, so it must not also be blue-and-underlined
+   — the rarity colour is the information, and the link is what you do with it. */
+.lootitem a { color: inherit; text-decoration: none; }
+.lootitem a:hover { text-decoration: underline; }
+
+/* The examine window — a replica of EQ2i's item box, which is itself a replica
+   of the game's. The colours, the fonts and the class names below are the
+   wiki's own (`MediaWiki:ExamineWindow.css`); keeping its names is what makes
+   the two comparable when either changes.
+
+   It does NOT use the site's tokens and it does NOT theme. An examine window
+   is black in a light client too — this is a quotation of the game's UI, and
+   recolouring it is the one change that would stop it looking like the thing
+   it is. The frame is the wiki's grey `ew-extras` border around a black box.
+
+   Positioned fixed and in `document.body`, placed from the item name's rect —
+   same reason as `.pickermenu`: the table scrolls sideways inside
+   `.tablewrap` and a card parented to a cell is clipped by it. The component
+   writes `left` and `top`/`bottom`. `pointer-events: none` so it can never sit
+   between the cursor and the link it is describing. */
+.examinecard {
+  position: fixed; z-index: 58; pointer-events: none;
+  width: 350px; max-width: calc(100vw - 16px);
+  padding: 3px; background: #dddddd;
+  box-shadow: 0 8px 24px #00000088;
+}
+.examinewindow {
+  background: #000; color: #fff;
+  font-family: Times, "Times New Roman", serif;
+  font-size: 13px; line-height: 16px;
+  border: 4px solid #000; padding: 4px 6px;
+}
+.ew-top { display: flex; gap: 6px; align-items: flex-start; }
+.ew-titles { flex: 1 1 auto; min-width: 0; }
+.ew-icon { flex: 0 0 42px; }
+.ew-title { font-size: 150%; font-weight: bold; line-height: 1.15; }
+/* The glow is the wiki's four-way black outline plus a triple coloured
+   shadow. It is what makes a Fabled name read as Fabled at a glance. */
+.itemquality {
+  font-weight: bold; font-size: 130%; font-family: Times, serif;
+  margin-top: 2px;
+}
+.xqc-fabled { color: #ff939d; }
+.xqc-legendary, .xqc-mastercrafted { color: #ffc993; }
+.xqc-treasured { color: #93d9ff; }
+.xqc-mythical { color: #ff99ff; }
+.xqc-ethereal { color: #ff6600; }
+.xqc-celestial { color: #22ff22; }
+.xqc-handcrafted { color: #33cc00; }
+.xqc-uncommon { color: #d2efbc; }
+.xqc-common { color: #eeeeee; }
+.xqc-unknown { color: #bbbbbb; }
+.itemquality {
+  text-shadow: -1px 0 black, 0 1px black, 1px 0 black, 0 -1px black;
+}
+.xqc-fabled { text-shadow: -1px 0 #000, 0 1px #000, 1px 0 #000, 0 -1px #000,
+  0 0 5px #ff939d, 0 0 5px #ff939d, 0 0 5px #ff939d; }
+.xqc-legendary, .xqc-mastercrafted { text-shadow: -1px 0 #000, 0 1px #000,
+  1px 0 #000, 0 -1px #000, 0 0 5px #ffc993, 0 0 5px #ffc993, 0 0 5px #ffc993; }
+.xqc-treasured { text-shadow: -1px 0 #000, 0 1px #000, 1px 0 #000, 0 -1px #000,
+  0 0 5px #93d9ff, 0 0 5px #93d9ff, 0 0 5px #93d9ff; }
+.xqc-mythical { text-shadow: -1px 0 #000, 0 1px #000, 1px 0 #000, 0 -1px #000,
+  0 0 5px #ff99ff, 0 0 5px #ff99ff, 0 0 5px #ff99ff; }
+.xqc-handcrafted, .xqc-uncommon { text-shadow: -1px 0 #000, 0 1px #000,
+  1px 0 #000, 0 -1px #000, 0 0 5px #ccff99, 0 0 5px #ccff99, 0 0 5px #ccff99; }
+
+.ew-flags {
+  font-weight: bold; color: #ffff00; text-transform: uppercase;
+  margin-top: 8px;
+}
+.ew-adorn { display: flex; gap: 4px; margin-top: 6px; }
+/* Flat stats green, property modifiers light blue, each on its own line —
+   the wiki's `.ew-stats` and `.ew-effectlist`. */
+.ew-stats { color: #33cc00; font-weight: bold; margin-top: 8px; }
+.ew-effectlist { color: #99ccff; font-weight: bold; margin-top: 6px; }
+.ew-facts { margin-top: 10px; border-collapse: collapse; width: 100%; }
+.ew-facts td { padding: 0 6px 0 0; vertical-align: top; }
+.ew-low { color: #bbbbbb; width: 34%; }
+.ew-high { font-weight: bold; color: #ffffff; }
+.ew-facts sup { font-size: 78%; }
+/* The proc: a yellow header and the wiki's indented description under it. */
+.ew-effects { color: #ffff00; font-weight: bold; margin-top: 10px; }
+.ew-effectdesc { color: #ffffff; }
+.ew-none { color: #bbbbbb; margin-top: 8px; font-size: 92%; }
+
+/* The roll list behind a contested drop. This one IS site chrome, not a
+   quotation — the lotto block has no examine window to imitate — so it uses
+   the tokens and themes like everything else. */
+/* A solid underline where the log tied the rolls to the item by name, dotted
+   where they were only NEAR it — the marker is the difference between a record
+   and a guess, and it belongs on the row, not just inside the card. */
+.hasrolls { border-bottom: 1px solid var(--row-line); }
+.hasrolls.nearby { border-bottom-style: dotted; }
+.rollpop {
+  position: fixed; z-index: 58; pointer-events: none;
+  width: max-content; min-width: 200px; max-width: 260px;
+  padding: 7px 9px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  backdrop-filter: blur(var(--blur));
+  box-shadow: 0 8px 24px var(--shadow-color);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.rollhead {
+  font-size: var(--fs-label); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+  border-bottom: 1px solid var(--row-line); padding-bottom: 3px; margin-bottom: 4px;
+}
+.rolltable { width: 100%; border-collapse: collapse; }
+.rolltable td { padding: 1px 0; }
+.rolltable .c {
+  width: 46px; font-size: var(--fs-xs); color: var(--text-muted);
+}
+.rolltable .n {
+  width: 34px; text-align: right; padding-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+/* The winner is the top row already; the tint says which line the item
+   actually went to without making the reader count. */
+.rolltable tr.won td { color: var(--gold-bright); font-weight: 600; }
+.rolltable tr.won .c { color: var(--gold); }
+.rollnote {
+  margin-top: 5px; font-size: var(--fs-xs); color: var(--text-muted);
+  border-top: 1px solid var(--row-line); padding-top: 4px;
+}
 
 .tierbadge {
   display: inline-block; padding: 0 6px; border-radius: 999px;
@@ -2154,6 +2296,102 @@ table.data th.dragover { box-shadow: inset 2px 0 0 var(--gold); }
   position: sticky; top: 0; z-index: 2;
   background: var(--surface-raised);
 }
+
+/* ---------- frozen tables: row one and column one hold still ---------- */
+
+/* A parse is read by carrying a name across ten columns and a header down
+   forty rows, and a table that scrolls both of them out of view is read from
+   memory. So the header row and the first column stay where they are and
+   everything else moves under them — `frozen` on the wrap, and
+   SortableTable's useFrozen supplies the three measurements CSS can't take
+   (see there: --fzleft, .xscrolled, .overflowing).
+
+   The pinned cells must be OPAQUE. Every surface token is translucent on
+   purpose, and a name column at 82% with figures sliding beneath it is worse
+   than no freeze at all — hence --frozen-bg / --frozen-head, which are those
+   same surfaces already composited over the page. */
+.tablewrap.frozen thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--frozen-head);
+}
+.tablewrap.frozen thead th:first-child,
+.tablewrap.frozen thead th.checkcol + th { z-index: 3; }
+/* tbody, not `tr` — a group heading is a th spanning the whole row and has no
+   first column to pin. A checkable table pins the box and the name together:
+   the checkbox is part of the name column's job, not a column of its own. */
+.tablewrap.frozen thead th:first-child,
+.tablewrap.frozen tbody td:first-child { position: sticky; left: 0; }
+.tablewrap.frozen thead th.checkcol + th,
+.tablewrap.frozen tbody td.checkcol + td { position: sticky; left: var(--fzleft, 24px); }
+.tablewrap.frozen tbody td:first-child,
+.tablewrap.frozen tbody td.checkcol + td { z-index: 1; background: var(--frozen-bg); }
+
+/* The row tints go back on TOP of that opaque base rather than replacing it —
+   a hovered or selected name cell has to be both tinted and solid, and
+   `background` on its own can only be one of the two. */
+.tablewrap.frozen tbody tr.clickable:hover td:first-child,
+.tablewrap.frozen tbody tr.clickable:hover td.checkcol + td {
+  background-image: linear-gradient(var(--row-hover), var(--row-hover));
+}
+.tablewrap.frozen tbody tr.selected td:first-child,
+.tablewrap.frozen tbody tr.selected td.checkcol + td {
+  background-image: linear-gradient(var(--row-selected), var(--row-selected));
+}
+.tablewrap.frozen tbody tr.allrow td:first-child,
+.tablewrap.frozen tbody tr.allrow td.checkcol + td {
+  background-image: linear-gradient(var(--surface-raised), var(--surface-raised));
+}
+.tablewrap.frozen tbody tr.rowlink td:first-child,
+.tablewrap.frozen tbody tr.rowlink td.checkcol + td {
+  background-image:
+    linear-gradient(rgba(var(--gold-rgb), 0.16), rgba(var(--gold-rgb), 0.16));
+}
+
+/* Every line on a pinned cell is an inset shadow, because a pinned cell is a
+   POSITIONED box and paints over the table's collapsed borders — the row
+   separators the first column shares with the rest of the table would go
+   under its own background. Same pixel, same colour, so a browser that draws
+   the border anyway draws it twice in the same place. */
+.tablewrap.frozen tbody td:first-child,
+.tablewrap.frozen tbody td.checkcol + td {
+  box-shadow: inset 0 -1px 0 var(--row-line);
+}
+/* The divider down the frozen column only appears once something has actually
+   gone under it — on a table that fits, it is a line drawn for no reason. */
+.tablewrap.frozen.xscrolled tbody td:first-child,
+.tablewrap.frozen.xscrolled tbody td.checkcol + td {
+  box-shadow: inset 0 -1px 0 var(--row-line), inset -1px 0 0 var(--border);
+}
+.tablewrap.frozen.xscrolled thead th:first-child,
+.tablewrap.frozen.xscrolled thead th.checkcol + th {
+  box-shadow: inset -1px 0 0 var(--border);
+}
+/* the linked-row gutter marker keeps its mark and takes the divider too */
+.tablewrap.frozen.xscrolled tbody tr.rowlink td:first-child {
+  box-shadow: inset 2px 0 0 var(--gold), inset 0 -1px 0 var(--row-line),
+              inset -1px 0 0 var(--border);
+}
+/* the checkbox is the near half of the name column, so the divider is not its
+   edge — it belongs on the far side of the name (last, to beat the rules
+   above at equal specificity) */
+.tablewrap.frozen.xscrolled tbody td.checkcol {
+  box-shadow: inset 0 -1px 0 var(--row-line);
+}
+.tablewrap.frozen.xscrolled thead th.checkcol { box-shadow: none; }
+
+/* Long ability names shorten ONLY when the table cannot fit its box, and only
+   the ones long enough to need it — a short name is never touched, and a
+   table with room to spare shortens nothing at all. The full name is on the
+   cell's own title, so an ellipsis is never the end of the story. Badges, the
+   curator ⚙ and the expander are outside this span: they are controls, and a
+   half-drawn control is a bug. */
+.tablewrap.frozen.overflowing .abname {
+  display: inline-block; max-width: var(--abname-max, 20ch);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
+}
+/* comparison columns are narrower by construction — several to a row */
+.cmpraider .tablewrap.frozen.overflowing .abname,
+.parsecol .tablewrap.frozen.overflowing .abname { --abname-max: 16ch; }
 
 /* ---------- timeline chart ---------- */
 

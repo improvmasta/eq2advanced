@@ -29,6 +29,17 @@ sync layout changes live (an in-module listener set — localStorage's own
 event only fires cross-tab), which is what keeps side-by-side columns lined
 up while you rearrange them.
 
+**The parses SCROLL TOGETHER, and each one is a frozen table.** Move one
+column's horizontal scrollbar and every parse beside it moves with it
+(`SortableTable`'s `syncScroll` group — `compare` on this page, `cmppanel` in
+the raid page's `ComparePanel`, and `compareraid` for raid columns, whose
+columns are a different set and would line up with nothing). A comparison is
+read ACROSS: the whole job is having the same stat under the same stat, and
+doing that by dragging two scrollbars to the same place is the work this page
+exists to remove. A parse added mid-comparison lands where the others already
+are. The ability name and the header row stay pinned inside each column on
+top of that — see "A parse table is FROZEN" in `docs/zoneruns.md`.
+
 **A column carries its own kind tabs**, the same `KIND_FILTERS` set the
 drilldown offers (Damage / Heals / Power / Threat / Cures / Self) and only the
 ones that parse has rows for (`availKinds`) — a fury's column has no Threat tab

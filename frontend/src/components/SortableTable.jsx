@@ -16,7 +16,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
    a column's cellClass(row) / cellStyle(row) add a per-cell class or style
    (rank coloring lives there), and cellTitle(row) is its tooltip — a tinted
    cell has to be able to answer "says who?", so the two travel together.
-   wrapClass 'sticky' pins the header for long raid tables.
+   wrapClass 'sticky' pins the header for long raid tables; `frozen` pins the
+   header AND the first column, and syncScroll ties this table's sideways
+   scroll to every other table sharing the same group name.
    groupBy: {key, of(row), label(row, rows)} draws a heading row whenever the
    group changes — only while the table is sorted by `key`, because a heading
    that repeats every third row is not a grouping. Pass an ARRAY of those to
@@ -73,8 +75,7 @@ function savePrefs(key, prefs) {
    by an ancestor, which is why the floating bar only ever appeared at the
    very bottom of the page. Clamping the top at 0 keeps the box from growing
    as you scroll past it, which would extend the page under its own feet. */
-function useFitViewport(enabled) {
-  const ref = useRef(null)
+function useFitViewport(enabled, ref) {
   useEffect(() => {
     const el = ref.current
     if (!enabled || !el) return
@@ -100,15 +101,136 @@ function useFitViewport(enabled) {
       if (raf) cancelAnimationFrame(raf)
     }
   }, [enabled])
-  return ref
+}
+
+/* A frozen table: the header row and the first column hold still while the
+   rest scrolls under them. The pinning itself is CSS (`.tablewrap.frozen`);
+   what JavaScript has to supply is the three things a stylesheet cannot
+   measure.
+
+   `--fzleft` — where the second frozen cell starts. A checkable table pins
+   the checkbox column AND the name beside it, and the checkbox column's real
+   width is whatever the browser gave it, not what the rule asked for.
+
+   `xscrolled` — whether the table is actually scrolled sideways. The divider
+   down the frozen column only means something once something has moved
+   underneath it; on a table that fits, it is a line drawn for no reason.
+
+   `overflowing` — whether the table fits its box at all, which is what gates
+   shortening long ability names (see `.abname`). Names are shortened ONLY
+   when the table cannot fit, and only the ones long enough to need it; the
+   rest are untouched, however narrow the column gets.
+
+   Un-shortening is deliberately asymmetric. Measuring an already-clamped
+   table would ask "does it fit?" of a table that fits BECAUSE it is clamped,
+   and the answer starts an oscillation — clamp, fits, unclamp, doesn't fit,
+   clamp. So the width it wanted before the clamp is remembered, and the names
+   only come back when there is room for that.
+
+   Both flags are STATE and go through the className, not classList: React
+   rewrites that attribute whole whenever the caller's wrapClass changes (the
+   raid table gains `sticky` at fifteen rows), and a class this hook had poked
+   into the DOM would go with it. */
+function useFrozen(enabled, ref) {
+  const [state, setState] = useState({ over: false, xscrolled: false })
+  /* Read by the measurement, which is not a render: a state updater has to be
+     pure, and deciding the clamp inside one would re-decide it every time
+     React replayed the update. `natural` is what the table measured before it
+     was clamped — see the oscillation above. */
+  const now = useRef(state)
+  now.current = state
+  useEffect(() => {
+    const el = ref.current
+    if (!enabled || !el) return
+    let raf = 0
+    let natural = 0
+    const measure = () => {
+      raf = 0
+      const head = el.querySelector('thead th')
+      if (head) el.style.setProperty('--fzleft', `${head.offsetWidth}px`)
+      let over = now.current.over
+      if (!over && el.scrollWidth > el.clientWidth + 1) {
+        natural = el.scrollWidth
+        over = true
+      } else if (over && natural && el.clientWidth >= natural) {
+        natural = 0
+        over = false
+      }
+      const xscrolled = el.scrollLeft > 0
+      setState((s) => (over === s.over && xscrolled === s.xscrolled
+        ? s : { over, xscrolled }))
+    }
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure) }
+    const onScroll = () => setState((s) => (
+      (el.scrollLeft > 0) === s.xscrolled ? s : { ...s, xscrolled: el.scrollLeft > 0 }))
+    measure()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', schedule)
+    /* The table resizes whenever its rows, its columns or its clamp change,
+       which is every reason this needs measuring again — so watch the element
+       rather than re-running the effect on each render. */
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null
+    if (ro) {
+      ro.observe(el)
+      const table = el.querySelector('table')
+      if (table) ro.observe(table)
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', schedule)
+      ro?.disconnect()
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [enabled])
+  if (!enabled) return ''
+  return ` frozen${state.over ? ' overflowing' : ''}${state.xscrolled ? ' xscrolled' : ''}`
+}
+
+/* Two parses side by side are read ACROSS, so moving one table's scrollbar
+   moves the other's: the same columns stay under each other and the pair can
+   be compared a stat at a time instead of a table at a time. Module state,
+   like the hover channel in BreakdownTable — the tables are siblings in a
+   comparison, not children of one component. */
+const syncGroups = new Map()   // group name -> Set<scroll element>
+let syncing = false
+
+function useScrollSync(group, ref) {
+  useEffect(() => {
+    const el = ref.current
+    if (!group || !el) return
+    let set = syncGroups.get(group)
+    if (!set) syncGroups.set(group, set = new Set())
+    // a parse added to a comparison lands where the others already are
+    for (const peer of set) { el.scrollLeft = peer.scrollLeft; break }
+    set.add(el)
+    const onScroll = () => {
+      // the scrolls we are about to cause must not scroll us back
+      if (syncing) return
+      syncing = true
+      for (const peer of set) {
+        if (peer !== el && peer.scrollLeft !== el.scrollLeft) peer.scrollLeft = el.scrollLeft
+      }
+      requestAnimationFrame(() => { syncing = false })
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      set.delete(el)
+      if (!set.size) syncGroups.delete(group)
+    }
+  }, [group])
 }
 
 export default function SortableTable({
   columns, rows, defaultSort, rowKey, onRowClick, selectedKey, className = '',
   checkable, checkedKeys, onCheck, childrenOf, rowClass, wrapClass = '', groupBy,
   prefsKey, topRows, defaultHidden, onRowHover, fitViewport, tools, fold,
+  frozen, syncScroll,
 }) {
-  const wrapRef = useFitViewport(fitViewport)
+  const wrapRef = useRef(null)
+  useFitViewport(fitViewport, wrapRef)
+  const frozenClass = useFrozen(frozen, wrapRef)
+  useScrollSync(syncScroll, wrapRef)
   const [sort, setSort] = useState(defaultSort || null) // {key, dir: 'asc'|'desc'}
   const [unfolded, setUnfolded] = useState(false)
   const [prefs, setPrefs] = useState(() => loadPrefs(prefsKey))
@@ -311,7 +433,7 @@ export default function SortableTable({
           )}
         </div>
       )}
-      <div className={`tablewrap ${wrapClass}`} ref={wrapRef}>
+      <div className={`tablewrap ${wrapClass}${frozenClass}`} ref={wrapRef}>
       <table className={`data ${className}`}>
         <thead>
           <tr>

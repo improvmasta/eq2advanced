@@ -260,7 +260,7 @@ export function CompositionStrip({ rows }) {
    brings them back. */
 export default function BreakdownTable({
   rows, kinds, duration, prefsKey, defaultHidden,
-  checkable, checkedKeys, onCheck, linkHover, wrapClass, fitViewport,
+  checkable, checkedKeys, onCheck, linkHover, wrapClass, fitViewport, syncScroll,
 }) {
   const [open, setOpen] = useState({})   // expandable row key -> open
   const canCurate = useCanCurate()
@@ -309,7 +309,14 @@ export default function BreakdownTable({
         const kids = r.members || r.extras
         return (
           <span className="name">
-            {r.gkey ? r.ability : abilityLabel(r)}
+            {/* The one part of the row that is allowed to be shortened, and
+                only when the table cannot fit (see useFrozen): the badges,
+                the ⚙ and the expander beside it are controls and must stay
+                whole. `title` is what makes an ellipsis readable — the full
+                name is one hover away, always, shortened or not. */}
+            <span className="abname" title={r.gkey ? r.ability : abilityLabel(r)}>
+              {r.gkey ? r.ability : abilityLabel(r)}
+            </span>
             {(r.gkey || PET_KINDS.has(r.source_kind)) && <span className="badge pet">pet</span>}
             {!r.gkey && r.via_pet && <span className="badge pet">pet cast</span>}
             {!r.gkey && r.proc && (
@@ -419,6 +426,11 @@ export default function BreakdownTable({
       onRowHover={linkHover ? (r) => setHoverNow(r ? hoverKeyOf(r) : null) : undefined}
       wrapClass={wrapClass}
       fitViewport={fitViewport}
+      /* A parse is ALWAYS a frozen table, wherever it is rendered: the
+         ability name is what every other cell on the row is about, and the
+         header is what tells you which number you are looking at. */
+      frozen
+      syncScroll={syncScroll}
       checkable={checkable}
       checkedKeys={checkedKeys}
       onCheck={onCheck}

@@ -50,7 +50,9 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/` and `noteshots/`
-(re-encoded screenshots). Schema is at **v30**; migrations in
+(re-encoded screenshots) and `icons/` (item icons cached from the wiki, keyed
+by Census icon id — reference data about the game, not about a raid). Schema
+is at **v32**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
@@ -81,6 +83,11 @@ Sharing and visibility — `docs/sharing.md`:
 - **Hiding is a SECOND predicate beside sharing, never folded in** —
   `VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS`. A hidden fight still
   SEGMENTS and never COUNTS.
+- **A reader takes a shared raid off their OWN list, and that is not a
+  revocation** — `run_dismissals` (v31) is a THIRD predicate, `LISTED_RUN_IDS`,
+  read by the raid list alone: the link still opens, the owner's audience is
+  untouched, and a dismissal follows the run through a rebuild
+  (`carry_shares`). Your own raid is refused — that one is `hide`.
 - **Admin is operational, not omniscient** — `role='admin'` is absent from
   every visibility decision.
 - **Private chat is stripped at INGEST, never at display** (`pipeline/redact.py`);
@@ -243,6 +250,14 @@ Display and import — `docs/zoneruns.md`, `docs/compare-import.md`:
   Raiders keep the old test: a raider with no damage there is noise.
 - **Rank coloring is PLACEMENT within the row's role**, never distance from a
   median; no role or under `MIN_PEERS` = no color.
+- **A parse table is FROZEN** (`SortableTable`'s `frozen`): the header row and
+  the name column hold still, the pinned cells are OPAQUE (`--frozen-bg`), and
+  a checkable table pins the checkbox with the name at a measured `--fzleft`.
+- **A long ability name shortens only when the table cannot fit** — never
+  because a column is narrow, never a badge or a control, full name on `title`;
+  un-shortening is asymmetric on purpose (it oscillates otherwise).
+- **Parses side by side scroll as ONE** (`syncScroll` groups) — a comparison is
+  read across, so the same column stays under the same column.
 - **An imported screenshot is a CLAIM, kept out of everything that
   aggregates** (no session/character/encounter/run; private, no group
   predicate). The row ladder is FITTED, the decimal mark is ARITHMETIC, the
@@ -257,6 +272,36 @@ Display and import — `docs/zoneruns.md`, `docs/compare-import.md`:
   loses their place.
 - **The roster cooperation graph was REJECTED** (moved 0 of 49 real runs);
   don't rebuild it without a log where the presence rule demonstrably fails.
+- **Loot is CHEST loot; a corpse drop is not loot** — same verbs, and only the
+  `from the <X> Chest of <Mob>` clause tells them apart. A win with no source
+  clause is not evidence of a chest either.
+- **Loot is written BESIDE the parse, never into `events`** — resolving a
+  looter's name would put somebody who walked past the chest into the fight's
+  roster. That is also why it needs no `PARSE_VERSION` bump.
+- **A chest belongs to the fight its MOB names, not to the clock** — three
+  rungs (encounter name → mob in the fight → nearest prior), and rung 3 says
+  `approx` rather than claiming it.
+- **An item's rarity comes from Census, its picture from EQ2i** — the log's
+  `looted the Fabled …` line only prints for people near you (15 of 43 in the
+  fixture), so it proves who TOOK it and nothing else. The log's item id is
+  the Census item id; item lookup is exact and is not the closed gear-proc
+  problem.
+- **The hover card is a REPLICA of EQ2i's item box, never a screenshot of it
+  and never its HTML** — EQ2i builds that box from the same Census record we
+  hold, so the card is our data in the wiki's clothes (`.ew-*`/`.xqc-*` colours
+  copied from `MediaWiki:ExamineWindow.css`). It does NOT theme: an examine
+  window is black in a light client too. Built at resolve time into
+  `items.stats_json`, so widening it means `backfill_loot.py --refresh-census`
+  (and `--refresh-wiki` for the proc, which only the wiki has).
+- **Census's `all` is ABILITY MOD, not "all stats"** — the wiki's `abmod`
+  proves it. And **`ERA_HIDDEN` drops stats TLE does not have yet** (Crit
+  Bonus today, Fervor when one appears): Census describes the LIVE item.
+- **The lotto block is exact, `/random` dice are not** — dice say nothing
+  about which item they are for, so they attach by announcement or by
+  proximity and the card says which. Never mix dice into a lotto block.
+- **A doubled asterisk before a slash closes a JS block comment** — `**/random**`
+  in a comment silently failed the SPA build. Check `npm run build` output,
+  not just its exit path.
 
 ## What the app is
 
@@ -274,8 +319,10 @@ Details per area live in the `docs/` file named beside it.
   collapses the same night from several uploaders into one row with a Parse
   switch.
 - **The raid page** (`docs/zoneruns.md`): Damage/Healing/Defense/AoEs/
-  Timeline/Class tabs (Insights hidden — one commented line in ParseView.jsx's
-  `TABS`), fight rail left, drilldown right. The tabs and tables ARE
+  Timeline/Class/Loot tabs (Insights hidden — one commented line in
+  ParseView.jsx's `TABS`), fight rail left, drilldown right. Loot is last and
+  is the one tab that is not the parse: what the chests gave, who took it,
+  with the item's icon and its EQ2i page (`backend/items.py`). The tabs and tables ARE
   `ParseView.jsx`, which the raid dashboard renders too; `ZoneRun.jsx` is the
   page around it (title, rail, sharing, edit mode). Pets/NPCs switches; per-TAB
   per-browser column memory; Deaths is two columns (tank report + every
@@ -345,6 +392,7 @@ with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE; fix pages shrink-wrapping instead of filling the shell
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
@@ -364,4 +412,3 @@ with `bash build.sh`.
 - 2026-08-03 (claude): Zone runs phase 3: Raids home (date-grouped runs), /zones/:id page v1, Uploads management page, shared UploadDrop
 - 2026-08-03 (claude): Zone runs phase 2: zone-runs API, cross-session encounters/agg (name-keyed merge), run-scoped raid report
 - 2026-08-03 (claude): Zone runs phase 1: zone_runs table (schema v6), content dedupe + segmentation linker, parse/live/startup hooks
-- 2026-08-03 (claude): Phase 7b: Workspace UX (ACT-style tree + drilldown), stats v2 surfacing, pet knowledge refine pass

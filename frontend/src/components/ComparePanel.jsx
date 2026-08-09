@@ -90,6 +90,10 @@ function RaiderParse({
           linkHover
           wrapClass="parsewin"
           fitViewport
+          /* Both parses scroll sideways together — a comparison is read
+             across, and lining the same stat up twice by hand is the reading
+             this panel exists to save. */
+          syncScroll="cmppanel"
           prefsKey="compare"
           defaultHidden={['total', 'share', 'to_hit_pct', 'median', 'min', 'press_delay_s']}
         />

@@ -390,6 +390,11 @@ function ShotCol({ col, remove }) {
             linkHover
             wrapClass="parsewin"
             fitViewport
+            /* Scroll one parse sideways and every parse beside it follows, so
+               the same column stays under the same column. Comparing is read
+               across the row; lining two tables up by hand is the work this
+               page is for. */
+            syncScroll="compare"
             prefsKey="compare"
             defaultHidden={['total', 'share', 'to_hit_pct', 'median', 'min', 'press_delay_s']}
           />
@@ -549,6 +554,11 @@ function ColBody({ col, view, onView, combinePets, onCombinePets, patch, remove 
             linkHover
             wrapClass="parsewin"
             fitViewport
+            /* Scroll one parse sideways and every parse beside it follows, so
+               the same column stays under the same column. Comparing is read
+               across the row; lining two tables up by hand is the work this
+               page is for. */
+            syncScroll="compare"
             prefsKey="compare"
             defaultHidden={['total', 'share', 'to_hit_pct', 'median', 'min', 'press_delay_s']}
           />
@@ -674,6 +684,11 @@ function RaidList({ agg, duration, kinds }) {
       defaultSort={{ key: damage ? 'dps' : 'hps', dir: 'desc' }}
       wrapClass="parsewin"
       fitViewport
+      frozen
+      /* Its own group: a raid list and an ability breakdown have different
+         columns, so lining their scrollbars up would line nothing up. Two
+         raid columns beside each other DO match. */
+      syncScroll="compareraid"
       prefsKey={`compareraid:${kinds[0]}`}
       defaultHidden={damage
         ? ['damage', 'share', 'auto', 'proc', 'avg_delay']

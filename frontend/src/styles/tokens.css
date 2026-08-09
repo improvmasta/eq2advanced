@@ -10,6 +10,14 @@
   --row-line: #2e315055;
   --row-hover: #252840a0;
   --row-selected: #2a2d4bd0;
+  /* The two surfaces above, OPAQUE. Every colour in this file is deliberately
+     translucent so cards sit on the page rather than on top of it — but a
+     frozen header row or name column has the table's own numbers sliding
+     underneath it, and translucency there is a smear, not a layer. These are
+     --surface and --surface-raised already composited over --bg; retune them
+     together with those two or the pinned cells stop matching their card. */
+  --frozen-bg: #1a1d2a;
+  --frozen-head: #24273d;
   --bar-track: #2e315066;
   --text: #e2e4f0;
   --text-muted: #8b90ab;
@@ -107,6 +115,8 @@
   --row-line: #ddd6c880;
   --row-hover: #f1ece0;
   --row-selected: #eae3d2;
+  --frozen-bg: #fdfcf9;
+  --frozen-head: #f8f5ef;
   --bar-track: #e4ddce90;
   /* A parse is a page of small tabular numbers, so the secondary ink carries
      more of it than anywhere else in the app — every column label, every kind

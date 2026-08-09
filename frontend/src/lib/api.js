@@ -56,6 +56,7 @@ export const url = {
   timeline: (ids, bucket) => `/api/encounters/timeline?ids=${ids.join(',')}${bucket ? `&bucket=${bucket}` : ''}`,
   deaths: (ids, windowS) => `/api/encounters/deaths?ids=${ids.join(',')}${windowS ? `&window=${windowS}` : ''}`,
   aoes: (ids) => `/api/encounters/aoes?ids=${ids.join(',')}`,
+  loot: (ids) => `/api/encounters/loot?ids=${ids.join(',')}`,
   classStats: (ids) => `/api/encounters/class-stats?ids=${ids.join(',')}`,
   encountersReport: (ids) => `/api/encounters/report?ids=${ids.join(',')}`,
   zoneRun: (id) => `/api/zone-runs/${id}`,
@@ -94,8 +95,11 @@ export const api = {
   session: (id) => req(`/api/sessions/${id}`),
   // `roster` asks for each night's names too — the Compare picker facets on
   // them in the browser instead of asking the server per keystroke
-  zoneRuns: (scope, { roster } = {}) => req(
-    `/api/zone-runs?scope=${scope || 'all'}${roster ? '&roster=1' : ''}`),
+  // `dismissed` asks for the raids you swept off the list as well — they are
+  // out by default, and come back flagged rather than as a second request
+  zoneRuns: (scope, { roster, dismissed } = {}) => req(
+    `/api/zone-runs?scope=${scope || 'all'}${roster ? '&roster=1' : ''}`
+    + `${dismissed ? '&dismissed=1' : ''}`),
   zoneRun: (id) => cachedGet(url.zoneRun(id)),
   zoneRunReport: (id) => cachedGet(url.zoneRunReport(id)),
   // raid-list editing: every edit is remembered by fight, so it survives the
@@ -113,6 +117,10 @@ export const api = {
     '/api/encounters/hide', json({ ids, hidden }))),
   hideZoneRun: (id, hidden = true) => mutate(req(
     `/api/zone-runs/${id}/hide`, json({ hidden }))),
+  // the reader's half of that: somebody else's raid off your own list, which
+  // changes nothing about the raid and nothing about who else can read it
+  dismissZoneRun: (id, dismissed = true) => mutate(req(
+    `/api/zone-runs/${id}/dismiss`, json({ dismissed }))),
   deleteSession: (id) => mutate(req(`/api/sessions/${id}`, { method: 'DELETE' })),
   coach: (sessionId) => req(`/api/sessions/${sessionId}/coach`),
   generateCoach: (sessionId) => req(`/api/sessions/${sessionId}/coach`, { method: 'POST' }),
@@ -122,6 +130,7 @@ export const api = {
   encountersTimeline: (ids, bucket) => cachedGet(url.timeline(ids, bucket)),
   encountersDeaths: (ids, windowS) => cachedGet(url.deaths(ids, windowS)),
   encountersAoes: (ids) => cachedGet(url.aoes(ids)),
+  encountersLoot: (ids) => cachedGet(url.loot(ids)),
   encountersClassStats: (ids) => cachedGet(url.classStats(ids)),
   // the run report, for a caller that has fights and no run — the dashboard
   encountersReport: (ids) => cachedGet(url.encountersReport(ids)),

@@ -106,6 +106,27 @@ leak or a silent hiding, and there is no longer a second copy to forget.
   set survives the delete and the untick silently revokes nothing. There are two
   standing branches — the character's auto-share and the uploader's connected
   guild tag — and a third would belong there too.
+- **A reader can take a shared raid off their own list, and that is a third
+  predicate rather than a branch of the rule** (`run_dismissals`, schema v31 →
+  `DISMISSED_RUN_IDS`, `LISTED_RUN_IDS`). Auto-share is what makes it necessary:
+  once somebody's raid week arrives whether or not you were on it, the answers
+  were "read past it every night" or "leave the group". It is deliberately not
+  an access rule — `visible_zone_run` and `visible_encounters` never consult it,
+  so a link to a dismissed raid still opens and the reader can put it back —
+  and it is not in `run_shares`, which is the OWNER's audience and would read a
+  reader's row as a share at all four standing-branch query sites. `POST
+  /zone-runs/{id}/dismiss` refuses your own raid (that one is `hide`, which
+  reaches everybody) and covers every parse of the same night that isn't yours,
+  because the list draws one row per RAID and sweeping one uploader's parse
+  would leave the row standing behind somebody else's. Dismissals are carried
+  through a rebuild by `carry_shares` like every other run reference, or an
+  uploader adding a file to the same night would put a swept raid back with no
+  edit of the reader's own. `GET /zone-runs` filters them out and reports
+  `dismissed_count`; `?dismissed=1` lists them again, flagged.
+  - The reason `drop_shares_for_runs` exists: `carry_shares` COPIES to the
+    survivor, `foreign_keys=ON`, and the rebuild then deletes the old run — so
+    every reference to a stale run has to go before that delete, not after it
+    in `drop_orphan_shares`.
 - **A standing branch has FOUR query sites**, not one, and the comment above
   `_SHARE_REACHES` lists them: `PERSONAL_RUN_IDS` (who can see it),
   `shares_for_runs` (what the owner's Share control shows), `shared_via_for_runs`

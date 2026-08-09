@@ -12,7 +12,8 @@ import groups as groupsmod
 import memo
 import raidmatch
 from db import get_db, row_to_dict, rows_to_dicts
-from groups import PERSONAL_RUN_IDS, SHARED_RUN_IDS, VISIBLE_UNHIDDEN_RUN_IDS
+from groups import (LISTED_RUN_IDS, PERSONAL_RUN_IDS, SHARED_RUN_IDS,
+                    VISIBLE_UNHIDDEN_RUN_IDS)
 from pipeline.zoneruns import encounter_fp, rebuild_zone_runs
 from security import (optional_user, owned_zone_run, require_admin, require_user,
                       visible_zone_run)
@@ -110,7 +111,8 @@ def _live_runs(conn, run_ids: list[int]) -> set[int]:
 
 
 @router.get("/zone-runs")
-def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_user)):
+def list_zone_runs(scope: str = "all", roster: int = 0, dismissed: int = 0,
+                   user=Depends(optional_user)):
     """The raid list. `scope` is mine | shared | all (default). Signed out, the
     only runs that exist are the published ones.
 
@@ -118,17 +120,34 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
     the Compare page's picker facets on names client-side rather than asking
     the server per keystroke. Same visibility predicate, so it reveals nothing
     a viewer could not already read fight by fight; parsed here so the client
-    never learns how the roster is stored."""
+    never learns how the roster is stored.
+
+    Raids the reader swept off their list are OUT by default and `dismissed=1`
+    puts them back in, flagged. Filtered here rather than in the browser like
+    the size chips, because this is the one list endpoint — Compare's picker
+    reads it too, and a sweep everybody has to reimplement is one that half the
+    surfaces get wrong. `dismissed_count` rides along either way, so the list
+    can offer them back without asking for them first."""
     conn = get_db()
     uid = user["id"] if user else None
     if scope not in ("mine", "shared", "all"):
         raise HTTPException(422, "scope is mine, shared or all")
+    # what the sweep is holding back, and only what it is still holding back: a
+    # dismissal outlives the share it was about (the owner leaves the group, the
+    # raid stops reaching you), and counting those would offer to reveal raids
+    # that are no longer there to reveal
+    swept = {r[0] for r in conn.execute(
+        f"SELECT z.id FROM zone_runs z WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS}) "
+        f"AND z.id IN ({groupsmod.DISMISSED_RUN_IDS})", {"uid": uid})} if uid else set()
+    # `mine` is exempt: your own raid never reaches this table (the endpoint
+    # refuses it), and taking one off your list is the owner's hide instead
     if scope == "mine":
         where = "WHERE c.user_id = :uid"
     elif scope == "shared":
-        where = f"WHERE z.id IN ({SHARED_RUN_IDS}) AND z.encounter_count > 0"
+        where = f"WHERE z.id IN ({SHARED_RUN_IDS}) AND z.encounter_count > 0" + (
+            "" if dismissed else f" AND z.id NOT IN ({groupsmod.DISMISSED_RUN_IDS})")
     else:
-        where = f"WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS})"
+        where = f"WHERE z.id IN ({VISIBLE_UNHIDDEN_RUN_IDS if dismissed else LISTED_RUN_IDS})"
     rows = conn.execute(
         "SELECT z.*, c.name AS character_name, c.user_id AS owner_id, "
         "u.username AS owner_username "
@@ -156,6 +175,7 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
         r["spark"] = spark.get(r["id"], [])
         r["raid_dps"] = round(run_dmg.get(r["id"], 0) / max(r["combat_s"] or 0, 1))
         r["mine"] = r["id"] in mine_ids
+        r["dismissed"] = r["id"] in swept
         r["public"] = r["id"] in public
         r["via_public"] = r["id"] in public and r["id"] not in personal
         # sharing state is the owner's business; a viewer is told nothing about
@@ -182,7 +202,8 @@ def list_zone_runs(scope: str = "all", roster: int = 0, user=Depends(optional_us
         if roster:
             r["roster"] = json.loads(raw) if raw else []
             r["named"] = named.get(r["id"], [])
-    return {"zone_runs": runs, "scope": scope, "signed_in": user is not None}
+    return {"zone_runs": runs, "scope": scope, "signed_in": user is not None,
+            "dismissed_count": len(swept)}
 
 
 def _merged_runs(conn, character_ids: set[int]) -> set[int]:
@@ -382,6 +403,43 @@ def set_run_public(run_id: int, payload: dict = Body(...), user=Depends(require_
         groupsmod.audit(conn, user["id"], "publish" if public else "unpublish",
                         f"zone_run:{run_id}", run["zone"])
     return {"zone_run_id": run_id, "public": public}
+
+
+@router.post("/zone-runs/{run_id}/dismiss")
+def dismiss_zone_run(run_id: int, payload: dict = Body(...), user=Depends(require_user)):
+    """Take a raid somebody shared with you off YOUR list, or put it back
+    (`dismissed: false`). The reader's own decision, and the only thing on a
+    shared raid that is: it changes nothing about the raid, tells the owner
+    nothing, and the raid stays readable by its link — `visible_zone_run` never
+    consults this table, so the page it takes you to still opens.
+
+    Your OWN raid is refused rather than quietly accepted: hiding one of those
+    is `POST /hide`, which also stops it reaching the people you shared it with,
+    and two verbs called Hide that mean different things is how somebody hides a
+    raid from themselves and believes they hid it from everyone.
+
+    Dismissing covers every parse of the same night that isn't yours. The list
+    draws one row per RAID (`raidmatch`), so a sweep that took one uploader's
+    parse would leave the row standing behind somebody else's and read as a
+    button that did nothing."""
+    conn = get_db()
+    run = visible_zone_run(conn, user, run_id)
+    if run["owner_id"] == user["id"]:
+        raise HTTPException(422, "this raid is yours — hide it instead")
+    dismissed = bool(payload.get("dismissed", True))
+    ids = [run_id] + [a["id"] for a in raidmatch.alternates(
+        conn, VISIBLE_UNHIDDEN_RUN_IDS, user["id"], run) if not a["mine"]]
+    ph = ",".join("?" * len(ids))
+    with conn:
+        if dismissed:
+            now = int(time.time())
+            conn.executemany(
+                "INSERT OR IGNORE INTO run_dismissals (zone_run_id, user_id, created_ts) "
+                "VALUES (?,?,?)", [(i, user["id"], now) for i in ids])
+        else:
+            conn.execute(f"DELETE FROM run_dismissals WHERE user_id=? "
+                         f"AND zone_run_id IN ({ph})", (user["id"], *ids))
+    return {"zone_run_id": run_id, "dismissed": dismissed, "runs": ids}
 
 
 @router.get("/zone-runs/{run_id}/report")

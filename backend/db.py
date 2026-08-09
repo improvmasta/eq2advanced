@@ -20,10 +20,14 @@ PARSESHOTS_DIR = DATA_DIR / "parseshots"
 # one: these are the raid's evidence, those are claims about a parse, and a
 # retention decision about either should never sweep up the other.
 NOTESHOTS_DIR = DATA_DIR / "noteshots"
+# Item icons, keyed by Census `iconid` — reference data about the GAME, not
+# about anybody's raid, so one file serves every account forever and a prune
+# of somebody's log can never reach it.
+ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 32
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -420,6 +424,58 @@ CREATE TABLE IF NOT EXISTS census_items (
   json BLOB,
   fetched_ts INTEGER
 );
+-- What a chest gave the raid. NOT a combat event and deliberately not in
+-- `events`: a looter is a NAME on a line, and resolving one into `entities`
+-- would put somebody who only walked past the chest into the fight's roster.
+-- See pipeline/loot.py.
+CREATE TABLE IF NOT EXISTS loot_drops (
+  id INTEGER PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES sessions(id),
+  encounter_id INTEGER,                   -- the fight the chest belonged to; NULL
+                                          -- when none could be named (see `attribution`)
+  ts INTEGER NOT NULL,
+  chest TEXT NOT NULL,                    -- 'Exquisite Chest' | 'Treasure Chest' | 'Small Chest'
+  mob TEXT NOT NULL,                      -- whose chest, verbatim off the line
+  item_id INTEGER NOT NULL,               -- the log's link id as UNSIGNED = the Census item id
+  item_name TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 1,         -- 'wins the lotto for 4 <ITEM>' is one row, not four
+  looter TEXT NOT NULL,                   -- 'You' already mapped to the logger
+  method TEXT NOT NULL,                   -- 'lotto' (rolled for) | 'loot' (taken outright)
+  rarity TEXT,                            -- off the paired `looted the <Rarity>` line
+  confirmed INTEGER NOT NULL DEFAULT 0,   -- a `looted` line paired: they really took it
+  rolls_json TEXT,                        -- who rolled what for it: the lotto's NEED/GREED
+                                          -- block, or the /random dice when the raid used
+                                          -- those instead (pipeline/loot.py)
+  attribution TEXT NOT NULL,              -- name | entity | nearest | none
+  UNIQUE(session_id, ts, item_id, looter, mob)
+);
+CREATE INDEX IF NOT EXISTS idx_loot_encounter ON loot_drops(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_loot_session ON loot_drops(session_id, ts);
+-- The display record for an item the log named: Census answers what it IS, the
+-- wiki answers what it LOOKS like and where to read about it. Reference data
+-- about the game — one row serves every account, and it is never per-raid.
+CREATE TABLE IF NOT EXISTS items (
+  item_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  iconid INTEGER,
+  tier TEXT,                              -- Census rarity (FABLED, LEGENDARY, TREASURED...)
+  type TEXT,
+  slot TEXT,
+  level INTEGER,
+  wiki_title TEXT,                        -- the EQ2i page that is NOT a disambig, or NULL
+  icon_ok INTEGER,                        -- 1 = cached in ICONS_DIR; 0 = the wiki has no
+                                          -- File:Item <iconid>.png; NULL = never asked
+  effects_json TEXT,                      -- the item's own effect: name, tier and the
+                                          -- indented description, off the wiki page's
+                                          -- EquipInformation template (Census has no
+                                          -- field for it — see docs/census-abilities.md)
+  stats_json TEXT,                        -- the examine window: Census `modifiers` grouped
+                                          -- by its own type, + adornment slots + set flags.
+                                          -- Stored rendered-ready so the hover card is a
+                                          -- read, never a fetch (backend/items.py)
+  census_ts INTEGER,                      -- when each source last answered; NULL = never
+  wiki_ts INTEGER
+);
 CREATE TABLE IF NOT EXISTS spell_overrides (
   spell_id INTEGER PRIMARY KEY,
   parsed_effects TEXT NOT NULL,
@@ -508,6 +564,19 @@ CREATE TABLE IF NOT EXISTS public_runs (
   published_by INTEGER NOT NULL REFERENCES users(id),
   created_ts INTEGER NOT NULL
 );
+-- A raid somebody shared with you that you don't want on your list (v31).
+-- The READER's own decision about their own list, and nothing else: it revokes
+-- no access, tells the owner nothing, and never touches the share it came from
+-- (only the owner can do that). Kept out of `run_shares` deliberately — that
+-- table is the OWNER's audience, and a row of somebody else's in it would be
+-- read as a share by every one of the four standing-branch query sites.
+CREATE TABLE IF NOT EXISTS run_dismissals (
+  zone_run_id INTEGER NOT NULL REFERENCES zone_runs(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY (zone_run_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_run_dismissals_user ON run_dismissals(user_id);
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
   ts INTEGER NOT NULL,
@@ -831,6 +900,7 @@ def init_db() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PARSESHOTS_DIR.mkdir(parents=True, exist_ok=True)
     NOTESHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
     conn = get_db()
     _rebuild_users(conn)
     _rebuild_characters(conn)
@@ -1069,6 +1139,30 @@ def init_db() -> None:
         # and NULL never produces a pill, because "unknown" is not "old".
         if "client_version" not in token_cols:
             conn.execute("ALTER TABLE device_tokens ADD COLUMN client_version TEXT")
+        # v31: `run_dismissals` — a raid shared with you, off YOUR list. New
+        # table again: an empty one reads exactly like the pre-v31 behaviour,
+        # and it is read beside the visibility predicate rather than inside it
+        # (groups.LISTED_RUN_IDS), so it can never widen what anybody can see.
+        # v32 shape guard: `qty` landed after the table did, and on the dev box
+        # the reloader had already run the CREATE. Guarded by SHAPE like every
+        # other column here — a database that got the table before this column
+        # existed is otherwise indistinguishable from an up-to-date one.
+        loot_cols = {r[1] for r in conn.execute("PRAGMA table_info(loot_drops)")}
+        if loot_cols and "qty" not in loot_cols:
+            conn.execute("ALTER TABLE loot_drops ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
+        if loot_cols and "rolls_json" not in loot_cols:
+            conn.execute("ALTER TABLE loot_drops ADD COLUMN rolls_json TEXT")
+        item_cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
+        for col in ("stats_json", "effects_json"):
+            if item_cols and col not in item_cols:
+                conn.execute(f"ALTER TABLE items ADD COLUMN {col} TEXT")
+        # v32: `loot_drops` + `items` — what the chests gave the raid, and the
+        # display record for the items they gave. Two new tables and no column
+        # anywhere else: nothing that existed reads them, an old database gets
+        # them empty, and no stat, roster or segment changes shape. History is
+        # filled by `tools/backfill_loot.py` re-reading stored raw, which is why
+        # this needs no PARSE_VERSION bump — loot is written BESIDE the parse,
+        # never inside its arithmetic.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

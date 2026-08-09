@@ -102,6 +102,25 @@ class CensusClient:
     def items_by_ids(self, ids: list[int]) -> list[dict]:
         return self._by_ids("item", "item_list", ids)
 
+    # The card an item needs to be DISPLAYED, which is a tiny slice of a record
+    # that is mostly stat block and discovery history. `c:show` matters here:
+    # a raid night's chest loot is a few hundred ids and the full documents run
+    # to megabytes. See backend/items.py.
+    # `typeinfo` carries a weapon's damage range, delay and rating. It also
+    # carries a class list Census will not let `c:show` narrow into, which is
+    # why the batch is 100 and not 1000.
+    CARD_SHOW = ("id,displayname,iconid,tier,type,itemlevel,slot_list,"
+                 "modifiers,flags,adornmentslot_list,typeinfo")
+
+    def item_cards(self, ids: list[int]) -> list[dict]:
+        out = []
+        for i in range(0, len(ids), ID_CHUNK):
+            chunk = ids[i:i + ID_CHUNK]
+            out += self._get(
+                f"item/?id={','.join(map(str, chunk))}"
+                f"&c:limit={len(chunk)}&c:show={self.CARD_SHOW}", "item_list")
+        return out
+
 
 _shared: CensusClient | None = None
 

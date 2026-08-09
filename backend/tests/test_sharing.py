@@ -674,3 +674,83 @@ def test_auto_share_carries_raids_only_by_default(client, world):
     sign_in(client, "mate")
     opened = [x for x in client.get("/api/zone-runs").json()["zone_runs"] if not x["mine"]]
     assert sorted(x["zone"] for x in opened) == ["The Emerald Halls", "The Estate of Unrest"]
+
+
+def test_a_reader_sweeps_a_shared_raid_off_their_own_list(client, world):
+    """The reading side of `hide`. Auto-share means somebody's whole raid week
+    arrives whether or not you were on it, and the only answers before this were
+    "read past it every night" and "leave the group".
+
+    What it must NOT be is a revocation: it is one person's list, so the owner
+    keeps their audience, the link still opens, and nobody else's list moves."""
+    sign_in(client, "mate")
+    theirs = [x for x in client.get("/api/zone-runs").json()["zone_runs"] if not x["mine"]]
+    target = next(x for x in theirs if x["zone"] == "The Emerald Halls")
+    assert target["dismissed"] is False
+    r = client.post(f"/api/zone-runs/{target['id']}/dismiss", json={})
+    assert r.status_code == 200 and r.json()["dismissed"] is True
+
+    listing = client.get("/api/zone-runs").json()
+    assert target["id"] not in [x["id"] for x in listing["zone_runs"]]
+    # the other raid the same standing share brings is untouched — a sweep is
+    # about one night, not about the person who shared it
+    assert "The Estate of Unrest" in [x["zone"] for x in listing["zone_runs"]]
+    # …and the list is told it is holding something back, or a raid that simply
+    # stopped appearing is indistinguishable from a share that was revoked
+    assert listing["dismissed_count"] == 1
+    assert client.get("/api/zone-runs?scope=shared").json()["dismissed_count"] == 1
+    assert target["id"] not in [
+        x["id"] for x in client.get("/api/zone-runs?scope=shared").json()["zone_runs"]]
+    # asked for, it comes back flagged rather than as a second endpoint
+    asked = {x["id"]: x for x in
+             client.get("/api/zone-runs?dismissed=1").json()["zone_runs"]}
+    assert asked[target["id"]]["dismissed"] is True
+
+    # not a revocation: the raid still opens, and so do its fights
+    detail = client.get(f"/api/zone-runs/{target['id']}")
+    assert detail.status_code == 200
+    enc = detail.json()["encounters"][0]
+    assert client.get(f"/api/encounters/agg?ids={enc['id']}").status_code == 200
+
+    # the owner is told nothing, loses nothing, and cannot sweep their own
+    sign_in(client, "owner")
+    owners = client.get("/api/zone-runs").json()
+    assert target["id"] in [x["id"] for x in owners["zone_runs"]]
+    assert owners["dismissed_count"] == 0
+    assert client.post(f"/api/zone-runs/{target['id']}/dismiss",
+                       json={}).status_code == 422
+
+    # A merge re-derives run ids, and a dismissal that evaporated there would
+    # put a swept raid back on the reader's list with no edit of their own. The
+    # SWEPT run has to be the one that disappears for this to test anything —
+    # the survivor keeps the earliest id — so the sweep moves to the run the
+    # merge will consume, and the row it lands on was never swept itself.
+    sign_in(client, "mate")
+    client.post(f"/api/zone-runs/{target['id']}/dismiss", json={"dismissed": False})
+    solo = next(x for x in client.get("/api/zone-runs").json()["zone_runs"]
+                if x["zone"] == "The Estate of Unrest" and not x["mine"])
+    client.post(f"/api/zone-runs/{solo['id']}/dismiss", json={})
+
+    sign_in(client, "owner")
+    assert client.post("/api/zone-runs/merge",
+                       json={"ids": [target["id"], solo["id"]]}).status_code == 200
+    merged = next(x for x in client.get("/api/zone-runs?scope=mine").json()["zone_runs"]
+                  if x["character_name"] == "Raidy")
+    assert merged["id"] != solo["id"], "the swept run survived; carry untested"
+    sign_in(client, "mate")
+    after = client.get("/api/zone-runs").json()
+    assert merged["id"] not in [x["id"] for x in after["zone_runs"]]
+    assert after["dismissed_count"] == 1
+
+    sign_in(client, "owner")
+    client.post(f"/api/zone-runs/{merged['id']}/unmerge")
+
+    # and putting it back is the same button again
+    sign_in(client, "mate")
+    swept = client.get("/api/zone-runs?dismissed=1").json()["zone_runs"]
+    for x in [y for y in swept if y["dismissed"]]:
+        assert client.post(f"/api/zone-runs/{x['id']}/dismiss",
+                           json={"dismissed": False}).status_code == 200
+    back = client.get("/api/zone-runs").json()
+    assert back["dismissed_count"] == 0
+    assert "The Emerald Halls" in [x["zone"] for x in back["zone_runs"]]

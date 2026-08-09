@@ -462,3 +462,12 @@ unknown. An unresolved gear proc is a curator's job. Reopen only if Fandom
 enables CirrusSearch: `insource:` would turn that structured `effectlist` into
 a precise one-call reverse index and change the arithmetic entirely.
 
+**This does NOT close items in general** — v32's loot tab looks items up by the
+hundred and it is cheap, because it is a different question. What was refused
+above is *ability name → which item casts it*, a reverse lookup with no index.
+Loot asks *item id → what is this item*, and the raid log hands over the id:
+`\aITEM -1813422462 …:Hoop of War\/a` is Census item 2481544834 written signed,
+confirmed against Census's own `gamelink`. One exact request per hundred ids,
+no search, no verification pass, no era filter needed. See
+`backend/items.py` and `docs/zoneruns.md` → "Items as reference data".
+

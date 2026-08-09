@@ -36,6 +36,11 @@ take effect immediately rather than "next rebuild".
 keep one wipe to yourself. Explicit `share` wins over everything, `hide` only
 overrides the auto-share of the same group.
 
+`run_dismissals` is the mirror of that on the READING side, and it is not part
+of the rule above: it takes a raid off one person's list without changing who
+may see it. Auto-share means somebody's whole raid week arrives whether or not
+you were on it, and the alternative to a sweep is leaving the group.
+
 Being able to SEE a run never implies being able to change it. Every mutation
 (delete, merge, split, run edits, reparse, session delete) checks ownership
 separately — see `security.owned_zone_run`.
@@ -158,6 +163,30 @@ VISIBLE_UNHIDDEN_RUN_IDS = f"""
     EXCEPT
     SELECT z.id FROM zone_runs z JOIN characters c ON c.id = z.character_id
       WHERE z.encounter_count = 0 AND c.user_id IS NOT :uid
+"""
+
+# A THIRD predicate, for the same reason hiding is a second one. The owner's
+# hide above is a statement about the raid — it means the same to everybody.
+# This one is a statement about one reader's LIST: somebody shares their raids
+# with you, most of them are worth reading, and the pug night you were not on
+# is clutter you should be able to sweep without leaving the group or asking
+# them to unshare it.
+#
+# It is deliberately NOT an access rule, and that is what keeps it honest:
+# `visible_zone_run` and `visible_encounters` never consult it, so a link to a
+# dismissed raid still opens and the reader can put it back. Folding it into
+# VISIBLE_RUN_IDS would make "off my list" look like "revoked", which is a
+# power over somebody else's share that a reader does not have.
+DISMISSED_RUN_IDS = """
+    SELECT zone_run_id FROM run_dismissals WHERE user_id = :uid
+"""
+
+# What the raid list draws: visible, not hidden by its owner, not swept off by
+# you. Signed out, :uid is NULL and nothing is dismissed.
+LISTED_RUN_IDS = f"""
+    SELECT id FROM ({VISIBLE_UNHIDDEN_RUN_IDS})
+    EXCEPT
+    {DISMISSED_RUN_IDS}
 """
 
 def is_member(conn, group_id: int, user_id: int) -> bool:
@@ -433,10 +462,33 @@ def carry_shares(conn, merged_into: dict[int, int]) -> None:
                 "INSERT OR IGNORE INTO public_runs (zone_run_id, published_by, created_ts) "
                 "SELECT ?, published_by, ? FROM public_runs WHERE zone_run_id=?",
                 (survivor, now, gone))
+        # A reader's dismissal has to survive the OWNER's rebuild too: the run
+        # id is the only handle it has, and an uploader adding a file to the
+        # same night would otherwise put a raid somebody swept away back on
+        # their list, with no edit of their own to explain it.
+        conn.execute(
+            "INSERT OR IGNORE INTO run_dismissals (zone_run_id, user_id, created_ts) "
+            "SELECT ?, user_id, created_ts FROM run_dismissals WHERE zone_run_id=?",
+            (survivor, gone))
+
+
+SHARE_TABLES = ("run_shares", "public_runs", "run_dismissals")
+
+
+def drop_shares_for_runs(conn, run_ids: list[int]) -> None:
+    """Every row hanging off runs that are ABOUT to be deleted. `carry_shares`
+    copies rather than moves, so the originals are still there when the rebuild
+    deletes the run — and `foreign_keys=ON` makes that delete fail rather than
+    leave them dangling. Call between the two."""
+    if not run_ids:
+        return
+    ph = ",".join("?" * len(run_ids))
+    for table in SHARE_TABLES:
+        conn.execute(f"DELETE FROM {table} WHERE zone_run_id IN ({ph})", run_ids)
 
 
 def drop_orphan_shares(conn) -> None:
-    for table in ("run_shares", "public_runs"):
+    for table in SHARE_TABLES:
         conn.execute(f"DELETE FROM {table} WHERE zone_run_id NOT IN "
                      "(SELECT id FROM zone_runs)")
 

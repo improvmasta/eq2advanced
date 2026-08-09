@@ -286,6 +286,9 @@ def clear_derived(conn: sqlite3.Connection, session_id: int) -> None:
     conn.execute("DELETE FROM encounters WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM events WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM entities WHERE session_id=?", (session_id,))
+    # Loot points at encounter ids, which are about to stop existing. It is
+    # re-scanned from the same raw at the end of the parse (pipeline/loot.py).
+    conn.execute("DELETE FROM loot_drops WHERE session_id=?", (session_id,))
 
 
 def _resolve_events(events: list[ParsedEvent], res: EntityResolver) -> list[dict]:
@@ -450,6 +453,16 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
             # the abilities each player actually used), so it runs last
             guess_session_classes(conn, session_id, roster)
 
+            # What the chests gave. A pass of its own over the raw rather than
+            # a branch inside the classifier: loot is not an event, nothing
+            # here resolves an entity, and it needs the ENCOUNTERS above to
+            # attribute a chest to the fight that dropped it. Cheap enough to
+            # re-read for (a regex reject on `ITEM ` costs nothing), and
+            # keeping it out of `parse_lines` is what stops a looter's name
+            # from joining the roster. See pipeline/loot.py.
+            from pipeline import loot
+            loot.record(conn, session_id, _iter_lines(path), logger)
+
             # learn-back: newly observed pet names + abilities pets actually
             # cast feed every future parse (and reparses of older sessions)
             petnames.learn(conn, observed_pets, session_id)
@@ -474,6 +487,19 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
         # land on a second, cheap pass over the same session. Failing here
         # costs a raid its ground truth, never its parse.
         _sync_roster_classes(conn, session_id, character_id)
+
+        # Same shape and the same reasoning as the roster sync above: naming
+        # the items a chest gave is an HTTP round trip per unseen id, so it
+        # runs OUTSIDE the write transaction and failing here costs a raid its
+        # item pictures, never its parse. Items are reference data, so a night
+        # that drops nothing new asks nothing at all.
+        try:
+            import items
+            items.ensure(conn, [r[0] for r in conn.execute(
+                "SELECT DISTINCT item_id FROM loot_drops WHERE session_id=?",
+                (session_id,))])
+        except Exception:                              # noqa: BLE001
+            pass
 
         # Ingest already dropped the private channels; this drops the group/raid
         # talk that happened outside any fight, which needs the fights to exist

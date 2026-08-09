@@ -81,6 +81,16 @@ function runBadges(r) {
           hidden
         </span>
       )}
+      {/* And only ever on somebody else's: a raid you swept off your list,
+          drawn because you asked to see them. The same badge as `hidden` and a
+          different word, because they are different facts — that one is the
+          owner withdrawing a raid from everybody, this one is you declining
+          to read it. */}
+      {r.dismissed && (
+        <span className="badge hidden" title="You took this off your list">
+          off your list
+        </span>
+      )}
       {r.guild && (
         <span className="badge guild" title="Majority guild of the roster, from Census">
           {r.guild}
@@ -137,6 +147,12 @@ export default function Home({ user }) {
      the true thing in both directions with nothing to cross-reference. */
   const [sources, setSources] = useState(() => new Set())
   const [myGroups, setMyGroups] = useState([])
+  /* Raids somebody shared with you that you swept off the list. Unlike every
+     other narrowing here this one is the SERVER's — it is a stored decision,
+     not a view — so asking to see them again is a refetch, and the count comes
+     back with the list either way so the offer can be made without one. */
+  const [showSwept, setShowSwept] = useState(false)
+  const [sweptCount, setSweptCount] = useState(0)
   /* Which parse of a shared night to show, per raid — {raid_key: run id}, and
      only where the reader has said. Everything else follows the precedence in
      `chooseParse`. */
@@ -146,11 +162,16 @@ export default function Home({ user }) {
   useEffect(() => { localStorage.setItem(NOTES_KEY, notesOpen ? '1' : '0') }, [notesOpen])
 
   /* Always everything you can see; narrowing is the source filter's job, in
-     the browser, so flipping it back is instant and never refetches. */
+     the browser, so flipping it back is instant and never refetches. The one
+     exception is the sweep, which is a stored decision rather than a view —
+     the server is the only thing that knows it, so asking for those rows is a
+     request, not a filter. */
   const refresh = useCallback(() => {
-    api.zoneRuns('all').then((d) => setRuns(d.zone_runs)).catch((e) => setError(e.message))
+    api.zoneRuns('all', { dismissed: showSwept })
+      .then((d) => { setRuns(d.zone_runs); setSweptCount(d.dismissed_count || 0) })
+      .catch((e) => setError(e.message))
     if (user) api.sessions().then((d) => setSessions(d.sessions)).catch(() => {})
-  }, [user])
+  }, [user, showSwept])
 
   // the groups you're in, for the filter and for whether Manage is yours to offer
   useEffect(() => {
@@ -333,6 +354,14 @@ export default function Home({ user }) {
      above does in bulk, reached without checking anything first. */
   const doHideRun = (r) => perform(() => api.hideZoneRun(r.id, !r.hidden))
 
+  /* The reader's verb, on somebody else's raid: off my list, or back onto it.
+     Nothing about the raid changes, so there is nothing to confirm and nothing
+     to undo beyond pressing it again. */
+  const doDismissRun = (r) => perform(async () => {
+    await api.dismissZoneRun(r.id, !r.dismissed)
+    setEditRow(null)
+  })
+
   const doDeleteRun = (r) => perform(async () => {
     const d = await api.deleteZoneRun(r.id)
     setEditRow(null)
@@ -500,21 +529,27 @@ export default function Home({ user }) {
        buttons on a page people mostly read — and pressing it opens the two
        sideways, in the cell, where the row you are about to change is. Delete
        arms in the same spot: the second click is the confirmation.
-       Only your own rows; a shared night has nothing here to grey out. */
-    ...((runs || []).some((r) => r.mine) ? [{
+
+       Somebody else's raid opens the same pencil onto ONE button, because
+       there is exactly one thing you may do to it: take it off your list. It
+       is the same column and the same gesture as your own rows, and it says
+       "off my list", never "hidden" — hiding is what the owner does, and it
+       reaches everyone. */
+    ...(user ? [{
       key: 'edit', label: '', sortable: false, align: 'r', menuLabel: 'Edit',
-      render: (r) => (r.mine ? (
+      render: (r) => (
         <span className="rowedit" onClick={(ev) => ev.stopPropagation()}>
           <button
             className={`ebtn ${editRow === r.id ? 'on' : ''}`}
             aria-expanded={editRow === r.id}
-            title={editRow === r.id ? 'Done' : 'Hide or delete this raid'}
+            title={editRow === r.id ? 'Done'
+              : r.mine ? 'Hide or delete this raid' : 'Take this raid off your list'}
             onClick={() => {
               setEditRow(editRow === r.id ? null : r.id)
               setRowConfirm(null)
             }}
           >✎</button>
-          {editRow === r.id && (
+          {editRow === r.id && (r.mine ? (
             <span className="rowedits">
               <button
                 className={`ebtn ${r.hidden ? 'on' : ''}`} disabled={busy}
@@ -537,9 +572,20 @@ export default function Home({ user }) {
                         onClick={() => setRowConfirm(r.id)}>🗑</button>
               )}
             </span>
-          )}
+          ) : (
+            <span className="rowedits">
+              <button
+                className={`ebtn ${r.dismissed ? 'on' : ''}`} disabled={busy}
+                title={r.dismissed
+                  ? 'Off your list. Click to put it back.'
+                  : "Take this raid off your list. Nothing changes for whoever "
+                    + 'shared it, and the link still opens.'}
+                onClick={() => doDismissRun(r)}
+              >{r.dismissed ? '⊙' : '⊘'}</button>
+            </span>
+          ))}
         </span>
-      ) : null),
+      ),
     }] : []),
   ]
 
@@ -603,6 +649,20 @@ export default function Home({ user }) {
             onToggle={toggleSource}
             onClear={() => { setSources(new Set()); setPicked(new Set()) }}
           />
+        )}
+        {/* The way back. The sweep is the only narrowing here that outlives the
+            page, so it is the only one that has to say it is on — a raid that
+            simply stopped appearing, with nothing on the screen about it, is
+            indistinguishable from a share that was revoked. */}
+        {user && (sweptCount > 0 || showSwept) && (
+          <button className={`chip ${showSwept ? 'on' : ''}`}
+                  aria-pressed={showSwept}
+                  title={showSwept
+                    ? 'Stop listing the raids you took off your list'
+                    : 'List them again, so you can put one back'}
+                  onClick={() => { setShowSwept((v) => !v); setPicked(new Set()) }}>
+            {sweptCount ? `${sweptCount} off your list` : 'Off your list'}
+          </button>
         )}
 
         {/* Everything on the right of the line is about something OTHER than
