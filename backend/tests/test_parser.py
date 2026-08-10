@@ -479,3 +479,21 @@ def test_a_line_that_only_looks_like_a_cast_is_not_one():
                  "You begin to choke!", "You begin to play an augmentation song."):
         e = ev(body)
         assert e is None or e.type != "buff_cast", body
+
+
+# ---- /act end ----
+
+def test_act_end_is_an_encounter_end_marker():
+    """EQ2 has no `/act` command, so typing it produces exactly the rejection
+    the fixture shows for any typo (`Unknown command: 'lbtell'`). That line is
+    how ACT hears the command, and how we hear it."""
+    e = ev("Unknown command: 'act end'")
+    assert e is not None and e.type == "encounter_end"
+    assert ev("Unknown command: 'ACT End'").type == "encounter_end"
+
+
+def test_another_rejected_command_is_not_an_encounter_end():
+    for body in ("Unknown command: 'lbtell'", "Unknown command: 'act clear'",
+                 "Unknown command: 'actor end'", "Unknown command: 'end'"):
+        e = ev(body)
+        assert e is None or e.type != "encounter_end", body

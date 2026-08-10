@@ -24,7 +24,9 @@ Two consequences of being a view, both deliberate:
 
 Live AoE detection reuses `pipeline/aoes.py`'s definition rather than
 restating it: a second in which one enemy ability touched MIN_TARGETS players
-is a cast. Only casts inside the CURRENT fight count toward an observed
+is a cast — or touched anyone at all, if the reported-timer list knows the
+ability by name (`aoes.anchors`). Only casts inside the CURRENT fight count
+toward an observed
 period — the wait between two pulls is a raid taking a break, not a cooldown —
 so a boss's first pull of the night shows a countdown only when ACT's
 reported-timer list knows the ability.
@@ -39,7 +41,9 @@ from typing import NamedTuple
 from parser.events import F_SELF_FOCUS, F_ZERO
 from parser.subjects import classify_entity_kind, decompose
 from pipeline.aoes import (DEFAULT_CLUSTER_S, CLUSTER_FRACTION, MIN_CASTS,
-                           MIN_TARGETS, observed_period, reported_timers)
+                           PET_KINDS, SUSTAINED_RUN, _cluster, _instances_hint,
+                           anchors, observed_period, reported_timers,
+                           suggest_period)
 from pipeline.encounters import GAP_S, _is_named_mob
 from pipeline.refine import refine_known_mobs
 
@@ -54,6 +58,13 @@ UNKNOWN_SOURCE = "Unknown"   # the same pool the recorded AoE tab uses
 # populations do not overlap: a boss's raid AoE reaches 72-100% of the raid,
 # and every add cleave and one-off that cluttered the panel reached 15-43%.
 RAID_FRACTION = 0.6
+# When a countdown stops being a countdown. Past due is information — "3s
+# late" reads as a stunned mob and "40s late" reads as a wrong timer — but an
+# hour into a raid a row that has been late for a minute is telling nobody
+# anything, and the panel is a shortlist. It leaves, and it comes back on its
+# own the moment the ability lands again, because every snapshot is rebuilt
+# from the fight's events rather than accumulated.
+OVERDUE_DROP_S = 60
 
 
 class Knowledge(NamedTuple):
@@ -181,7 +192,14 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
     it lands on — `Soul Paralysis` reaches one group in a long fight and
     everyone in a short one), or the cast reached `RAID_FRACTION` of the raid,
     which is what keeps a sourceless 24-target `Overnuke` that no timer list
-    has ever heard of. What falls out is what an add's cleave and a boss's
+    has ever heard of.
+
+    The list decides the other thing too, and this is the half that was wrong:
+    for an ability it knows, reach stops deciding what a CAST is. A row that
+    earns its place by name and then re-arms only on the casts that happened
+    to reach five people is a countdown anchored to the wrong second — Mayong's
+    `Soul Paralysis` landed 11 times on the kill that turned this up, three of
+    them raid-wide, and the panel counted 37s from the third. What falls out is what an add's cleave and a boss's
     one-off spell have in common: a group's worth of targets and nothing to
     count down to.
 
@@ -194,7 +212,8 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
     # same thing mid-fight as it does in the audit afterwards
     by_ability: dict[tuple, dict[int, dict]] = defaultdict(
         lambda: defaultdict(lambda: {"hit": set(), "avoided": set(),
-                                     "absorbed": set()}))
+                                     "absorbed": set(), "touched": set()}))
+    schools: dict[tuple, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for ev in events:
         if ev.type not in ("damage", "avoid") or not ev.ability or not ev.tgt:
             continue
@@ -204,45 +223,73 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         # because that would drop exactly the bosses worth a countdown: live,
         # "Venekor" is indistinguishable from a raider by name alone. The
         # anchor rule below is the real evidence — a raider's green AE hits
-        # mobs, so touching MIN_TARGETS RAIDERS in one second is a claim only
-        # an enemy ability can make.
+        # mobs, so reaching a GROUP of raiders in one second is a claim only an
+        # enemy ability can make (`aoes.anchors`; an ability on the reported
+        # list is taken on its name, and no raider spell is on that list).
         if src is not None and (src.name == logger
                                 or src.unit in ("player", "own_pet",
                                                 "swarm_pet", "named_pet")):
             continue
-        tgt, _kind = names.target(ev.tgt)
-        if tgt not in players:
+        tgt, kind = names.target(ev.tgt)
+        raider = tgt in players
+        # A pet is not part of what the raid covered and never counts toward
+        # reach, but it is proof the ability went off (aoes.PET_KINDS) — which
+        # is the whole evidence a reported-timer row needs.
+        if not raider and kind not in PET_KINDS:
             continue
         # `X is hit by <Effect>` names no caster, and some of the biggest raid
         # AoEs arrive that way — the recorded tab pools them under Unknown and
         # so does this, or a 24-target hit with a 30s timer goes unwatched
-        sec = by_ability[(src.name if src else UNKNOWN_SOURCE, ev.ability)][ev.ts]
+        key = (src.name if src else UNKNOWN_SOURCE, ev.ability)
+        sec = by_ability[key][ev.ts]
+        sec["touched"].add(tgt)
+        if not raider:
+            continue
         if ev.type == "avoid":
             sec["avoided"].add(tgt)
         elif ev.flags & F_ZERO or not ev.amount:
             sec["absorbed"].add(tgt)
         else:
             sec["hit"].add(tgt)
+        # shares, not a reconciliation — see the same accumulation in aoes.py
+        if ev.type == "damage" and ev.dtype:
+            schools[key][ev.dtype] += ev.amount or 0
 
     timers = reported_timers()
     out = []
     for (src, ability), seconds in by_ability.items():
-        wide = sorted(ts for ts, s in seconds.items()
-                      if len(s["hit"] | s["avoided"] | s["absorbed"]) >= MIN_TARGETS)
+        reported = (timers.get(ability) or {}).get("timer_s")
+        # Reach, or the reported list — `aoes.anchors` owns which, so the panel
+        # and the audit cannot disagree about what a cast is
+        wide = anchors(seconds, reported)
         if not wide:
             continue
-        reported = (timers.get(ability) or {}).get("timer_s")
         threshold = (max(DEFAULT_CLUSTER_S, reported * CLUSTER_FRACTION)
                      if reported else DEFAULT_CLUSTER_S)
-        clusters = [[wide[0]]]
-        for ts in wide[1:]:
-            if ts - clusters[-1][-1] > threshold:
-                clusters.append([ts])
-            else:
-                clusters[-1].append(ts)
+        # the audit's clustering, called rather than restated — this used to
+        # be a copy of the loop, and a copy is how the panel and the tab come
+        # to disagree about how many times a boss cast something
+        clusters = _cluster(wide, threshold)
         starts = [c[0] for c in clusters]
+        # A CAST IS A MOMENT; A DAMAGE SHIELD IS A CONDITION (aoes.
+        # SUSTAINED_RUN). A shield reaches the raid exactly the way a cast
+        # does, so neither the anchor nor RAID_FRACTION can tell them apart —
+        # what separates them is that a shield keeps meeting the anchor second
+        # after second, because it fires every time somebody swings. Mayong's
+        # `Caress Feedback` was drawing a countdown on this panel: 9 raid-wide
+        # seconds per burst against 1 for every real AoE in the same fights.
+        #
+        # It has to be caught HERE and not left to the clustering, which
+        # actively hides it: 6-second gaps turn a shield that never stops into
+        # tidy "casts" 19 seconds apart, and a shield that pauses when the mob
+        # is untargetable into a plausible 55-second timer. The one shield that
+        # the old code did drop was an accident — 149 unbroken seconds became a
+        # single cluster and fell under MIN_CASTS.
+        runs = sorted(len(c) for c in clusters)
+        if not reported and runs[len(runs) // 2] >= SUSTAINED_RUN:
+            continue
         gaps = [b - a for a, b in zip(starts, starts[1:])]
-        period, _agree = observed_period(gaps) if gaps else (None, 0)
+        period, agree = observed_period(gaps) if gaps else (None, 0)
         # reported wins: it is what the raid was told to expect, and one gap
         # inside one pull is a weak measurement
         period_s, period_src = ((reported, "reported") if reported
@@ -269,19 +316,48 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         widest = max(len(h | a | b) for h, a, b in reach)
         if not reported and widest < len(players) * RAID_FRACTION:
             continue
+        next_due_ts = starts[-1] + period_s if period_s else None
+        # Overdue is a state and the row reports it (OVERDUE_DROP_S), right up
+        # until it has been late long enough that it is no longer telling
+        # anybody when anything is due. The next cast puts it straight back.
+        #
+        # A row with NO period gets the same line, measured from its last cast,
+        # and it was the half that was missing: nothing here expired a row that
+        # had nothing to be late for, so it held its slot until the pull ended.
+        # An avatar throws several raid-wide abilities that do not repeat on a
+        # clock (`Stealth Assault`, `Mischievous Bombardment` — two casts, no
+        # agreeing gap, no entry in ACT's list), and each one took a permanent
+        # place at the bottom of a panel the meter is drawn UNDER: five rows on
+        # screen, two of them saying only "2×", and the raiders pushed off the
+        # scene. What a row with no timer has to say is that this just
+        # happened, so it says it for as long as that is true.
+        stale_ts = next_due_ts if next_due_ts is not None else starts[-1]
+        if now_ts - stale_ts > OVERDUE_DROP_S:
+            continue
         hit, avoided, absorbed = reach[-1]
         # a player who ate it is not also a player who dodged it
         avoided -= hit
         absorbed -= hit
+        by_damage = dict(sorted(schools[(src, ability)].items(),
+                                key=lambda kv: (-kv[1], kv[0])))
         out.append({
             "source": src,
             "ability": ability,
             "casts": len(starts),
             "last_cast_ts": starts[-1],
             "since_s": max(0, now_ts - starts[-1]),
+            "dtype": next(iter(by_damage), None),
+            "dtypes": by_damage,
+            # a timer the raid could go and fix, measured off this pull. Live
+            # it needs the same three agreeing gaps the audit asks for, so it
+            # appears late in a long fight or not at all — which is the point.
+            "suggested_s": suggest_period(
+                reported, period, agree,
+                _instances_hint(period, reported,
+                                _is_named_mob(src, logger, names.mobs))),
             "period_s": period_s,
             "period_src": period_src,
-            "next_due_ts": starts[-1] + period_s if period_s else None,
+            "next_due_ts": next_due_ts,
             "last_hit": len(hit),
             "last_blocked": len(avoided | absorbed),
             "last_targets": len(hit | avoided | absorbed),
@@ -466,6 +542,10 @@ def build_snapshot(events, logger: str, zone: str | None, start_ts: int,
         # against the LOG clock, not the last cast: a countdown has to keep
         # counting while the raid stands still between pulls
         "aoes": _live_aoes(events, names, players, log_ts),
+        # the browser drains its own bars between partials, so it needs the
+        # same drop rule the payload was built with or a row it is still
+        # drawing outlives the one the server has already dropped
+        "aoe_drop_s": OVERDUE_DROP_S,
     }
 
 

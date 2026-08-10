@@ -230,9 +230,15 @@ export default function LiveMeter({
       </div>
 
       {/* Paused means nothing on this panel moves, countdowns included. They
-          are the only other thing here that is a function of time. */}
+          are the only other thing here that is a function of time.
+
+          This is the full-width panel and the only one anybody can click, so
+          the joust ticks and the suggested timers live here rather than on the
+          rail or over somebody's stream. */}
       {showTimers && !paused && (
-        <AoeTimers aoes={fight.aoes} logTs={fight.log_ts ?? fight.last_ts} />
+        <AoeTimers aoes={fight.aoes} logTs={fight.log_ts ?? fight.last_ts}
+                   running={!frozen} dropS={fight.aoe_drop_s}
+                   editable showSuggest />
       )}
 
       {onToggle && (

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import SortableTable from './SortableTable.jsx'
+import { DtypePill } from './AoeTimers.jsx'
 import { fmt } from '../lib/api.js'
+import { toggleJoust, useJoust } from '../lib/joust.js'
 
 /* Incoming raid AoEs: what the enemy pulled, how often it really landed, and
    how much of the raid was covered when it did.
@@ -12,10 +14,20 @@ import { fmt } from '../lib/api.js'
    for this expansion, a mob that got stunned, or several trash mobs sharing
    one name.
 
-   What is NOT claimed: that every cast was seen. An AoE that never reached
-   five people leaves no trace wide enough to detect, so the cast count is a
-   floor. A missed cast can only make a gap longer, never shorter, which is
-   why the observed timer is the shortest repeating gap rather than the mean. */
+   What is NOT claimed: that every cast was seen. An AoE the timer list has
+   never heard of has to reach five people to leave a trace wide enough to
+   detect, so its cast count is a floor. A missed cast can only make a gap
+   longer, never shorter, which is why the observed timer is the shortest
+   repeating gap rather than the mean.
+
+   Two things here are not readings. The JOUST tick is the one fact a log
+   cannot supply — whether the raid leaves for this one — and it is marked
+   here because this is the tab you have open when you are working out what
+   went wrong; the dashboard turns it into a burn-window countdown
+   (`lib/joust.js`). And a SUGGESTED timer is what to go and type into ACT: it
+   appears only when this log measured a period that disagrees with the
+   configured one by more than the noise, over enough agreeing intervals to
+   mean it (`aoes.suggest_period`). */
 
 const clock = (ts, base) => {
   const s = Math.max(0, ts - base)
@@ -54,6 +66,7 @@ function Casts({ row, base }) {
 
 export default function AoePanel({ data, err, base }) {
   const [open, setOpen] = useState(null)
+  const jousted = useJoust()
 
   if (err) return <p className="err">{err}</p>
   if (!data) return <p className="muted">Loading…</p>
@@ -68,8 +81,8 @@ export default function AoePanel({ data, err, base }) {
   if (!data.aoes?.length) {
     return (
       <p className="muted">
-        Nothing in this selection hit {data.min_targets} raiders at once more
-        than once.
+        Nothing in this selection reached {data.min_targets} raiders at once
+        more than once, and nothing in it is on the ACT spell-timer list.
       </p>
     )
   }
@@ -83,7 +96,31 @@ export default function AoePanel({ data, err, base }) {
       key: 'ability', label: 'AoE', align: 'l', fixed: true,
       render: (r) => (
         <span className="name">
+          {/* The tick, ahead of the name: it is an input, and an input that
+              sits after the thing it acts on reads as a result of it. */}
+          <label className="joustbox"
+                 title={jousted.has(r.ability)
+                   ? `${r.ability} is jousted — it drives the burn window on the`
+                     + ' raid dashboard'
+                   : `Mark ${r.ability} as one you joust`}
+                 onClick={(e) => e.stopPropagation()}>
+            <input type="checkbox" checked={jousted.has(r.ability)}
+                   onChange={() => toggleJoust(r.ability)} />
+          </label>
           {r.ability}
+          <DtypePill row={r} />
+          {/* A CONDITION, not a cast: it kept meeting the raid-wide anchor
+              second after second, which is a damage shield or an aura rather
+              than something the mob cast at the raid (aoes.SUSTAINED_RUN). It
+              stays listed — it did reach the raid and that is what this tab
+              records — but it is marked, and it never gets a countdown. */}
+          {r.sustained && (
+            <span className="selfmark"
+                  title={`Sustained: ${r.run_s}s of raid-wide hits in a row per burst.`
+                    + ' A damage shield or aura, not a timed cast — no countdown.'}>
+              shield
+            </span>
+          )}
           <button
             className="expandcol"
             onClick={(e) => { e.stopPropagation(); setOpen(open === key(r) ? null : key(r)) }}
@@ -98,7 +135,20 @@ export default function AoePanel({ data, err, base }) {
     {
       key: 'reported_s', label: 'ACT timer',
       render: (r) => (r.reported_s != null
-        ? `${r.reported_s}s`
+        ? (
+          <span>
+            {r.reported_s}s
+            {/* What to type into ACT instead. Only ever shown next to the
+                number it disagrees with, because that is the edit. */}
+            {r.suggested_s && (
+              <span className="suggest"
+                    title={`${r.observed_agree} intervals in this log agree on`
+                      + ` ${r.suggested_s}s, not ${r.reported_s}s`}>
+                ⇢{r.suggested_s}s
+              </span>
+            )}
+          </span>
+        )
         : <span className="muted" title="Not in the ACT spell-timer list">—</span>),
       sortValue: (r) => r.reported_s ?? null,
     },
@@ -158,7 +208,8 @@ export default function AoePanel({ data, err, base }) {
       <div className="drillhead">
         <h2>Incoming AoEs</h2>
         <span className="muted">
-          hit {data.min_targets}+ raiders at once · ACT timer vs what the log shows
+          on the ACT timer list, or {data.min_targets}+ raiders at once ·
+          ACT timer vs what the log shows
         </span>
       </div>
       <SortableTable
@@ -185,9 +236,11 @@ export default function AoePanel({ data, err, base }) {
         </p>
       )}
       <p className="note">
-        A cast that never reached {data.min_targets} raiders leaves no trace wide
-        enough to see, so the cast count is a floor. Observed is the shortest
-        interval that repeats — a cast we missed can only make a gap longer.
+        An ability ACT&apos;s list knows counts every landing, however few it
+        found. One it does not has to reach {data.min_targets} raiders to leave
+        a trace wide enough to see, so its cast count is a floor. Observed is
+        the shortest interval that repeats — a cast we missed can only make a
+        gap longer.
       </p>
     </div>
   )

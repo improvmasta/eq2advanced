@@ -3434,13 +3434,29 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-bottom: 1px solid var(--row-line);
 }
 .aoerow:last-child { border-bottom: 0; }
-/* No CSS transition: the drain is driven per frame off the shared ticker
-   (lib/smooth.js) now, and a transition chasing a value that moves 20 times a
-   second is a second animation lagging behind the first. */
-.aoerow .fill {
-  position: absolute; left: 0; top: 1px; bottom: 1px; z-index: 0;
-  background: color-mix(in oklab, var(--warning) 16%, transparent);
+/* The drain is the one continuously moving thing on the live parse, and it is
+   the COMPOSITOR's, not JS's: the bar is full width and scaled, and it fills
+   over one period under its own animation, seeked into position at mount with
+   a negative `animation-delay` (AoeTimers.jsx). Driven from the shared ticker
+   it was a 20Hz length sampled by an OBS source compositing at 60fps, which
+   judders on the stream however right the value is. Nothing writes to this
+   between casts, so nothing can make it stutter.
+
+   `scaleX` rather than `width` for the same reason: no layout, no paint, and
+   the fill is a flat colour so there is nothing in it to distort. */
+@keyframes aoedrain {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
+.aoerow .fill {
+  position: absolute; left: 0; right: 0; top: 1px; bottom: 1px; z-index: 0;
+  transform: scaleX(0); transform-origin: left center; will-change: transform;
+  background: color-mix(in oklab, var(--warning) 16%, transparent);
+  animation: aoedrain linear 1 both;
+}
+/* Exempt from prefers-reduced-motion, like the meter (docs/live.md): this bar
+   is not a flourish over a change, it IS the reading — a countdown that does
+   not count says nothing. */
 .aoerow > :not(.fill) { position: relative; z-index: 1; }
 .aoerow.due .fill { background: color-mix(in oklab, var(--danger) 22%, transparent); }
 .aoerow .src { color: var(--text-muted); font-size: var(--fs-label); }
@@ -3471,6 +3487,77 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .aoerow .split b { font-weight: 700; color: var(--text); }
 .aoerow .split .blkn { color: var(--success); }
 .aoerow .split + .cd { margin-left: 14px; }
+
+/* ---- what it lands as, what we joust, and the burn window ---- */
+
+/* The damage-type pill. Deliberately NOT colour-coded by school: twelve
+   schools is more hues than the page has to spare, and the word already says
+   it in one glance. It is the same pill on the countdown panel and on the
+   recorded AoE tab, from one component (`DtypePill`). */
+.dpill {
+  flex: 0 0 auto; font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0 6px; line-height: 1.6;
+  white-space: nowrap; cursor: help; margin-left: 5px;
+}
+
+/* The measured timer, offered beside the configured one. Amber because it is
+   the same "these two disagree" the Δ column already colours. */
+.suggest {
+  font-style: normal; font-size: var(--fs-label); color: var(--warning);
+  margin-left: 5px; white-space: nowrap; cursor: help;
+}
+
+.joustbox { display: inline-flex; align-items: center; cursor: pointer; }
+.joustbox input {
+  width: 13px; height: 13px; margin: 0 5px 0 0; cursor: pointer;
+  accent-color: var(--joust);
+}
+.aoerow .joustbox input { margin-right: 0; }
+/* Marked, on a panel with no checkbox to show it — the mini rail and the
+   stream overlay both draw these rows and neither can be ticked. */
+.aoerow.jousted { box-shadow: inset 2px 0 0 var(--joust); }
+
+/* THE BURN WINDOW: the same countdown read as time in melee. It sits under
+   the abilities, separated, because it is the one row that is an instruction
+   rather than a reading. */
+.aoerow.burn { border-top: 1px solid var(--border); border-bottom: 0; }
+.aoerow.burn .fill {
+  background: color-mix(in oklab, var(--joust) 16%, transparent);
+}
+.aoerow.burn .ab {
+  color: var(--joust); font-weight: 700; font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.aoerow.burn .cd .digits { color: var(--joust); }
+/* out of time: the window is the thing that has run out, so it takes the
+   overdue treatment rather than the ability row above it */
+.aoerow.burn.out .fill {
+  background: color-mix(in oklab, var(--danger) 24%, transparent);
+}
+.aoerow.burn.out .cd .digits { color: var(--danger); }
+.aoerow.burn .joustnow {
+  font-style: normal; font-weight: 700; color: var(--danger);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  animation: joustflash 0.5s linear 6;
+}
+/* A FEW times, not forever: three seconds of flashing catches an eye that was
+   on the game, and a light blinking for the rest of the window is something
+   people learn to stop seeing. */
+@keyframes joustflash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The drain still drains — it is a clock, and the note above says why. What
+     goes is the BLINK, and it is replaced rather than removed: reduced motion
+     asks for less movement, not for less warning, so the word takes a solid
+     block instead of an animation and ends up louder, not quieter. */
+  .aoerow.burn .joustnow {
+    animation: none; background: var(--danger); color: var(--bg);
+    padding: 0 5px; border-radius: 3px;
+  }
+}
 
 /* ---- the mini overlays (MiniRail) ---- */
 
@@ -3541,10 +3628,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   padding: 12px 10px; text-align: center;
   font-size: var(--fs-label); color: var(--text-muted);
 }
-.minilabel {
-  padding: 4px 9px 2px; font-size: var(--fs-label); color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.08em;
-}
 .minirows + .minirows { border-top: 1px solid var(--row-line); }
 .minirow {
   position: relative; display: flex; align-items: center; gap: 6px;
@@ -3580,22 +3663,36 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 /* Max hit. The only number besides the rate that survives the condensing,
    because it is the only one the rate cannot imply — it rides in front of the
-   rate, muted and captioned, so the ranking still reads down one column. */
+   rate, muted, so the ranking still reads down one column.
+
+   Both numeric cells hold a MINIMUM WIDTH and set right, which is what makes
+   them columns rather than two figures that happen to end the row. Ragged
+   numbers cannot be compared down a list — the eye has to re-find the start of
+   each one — and a column head can only sit over a column that holds still.
+   Tabular figures do the rest. */
 .minirow .best {
   flex: none; font-size: var(--fs-label);
   color: var(--text-muted); font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.minirow .best i {
-  margin-left: 3px; font-style: normal; font-size: 0.9em;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  opacity: 0.75;
+  white-space: nowrap; min-width: 3.4em; text-align: right;
 }
 .minirow .val {
   margin-left: auto; flex: none; font-weight: 600;
   font-variant-numeric: tabular-nums;
+  min-width: 4em; text-align: right;
 }
 .minirow .best + .val { margin-left: 0; }
+/* The column heads. Quiet, uppercase and once per stack — they name the
+   numbers for somebody who arrived mid-pull, and then get out of the way. */
+.minirow.minihdr {
+  padding-top: 1px; padding-bottom: 2px;
+  font-size: var(--fs-label); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.07em;
+  border-bottom: 1px solid var(--row-line);
+}
+.minirow.minihdr .who { font-weight: 600; }
+.minirow.minihdr .best, .minirow.minihdr .val {
+  font-size: inherit; font-weight: 600; color: inherit;
+}
 
 /* Two stacks, side by side instead of one under the other: the same parse in a
    wide OBS scene rather than a tall one (the overlay's Layout setting). */
@@ -3798,25 +3895,65 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* A pinned width comes in as an inline `width` (the Width setting); this keeps
    one that is wider than the browser source inside the scene rather than
    spilling a scrollbar across somebody's stream. */
+/* THE OVERLAY IS NOT READ AT ITS OWN SIZE, and that is the whole reason this
+   scope exists. The rail is CSS pixels on the streamer's monitor at 1:1; the
+   overlay is those same pixels put through an OBS canvas→output downscale and
+   then a lossy encoder, and watched from a couch. A 1440 canvas going out at
+   936p is already 1.5×, before the encoder spends its bits on the moving game
+   rather than on 10px glyph stems. The rail's type sizes arrive at a viewer as
+   a smear, which is not a focus problem and cannot be fixed by sharpening
+   anything.
+
+   So the overlay carries its OWN type scale: a base size the row sizes are
+   relative to, multiplied by `--ovl` (the Text size setting). The tokens are
+   re-expressed in `em` here for exactly that reason — `--fs-data` is an
+   absolute 12.5px globally, and an absolute size cannot be scaled by anybody.
+   Everything in a panel is a multiple of the base, so one number moves the
+   whole overlay and nothing inside it drifts out of proportion. */
 .overlaypage.mini {
   display: grid; gap: 6px; font-family: var(--font-data); max-width: 100%;
+  font-size: calc(15px * var(--ovl, 1));
+  --fs-data: 1em;
+  --fs-label: 0.82em;
 }
+/* The two sizes that were in `rem` and so would have ignored the scale. */
+.overlaypage.mini .mininums b { font-size: 1.25em; }
+.overlaypage.mini .aoerow .cd .digits { font-size: 1.2em; }
+/* Nearly OPAQUE, where it used to be 62%. What is behind the panel is not
+   information — it is somebody's raid moving at 60fps under the text, and an
+   encoder handed a moving background behind semi-transparent glyphs re-smears
+   them every frame. The border and the corner radius are what say "this is a
+   panel over the game"; the transparency was only ever saying it twice.
+
+   The shadow lost its BLUR for the same reason: a soft halo under small type
+   is what reads as out-of-focus once the encoder blurs it again. One hard
+   pixel of black separates the text from the panel edge and nothing else. */
 .overlaypage.theme-transparent .minipanel {
-  background: rgba(12, 13, 20, 0.62);
-  border-color: rgba(255, 255, 255, 0.14);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  color: #f2f3f8;
+  background: rgba(10, 11, 17, 0.9);
+  border-color: rgba(255, 255, 255, 0.16);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+  color: #f6f7fb;
 }
+/* Stems, not size, are what the encoder eats first: the name and the rate go
+   up a weight over the dock's, which costs no width at all. */
+.overlaypage.mini .minirow .who b,
+.overlaypage.mini .minirow .val { font-weight: 700; }
 /* Every muted thing in a row has to be re-lit for the transparent theme:
    --text-muted is picked against a known surface and the surface here is
    somebody's raid. The class short-name is in this list for the same reason
    the rank and the max hit are — it is the caption on the name, and a caption
    that dissolves into the game behind it is not one. */
 .overlaypage.theme-transparent .minirow .rank,
-.overlaypage.theme-transparent .minirow .cls,
 .overlaypage.theme-transparent .minirow .best,
-.overlaypage.theme-transparent .mininums i,
-.overlaypage.theme-transparent .minilabel { color: #c7cade; }
+.overlaypage.theme-transparent .minirow.minihdr,
+.overlaypage.theme-transparent .mininums i { color: #c9cde2; }
+/* The class stays where it is — a caption against the name, which is where it
+   reads from — but it stops being the dimmest thing in the row. It was the
+   first thing to dissolve on the stream because it was both the smallest AND
+   the faintest; it gives up the second of those. Still not tinted: the bar
+   behind the row carries the archetype, and four characters of colour at this
+   size is chroma the encoder subsamples away anyway. */
+.overlaypage.theme-transparent .minirow .cls { color: #dfe3f4; font-weight: 600; }
 .overlaypage.mini .miniparse.stale { opacity: 0.72; }
 .overlaypage.theme-dark { background: var(--bg); }
 .overlaypage.theme-light { background: #fffefb; }

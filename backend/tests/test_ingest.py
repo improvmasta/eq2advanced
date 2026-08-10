@@ -170,6 +170,32 @@ def test_batch_incremental_finalization(client):
     assert [e["logger_damage"] for e in detail["encounters"]] == [220, 450]
 
 
+def test_act_end_finalizes_the_fight_without_waiting(client):
+    """`/act end` is the one thing that closes a live segment on the spot. The
+    writer normally holds the last segment for CLOSE_S in case a late kill line
+    joins it (the test above: fight A has no card until fight B arrives 100s
+    later), and the raid saying the pull is over settles that — the card has to
+    be there while everyone is still looking at the meter."""
+    _, _, token = mint_token(client, "Endy")
+    sid = send_batch(
+        client, token,
+        FIGHT_A + [line(T0 + 6, "Unknown command: 'act end'")]
+    ).json()["session_id"]
+
+    encs = client.get(f"/api/sessions/{sid}").json()["encounters"]
+    assert len(encs) == 1 and encs[0]["logger_damage"] == 220
+    from pipeline import live as livemod
+    assert livemod.in_combat(sid) is False
+
+    # and the cut survives the close-time rebuild from raw, so what the meter
+    # showed and what the session ends up holding are the same two fights
+    send_batch(client, token, [line(T0 + 8, "YOU hit a training dummy for 60 crushing damage.")])
+    client.post("/api/ingest/backfill/done",
+                headers={"Authorization": f"Bearer {token}"})
+    detail = client.get(f"/api/sessions/{sid}").json()
+    assert [e["logger_damage"] for e in detail["encounters"]] == [220, 60]
+
+
 def test_batch_idempotency_and_line_dedupe(client):
     _, _, token = mint_token(client, "Dupey")
     batch_id = str(uuid.uuid4())

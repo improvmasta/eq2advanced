@@ -26,7 +26,7 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 20    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 21    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
 #                      15: the clock stops at the group's last action; a dead
 #                            mob's trailing ticks leave the fight
@@ -63,6 +63,12 @@ PARSE_VERSION = 20    # 13: every rez family, revives + time dead, intercepts,
 #                            from "may cast X" — so `proc_names` narrows and the
 #                            rollup's press counting changes with it
 #                            (census/catalog.py, pipeline/refine.py)
+#                      21: `/act end` ends the fight. EQ2 rejects the command
+#                            into the log (`Unknown command: 'act end'`) and
+#                            that rejection is now an `encounter_end` event
+#                            which hard-cuts the segment, the way ACT splits
+#                            the encounter on the same line (parser/classify.py,
+#                            pipeline/encounters.py)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 

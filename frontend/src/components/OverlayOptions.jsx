@@ -143,6 +143,25 @@ export default function OverlayOptions({ overlay, onChange, onRevoke }) {
                onChange={(ev) => set({ max_rows: Number(ev.target.value) || 8 })} />
       </Row>
 
+      {/* The setting that decides whether anybody can READ the thing.
+
+          What reaches a viewer is not what is on the streamer's monitor: the
+          canvas is downscaled to the output resolution, and then encoded. A
+          1440 scene going out at 936p is 1.5× smaller before the encoder has
+          spent a bit. Nothing here can know that chain, and every scene's is
+          different, so it is a knob — and the honest hint is to turn it up
+          until it reads on the STREAM, not in the preview. */}
+      <Row label="Text size"
+           hint={`${Math.round((cfg.text_scale ?? 1.25) * 100)}% — size it on the`
+             + ' stream, not in the OBS preview'}>
+        <span className="chips">
+          {[[1, '100%'], [1.25, '125%'], [1.5, '150%'], [1.75, '175%']].map(([v, l]) => (
+            <button key={v} className={`chip ${(cfg.text_scale ?? 1.25) === v ? 'on' : ''}`}
+                    onClick={() => set({ text_scale: v })}>{l}</button>
+          ))}
+        </span>
+      </Row>
+
       {/* Blank means "fill the browser source", which is what OBS is already
           for. A number pins it, so the parse is the same width every night
           however the source was sized — and a source narrower than the number

@@ -137,14 +137,27 @@ export default function Overlay() {
     <div className={`overlaypage mini theme-${config.theme || 'transparent'}${
       inCombat ? '' : ' idle'}`}
          /* a pinned width, or the source's own. `max-width` in the sheet keeps
-            a number wider than the source from spilling out of the scene. */
-         style={config.width_px ? { width: `${config.width_px}px` } : undefined}>
+            a number wider than the source from spilling out of the scene.
+
+            `--ovl` is the Text size setting, and everything in a panel is a
+            multiple of it (base.css). It defaults ABOVE 1: the rail's sizes
+            are read at 1:1 on a monitor and this is read after a downscale and
+            an encode, so the size that is right on the dock is the wrong
+            starting point here. */
+         style={{
+           ...(config.width_px ? { width: `${config.width_px}px` } : null),
+           '--ovl': config.text_scale ?? 1.25,
+         }}>
+      {/* `showSuggest` is off: a suggested timer is an errand — go and edit an
+          ACT config — and nobody watching a stream can run it. The countdown
+          itself is the same number either way. */}
       <MiniParse
         fight={shown}
         metrics={metrics.map((m) => (m === 'hps' ? 'heal' : 'damage'))}
         rows={config.max_rows || 8}
         layout={config.layout === 'horizontal' ? 'horizontal' : 'vertical'}
         showAoes={!!config.show_timers && inCombat}
+        showSuggest={false}
         stale={!inCombat}
       />
       {!inCombat && (

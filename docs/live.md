@@ -226,6 +226,12 @@ render pass, and the moving part is always a LEAF so it never re-renders the
 row around it. Nothing here invents data: a slide only ever travels between two
 numbers the server sent.
 
+That loop drives DIGITS, and 20Hz is chosen for digits that change once a
+second. The one thing here that moves CONTINUOUSLY — the AoE drain bar — is not
+on it and must not be put back on it: a length rewritten from JS is only as
+smooth as the loop rewriting it, and 20Hz sampled by an OBS source compositing
+at 60fps judders on the stream. That one is handed to the compositor (below).
+
 **The elapsed clock counts in the browser, and its correction is asymmetric.**
 `elapsed_s` is log time arriving in whatever steps the uploader's batches
 happen to be, so printed directly it stutters — "0:04, 0:04, 0:07" — and a
@@ -252,6 +258,12 @@ or the replay's cursor — never the wall clock, which a backfilling log would
 make a liar). `ended` stops the clock, kills the pulse dot, and moves the
 rail's row to `saving`. The fight stays on screen with its numbers until its
 record lands, which is the point: those are the seconds everyone is reading.
+
+The exception is `/act end` (`docs/parser.md`), where the raid says the pull is
+over: `CLOSE_S` exists because a late kill line can still arrive for a fight
+that merely went quiet, and that line settles it. A segment carrying
+`Segment.ended_by_cmd` is committed by the very next flush rather than waiting
+the 17s out, so the card lands while the meter is still being read.
 
 **The fight's length is damage to damage, live and recorded alike.**
 `elapsed_s` was the last EVENT in the open segment, which counted the trailing
@@ -464,6 +476,58 @@ Two orderings in there are load-bearing:
   kill-victim rule reads the eight raiders a boss just killed as eight mobs,
   and the meter empties out at the moment the raid wants to look at it.
 
+#### The stranger problem, and asking Census mid-pull
+
+Everything above is knowledge the app already had, which is exactly its limit.
+`snapshot_context` is read ONCE, when the session's `LiveState` is created, and
+every row in it is the settled output of a parse that already finished. For the
+people you raid with every week that is the right trade and costs four indexed
+reads. For anybody else it is empty: stand next to another guild's avatar pulls
+to gather data and every name in the meter is one this app has never parsed, so
+the whole raid sits there with no class — and on this screen the class is not a
+label, it is the bars (`classes.js: barFill` colours damage and healing by
+archetype). The answer did arrive, at session CLOSE, when the rebuild ran
+`ingest_writer._sync_roster_classes` — which is hours after the pull nobody
+could read.
+
+Census does not need a spellbook to answer that. It needs the NAME
+(`census/roster.py`), which the log has printed the moment somebody swings. So
+the live path asks, and the same cache the recorded path fills answers for both:
+
+- **What is asked about is the built snapshot's unclassed player rows**
+  (`_unclassed`), not the batch's names. The snapshot is where every one of
+  those words has already been decided — `Names` has ruled the mobs and the
+  pets out, `YOU` has become the logger, the list is already cut to
+  `MAX_ACTORS` — so nothing is spent on the zone's trash and nothing is asked
+  about that the meter would not colour. It rides the existing gate too: no
+  dashboard open, no snapshot, no lookup.
+- **Never on the ingest thread.** `process_batch` holds `state.lock` for the
+  whole of a batch, and `CensusClient` retries a stalled read three times, so
+  an HTTP call there stalls the meter with it. The names go to a queue and one
+  process-wide worker; `state.lock` is taken only to write the answers back,
+  and `get_db()` is thread-local so the worker has its own connection.
+- **A name is asked about once a session**, marked when it is QUEUED rather
+  than when it is answered — the plugin sends twice a second and the same
+  unclassed row is in every payload, so marking on the answer would queue a
+  slow lookup twenty more times while it ran.
+- **What gets merged is the CACHE, not the call's report.** `roster.resolve`
+  asks about the stale names only, so a name the parse path or another
+  uploader's session already resolved comes back `found: 0` — it was never
+  asked about. Reading the report instead of the table is how a second meter
+  sits uncoloured all night beside a first one that has the answer on disk.
+- **A failure is not an answer.** `roster.resolve` already declines to cache a
+  network error, so the names go back on the table behind a cooldown
+  (`LIVE_ROSTER_RETRY_S`) — an outage is retried at that rate rather than at
+  the plugin's.
+- **A found name is also proof of PERSONHOOD**, so it joins `known_players`.
+  That is the second thing the live path was missing about a stranger: one
+  segment of a wipe is 200 events in which the boss kills eight people, and
+  `refine_known_mobs`'s kill-victim rule reads those eight as mobs.
+
+Nothing publishes from the worker. The class lands on the bars when the next
+snapshot is built, which is the next half second — a payload republished with
+the same numbers would be a repaint the stream cannot use.
+
 Checked against the back catalogue: over two full raid nights the provisional
 label now matches the recorded one on 614 of 640 fights, and every disagreement
 left is a 3-to-400-event trash stub where two adds trade the lead or the
@@ -488,9 +552,11 @@ assigns the attribute; readers on the event loop take the reference and treat
 it as frozen. One atomic store, no reader lock, no copies.
 
 **Live AoE timers** reuse `pipeline/aoes.py`'s definition — a second in which
-one enemy ability touched `MIN_TARGETS` players is a cast — importing its
-constants rather than restating them, so the live rule and the recorded rule
-cannot drift apart. Two differences, both deliberate. Nothing filters on name
+one enemy ability touched `MIN_TARGETS` players is a cast, or touched ANYONE
+at all if the reported-timer list knows the ability (`aoes.anchors`, below) —
+importing its constants and its clustering rather than restating them, so the
+live rule and the recorded rule cannot drift apart. Two differences, both
+deliberate. Nothing filters on name
 grammar, because that would drop exactly the bosses worth a countdown (live,
 `Venekor` is indistinguishable from a raider by name; the anchor rule is the
 real evidence — a raider's green AE hits mobs, so touching five RAIDERS in one
@@ -502,6 +568,47 @@ inside the CURRENT fight feed an observed period — the wait between two pulls
 is a raid taking a break — so a boss's first cast counts down only when ACT's
 reported-timer list knows the ability, and a single cast with no timer at all
 is not shown, because a row that can only say "that happened" is noise.
+
+### The timer list decides what a CAST is, not just what earns a row
+
+`RAID_FRACTION` below decides which abilities reach the panel. This decides
+what counts as a cast once one has, and the two were entangled: an ability
+earned its row by being on ACT's list, and then re-armed its countdown only on
+the seconds that reached five raiders. The countdown was therefore anchored to
+a second that had nothing to do with when the boss last cast it.
+
+Measured on the 2026-08-09 Vampire Lord Mayong Mistmoore kill in Throne of New
+Tunaria, 15m52s, reported timer 37s. `Soul Paralysis` **landed 11 times**; it
+reached five or more raiders **three** times. The parse itself was never in
+doubt — all 47 log lines parsed and attributed — but the panel saw three casts
+598 and 313 seconds apart, and read overdue for most of the fight.
+
+So for an ability the list knows by name, reach stops being evidence:
+
+- **One target is a cast**, and so is a cast that found nothing but a pet
+  (`aoes.PET_KINDS`). A pet ANCHORS and is never counted as coverage — `hit`,
+  `avoided`, `absorbed` and `blocked_pct` stay statements about raiders.
+- **One cast is a row**, where an unlisted ability still needs `MIN_CASTS`. A
+  boss's first cast of the night is exactly when a countdown is worth the most,
+  and the reported timer is the only one available on it.
+
+Over 60 recent named fights this ADDED 13 rows and removed none: `Mayong's
+Touch` (102 casts, 37s reported, 38.8s measured), `Prone to Corruption`,
+`Touch of Darkness`, `Reaching Rot` — abilities on the raid's own callout list
+that had never once appeared, because they do not reach five people.
+
+**Do not bound how far a cluster may run from its start** (`aoes._cluster`).
+The one flaw in hop-by-hop clustering is real — `Stench of Death` ticks every
+3s for ~15s on a 23s cycle, and its tail walks into the next cast and merges
+them, costing about a third of its casts — and a span bound trades it for a
+worse one. `Blanket of Eternal Night` ticks every 6s for **76 seconds**, longer
+than its own ~60s cycle, so any span short enough to split Stench chops
+Blanket's tail into casts that never happened: 65 casts became 72 and the
+measured period fell from 59.8s to 40.3s, which then presented itself as a
+"your 60s timer should be 40s" suggestion. Merging is the failure to prefer,
+because a merged cast makes a gap LONGER and `observed_period` is built to
+survive exactly that, while a split one makes a gap SHORTER and nothing
+downstream can tell that from a real timer.
 
 ### An audit's threshold is not a panel's (`RAID_FRACTION`)
 
@@ -541,9 +648,45 @@ Casualty worth naming: `Fiery End` off a mutagenic disgorgant (43% reach, 7.5s
 `aoes.py` documents — several mobs sharing a name read as one casting far too
 often — so it is a countdown that was already lying.
 
-The recorded AoE tab is untouched by any of this. It still lists everything
-that touched five people, because that is a different question asked at a
-different time.
+### A cast is a moment; a damage shield is a condition (`SUSTAINED_RUN`)
+
+`Caress Feedback` was drawing a countdown on Mayong. It is his damage shield —
+it fires when somebody swings at him — so it reaches the raid exactly the way a
+cast does, and neither the five-in-a-second anchor nor `RAID_FRACTION` can tell
+the two apart. Reach is the wrong question. **How long it goes on** is the
+right one: an ability that keeps meeting the raid-wide anchor second after
+second is not being cast at the raid, it is a state the raid is standing in.
+
+Median raid-wide seconds per burst, over 60 named fights (288 minutes):
+
+| | median | longest burst |
+|---|---|---|
+| `Caress Feedback` (D'Lizta) | **36** | 149s |
+| `Royal Decree` (Lenya Thex) | **33–38** | 232s |
+| `Caress Feedback` (Mayong) | **9** | 29s |
+| `Stench of Death` — the widest-reaching real AoE | 3 | 8s |
+| `Vortex of Darkness`, `Rumbling of Earth` | 2 | |
+| `Blanket of Eternal Night`, `Soul Paralysis`, `Dark Visage`, `Ydalian Bolt`, `Regal Backlash`, `Enthralling Flames` | **1** | 1–3s |
+
+No overlap and no borderline case, so `SUSTAINED_RUN = 6` sits in the empty
+middle. A REPORTED timer is exempt, the same way it outranks an observed period
+everywhere else — the raid's own list beats any shape argument.
+
+It has to be caught explicitly, because **the clustering actively hides it**.
+Six-second gaps turn a shield that never stops into tidy "casts" 19 seconds
+apart, and one that pauses while the mob is untargetable into a plausible
+55-second timer — a countdown assembled out of somebody's melee windows. The
+one shield the old code did drop was an ACCIDENT: 149 unbroken seconds became a
+single cluster and fell under `MIN_CASTS`. So the defence was dropping the
+shields that never stop and admitting the ones that pause, which is backwards.
+
+The row stays on the recorded AoE tab, marked `shield` and carrying its
+`run_s`. It reached the raid and that is what the tab records; what it loses is
+the countdown, which it never had anything to count down to.
+
+The recorded AoE tab is otherwise untouched by any of this. It still lists
+everything that touched five people, because that is a different question asked
+at a different time.
 
 The panel is headed **Spell timers**, not "Raid-wide": what it lists is the
 shortlist worth calling out, and "raid-wide" described the anchor rule rather
@@ -557,6 +700,123 @@ handling this AoE" is the question the countdown exists to set up, and the
 countdown itself is big tabular digits that keep counting UP past due —
 "+0:03" reads as a stunned mob, "+0:40" reads as the timer being wrong, and
 "due" alone could not say which.
+
+Three more things a row carries, and one that it loses.
+
+- **What it lands AS**, as a pill beside the name (`DtypePill`, exported from
+  `AoeTimers.jsx` and drawn identically on the recorded tab). One word, because
+  it answers a one-word question: whether the raid can be asked to cover this
+  one, and by whom. The pill is the biggest school; a dual-type hit keeps the
+  rest on the title. Not colour-coded — twelve schools is more hues than the
+  page has to spare.
+- **A SUGGESTED timer**, printed and never applied. `aoes.suggest_period`
+  offers the measured period when it clears both the 15% the Δ column already
+  highlights and three seconds flat, over `SUGGEST_MIN_AGREE = 3` agreeing
+  intervals, and never when `instances_hint` explains the disagreement as
+  several mobs sharing a name. The countdown itself stays on the configured
+  number: a countdown that silently uses a different timer from everybody
+  else's is worse than one that is wrong the same way as theirs. On 60 recent
+  named fights it fires 9 times — `Soul Paralysis` 37s→43.6s over 42 agreeing
+  intervals, `Stench of Death` 30s→23s, `Dark Visage` 28s→44.3s. It is shown on
+  the live parse and the mini rail and NOT on the stream overlay, because it is
+  an errand (go and edit an ACT config) and nobody watching a stream can run
+  it.
+- **A JOUST tick** (`lib/joust.js`), which is the only thing on this panel a
+  log cannot supply — running out of an AoE and standing in it look identical
+  in a log. It is keyed by ability NAME, not by source or fight, because
+  jousting is a property of the ability and a mark has to outlive the pull it
+  was made on. It lives in localStorage: per browser, deliberately not per
+  account, since it is a note about how you play and the alternative is a
+  settings table and a round trip before a countdown can draw. The consequence
+  is that an OBS browser source is a different browser and inherits nothing.
+  Ticks are drawn on the full-width live panel and the recorded AoE tab — the
+  two surfaces anybody can click.
+- **And it LEAVES when it has been overdue for `OVERDUE_DROP_S` = 60s.** Past
+  due is information, right up until it stops telling anybody when anything is
+  due; the panel is a shortlist. Nothing needs un-dropping, because every
+  snapshot is rebuilt from the fight's events rather than accumulated — the row
+  returns on its own the moment the ability lands again. The browser re-applies
+  the same line against its own clock (`aoe_drop_s` in the payload), since that
+  clock runs ahead of the payload by design and the row would otherwise sit
+  there counting up for a poll.
+
+**A row with no timer leaves on the same line, measured from its LAST CAST**,
+and that was the half of the rule that was missing. A row earns its place with
+two casts even when nothing repeats (`observed_period` needs two agreeing gaps,
+so three casts), and a row with no period has nothing to be late for — so
+nothing expired it and it held its slot for the rest of the pull. An avatar is
+where that stops being theoretical: several of its raid-wide abilities do not
+repeat on a clock at all (`Stealth Assault`, `Mischievous Bombardment` — two
+casts, no agreeing gap, no entry in ACT's list), so a five-row panel was two
+rows of countdown and three rows saying `2×` forever. What a row with no timer
+has to say is that this just happened, so it says it for as long as that is
+true.
+
+That mattered where it costs the most. The dashboard's panel is a page you can
+scroll; the dock and the stream overlay draw the METER UNDERNEATH the timers in
+a scene of fixed height, so every permanent row there is a raider pushed off the
+bottom — people simply vanished from the parse mid-pull. The expiry is the fix
+for why those rows existed; the compact panel takes the belt as well
+(`AoeTimers: miniTimers`), because a fixed scene cannot afford to find out it
+was wrong: rows with no period are dropped while the fight is RUNNING (once it
+ends every row loses its countdown and they all belong again), and what is left
+is capped at `MINI_TIMER_ROWS` = 4. Rows arrive soonest-due first, so the cut
+falls on the ones furthest from mattering. It is the same trade as the meter's
+own `max_rows` on the overlay against the dashboard's fold — nobody watching a
+stream can click, and nobody mid-pull can scroll a dock.
+
+**The burn window** is the last row and the only one that is not an ability.
+Once anything is ticked as jousted, the soonest such cast owns a row that reads
+the same seconds the other way round: not "the AoE lands in 24s" but "you have
+24 seconds in melee", which is the number a raid actually calls out. It takes
+its own colour (`--joust`, teal — the drain is already amber and overdue is
+already red, and this row is neither a reading nor a problem), and inside
+`JOUST_WARN_S` = 5 it says **JOUST** in the clear, flashing six times over
+three seconds and then holding. A few times, not forever: three seconds catches
+an eye that was on the game, and a light blinking for the rest of the window is
+something people learn to stop seeing. Under `prefers-reduced-motion` the blink
+is REPLACED rather than removed — the word takes a solid danger-coloured block
+— because reduced motion is a request for less movement, not for less warning.
+
+**The drain bar belongs to the COMPOSITOR, and the countdown stops when the
+fight does.** Both halves of this were caught on somebody's Twitch stream
+rather than on a dev box, which is the environment that makes them visible.
+
+The bar and the digits used to run the same way: the shared 20Hz ticker set
+state, React re-rendered the list, and the fill's `width` was rewritten twenty
+times a second. Two separate things jerked.
+
+- **The payload re-anchored the clock flat.** The countdowns are in log time and
+  the panel anchored on `log_ts` every time a payload arrived. But `log_ts` is
+  the newest line the plugin has SENT, so it trails the log clock by however
+  long that batch took to reach the browser, and that varies — so every couple
+  of seconds the countdown jumped BACKWARD by a fraction of a second and drained
+  forward again. Same disease the elapsed clock was already inoculated against,
+  same cure: `useLogClock` (`lib/smooth.js`) predicts forward and takes a
+  payload only when it is AHEAD, or `SNAP_S` behind (a different fight). It is
+  also why the digits sometimes printed a second twice.
+- **20Hz is not a frame rate.** An OBS browser source composites at the scene's
+  rate, typically 60fps, so a length rewritten every 50ms advances in 3-frame,
+  4-frame, 3-frame steps — judder, from a value that is perfectly correct. So
+  the bar is now a CSS animation (`@keyframes aoedrain`, `transform: scaleX()`)
+  running over one period and SEEKED to where the fight is with a negative
+  `animation-delay`. The seek is taken once, at mount, and the element is keyed
+  on `next_due_ts`: a genuinely new cast remounts and re-seeks it, and nothing
+  else touches it, because rewriting the delay on a running animation re-seeks
+  it — a jump per payload, the artifact this is fixing. Between casts JS does
+  not touch the bar at all, and it cannot judder however busy the tab is.
+
+The digits stay on the ticker — they change once a second, so a tick only has
+to be fine enough to catch the crossing — but they now re-render only when what
+they SAY changes, rather than twenty times a second for the whole list.
+
+And the panel takes `running`, the flag the elapsed clock takes, off the same
+`ended`/`stale` pair: a pull that ACT has called has no next cast, so a bar
+draining toward one is counting down to something that will never happen. The
+rows stay, because which AoEs went off and how many they hit is worth reading
+after the pull — they say how many times it fired instead of when the next one
+is due. Nothing about this is overlay-specific: the mini parse and the stream
+overlay are one component, so the dock beside the game gets the same fix.
 
 Cost: one pure-Python pass over the open fight per batch. Measured against the
 biggest fight in bobby.txt — 46,521 events over 408 seconds — that is 65ms,

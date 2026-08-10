@@ -27,6 +27,14 @@ from .subjects import decompose
 DTYPES = "crushing|slashing|piercing|disease|poison|mental|cold|heat|divine|magic|focus"
 
 RE_ZONE = re.compile(r"^You have entered\s+(.+)\.$")
+# `/act end` typed in game. EQ2 has no such command, so the client writes the
+# rejection into the log — `Unknown command: 'act end'`, exactly the format the
+# fixture shows for a real typo (`Unknown command: 'lbtell'`, 9 of them). That
+# rejection IS the channel: it is how ACT's own EQ2 plugin hears the command,
+# and it is why the raider does not need this site to be listening to anything
+# but the log. Only `end` means something here; `/act clear` operates on ACT's
+# own window and has nothing to do on a server.
+RE_ACT_END = re.compile(r"^Unknown command: '\s*act\s+end\s*'\.?$", re.IGNORECASE)
 RE_KILL_YOU = re.compile(r"^You have killed (.+)\.$")
 RE_KILL = re.compile(r"^(.+?) has killed (.+)\.$")
 RE_ALAS = re.compile(r"^Alas, (.+) has died from pain and suffering\.$")
@@ -147,6 +155,9 @@ def classify_body(ts: int, body: str, logger: str,
 
     def dec(subj: str) -> tuple[Subject, str | None]:
         return decompose(subj, logger, pet_names)
+
+    if RE_ACT_END.match(body):
+        return ParsedEvent(ts, "encounter_end")
 
     if m := RE_ZONE.match(body):
         zone = m.group(1).strip()

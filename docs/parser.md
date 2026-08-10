@@ -34,6 +34,38 @@ lulls > 6s split the fight — Garanel's 21s lull yields two segments (the first
 labeled by its named add, Garanel's Shade), which is exactly what ACT shows
 for the same night.
 
+### `/act end` — the one marker the log does have
+
+Typing `/act end` in game ends the current fight here, the same way it does in
+ACT. EQ2 has no `/act` command, so the client writes its refusal into the log:
+
+```
+(1785630981)[Sat Aug  1 20:36:21 2026] Unknown command: 'act end'
+```
+
+That refusal IS the channel — it is how ACT's own EQ2 plugin hears the command
+(EQAditu: "EQ2 will generate an error message in the log file, the EQ2 English
+parsing plugin will see that error message and forward it to ACT"), and the
+format is the one the golden fixture shows for any typo (9 × `Unknown command:
+'lbtell'`). Nothing is needed from the uploader: it sends every line verbatim,
+and `pipeline/redact.py` governs chat prefixes only, so the line arrives.
+
+`parser/classify.py` turns it into an `encounter_end` event and
+`segment_events` hard-cuts on it like a zone line: the marker joins no segment,
+the next damage line opens a new one, and — unlike a segment that merely timed
+out — **nothing trails into it**, because a kill or a death after the raid
+ended the pull belongs to what comes next.
+
+Only `end` is honoured. `/act clear` operates on ACT's own window and has
+nothing to do on a server.
+
+Live, the cut also has to be immediate. `live._flush` normally holds the last
+segment for `CLOSE_S` (17s) in case a late kill line joins it; a segment
+carrying `Segment.ended_by_cmd` commits at once instead, so the fight card is
+on the dashboard while the raid is still reading the meter, and the In Combat
+light goes out with it. The rebuild from raw at session close re-reads the same
+line and makes the same cut, so the live view and the finished session agree.
+
 ### Naming: the enemy fought, not the enemy that died
 
 `pipeline.encounters.encounter_label` titles a segment after the **mob that

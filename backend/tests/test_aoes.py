@@ -25,14 +25,19 @@ BASE_TS = 1754500000
 CTIME = "Mon Aug 03 21:00:00 2026"
 NAMED = "The Corsolander"
 RAIDERS = [f"Raider{i}" for i in range(1, 9)]
+# `War Stomp` is IN the shipped ACT list at 45s, which is what makes it the
+# default here — most of these tests are about an ability the raid was told to
+# expect. Anything testing the reach rule has to name something the list has
+# never heard of, or it is testing the other branch by accident.
+UNLISTED = "Cleaving Swipe"
 
 
 def ev(ts, tgt, *, enc=1, kind="damage", ability="War Stomp", src="The Corsolander",
-       amount=1000, flags=0):
+       amount=1000, flags=0, dtype=None, tgt_kind="player"):
     return {"encounter_id": enc, "ts": ts, "type": kind, "ability": ability,
             "src_name": src, "src_kind": "mob",
-            "tgt_key": f"{tgt}|player", "tgt_kind": "player",
-            "amount": amount, "flags": flags}
+            "tgt_key": f"{tgt}|{tgt_kind}", "tgt_kind": tgt_kind,
+            "amount": amount, "dtype": dtype, "flags": flags}
 
 
 def cast(ts, *, enc=1, hit=RAIDERS, avoided=(), absorbed=(), **kw):
@@ -98,10 +103,124 @@ def test_the_wait_between_two_pulls_is_not_a_cooldown():
 
 
 def test_a_cleave_is_not_an_aoe():
-    """Fewer targets than MIN_TARGETS at once is a frontal, not a raid AoE."""
+    """Fewer targets than MIN_TARGETS at once is a frontal, not a raid AoE —
+    for an ability the reported-timer list has never heard of. `UNLISTED` is
+    load-bearing: with a reported timer this is a cast, which is the next
+    test."""
     small = RAIDERS[:aoes.MIN_TARGETS - 1]
-    rows = cast(BASE_TS, hit=small) + cast(BASE_TS + 45, hit=small)
+    rows = (cast(BASE_TS, hit=small, ability=UNLISTED)
+            + cast(BASE_TS + 45, hit=small, ability=UNLISTED))
     assert aoes.detect(rows, {NAMED}) == []
+
+
+# ------------------------------------------------- the list decides, not reach ---
+
+def test_a_reported_ability_is_a_cast_however_few_it_found():
+    """The raid was told to expect this one BY NAME, so reach has nothing left
+    to prove. Mayong's Soul Paralysis reached one group in a 16-minute kill and
+    a five-target anchor saw three of its eleven casts."""
+    rows = [ev(BASE_TS + t, "Raider1") for t in (0, 45, 90)]
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["casts"] == 3
+    assert row["median_targets"] == 1
+    assert row["observed_s"] == 45.0
+
+
+def test_a_pet_eating_it_proves_the_cast_without_joining_the_raid():
+    """A pet is evidence and is never coverage: it anchors the cast, and the
+    reach numbers stay a statement about RAIDERS."""
+    rows = [ev(BASE_TS, "Bobby's pet", tgt_kind="swarm_pet"),
+            ev(BASE_TS + 45, "Bobby's pet", tgt_kind="swarm_pet")]
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["casts"] == 2
+    assert row["median_targets"] == 0        # nobody in the raid took it
+    assert row["cast_list"][0]["hit"] == 0
+
+
+def test_one_cast_counts_when_the_list_knows_it_and_not_otherwise():
+    """A first pull is exactly when a countdown is worth the most, and the
+    reported timer is the only one available on it."""
+    [row] = aoes.detect(cast(BASE_TS), {NAMED})
+    assert row["casts"] == 1 and row["reported_s"] == 45
+    assert aoes.detect(cast(BASE_TS, ability=UNLISTED), {NAMED}) == []
+
+
+def test_a_ticking_tail_never_splits_a_cast_into_two():
+    """A DoT tail is not a second cast however long it runs — see `_cluster`.
+    Blanket of Eternal Night ticks for 76s on a ~60s cycle, and a span bound
+    short enough to help elsewhere turned its tail into casts that never
+    happened."""
+    rows = []
+    for start in (0, 120):
+        rows += cast(BASE_TS + start)                       # the cast itself
+        for tick in range(6, 100, 6):                       # 94s of tail
+            rows.append(ev(BASE_TS + start + tick, "Raider1"))
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["casts"] == 2
+    assert row["observed_s"] is None      # one gap, and it is not claimed
+
+
+# ---------------------------------------------------------- damage schools ---
+
+def test_the_row_says_what_it_lands_as():
+    rows = (cast(BASE_TS, dtype="cold") + cast(BASE_TS + 45, dtype="cold")
+            + [ev(BASE_TS, "Raider1", dtype="disease", amount=10)])
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["dtype"] == "cold"                    # biggest school leads
+    assert set(row["dtypes"]) == {"cold", "disease"}
+    assert sum(row["dtypes"].values()) == row["damage"]
+
+
+def test_damage_with_no_school_is_left_out_rather_than_guessed():
+    """A ward-folded hit can carry damage and name no school (`_pair_wards`),
+    so the breakdown is shares of the damage and not a reconciliation of it —
+    on the real TNT Soul Paralysis row, 486,629 of 534,171."""
+    rows = (cast(BASE_TS, dtype="cold") + cast(BASE_TS + 45, dtype="cold")
+            + [ev(BASE_TS, "Raider1", amount=5000)])
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["dtypes"] == {"cold": row["damage"] - 5000}
+    assert sum(row["dtypes"].values()) < row["damage"]
+
+
+# ------------------------------------------------------ suggesting a timer ---
+
+def test_a_timer_this_log_disagrees_with_is_offered_not_applied():
+    """Three agreeing gaps at 60s against a reported 45s is an ACT config
+    somebody should go and fix."""
+    rows = []
+    for t in (0, 60, 120, 180):
+        rows += cast(BASE_TS + t)
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["reported_s"] == 45                   # unchanged: it is theirs
+    assert row["observed_s"] == 60.0
+    assert row["suggested_s"] == 60.0
+
+
+def test_close_enough_is_not_a_suggestion():
+    """Second-resolution stamps and a stunned mob both move a gap a little."""
+    rows = []
+    for t in (0, 47, 94, 141):
+        rows += cast(BASE_TS + t)
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["observed_s"] == 47.0 and row["suggested_s"] is None
+
+
+def test_two_agreeing_gaps_is_a_guess_not_a_config_change():
+    rows = cast(BASE_TS) + cast(BASE_TS + 70) + cast(BASE_TS + 140)
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["observed_s"] == 70.0
+    assert row["observed_agree"] == 2
+    assert row["suggested_s"] is None
+
+
+def test_several_mobs_of_one_name_are_never_a_timer_suggestion():
+    """The observed period is a fraction of the reported one because there are
+    two mobs, and editing the ACT config for that would be wrong twice."""
+    rows = []
+    for t in (0, 10, 20, 30, 40):
+        rows += cast(BASE_TS + t, ability="Faith Strike", src="a fallen paladin")
+    [row] = aoes.detect(rows, set())
+    assert row["instances_hint"] == 2 and row["suggested_s"] is None
 
 
 def test_only_enemies_cast_aoes():

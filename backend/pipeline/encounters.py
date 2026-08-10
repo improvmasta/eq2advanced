@@ -1,5 +1,7 @@
-"""Encounter segmentation. The log has NO encounter markers — segments are
-defined by damage-line gaps (>= GAP_S seconds) and hard-cut on zone changes.
+"""Encounter segmentation. The log has no encounter markers of its own —
+segments are defined by damage-line gaps (>= GAP_S seconds) and hard-cut on
+zone changes, plus the one marker the RAID can put there by typing `/act end`
+(an `encounter_end` event; see docs/parser.md).
 
 `segment_events` is pure over parsed events and has no DB. `encounter_label`
 needs resolved entities (it has to know which target is a mob), so callers in
@@ -27,6 +29,10 @@ class Segment:
     name: str | None = None
     is_named: bool = False
     success: int | None = None
+    # closed by `/act end` rather than by silence. The live writer needs to know:
+    # a segment that timed out may still gain a late kill line, but one the raid
+    # ENDED cannot, so it commits at once instead of waiting out CLOSE_S.
+    ended_by_cmd: bool = False
 
 
 _TRAIL_TYPES = {"kill", "death", "pet_death", "rez", "revive"}
@@ -193,7 +199,8 @@ def split_trailing_corpse(seg: Segment, rows: list[dict]) -> list[Segment]:
         if fight_end == seg.end_ts:
             return [seg]
         return [Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
-                        event_indices=list(seg.event_indices))]
+                        event_indices=list(seg.event_indices),
+                        ended_by_cmd=seg.ended_by_cmd)]
     # the kill's own second belongs to the fight (a lifetap heal on the killing
     # blow is part of it, and ACT's encounter ends on that second)
     cut = last + 1
@@ -201,10 +208,12 @@ def split_trailing_corpse(seg: Segment, rows: list[dict]) -> list[Segment]:
         cut += 1
     if cut >= len(rows):
         return [Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
-                        event_indices=list(seg.event_indices))]
+                        event_indices=list(seg.event_indices),
+                        ended_by_cmd=seg.ended_by_cmd)]
 
     head = Segment(zone=seg.zone, start_ts=seg.start_ts, end_ts=fight_end,
-                   event_indices=list(seg.event_indices[:cut]))
+                   event_indices=list(seg.event_indices[:cut]),
+                   ended_by_cmd=seg.ended_by_cmd)
     tail_rows = rows[cut:]
     hitters = {r["src_entity"] for r in tail_rows if r["type"] == "damage"}
     if not hitters or not hitters <= dead:
@@ -273,6 +282,19 @@ def segment_events(events: list, logger: str, initial_zone: str | None = None,
             current = None
             last_damage_ts = None
             zone = ev.extra.get("zone")
+            continue
+
+        if ev.type == "encounter_end":
+            # `/act end`: the raid said the fight is over, so it is — the next
+            # damage line opens a new one, exactly as ACT splits it. The marker
+            # itself joins no segment (like a zone line), and nothing trails
+            # into the closed one: a kill or a death after the raid ended the
+            # pull belongs to what comes next.
+            if current is not None:
+                current.ended_by_cmd = True
+            finalize(current)
+            current = None
+            last_damage_ts = None
             continue
 
         if ev.type in ("damage", "avoid"):

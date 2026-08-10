@@ -30,6 +30,12 @@
   --danger: #f87171;
   --success: #4ade80;
   --warning: #fbbf24;
+  /* The burn window (AoeTimers.jsx). Its own hue on purpose: the drain bar is
+     already amber and overdue is already red, and this row is neither a
+     reading nor a problem — it is the one line on the panel that tells you to
+     go and hit something. Teal is the only free direction that is not one of
+     the four archetype colours. */
+  --joust: #5eead4;
 
   --rarity-common: #9d9d9d;
   --rarity-treasured: #93d9ff;
@@ -140,6 +146,9 @@
   --danger: #b53434;
   --success: #1b6e3c;
   --warning: #8a5d00;
+  /* deeper than the dark theme's teal for the same reason the reds are: this
+     is a figure somebody reads off a light surface, not decoration */
+  --joust: #0f6f6a;
 
   --rarity-common: #71716f;
   --rarity-treasured: #1c6f9e;

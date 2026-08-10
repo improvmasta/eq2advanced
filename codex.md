@@ -6,6 +6,7 @@ reference: `ARCHITECTURE.md` is the index of `docs/*.md`.
 
 ## Ship log
 
+- 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
 - 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page
 - 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
@@ -25,4 +26,3 @@ reference: `ARCHITECTURE.md` is the index of `docs/*.md`.
 - 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)
 - 2026-08-03 (claude): Zone runs phase 5: checkbox multi-select + ComparePanel (per-metric grouped bars from agg + report data)
 - 2026-08-03 (claude): Zone runs phase 4: zone-page tabs (Overview/Damage/Healing/Defense/Insights), right-side ActorPanel, shared stats.js, coach resurfaced
-- 2026-08-03 (claude): Zone runs phase 3: Raids home (date-grouped runs), /zones/:id page v1, Uploads management page, shared UploadDrop

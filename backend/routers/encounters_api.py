@@ -807,7 +807,7 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
     rows = []
     for r in conn.execute(
             f"SELECT e.encounter_id, e.ts, e.type, e.src_entity, e.tgt_entity, "
-            f"e.amount, e.flags, ab.name AS ability FROM events e "
+            f"e.amount, e.dtype, e.flags, ab.name AS ability FROM events e "
             f"LEFT JOIN abilities ab ON ab.id = e.ability_id "
             f"WHERE e.encounter_id IN ({lph}) AND e.type IN ('damage','avoid') "
             f"ORDER BY e.ts, e.seq", live):
@@ -819,7 +819,7 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
             "ts": r["ts"], "type": r["type"], "ability": r["ability"],
             "src_name": src["name"], "src_kind": src["kind"],
             "tgt_key": _ent_key(tgt["name"], tgt["kind"]), "tgt_kind": tgt["kind"],
-            "amount": r["amount"], "flags": r["flags"],
+            "amount": r["amount"], "dtype": r["dtype"], "flags": r["flags"],
         })
     return {
         "aoes": aoes.detect(rows, named_sources),

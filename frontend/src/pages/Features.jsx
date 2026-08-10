@@ -48,7 +48,7 @@ const FEATURES = [
   },
   {
     title: 'Live raiding dashboard',
-    line: 'Live parse, AoE timers, and a mini parse you can dock to either edge of the screen. Add notes and screenshots to any zone or boss while the raid runs.',
+    line: 'Live parse, AoE timers, and a mini parse you can dock to either edge of the screen. Add notes and screenshots to any zone or boss while the raid runs. Typing /act end in game ends the fight here too, the same way it does in ACT.',
     shots: [['live-dashboard.webp', 'Mid-fight, mini parse docked left']],
   },
   {

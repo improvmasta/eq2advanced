@@ -19,10 +19,19 @@ import { useEffect, useRef, useState } from 'react'
 
    ONE requestAnimationFrame loop drives them. React batches every `setState`
    made inside one tick into a single render pass — which only happens if they
-   all land in the same tick. */
+   all land in the same tick.
 
-/* 20Hz. These are slow readings — a bar draining over 30 seconds moves less
-   than a pixel a frame at 60Hz — and the cost is per subscriber per tick. */
+   It drives DIGITS. Anything that has to move CONTINUOUSLY is handed to the
+   compositor instead (the AoE drain bar is a CSS animation seeked to its
+   position, `AoeTimers.jsx`): a JS loop repainting a length is sampled by
+   whatever is compositing the page, and an overlay in OBS composites at 60fps
+   against a 20Hz loop — three frames, four frames, three — which reads as
+   judder on the stream even when every value is right. */
+
+/* 20Hz. What runs on this is a countdown's digits, which change once a second;
+   the tick only has to be fine enough to catch the crossing, and the cost is
+   per subscriber per tick. Anything that must move every frame does not belong
+   here — see above. */
 const FRAME_MS = 50
 
 const subs = new Set()
@@ -64,6 +73,39 @@ const wall = () => Date.now() / 1000
 /* Behind us by more than this and the payload is describing a different fight,
    not a slow batch. */
 const SNAP_S = 3
+
+/* The LOG clock, read as a function rather than as a value.
+
+   The AoE countdowns are in log time and the browser only has its own, so the
+   panel needs to know what the log clock says RIGHT NOW, between payloads. It
+   used to anchor flat — every payload reset the clock to the `log_ts` that
+   payload carried — and that is a sawtooth: `log_ts` is the newest line the
+   plugin has SENT, so it is always behind the log clock by however long that
+   batch took to arrive, and the amount varies. Every couple of seconds the
+   countdowns jumped BACKWARD by a fraction of a second and then drained
+   forward again, which is what "the bars jerk" was, and the same yank is what
+   made the digits print a second twice.
+
+   So the correction is the elapsed clock's, for the elapsed clock's reasons
+   (below): a payload AHEAD of our prediction is real and is taken; a payload a
+   fraction BEHIND it is batch latency and our count stands; only one well
+   behind (`SNAP_S`) is a different fight and re-anchors.
+
+   Returns a getter, not a number, because the caller wants the time at the
+   moment it draws — a value would be one more thing to re-render for. */
+export function useLogClock(logTs) {
+  const anchor = useRef(null)
+  if (!anchor.current) anchor.current = { base: logTs || 0, at: wall() }
+
+  useEffect(() => {
+    if (typeof logTs !== 'number' || !Number.isFinite(logTs)) return
+    const predicted = anchor.current.base + (wall() - anchor.current.at)
+    const take = logTs > predicted || logTs < predicted - SNAP_S
+    anchor.current = { base: take ? logTs : predicted, at: wall() }
+  }, [logTs])
+
+  return useRef(() => anchor.current.base + (wall() - anchor.current.at)).current
+}
 
 /* The elapsed clock, ticking once a second and never skipping one.
 

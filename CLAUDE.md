@@ -126,6 +126,10 @@ segmentation; the subject model is verified against a real raid log):
   rollup semantics change; the startup sweep reparses stale sessions.
 - **A segment is only a FIGHT if the raid engaged it** (`_ENGAGE_KINDS`); an
   ally death makes a no-damage segment a WIPE.
+- **`/act end` ends the fight, live and on rebuild** — EQ2 rejects the command
+  into the log (`Unknown command: 'act end'`), which is the same channel ACT
+  hears it on; it hard-cuts like a zone line, nothing trails into it, and
+  `Segment.ended_by_cmd` commits it without waiting out `CLOSE_S`.
 - **Do NOT re-add trailing-event trimming** — it regresses cures/EncHPS.
 - **Everything that vetoes a mob reclassing claims the name is a PERSON**;
   `roster_prescan` is the authority, softer signals never veto alone.
@@ -178,6 +182,12 @@ Live, notes and replay — `docs/live.md`:
   bare pets, read once per session) plus `refine_known_mobs` over the open
   segment. A seeded mob outranks the roster and only CENSUS vetoes it; the
   roster vetoes only what one segment INFERS.
+- **A stranger's class is asked of Census DURING the pull** (`live.
+  _queue_roster_lookup`) — `snapshot_context` is read once at session start, so
+  next to another guild's raid every bar was uncoloured until the close-time
+  rebuild hours later. The unclassed player rows of the built snapshot go to a
+  background worker; the HTTP never touches the ingest thread, a name is asked
+  about once a session, and a failure backs off (`LIVE_ROSTER_RETRY_S`).
 - **A meter row is a rate, never a total**, and the tail folds at 12 rows
   (`SortableTable`'s `fold` cuts after the sort). The stream overlay keeps its
   hard `max_rows` cap instead — nobody can click a stream. **Max hit is the
@@ -194,9 +204,16 @@ Live, notes and replay — `docs/live.md`:
   animation over the gap. What still moves is the two things that are functions
   of TIME: the AoE countdowns, and the elapsed clock counting in the browser
   (its correction is asymmetric — take a payload ahead of us, hold against
-  latency behind us — so it never repeats or skips a second). **A clock stops
-  when its fight does**: a frozen parse counting off seconds is the one thing
-  here that is actively wrong.
+  latency behind us — so it never repeats or skips a second; the countdowns
+  take the same correction through `useLogClock`, since a flat re-anchor on
+  every payload is a sawtooth). **A clock stops when its fight does** — the
+  elapsed clock and the countdowns alike: a frozen parse counting off seconds,
+  or a bar draining toward a cast the ended pull will never get, is the one
+  thing here that is actively wrong.
+- **The AoE drain bar is the COMPOSITOR's, never the ticker's** — a CSS
+  animation over one period, seeked with a negative `animation-delay` at mount
+  and keyed on `next_due_ts`. The 20Hz ticker exists for digits; a length
+  rewritten by JS at 20Hz judders in an OBS source compositing at 60fps.
 - **The screen sees a hit in ~1s, and every term of that is written down**
   (`docs/live.md` → "How fast the screen sees a hit"). Plugin cadence 0.5s,
   `SNAPSHOT_MIN_S` 0.25s, and the SSE streams are WOKEN by `pipeline/livebus.py`
@@ -208,12 +225,44 @@ Live, notes and replay — `docs/live.md`:
   are behind** (`device_tokens.client_version` v30, off the uploader's
   User-Agent, vs `refdata/plugin/VERSION`). Never heard from is not behind, and
   versions compare as numbers.
-- **Live AoE detection imports `aoes.py`'s constants**; the
-  ≥5-raiders-in-a-second anchor is the whole evidence that a cast HAPPENED.
+- **Live AoE detection imports `aoes.py`'s constants and its clustering**; the
+  ≥5-raiders-in-a-second anchor is the evidence that a cast HAPPENED — for an
+  ability the ACT timer list has never heard of.
+- **For an ability that list KNOWS, reach stops deciding what a cast is**
+  (`aoes.anchors`): one target anchors, a pet anchors (`PET_KINDS` — evidence,
+  never coverage), one cast is a row. Mayong's `Soul Paralysis` landed 11 times
+  on the TNT kill and reached 5 raiders 3 times, so the countdown re-armed from
+  the wrong second and read overdue all fight. Added 13 rows over 60 named
+  fights, removed none.
+- **Don't bound how far a cluster runs from its start** (`aoes._cluster`) — it
+  splits `Blanket of Eternal Night`'s 76s tail into casts that never happened
+  (65→72, measured period 59.8s→40.3s). Merging is the failure to prefer: a
+  merged cast makes a gap LONGER, which `observed_period` survives by design.
+- **A suggested timer is OFFERED, never applied** (`suggest_period`): 3+
+  agreeing intervals, past 15% and 3s, never when `instances_hint` explains it.
+  The countdown stays on the raid's configured number.
+- **Jousting is marked by hand and keyed by ability NAME** (`lib/joust.js`,
+  localStorage) — a log cannot tell running out from standing in. It drives the
+  burn-window row; an OBS browser source inherits no marks.
+- **A countdown overdue by `OVERDUE_DROP_S` (60s) leaves the panel** and comes
+  back on its own — snapshots are rebuilt, never accumulated. **A row with no
+  timer leaves on the same line, measured from its last cast**: an avatar's
+  irregular raid-wide abilities (`Stealth Assault`) have nothing to be late for,
+  so nothing expired them and they held a slot all fight.
+- **The compact panel is not the dashboard's** (`AoeTimers: miniTimers`) — the
+  dock and the stream overlay draw the meter UNDER the timers in a fixed scene,
+  so a countdown-less row is a raider off the bottom: capped at
+  `MINI_TIMER_ROWS`, and rows with no period are dropped while the fight runs.
 - **An audit's threshold is not a panel's** — five targets is a GROUP, and it
   drew 10 rows for 3 real abilities on a Mayong kill. The Spell timers panel
   additionally needs a reported timer OR `RAID_FRACTION` of the raid reached;
   the recorded AoE tab still lists everything.
+- **A cast is a MOMENT; a damage shield is a CONDITION** (`aoes.SUSTAINED_RUN`)
+  — a shield reaches the raid exactly the way a cast does, so reach cannot
+  separate them and only DURATION can: 9–36 raid-wide seconds per burst against
+  1 for every real AoE measured. Catch it explicitly; the clustering hides it
+  by assembling a plausible timer out of melee windows, and `MIN_CASTS` only
+  ever dropped the shields that never stop. A reported timer is exempt.
 - **The notes column collapses, and Enter files a note** (Shift+Enter is the
   newline). The `File under X` button sits under the textarea, and the
   screenshot drop is a strip — a paste needs no target.
@@ -392,6 +441,7 @@ with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
 - 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page
 - 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
@@ -411,4 +461,3 @@ with `bash build.sh`.
 - 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)
 - 2026-08-03 (claude): Zone runs phase 5: checkbox multi-select + ComparePanel (per-metric grouped bars from agg + report data)
 - 2026-08-03 (claude): Zone runs phase 4: zone-page tabs (Overview/Damage/Healing/Defense/Insights), right-side ActorPanel, shared stats.js, coach resurfaced
-- 2026-08-03 (claude): Zone runs phase 3: Raids home (date-grouped runs), /zones/:id page v1, Uploads management page, shared UploadDrop

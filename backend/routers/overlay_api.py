@@ -55,6 +55,9 @@ LAYOUTS = ("vertical", "horizontal")
 # Narrower than this and a name and a rate do not fit on one row; wider than
 # this is not an overlay any more.
 MIN_WIDTH_PX, MAX_WIDTH_PX = 160, 1920
+# Below 1 is smaller than the dock, which no stream has ever wanted; above 2.5
+# a row of eight is taller than most scenes have for it.
+MIN_SCALE, MAX_SCALE = 1.0, 2.5
 
 
 class OverlayConfig(BaseModel):
@@ -68,6 +71,13 @@ class OverlayConfig(BaseModel):
     # the source is nudged is one nobody can line up against anything else —
     # so the number is typed rather than dragged.
     width_px: int | None = None
+    # Type size, as a multiplier on the overlay's own base size (base.css:
+    # `--ovl`). It defaults ABOVE 1 and that is not a stylistic preference:
+    # what a viewer gets is the scene downscaled to the output resolution and
+    # then encoded, so the sizes that are right on a monitor at 1:1 arrive as a
+    # smear. Nothing on this end can know that chain — every scene's is
+    # different — so the streamer turns it up until it reads on the stream.
+    text_scale: float = 1.25
     # OFF is not REVOKED. A streamer who wants the parse off the scene for one
     # pull should not have to change anything in OBS and then re-add the source
     # afterwards, so the page keeps its connection and draws nothing.
@@ -86,6 +96,8 @@ class OverlayConfig(BaseModel):
             # into a box on a dashboard, not an argument worth a 422
             "width_px": (None if not self.width_px or self.width_px <= 0
                          else max(MIN_WIDTH_PX, min(MAX_WIDTH_PX, self.width_px))),
+            # clamped for the same reason as the width
+            "text_scale": round(max(MIN_SCALE, min(MAX_SCALE, self.text_scale)), 2),
         }
 
 

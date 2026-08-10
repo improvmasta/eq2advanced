@@ -15,6 +15,8 @@ import gzip
 import hashlib
 import json
 import logging
+import os
+import queue
 import threading
 import time
 from typing import NamedTuple
@@ -43,6 +45,13 @@ LIVE_LAG_S = 120             # log time this far behind the clock is history, no
 # fight ever measured (46k events), so four a second is affordable, and only
 # while somebody is watching (`watch_until`).
 SNAPSHOT_MIN_S = 0.25
+# A name on screen with no class, asked about WHILE the pull is happening (see
+# `_queue_roster_lookup`). The budget is a whole raid's worth, because the case
+# this exists for is 24 strangers arriving at once; the pace keeps a background
+# thread from opening 24 sockets in the same second the raid is fighting in.
+LIVE_ROSTER_BUDGET = 40
+LIVE_ROSTER_PACE_S = 0.05
+LIVE_ROSTER_RETRY_S = 30     # after a drain that failed, before asking again
 
 
 class LiveState:
@@ -73,6 +82,13 @@ class LiveState:
         self.open_end_ts: int | None = None
         self.open_zone: str | None = None
         self.roster: dict[str, str] = {}   # name_lower -> class, for the bars
+        # Who has already been handed to the Census worker this session, and
+        # the world to ask about them on. The set is what stops the same
+        # unclassed row from queueing a lookup twice a second — a name is
+        # marked when it is QUEUED, not when it is answered.
+        self.roster_asked: set[str] = set()
+        self.roster_quiet_until = 0.0   # backoff after a failed drain
+        self.world_id: int | None = None
         self.known_mobs: frozenset[str] = frozenset()   # see snapshot_context
         # Names known to be people: what earlier parses saw, plus what THIS log
         # proves as the night goes on (chat, loot, a raid join, a rez). It
@@ -111,6 +127,11 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
                 state.zone = json.loads(zrow["extra"]).get("zone")
             (state.roster, state.known_mobs, state.known_players,
              state.known_pets) = snapshot_context(conn)
+            wrow = conn.execute(
+                "SELECT c.world_id AS world_id FROM sessions s "
+                "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
+                (session_id,)).fetchone()
+            state.world_id = wrow["world_id"] if wrow else None
             _states[session_id] = state
     return state
 
@@ -190,6 +211,130 @@ def snapshot_context(conn) -> SnapshotContext:
 
     return SnapshotContext(classes, seed("mob"), frozenset(players),
                            seed("swarm_pet") | seed("named_pet"))
+
+
+# --- asking Census about a stranger, mid-pull -------------------------------
+# One worker for the whole process: the requests are network-bound and a raid
+# has at most a couple of live sessions, so a queue costs less than a thread per
+# batch and bounds how hard a Census outage is hit.
+_roster_q: "queue.Queue[tuple[LiveState, list[str]]]" = queue.Queue()
+_roster_worker: threading.Thread | None = None
+# its own lock, not `_states_lock`: this is reached with a session's `state.lock`
+# already held, and the two locks must not have an order to get wrong
+_roster_worker_lock = threading.Lock()
+
+
+def _unclassed(fight: dict | None) -> list[str]:
+    """The people on screen with no class — who to ask Census about.
+
+    Taken off the built snapshot rather than off the batch's names, because the
+    snapshot is where every one of those words has already been decided:
+    `livemeter.Names` has ruled out the mobs and the pets, `YOU` has become the
+    logger, and the list is already cut to `MAX_ACTORS`. So this is the raid the
+    dashboard is drawing and nothing else — no request is spent on the zone's
+    trash, and no name is asked about that the meter would not colour."""
+    return [a["name"] for a in (fight or {}).get("actors", ())
+            if a["kind"] == "player" and not a.get("class")]
+
+
+def _queue_roster_lookup(state: LiveState, names) -> None:
+    """Ask Census about the people on screen who have no class yet.
+
+    `snapshot_context` is read ONCE, when the session's `LiveState` is created,
+    and everything in it is the output of parses that already finished. That is
+    right for the people you raid with every week and useless for anybody else:
+    standing next to another guild's avatar pull, every name in the meter is one
+    this app has never parsed, so the whole raid sat there uncoloured — and the
+    damage and heal bars ARE the class (`classes.js: barFill`). The answer only
+    arrived at session CLOSE, when the rebuild's `_sync_roster_classes` ran, by
+    which time the pull nobody could read is hours old.
+
+    Census does not need a spellbook to answer that — it needs the name — so the
+    live path can have the same ground truth the recorded one gets, a second or
+    two after a stranger's first hit instead of a night later. What it must not
+    do is make the raid wait for it: this hands the names to a background worker
+    and returns, and the class lands on the bars whenever the next snapshot is
+    built (the plugin sends twice a second, so that is the next half second).
+
+    Called with `state.lock` held.
+    """
+    if os.environ.get("CENSUS_AUTO_REFRESH", "1") == "0":
+        return
+    if time.time() < state.roster_quiet_until:
+        return
+    fresh = sorted({n for n in names if n and n.lower() not in state.roster_asked})
+    if not fresh:
+        return
+    state.roster_asked |= {n.lower() for n in fresh}
+    _roster_q.put((state, fresh))
+    _ensure_roster_worker()
+
+
+def _ensure_roster_worker() -> None:
+    global _roster_worker
+    with _roster_worker_lock:
+        if _roster_worker is None or not _roster_worker.is_alive():
+            _roster_worker = threading.Thread(
+                target=_roster_loop, name="live-roster", daemon=True)
+            _roster_worker.start()
+
+
+def _roster_loop() -> None:
+    while True:
+        state, names = _roster_q.get()
+        try:
+            _lookup_roster(state, names)
+        except Exception:
+            logging.getLogger("live").exception(
+                "live roster lookup failed for session %d", state.session_id)
+        finally:
+            _roster_q.task_done()
+
+
+def _lookup_roster(state: LiveState, names: list[str]) -> None:
+    """One drain of the queue: resolve, then merge into the live state.
+
+    The HTTP happens with NO lock held — `state.lock` is taken only to write the
+    answers, because the ingest thread holds it for the whole of a batch and a
+    Census read that stalls (they do; `CensusClient` retries three times) would
+    stall the meter with it. `get_db()` is thread-local, so this has its own
+    connection and `roster.resolve` writes `roster_classes` in its own
+    transaction — the same cache the next parse and the next session read.
+
+    A found name is also proof of PERSONHOOD, which is the second thing the live
+    path was missing about a stranger: `refine_known_mobs` reads a boss killing
+    eight raiders as eight mobs, and `known_players` is what vetoes that. Census
+    answering for a name is the strongest form of that evidence there is.
+    """
+    from census import client as census_client
+    from census import roster as census_roster
+
+    conn = get_db()
+    world = state.world_id or census_roster.DEFAULT_WORLD
+    report = census_roster.resolve(
+        conn, census_client.shared_client(), names, world,
+        budget=LIVE_ROSTER_BUDGET, pace_s=LIVE_ROSTER_PACE_S)
+    if report["failed"]:
+        # a network failure is not an answer and was not cached, so the names
+        # go back on the table — behind a cooldown, so an outage is retried at
+        # this rate rather than at the plugin's
+        with state.lock:
+            state.roster_asked -= {n.lower() for n in names}
+            state.roster_quiet_until = time.time() + LIVE_ROSTER_RETRY_S
+    # What the CACHE now holds for these names, which is not the same as what
+    # this call fetched. `resolve` asks about the STALE ones only, so a name
+    # another live session (or the parse path, or last week) already resolved
+    # comes back `found: 0` here — it was never asked about. Merging the report
+    # instead of the table is how a second uploader's meter would sit
+    # uncoloured all night beside a first one that had the answer on disk.
+    known = census_roster.known_classes(conn, world)
+    found = census_roster.found_names(conn, world)
+    with state.lock:
+        for name in names:
+            cls = known.get(name.lower())
+            if cls:
+                state.roster[name.lower()] = cls
+        state.known_players |= {n for n in names if n in found}
 
 
 def drop_state(session_id: int) -> None:
@@ -430,6 +575,7 @@ def _publish_snapshot(state: LiveState, mode: str, now: int) -> None:
             # the newest line the plugin has sent: the log clock that says
             # whether the open segment is still a fight (livemeter.build_snapshot)
             now_ts=state.last_line_ts)
+        _queue_roster_lookup(state, _unclassed(state.snapshot.get("fight")))
         # ring every stream parked on this session. Cheap and non-blocking:
         # nobody watching is an empty dict lookup, and a waiter is woken on its
         # own event loop rather than here on the ingest thread.
@@ -454,7 +600,12 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
     segs = segment_events(events, state.logger, initial_zone=state.zone)
 
     n_closed = len(segs)
-    if not force and segs and latest - segs[-1].end_ts < CLOSE_S:
+    if (not force and segs and not segs[-1].ended_by_cmd
+            and latest - segs[-1].end_ts < CLOSE_S):
+        # `/act end` is the exception: CLOSE_S exists because a kill line can
+        # still arrive for a fight that merely went quiet, and the raid saying
+        # the pull is over settles that. Waiting it out anyway would leave the
+        # meter running for another 17s on a fight ACT has already carded.
         n_closed -= 1
     closed, open_seg = segs[:n_closed], segs[n_closed] if n_closed < len(segs) else None
     open_first = open_seg.event_indices[0] if open_seg else None

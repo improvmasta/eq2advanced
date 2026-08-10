@@ -32,6 +32,7 @@ class ParsedEvent:
     ts: int
     type: str                       # damage|heal|ward|power|threat|dispel|affliction|expiry|
                                     # kill|death|pet_death|rez|interrupt|cast_flavor|zone|
+                                    # encounter_end (the raid typed `/act end`)|
                                     # buff_cast|buff|other
                                     # buff_cast = a curated buff being cast (src = caster);
                                     # buff = the same buff LANDING (tgt = who got it, src

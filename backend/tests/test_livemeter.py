@@ -457,6 +457,70 @@ def full_raid(ts):
     return [dmg(ts, p, "a mob", 100, unit="player") for p in RAID]
 
 
+REPORTED = "War Stomp"        # in the shipped ACT list at 45s
+
+
+def test_a_reported_ability_counts_down_however_few_it_reached():
+    """The panel's other half. `RAID_FRACTION` decides which abilities EARN a
+    row; this decides what a CAST is once one has, and reach stops deciding.
+    Mayong's Soul Paralysis reached one group on a 16-minute kill, so a panel
+    that re-armed only on the raid-wide landings counted 37s from the third of
+    eleven casts and read overdue for most of the fight."""
+    events = full_raid(T0) + [
+        dmg(T0 + 10, "The Corsolander", RAID[0], 4000, ability=REPORTED),
+        dmg(T0 + 55, "The Corsolander", RAID[0], 4000, ability=REPORTED),
+    ]
+    row = snap(events, now_ts=T0 + 60)["aoes"][0]
+    assert row["ability"] == REPORTED
+    assert row["casts"] == 2
+    assert row["last_cast_ts"] == T0 + 55
+    assert row["next_due_ts"] == T0 + 55 + 45
+
+
+def test_a_countdown_that_has_been_wrong_for_a_minute_leaves():
+    """Overdue is information right up until it is not telling anybody when
+    anything is due — and the panel is a shortlist (OVERDUE_DROP_S)."""
+    events = full_raid(T0) + [dmg(T0 + 10, "The Corsolander", p, 4000,
+                                  ability=REPORTED) for p in RAID]
+    due = T0 + 10 + 45
+    assert snap(events, now_ts=due + livemeter.OVERDUE_DROP_S)["aoes"]
+    assert snap(events, now_ts=due + livemeter.OVERDUE_DROP_S + 1)["aoes"] == []
+
+
+def test_a_row_with_no_timer_leaves_on_the_same_line():
+    """The other half of the drop rule, and the half that was missing: a row
+    with no period has nothing to be LATE for, so nothing expired it and it
+    held a slot until the pull ended. An avatar throws several raid-wide
+    abilities that do not repeat on a clock (`Stealth Assault`), and on a panel
+    the meter is drawn under, a row that can only say "2x" forever is a raider
+    off the bottom of the scene. Measured from the last cast, same 60s."""
+    cast = aoe_cast(T0) + aoe_cast(T0 + 40)      # two casts, no agreeing gap
+    row = snap(cast, now_ts=T0 + 40)["aoes"][0]
+    assert row["period_s"] is None and row["next_due_ts"] is None
+    assert snap(cast, now_ts=T0 + 40 + livemeter.OVERDUE_DROP_S)["aoes"]
+    assert snap(cast, now_ts=T0 + 40 + livemeter.OVERDUE_DROP_S + 1)["aoes"] == []
+
+
+def test_and_comes_back_the_moment_it_lands_again():
+    """Nothing is remembered between snapshots — each one is rebuilt from the
+    fight's events — so a dropped row needs no un-dropping."""
+    late = T0 + 400
+    events = full_raid(T0) + [dmg(T0 + 10, "The Corsolander", p, 4000,
+                                  ability=REPORTED) for p in RAID]
+    events += [dmg(late, "The Corsolander", p, 4000, ability=REPORTED)
+               for p in RAID]
+    row = snap(events, now_ts=late + 1)["aoes"][0]
+    assert row["last_cast_ts"] == late
+
+
+def test_the_row_says_what_it_lands_as():
+    events = full_raid(T0) + [
+        ParsedEvent(T0 + 10, "damage", src=Subject("The Corsolander", "unknown"),
+                    tgt=p, ability=REPORTED, amount=4000, dtype="cold")
+        for p in RAID]
+    assert snap(events)["aoes"][0]["dtype"] == "cold"
+
+
 def test_a_group_sized_hit_with_no_timer_is_not_a_spell_timer():
     """The audit's threshold is not the panel's. Five people in one second is
     an EQ2 GROUP, and on a real Mayong kill that let seven add cleaves and

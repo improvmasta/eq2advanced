@@ -1,7 +1,7 @@
 import { fmt } from '../lib/api.js'
 import { barFill, classLabel, classShort } from '../lib/classes.js'
 import { useSmoothSeconds } from '../lib/smooth.js'
-import AoeTimers from './AoeTimers.jsx'
+import AoeTimers, { miniTimers } from './AoeTimers.jsx'
 import { METRICS, meterRate, meterRows } from './LiveMeter.jsx'
 
 /* The parse at a fifth of the width: the dashboard's meter with everything a
@@ -33,14 +33,27 @@ import { METRICS, meterRate, meterRows } from './LiveMeter.jsx'
 /* The rail is a glance, and the fold is the wrong affordance here. */
 export const MINI_ROWS = 10
 
-export function MiniSection({ fight, mkey, rows: cap = MINI_ROWS, labelled }) {
+export function MiniSection({ fight, mkey, rows: cap = MINI_ROWS }) {
   const m = METRICS[mkey]
   const rows = meterRows(fight, mkey).slice(0, cap)
   const max = rows.length ? rows[0][m.key] || 0 : 0
   if (!rows.length) return null
   return (
     <div className="minirows">
-      {labelled && <div className="minilabel">{m.rateLabel}</div>}
+      {/* Column heads, which the dashboard's meter has had all along and this
+          did not — it carried the metric's name only when TWO stacks were on
+          screen and needed telling apart. That is the author's question, not
+          the reader's: somebody who arrives at a stream mid-pull has no way to
+          know whether the big number is DPS or HPS, and no way to ask. The
+          rank needs no head (a column of 1..10 is self-evident) and neither
+          does the class, which reads as the caption on the name it sits
+          against. The numeric heads are what earn their line. */}
+      <div className="minirow minihdr">
+        <span className="rank" />
+        <span className="who">Player</span>
+        {m.best && <span className="best">{m.best.label}</span>}
+        <span className="val">{m.rateLabel}</span>
+      </div>
       {rows.map((row, i) => {
         const best = m.best && (row[m.best.key] || 0)
         return (
@@ -69,16 +82,22 @@ export function MiniSection({ fight, mkey, rows: cap = MINI_ROWS, labelled }) {
                 <em className="cls" title={classLabel(row.class)}>{classShort(row.class)}</em>
               )}
             </span>
-            {/* the one number the rate cannot say — see METRICS.best. It is
-                LABELLED, because an unlabelled second figure beside a rate is
-                just two numbers and people read the wrong one. */}
+            {/* the one number the rate cannot say — see METRICS.best. It used
+                to caption itself (`12.4k max`), because an unlabelled second
+                figure beside a rate is just two numbers and people read the
+                wrong one. The column head says it now, once, for ten rows. */}
             {!!best && (
               <span className="best" title={`${m.best.label}: ${best.toLocaleString()}`}>
-                {fmt.num(best)}<i>max</i>
+                {fmt.num(best)}
               </span>
             )}
+            {/* ROUNDED, unlike the dashboard meter and the parse tables, which
+                keep ACT's two decimals because they are read side by side with
+                ACT. Nobody reads `.20` off a strip beside the game, and nobody
+                on a stream can read it at all — those three characters are
+                width, and width here is type size. */}
             <span className="val">
-              {fmt.num2(meterRate(row, m, fight.elapsed_s))}
+              {fmt.num(meterRate(row, m, fight.elapsed_s))}
             </span>
           </div>
         )
@@ -89,7 +108,8 @@ export function MiniSection({ fight, mkey, rows: cap = MINI_ROWS, labelled }) {
 
 export default function MiniParse({
   fight, metrics = ['damage'], rows = MINI_ROWS, layout = 'vertical',
-  showAoes = true, showNums = true, showHead = true, stale, title, actions,
+  showAoes = true, showNums = true, showHead = true, showSuggest = true,
+  stale, title, actions,
 }) {
   const active = metrics.filter((k) => METRICS[k])
   const aoes = fight?.aoes || []
@@ -124,9 +144,19 @@ export default function MiniParse({
         </div>
       )}
 
-      {showAoes && !!aoes.length && (
+      {/* Asked of `AoeTimers`' own rule rather than of `aoes.length`: this
+          panel is a bordered strip whether or not there is a row inside it,
+          and the compact list is not the payload's list (a countdown-less row
+          is a raider off the bottom of the scene — see `miniTimers`). */}
+      {showAoes && !!miniTimers(aoes, !frozen).length && (
         <div className="minipanel minitimers">
-          <AoeTimers aoes={aoes} logTs={fight?.log_ts ?? fight?.last_ts} compact />
+          {/* The countdowns freeze for exactly the reasons the clock above
+              does. A pull that has ENDED has no next cast, so a bar still
+              draining toward one — on the rail, or over somebody's stream — is
+              counting down to something that will never happen. */}
+          <AoeTimers aoes={aoes} logTs={fight?.log_ts ?? fight?.last_ts}
+                     running={!frozen} dropS={fight?.aoe_drop_s}
+                     showSuggest={showSuggest} compact />
         </div>
       )}
 
@@ -138,8 +168,7 @@ export default function MiniParse({
            second the boss dies is exactly backwards. */
         <div className={`minipanel miniparse ${layout}${stale ? ' stale' : ''}`}>
           {active.map((k) => (
-            <MiniSection key={k} fight={fight} mkey={k} rows={rows}
-                         labelled={active.length > 1} />
+            <MiniSection key={k} fight={fight} mkey={k} rows={rows} />
           ))}
         </div>
       ) : (
