@@ -392,6 +392,7 @@ with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE; fix pages shrink-wrapping instead of filling the shell
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
@@ -411,4 +412,3 @@ with `bash build.sh`.
 - 2026-08-03 (claude): Zone runs phase 4: zone-page tabs (Overview/Damage/Healing/Defense/Insights), right-side ActorPanel, shared stats.js, coach resurfaced
 - 2026-08-03 (claude): Zone runs phase 3: Raids home (date-grouped runs), /zones/:id page v1, Uploads management page, shared UploadDrop
 - 2026-08-03 (claude): Zone runs phase 2: zone-runs API, cross-session encounters/agg (name-keyed merge), run-scoped raid report
-- 2026-08-03 (claude): Zone runs phase 1: zone_runs table (schema v6), content dedupe + segmentation linker, parse/live/startup hooks
