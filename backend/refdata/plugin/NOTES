@@ -1,0 +1,4 @@
+Fixes a bug that could silently drop log lines: if a send failed while the
+uploader was catching up, everything it had read but not yet sent was skipped
+instead of resent. One raid lost the first three minutes of a kill to it. Worth
+updating before your next raid — your key and your settings stay as they are.

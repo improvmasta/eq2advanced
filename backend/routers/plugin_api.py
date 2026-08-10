@@ -11,7 +11,7 @@ It is served ZIPPED: a bare `.dll` is on Chrome's and Edge's dangerous-file
 list and gets blocked.
 
 `GET /api/plugin`          -> {filename, version, size, sha256, built_ts,
-                              download_name, download_size}, no auth.
+                              download_name, download_size, notes}, no auth.
                               `size`/`sha256` are the DLL's, so they still match
                               what CI built. Signed in, it also carries
                               `your_version` and `update_available` — see below.
@@ -64,6 +64,7 @@ PLUGIN_DLL = PLUGIN_DIR / "EQ2Advanced.dll"
 # cannot be read back without a PE parser, and this number decides who is shown
 # an update — so it is committed as a fact rather than guessed from the file.
 PLUGIN_VERSION_FILE = PLUGIN_DIR / "VERSION"
+PLUGIN_NOTES_FILE = PLUGIN_DIR / "NOTES"
 FILENAME = "EQ2Advanced.dll"
 ZIP_NAME = "EQ2Advanced.zip"
 
@@ -100,6 +101,26 @@ def _version() -> str | None:
         return None
 
 
+def _notes() -> str | None:
+    """One sentence saying what THIS build does, shown to somebody the pill sent
+    to Import.
+
+    It lives in a file beside the DLL rather than in the page, because the page
+    is where it rots: the update copy was written for 0.2.0 ("sends every 2
+    seconds; the new one four times as often") and was still saying it when
+    0.2.1 shipped a data-loss fix — so a raider already on 0.2.0 followed a pill
+    to a paragraph describing a change they had, and no reason to update. A
+    version number is not a reason to reinstall anything; what the build does
+    is, and that has to ship WITH the build.
+
+    Missing or empty is fine and falls back to generic copy — an unexplained
+    release is still worth offering, it just gets a plainer sentence."""
+    try:
+        return PLUGIN_NOTES_FILE.read_text().strip() or None
+    except OSError:
+        return None
+
+
 def _meta() -> dict | None:
     """Hash it once per process — the file only changes when the app is
     redeployed, and hashing 35 KB on every page load is pointless work."""
@@ -119,6 +140,7 @@ def _meta() -> dict | None:
         "built_ts": int(stat.st_mtime),
         "download_name": ZIP_NAME,
         "download_size": len(zipped),
+        "notes": _notes(),
     }
     return _meta_cache
 

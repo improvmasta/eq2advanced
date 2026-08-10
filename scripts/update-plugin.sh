@@ -65,6 +65,23 @@ after="$(sha256sum "$dest" | cut -d' ' -f1)"
 
 printf '%s\n' "$version" > "$vdest"
 
+# What the build DOES, shown on /import to whoever the update pill sent there.
+# It ships beside the DLL because release copy that lives in the page rots: the
+# 0.2.0 sentence was still on the page when 0.2.1 shipped, so a raider followed
+# a pill to a paragraph describing a change they already had. Pass it in, or
+# write NOTES by hand before running this. A stale one is worse than none, so
+# this WARNS rather than silently carrying the last release's wording forward.
+ndest="$root/backend/refdata/plugin/NOTES"
+if [ -n "${PLUGIN_NOTES:-}" ]; then
+  printf '%s\n' "$PLUGIN_NOTES" > "$ndest"
+elif [ ! -s "$ndest" ]; then
+  echo "note: no backend/refdata/plugin/NOTES — /import will use generic copy." >&2
+  echo "      Write one sentence saying what v$version does, or pass PLUGIN_NOTES." >&2
+elif [ "$ndest" -ot "$vdest" ]; then
+  echo "WARNING: NOTES is older than VERSION. /import would tell people about the" >&2
+  echo "         PREVIOUS release. Update backend/refdata/plugin/NOTES for v$version." >&2
+fi
+
 echo "run $run -> backend/refdata/plugin/EQ2Advanced.dll (v$version)"
 echo "  was $before"
 echo "  now $after"

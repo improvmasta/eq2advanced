@@ -279,14 +279,19 @@ export default function Import() {
                   to reinstall anything — and it names the version they are on,
                   so somebody with two machines can tell which one this is
                   about. Uploading keeps working on the old one; nothing here
-                  is an error. */}
+                  is an error.
+
+                  The what-it-does sentence comes from the SERVER (`notes`,
+                  shipped in refdata beside the DLL), not from here. It was
+                  hardcoded once, describing 0.2.0's faster cadence, and it was
+                  still saying that when 0.2.1 shipped a data-loss fix — so the
+                  pill led people to a paragraph about a change they already had.
+                  Release copy has to travel with the release. */}
               {plugin?.update_available && (
                 <p className="pluginupdate">
-                  <b>Plugin {plugin.version} is ready.</b> You are uploading with{' '}
-                  {plugin.your_version}, which sends every 2 seconds; the new one
-                  sends four times as often, so the live meter keeps up with ACT&apos;s
-                  own. Download it below and re-add the DLL in ACT — your key and
-                  your settings stay as they are.
+                  <b>Plugin {plugin.version} is ready.</b>{' '}
+                  {plugin.notes || 'Download it below and re-add the DLL in ACT.'}
+                  {' '}You are uploading with {plugin.your_version}.
                 </p>
               )}
 
