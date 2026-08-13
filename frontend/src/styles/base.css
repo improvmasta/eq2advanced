@@ -105,11 +105,17 @@ p + p { margin-top: 8px; }
 .topnav nav a:hover { color: var(--text); background: var(--row-hover); text-decoration: none; }
 .topnav nav a.active { color: var(--gold-bright); border-bottom-color: var(--gold); }
 
-/* The Live tab: last in the bar and deliberately not dressed like the others —
-   every other tab is a place, this one is a state. It carries its own answer
-   ("Idle" / "In Combat") so the question is settled before anyone clicks. The
-   combat state is colour, not motion: this sits in the corner of the eye for a
-   whole raid night. */
+/* The Live Parser tab: last in the bar and deliberately not dressed like the
+   others — every other tab is a place, this one is a state, and on a night when
+   ACT is sending it is the most important thing in the bar. It carries its own
+   answer ("Idle" / "In Combat") so the question is settled before anyone clicks.
+
+   Three states, ONE hue. Off is the plain tab dress: nothing is running, so
+   there is nothing to light up. Connected outlines in green with a dim light,
+   and a pull in progress fills the tab in and turns the light on. Green because
+   the parser working is the GOOD case — the state that used to go red was the
+   raid doing exactly what it is supposed to. Colour, never motion: this sits in
+   the corner of the eye for a whole raid night. */
 .topnav nav a.navlive {
   display: inline-flex; align-items: center; gap: 7px;
   margin-left: 10px; padding: 3px 10px 4px;
@@ -120,10 +126,35 @@ p + p { margin-top: 8px; }
   font-style: normal; font-size: 0.85em; letter-spacing: 0.06em;
   color: var(--text-muted); text-transform: uppercase;
 }
-.topnav nav a.navlive.combat { border-color: var(--danger); }
-.topnav nav a.navlive.combat em { color: var(--danger); font-weight: 700; }
+/* the light, on the tab rather than beside it — same 6px dot as the ACT pill */
+.topnav nav a.navlive .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  flex-shrink: 0; opacity: 0.55;
+}
+.topnav nav a.navlive.on {
+  border-color: rgba(var(--success-rgb), 0.55);
+  background: rgba(var(--success-rgb), 0.08);
+  color: var(--text);
+}
+.topnav nav a.navlive.on em { color: var(--success); }
+.topnav nav a.navlive.combat {
+  border-color: var(--success);
+  background: rgba(var(--success-rgb), 0.2);
+  color: var(--text);
+}
+.topnav nav a.navlive.combat .dot { opacity: 1; }
+.topnav nav a.navlive.combat em { color: var(--success); font-weight: 700; }
+/* only the lit states hover green; an Off tab is an ordinary tab */
+.topnav nav a.navlive.on:hover,
+.topnav nav a.navlive.combat:hover {
+  background: rgba(var(--success-rgb), 0.26);
+}
+/* being ON the dashboard is the gold "you are here", and it must not fight the
+   green that says what the parser is doing — so the underline goes and the
+   brand colour lands on the label alone */
 .topnav nav a.navlive.active { color: var(--gold-bright); border-bottom-color: var(--border); }
-.topnav nav a.navlive.combat.active { border-bottom-color: var(--danger); }
+.topnav nav a.navlive.on.active { border-bottom-color: rgba(var(--success-rgb), 0.55); }
+.topnav nav a.navlive.combat.active { border-bottom-color: var(--success); }
 
 /* The sibling TLE sites, sitting in the gap the nav leaves. TWO auto margins —
    one here, one on .navtools — so the slack splits evenly and the plaques ride
@@ -343,6 +374,24 @@ table.data td.name { font-family: var(--font-body); font-size: var(--fs-sm); }
   content: ''; display: inline-block; width: 6px; height: 6px;
   margin-right: 5px; vertical-align: 1px;
   border-radius: 50%; background: var(--danger);
+}
+
+/* "You watched this one." It sits next to the guild tag and says something
+   about the same row, so it takes the guild's quiet treatment rather than the
+   live pill's — this is a label, not a state, and nothing about it is urgent.
+   Italic is the whole distinction: it reads as an aside on the guild beside it,
+   which is how the row is meant to be read ("Dead on Arrival, observed").
+   The RAID PAGE writes it out like this; the list draws the eye below. */
+.badge.observed { font-style: italic; vertical-align: middle; }
+
+/* The same fact on the raid list, where it is one row of forty and the word
+   cost a badge's width in the widest column. No box and no border — a pill
+   would be louder than the word it replaced, which is the opposite of the
+   point — just the glyph at the guild tag's weight, with the sentence on the
+   title. */
+.observedeye {
+  display: inline-flex; align-items: center; vertical-align: middle;
+  color: var(--text-muted);
 }
 
 /* adornment / slot chips — the small bracketed tags in the reference */
@@ -772,6 +821,11 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 /* How big the night is. It rides at the right end of the WHO line — off the
    title's baseline, where it pushed a long zone name onto two lines and then
    crowded them, and costing no line of its own. */
+/* The right end of the who line: whatever small control that list carries,
+   then the count. One group, pushed over together, so the button stays docked
+   to the number rather than drifting into the middle of the line. */
+.railtail { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.railtail .railcount { margin-left: 0; }
 .railcount {
   margin-left: auto; flex-shrink: 0; white-space: nowrap;
   color: var(--text-muted);
@@ -1432,6 +1486,9 @@ table.cmptable td.best .v { font-weight: 700; }
 .switch input:indeterminate + .track { background: rgba(var(--gold-rgb), 0.14); border-color: var(--gold-dim); }
 .switch input:indeterminate + .track .knob { transform: translateX(6px); background: var(--gold-dim); }
 .switch input:focus-visible + .track { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* Held off by a master switch above it, and still showing what it is set to —
+   a row that vanished would take its setting with it (`Settings.jsx`). */
+.switch.off { opacity: 0.45; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .switch .knob { transition: background 120ms linear; }
 }
@@ -1479,7 +1536,10 @@ table.data.raidlist { font-size: var(--fs-base); }
   border-color: var(--gold-dim);
 }
 .parsepick select:hover { background: rgba(var(--gold-rgb), 0.12); }
-.raidlist .parsepick select { max-width: 210px; }
+/* On the raid list the control names a CHARACTER, and it sits in a column of
+   names where every other row is plain text — gold there read as a link out.
+   The border and the arrow still say it is a control. */
+.raidlist .parsepick select { max-width: 210px; color: var(--text); }
 
 /* One control line for the whole list: filters on the left, and whatever the
    current selection can do on the right. It sticks, so acting on a raid you
@@ -1492,7 +1552,7 @@ table.data.raidlist { font-size: var(--fs-base); }
   /* translucent + blurred rather than a solid band: the page's glow sits
      behind everything at the top of the viewport, which is exactly where this
      parks, and a flat rectangle of --bg over it reads as a seam */
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: rgba(var(--bg-rgb), 0.88);
   backdrop-filter: blur(var(--blur));
 }
 /* One control language on the line: same type size, same height, same "on"
@@ -2023,6 +2083,108 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
 .rowactions { white-space: nowrap; }
 .rowactions .chip { cursor: pointer; margin-left: 4px; }
 
+/* What has come in, in two columns that are not the same size of thing: the
+   logs are this site's own parses (two thirds, a wide table) and the shots are
+   claims read off somebody else's picture (one third, a strip of entries). The
+   shot column used to be a seven-column table under the logs, where it was
+   both unreadable and below the fold of a fifty-file backfill. */
+.importcols {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 12px; align-items: start;
+}
+.importcols > .card { margin-top: 0; }
+@media (max-width: 900px) {
+  .importcols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Ten rows, then it scrolls under a pinned header. `sticky` already caps by
+   viewport, which is the wrong unit here: this card is a record of what came
+   in, not the page's subject, and it must not push the column beside it down
+   a screen and a half.
+
+   Both classes are named, and that is not decoration: `.tablewrap.sticky`
+   lives further down this file with the same specificity, so a two-class rule
+   here would lose to it on source order and the cap would silently be the
+   viewport's again. */
+.tablewrap.sticky.rows10 { max-height: 21em; }
+
+/* ---------- the two drop slots ----------
+
+   The screenshot slot IS Compare's empty column (see `.parsecol.dropslot`): a
+   + inside a heavy dashed box over a dimmed real ACT window, so the box shows
+   what goes in it instead of only saying so. The log slot is the same object
+   with no picture behind it — the same border, the same +, the same one line
+   of words — because dropping a file is one gesture and it should not look
+   like two. */
+.shotcol .shotslot {
+  min-height: 130px; justify-content: center; padding: 22px 16px;
+  position: relative; overflow: hidden;
+}
+.shotcol .shotslot::before {
+  content: ''; position: absolute; inset: 10px; pointer-events: none;
+  border-radius: var(--radius-sm);
+  background: url(../assets/act-window.webp) center top / cover no-repeat;
+  opacity: 0.09; filter: grayscale(0.35) contrast(1.1);
+  transition: opacity 0.15s;
+}
+.shotcol .shotslot:hover::before { opacity: 0.16; }
+.shotcol .shotslot.over::before { opacity: 0.22; }
+.shotcol .shotslot > * { position: relative; }
+:root[data-theme="light"] .shotcol .shotslot::before {
+  opacity: 0.16; mix-blend-mode: multiply;
+}
+:root[data-theme="light"] .shotcol .shotslot:hover::before { opacity: 0.26; }
+:root[data-theme="light"] .shotcol .shotslot.over::before { opacity: 0.34; }
+
+/* ---------- screenshot imports, as a column ---------- */
+
+.shotlist { list-style: none; margin: 10px 0 0; padding: 0; }
+/* Flex rather than a grid: a shot with no kept picture is one item short, and
+   in a three-track grid that silently slides its words under the thumbnail
+   column of every entry above it. */
+.shotlist li {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start;
+  padding: 7px 0; border-bottom: 1px solid var(--row-line);
+}
+.shotlist li:last-child { border-bottom: none; }
+.shotlist .sl {
+  display: flex; flex-direction: column; gap: 1px;
+  flex: 1 1 120px; min-width: 0;
+}
+.shotlist .sl .t { font-size: var(--fs-sm); font-weight: 600; }
+.shotlist .sl .m {
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+/* The two verbs sit on the entry's top line, so a long fight name wraps under
+   them rather than shoving them off the edge of a narrow column. */
+.shotlist .sa { display: flex; gap: 4px; align-items: center; margin-left: auto; }
+.shotlist .sa .chip { cursor: pointer; }
+/* Smaller than the one in a compare column — this is a third of a page, and
+   the picture is here to be recognised and clicked, not read. It opens full
+   size, which is where reading a figure off it happens. */
+.shotlist .shotthumb img { width: 72px; }
+
+/* Naming a shot: it opens INSIDE the entry, across all three tracks, because
+   what is being named is the line above it. Labels over fields rather than
+   beside them — a third of a page has no room for a label column. */
+.shotedit {
+  flex: 1 0 100%; margin-top: 6px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px 8px;
+  padding: 8px; border-radius: var(--radius-sm);
+  background: var(--row-hover); border: 1px solid var(--border);
+}
+.shotedit label {
+  display: flex; flex-direction: column; gap: 2px;
+  font-family: var(--font-data); font-size: var(--fs-label);
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.shotedit input, .shotedit select { width: 100%; min-width: 0; margin-right: 0; }
+.shotedit input:disabled { opacity: 0.6; cursor: not-allowed; }
+.shotedit .err, .shotedit .row { grid-column: 1 / -1; margin: 0; }
+.shotedit .row { gap: 8px; }
+
 /* ---------- class identity ---------- */
 
 /* The stripe is the family color, the chip spells the class out. Color is
@@ -2108,8 +2270,10 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
    a stray button rather than the fourth role. */
 .filterbar .roles { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
 /* Beside an open panel the raider list is a picker in a 320px column: the name
-   box takes its own line so the four roles keep theirs. */
-.workspace.withpanel .wsmain .filterbar input[type="text"] { width: 100%; }
+   box takes its own line so the four roles keep theirs. Docked under the
+   dashboard's rail (`.wsdock`) it is the same picker in a narrower one. */
+.workspace.withpanel .wsmain .filterbar input[type="text"],
+.wsdock .filterbar input[type="text"] { width: 100%; }
 .chip.role { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .chip.role > i { width: 7px; height: 7px; border-radius: 2px; }
 
@@ -2173,6 +2337,9 @@ table.data td.rank-low { color: var(--danger); }
 
 /* A number that deliberately leaves something out, with the amount on hover */
 .selfmark { color: var(--text-muted); margin-left: 2px; cursor: help; }
+/* an ability a reuse debuff is measured to move, on the recorded AoE tab. The
+   same gold the live panel's pill uses, because it is the same finding. */
+.swipehit { color: var(--gold); cursor: help; }
 
 /* ---------- column layout (drag to reorder, menu to hide) ---------- */
 
@@ -2434,14 +2601,14 @@ table.data th.dragover { box-shadow: inset 2px 0 0 var(--gold); }
 /* incoming-damage overlay: a filled backdrop the eye reads as context, never
    as one of the plotted raiders (no line weight, no legend color of its own) */
 .chartwrap svg .takenarea {
-  fill: color-mix(in oklab, var(--danger) 22%, transparent);
-  stroke: color-mix(in oklab, var(--danger) 45%, transparent); stroke-width: 1;
+  fill: rgba(var(--danger-rgb), 0.22);
+  stroke: rgba(var(--danger-rgb), 0.45); stroke-width: 1;
 }
 .takenswatch, .charttip .tr > i.takenswatch {
-  fill: color-mix(in oklab, var(--danger) 30%, transparent);
-  stroke: color-mix(in oklab, var(--danger) 55%, transparent);
-  background: color-mix(in oklab, var(--danger) 30%, transparent);
-  border: 1px solid color-mix(in oklab, var(--danger) 55%, transparent);
+  fill: rgba(var(--danger-rgb), 0.3);
+  stroke: rgba(var(--danger-rgb), 0.55);
+  background: rgba(var(--danger-rgb), 0.3);
+  border: 1px solid rgba(var(--danger-rgb), 0.55);
   border-radius: 2px;
 }
 
@@ -2622,10 +2789,10 @@ tr.recaprow:hover td { background: var(--row-hover); }
    quiet pills, and gold rather than red because nothing is broken — the old
    plugin keeps uploading, it is just slower. */
 .navpill.upd {
-  background: color-mix(in oklab, var(--gold) 18%, transparent);
+  background: rgba(var(--gold-rgb), 0.18);
   border-color: var(--gold); color: var(--gold-bright); font-weight: 600;
 }
-.navpill.upd:hover { background: color-mix(in oklab, var(--gold) 28%, transparent); }
+.navpill.upd:hover { background: rgba(var(--gold-rgb), 0.28); }
 /* Numbered install steps. Terse on purpose — someone installing a plugin wants
    the four things to press, not prose about them. */
 .steps { margin: 8px 0 6px; padding-left: 20px; }
@@ -2648,16 +2815,34 @@ tr.recaprow:hover td { background: var(--row-hover); }
 
 /* A big obvious target that behaves the way every upload box does: drag onto
    it, or click it. The whole panel is the button — a small "browse" link inside
-   a drop area is the thing people miss. */
+   a drop area is the thing people miss.
+
+   Dressed as the screenshot slot beside it (`.shotdrop`), down to the + and the
+   2px dash: one gesture, one shape. The arrow glyph it used to wear was this
+   site's own invention, and it sat next to a box on the same page wearing the
+   mark everything else on the internet uses. */
 .uploader .dropzone {
   padding: 22px 16px; cursor: pointer; user-select: none;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  border: 2px dashed var(--gold-dim); text-align: center;
 }
 .uploader .dropzone:hover { border-color: var(--gold-dim); background: var(--row-hover); }
 .uploader .dropzone:focus-visible { outline: 1px solid var(--gold-dim); }
-.dropicon { font-size: 1.6rem; line-height: 1; color: var(--gold-dim); }
+.uploader .dropzone.drag { border-color: var(--gold); }
+.uploader .dropzone .plus {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--gold-dim); color: var(--gold);
+  font-family: var(--font-data); font-size: 1.35rem; line-height: 1;
+}
+.uploader .dropzone:hover .plus, .uploader .dropzone.drag .plus {
+  border-color: var(--gold); color: var(--gold-bright);
+}
 .dropmain { color: var(--text); font-size: var(--fs-sm); }
-.dropsub { color: var(--text-muted); font-size: var(--fs-xs); max-width: 56ch; }
+.dropsub {
+  color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-xs); max-width: 56ch;
+}
 
 .queue { margin-top: 10px; }
 .queuehead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -2963,7 +3148,7 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
 .pluginupdate {
   margin: 10px 0 0; padding: 8px 10px; border-radius: var(--radius-sm);
   border: 1px solid var(--gold-dim);
-  background: color-mix(in oklab, var(--gold) 8%, transparent);
+  background: rgba(var(--gold-rgb), 0.08);
   font-size: var(--fs-sm); line-height: 1.55;
 }
 .pluginupdate b { color: var(--gold-bright); }
@@ -3218,10 +3403,44 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   gap: 14px; align-items: start; margin-top: 14px;
 }
 .dashgrid.idle { grid-template-columns: minmax(0, 1fr) 340px; }
+/* CLOSED NOTES GIVE THE WIDTH BACK. A collapsed column that still holds its
+   340px track is a collapse in name only — and 340px is exactly what the
+   parses in the middle are short of when two raiders are opened side by side.
+   Closed, `RaidNotes` renders a tab instead of a card (`.notestab`) and the
+   track shrinks to it. Only where there are three columns to share: under
+   1500px the notes are already a full-width row below the other two. */
+@media (min-width: 1501px) {
+  .dashgrid:has(.notestab) { grid-template-columns: 292px minmax(0, 1fr) auto; }
+  .dashgrid.idle:has(.notestab) { grid-template-columns: minmax(0, 1fr) auto; }
+}
 .dashrail { position: sticky; top: 12px; display: grid; gap: 8px; }
 .dashmain { min-width: 0; }
 .dashmain > :first-child { margin-top: 0; }
 .dashside { min-width: 0; position: sticky; top: 12px; }
+
+/* THE RAIDER LIST UNDER THE FIGHT RAIL, which is where the raid page keeps it
+   whenever a parse is open beside it (`.workspace.withpanel`). The dashboard
+   cannot do that with a grid rule — its rail belongs to the PAGE and the list
+   belongs to the parse three levels down the middle column — so the parse
+   portals the list in here (`ParseView`'s `pickerSlot`) and the middle column
+   is left to whatever was opened, one drilldown or several.
+
+   Empty the rest of the time, and an empty box in a gapped column is a hole.
+
+   Docked, the left column stops being sticky and the rail gives up half its
+   height: a sticky column taller than the window pins its top and puts its
+   bottom somewhere the page cannot scroll to. Same bargain, same 44vh, as the
+   raid page makes for the same reason. */
+.dashpicker:empty { display: none; }
+.dashrail:has(.dashpicker > *) { position: static; }
+.dashrail:has(.dashpicker > *) .rail { position: static; max-height: 44vh; }
+/* A drilldown on the RAID page sizes its own column (`auto`, so the ability
+   table sets the width and the page scrolls). The dashboard's middle column
+   cannot be sized by its contents — a notes column is standing to the right of
+   it — so here the table scrolls inside the card instead of pushing its way
+   across the page. */
+.dashmain .panelcol .actorpanel { min-width: 0; }
+.dashmain .panelcol .actorpanel .tablewrap { overflow-x: auto; }
 
 /* The pull in progress, as the rail's last row. It used to be a button ABOVE
    the rail, on the reasoning that it is not one of the night's fights — but
@@ -3288,15 +3507,69 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .livemeter.off { opacity: 0.16; filter: saturate(0.35); pointer-events: none; }
 .livemeter.idle { padding: 22px 14px; text-align: center; }
 
+/* HOW WIDE THE PULL IN PROGRESS IS — and it is not "as wide as the column".
+
+   The middle column is sized for the PARSE: a finished fight becomes
+   `ParseView` there, twenty-odd columns of ability breakdown that genuinely
+   want every pixel of a second monitor. The live meter is the opposite kind
+   of thing. It is a name, a bar and a rate, read at a glance with the game in
+   front of you, and stretched across 1000px it became a row of text with a
+   quarter-mile of empty bar in the middle — the one reading it is there to
+   give (who is on top, by how much) was the hardest thing on it to see.
+
+   So the meter sizes itself and the column keeps the slack. Two widths,
+   because the panel is two different things stacked:
+
+   `--live-w` is the PANEL, and `fit-content` means it ends where the headline
+   does — at the deaths stat, the last figure in `.lhnums`. Not a fixed number:
+   the headline is the widest thing in here and it is allowed to say how wide
+   "here" is.
+
+   `--live-tbl-w` is the BARS AND THE COUNTDOWNS, and it is deliberately
+   narrower still — about where `raid HPS` ends. A meter row is a name and one
+   number; a countdown is a name and one clock. Past that width the bar stops
+   being a comparison and starts being a rule.
+
+   Only the LIVE meter. A fight that has ended is the parse, and a parse being
+   compared against another parse extends as far as it likes. */
+.dashmain .livemeter {
+  --live-w: fit-content;
+  --live-tbl-w: 360px;
+  width: var(--live-w);
+  max-width: 100%;
+}
+/* Everything under the headline stops at the narrower width, separators
+   included: a border-top running on past the last bar draws the panel wider
+   than its contents are, which is the complaint again in one line. */
+.dashmain .livemeter .metertabs,
+.dashmain .livemeter .meterrows,
+.dashmain .livemeter .aoetimers {
+  width: var(--live-tbl-w);
+  max-width: 100%;
+}
+/* The countdown rows carry more than the meter rows do (source, last cast's
+   split, where the number came from), so what they can show is a question
+   about how much room they were given rather than about which panel they are
+   — hence a container query and not a second `compact` flag. Widen
+   `--live-tbl-w` and the row earns its words back. */
+.dashmain .livemeter .aoetimers { container: aoepanel / inline-size; }
+/* At that width a long name has to give way to the number — the number is the
+   reading, and a name wrapping to a second line breaks the row grid the eye is
+   running down. */
+.dashmain .livemeter .meterrow .who { overflow: hidden; }
+.dashmain .livemeter .meterrow .who b {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* The headline sits ON the chart: the shape of the pull is context for the
    number, not a second thing to look at. */
 .liveheadline { position: relative; padding: 12px 14px 10px; }
 .livechart { position: absolute; inset: auto 0 0 0; height: 92px; pointer-events: none; }
 .livechart svg { display: block; width: 100%; }
-.livearea { fill: color-mix(in oklab, var(--gold) 12%, transparent); }
-.liveline { stroke: color-mix(in oklab, var(--gold) 45%, transparent); stroke-width: 1.5; }
-.livechart.heal .livearea { fill: color-mix(in oklab, var(--fam-priest) 14%, transparent); }
-.livechart.heal .liveline { stroke: color-mix(in oklab, var(--fam-priest) 55%, transparent); }
+.livearea { fill: rgba(var(--gold-rgb), 0.12); }
+.liveline { stroke: rgba(var(--gold-rgb), 0.45); stroke-width: 1.5; }
+.livechart.heal .livearea { fill: rgba(var(--fam-priest-rgb), 0.14); }
+.livechart.heal .liveline { stroke: rgba(var(--fam-priest-rgb), 0.55); }
 /* The chart's peak is NOT written on the chart. It lived in the bottom-right
    corner, which is also where `.lhnums` ends once the window is narrow enough
    to wrap it — so it reads as a stat in the headline row instead, where the
@@ -3350,6 +3623,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .metertabs .collabel {
   margin-left: auto; font-family: var(--font-data);
   font-size: var(--fs-label); color: var(--text-muted);
+}
+/* Between the stacks of bars and the countdown panel. A hairline rather than a
+   gap: at this size a gap reads as "these wrapped", and the two kinds of switch
+   in this row genuinely are two kinds — one adds bars, one adds a panel. */
+.metertabs .tabsep {
+  width: 1px; align-self: stretch; margin: 0 3px;
+  background: var(--border); flex: none;
 }
 
 /* Several meters at once: each active metric is its own stack of bars with a
@@ -3434,6 +3714,26 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-bottom: 1px solid var(--row-line);
 }
 .aoerow:last-child { border-bottom: 0; }
+
+/* A ROW TOO NARROW FOR ALL OF IT DROPS WORDS, NEVER THE CLOCK. The order it
+   gives things up in is the order `compact` gives them up in and for the same
+   reason (docs/live.md): the ability, the countdown and whether it just landed
+   are what is read mid-pull; what it lands AS, who cast it, how the last cast
+   split and where the period came from are all looked up once, after. The
+   suggestion is an errand and keeps its place last.
+
+   Set on the CONTAINER, so this is the dashboard meter at `--live-tbl-w` and
+   anything else that gets squeezed — not a flag somebody has to remember to
+   pass. */
+@container aoepanel (max-width: 420px) {
+  .aoerow .dpill, .aoerow .src, .aoerow .split { display: none; }
+  .aoerow .cd em.reported, .aoerow .cd em.learned,
+  .aoerow .cd em.observed { display: none; }
+  .aoerow .ab {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+}
+
 /* The drain is the one continuously moving thing on the live parse, and it is
    the COMPOSITOR's, not JS's: the bar is full width and scaled, and it fills
    over one period under its own animation, seeked into position at mount with
@@ -3451,14 +3751,65 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .aoerow .fill {
   position: absolute; left: 0; right: 0; top: 1px; bottom: 1px; z-index: 0;
   transform: scaleX(0); transform-origin: left center; will-change: transform;
-  background: color-mix(in oklab, var(--warning) 16%, transparent);
+  background: rgba(var(--warning-rgb), 0.16);
   animation: aoedrain linear 1 both;
 }
 /* Exempt from prefers-reduced-motion, like the meter (docs/live.md): this bar
    is not a flourish over a change, it IS the reading — a countdown that does
    not count says nothing. */
-.aoerow > :not(.fill) { position: relative; z-index: 1; }
-.aoerow.due .fill { background: color-mix(in oklab, var(--danger) 22%, transparent); }
+.aoerow > :not(.fill):not(.mark):not(.hitflash) { position: relative; z-index: 1; }
+
+/* ---- IT JUST LANDED (AoeTimers.jsx: justHit) ---- */
+
+/* The only motion on this panel that is not a clock, and the exception that
+   proves the rule the rest of it follows. Everything else holds still because
+   movement with no news costs you your place; this moves because it IS the
+   news — a cast has landed and the countdown it just reset is about to look
+   identical to one that has been running a while. On a bar that is nearly full
+   either way, "it fired" and "you looked away" are otherwise the same picture.
+
+   ONE pulse, not a strobe: up fast, then a decay to nothing. That shape is
+   already a cross-fade, so it degrades correctly under reduced motion instead
+   of needing to be switched off — and a countdown panel that stops reporting
+   landings under reduced motion would be withholding the reading, not sparing
+   anybody an effect. Drawn over the fill and under the text, and — unlike the
+   drain — NOT seeked: the screen sees a hit about a second after the log
+   records it, so seeking to the log stamp would drop the flash into the middle
+   of its own decay. A landing announced a beat late beats one announced faintly
+   on time. */
+@keyframes aoehit {
+  0%   { opacity: 0; }
+  6%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+.aoerow .hitflash {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: rgba(var(--danger-rgb), 0.42);
+  animation: aoehit 1.4s ease-out 1 both;
+}
+.aoerow .cd .hitnow {
+  font-style: normal; font-weight: 700; color: var(--danger);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  animation: aoehit 1.4s ease-out 1 both;
+}
+.aoerow.due .fill { background: rgba(var(--danger-rgb), 0.22); }
+
+/* ---- a row a reuse debuff is running under (AoeTimers.jsx: SwipedBar) ---- */
+
+/* WHERE THE NORMAL TIMER WOULD HAVE FIRED. The one mark on this panel that is
+   not a countdown: it is the control the adjusted bar is checked against, so a
+   cast landing past it is the stretch being real and a cast landing on it is
+   this ability turning out not to move. Drawn as a hairline rather than a
+   label because it has to be readable at a glance and there is already a
+   number at each end of the row. */
+.aoerow .mark {
+  position: absolute; top: 0; bottom: 0; width: 0; z-index: 0;
+  border-left: 1px dashed rgba(var(--warning-rgb), 0.7);
+}
+/* A swiped row is drawn in the debuff's colour rather than labelled in it: the
+   bar is already saying "this is the stretched number" by being that long, and
+   a badge saying so again is a word that never changes what anybody does. */
+.aoerow.swiped .fill { background: rgba(var(--gold-rgb), 0.15); }
 .aoerow .src { color: var(--text-muted); font-size: var(--fs-label); }
 .aoerow .cd {
   margin-left: auto; display: flex; align-items: baseline; gap: 5px;
@@ -3508,14 +3859,54 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   margin-left: 5px; white-space: nowrap; cursor: help;
 }
 
-.joustbox { display: inline-flex; align-items: center; cursor: pointer; }
-.joustbox input {
-  width: 13px; height: 13px; margin: 0 5px 0 0; cursor: pointer;
-  accent-color: var(--joust);
+/* ---- the two hand marks (AoeTimers.jsx: MarkPills) ---- */
+
+/* JOUST and MINI, stacked, on every row of the full panel and of the recorded
+   AoE tab. They replaced a pair of checkboxes and the reason is worth keeping:
+   a tick is a control that says what it does only in its tooltip, and these
+   rows are read while somebody is fighting, when nobody hovers anything. A
+   word says what it is when it is off and says it is on by being lit.
+
+   STACKED because the cost on this panel is horizontal — the dock and the
+   overlay are as narrow as the game leaves them and the ability name is what
+   has to survive, while vertical space is free. Two pills at this size stack
+   inside the height one line of countdown digits already asks for, so no row
+   grows to hold them. */
+.aoemarks {
+  flex: 0 0 auto; display: inline-flex; flex-direction: column; gap: 2px;
+  vertical-align: middle; margin-right: 7px;
 }
-.aoerow .joustbox input { margin-right: 0; }
-/* Marked, on a panel with no checkbox to show it — the mini rail and the
-   stream overlay both draw these rows and neither can be ticked. */
+.aoepill {
+  appearance: none; cursor: pointer; padding: 0 5px; min-width: 42px;
+  font-family: var(--font-data); font-size: 9px; line-height: 1.45;
+  letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: none; color: var(--text-muted);
+}
+.aoepill:hover { color: var(--text); }
+.aoepill.joust:hover { border-color: var(--joust); }
+.aoepill.mini:hover { border-color: var(--gold); }
+/* ON is a FILL, not a brighter outline: at nine pixels an outline change is
+   not a state anybody reads across a room, and this is read across a room.
+   Each pill lit in the colour of what it does — teal is the burn window's
+   already (tokens.css) and gold is the site's — so which of the two is on is
+   answerable without reading either of them.
+
+   The foreground is `--bg` rather than a literal dark, for the same reason the
+   reduced-motion JOUST block below is: `--joust` is a light teal in the dark
+   theme and a dark teal in the light one, and only the page's own background
+   inverts with it. */
+.aoepill.on { font-weight: 700; color: var(--bg); }
+.aoepill.joust.on { background: var(--joust); border-color: var(--joust); }
+.aoepill.mini.on { background: var(--gold); border-color: var(--gold); }
+/* The AoE tab is a dense table with a frozen name column. The stack centres on
+   the name rather than sitting above it, and it does add a couple of pixels of
+   row height — which is the trade for having the marks on the tab you have
+   open when you are working out what went wrong, and is why they are 9px. */
+.data .aoemarks { margin-right: 6px; }
+
+/* Marked, on a panel with no pills to show it — the mini rail and the stream
+   overlay both draw these rows and neither can be clicked. */
 .aoerow.jousted { box-shadow: inset 2px 0 0 var(--joust); }
 
 /* THE BURN WINDOW: the same countdown read as time in melee. It sits under
@@ -3523,7 +3914,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    rather than a reading. */
 .aoerow.burn { border-top: 1px solid var(--border); border-bottom: 0; }
 .aoerow.burn .fill {
-  background: color-mix(in oklab, var(--joust) 16%, transparent);
+  background: rgba(var(--joust-rgb), 0.16);
 }
 .aoerow.burn .ab {
   color: var(--joust); font-weight: 700; font-size: var(--fs-label);
@@ -3533,7 +3924,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* out of time: the window is the thing that has run out, so it takes the
    overdue treatment rather than the ability row above it */
 .aoerow.burn.out .fill {
-  background: color-mix(in oklab, var(--danger) 24%, transparent);
+  background: rgba(var(--danger-rgb), 0.24);
 }
 .aoerow.burn.out .cd .digits { color: var(--danger); }
 .aoerow.burn .joustnow {
@@ -3555,6 +3946,45 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
      block instead of an animation and ends up louder, not quieter. */
   .aoerow.burn .joustnow {
     animation: none; background: var(--danger); color: var(--bg);
+    padding: 0 5px; border-radius: 3px;
+  }
+}
+
+/* THE REFLECT WINDOW: the other instruction row, and the only countdown on
+   this panel that ends in good news.
+
+   It sits at the TOP rather than under the abilities like the burn window,
+   which is the one place this panel lets a row jump the queue. The ordering
+   rule it breaks ("rows do not move") exists to protect rows somebody learns
+   by position over a whole fight; this one lives for thirty seconds and then
+   is gone, so there is no position to learn — and while it is up it is the
+   only row saying something about right now.
+
+   DANGER while it runs, SUCCESS when it clears, because those are genuinely
+   the two readings: keep casting and you are hitting yourself, and then you
+   are not. Note this is the opposite polarity to `.aoerow.due` directly above
+   it in this file — there, red means a cast is LATE and something is wrong;
+   here red means the mechanic is working exactly as intended and you should
+   stop. Same colour, opposite cause, which is why the row says the words. */
+.aoerow.reflect { border-bottom: 1px solid var(--border); }
+.aoerow.reflect .fill { background: rgba(var(--danger-rgb), 0.24); }
+.aoerow.reflect .ab {
+  color: var(--danger); font-weight: 700; font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.aoerow.reflect .cd .digits { color: var(--danger); }
+.aoerow.reflect.clear .ab { color: var(--success); }
+.aoerow.reflect .clearnow {
+  font-style: normal; font-weight: 700; color: var(--success);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  animation: joustflash 0.5s linear 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Same trade the burn window makes, and it matters more here: the all-clear
+     is the single moment this row exists to announce, so it gets LOUDER when
+     the animation goes, not quieter. */
+  .aoerow.reflect .clearnow {
+    animation: none; background: var(--success); color: var(--bg);
     padding: 0 5px; border-radius: 3px;
   }
 }
@@ -3605,6 +4035,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .minibtn + .minibtn { margin-left: 0; }
 .minibtn:hover { color: var(--gold); border-color: var(--gold-dim); }
+/* the ⚙ while its panel is open — the head is the only place on the rail that
+   can say the settings are down there */
+.minibtn.on { color: var(--gold-bright); border-color: var(--gold); }
 
 .minipanel.mininums {
   display: flex; justify-content: space-between; gap: 4px; padding: 6px 9px;
@@ -3621,8 +4054,15 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    above it holds its height — a countdown that got squeezed off the bottom of
    a short window is the one row that had to be visible. */
 .minipanel.minihead, .minipanel.mininums,
-.minipanel.minitimers, .minipanel.minidle { flex: none; }
-.miniparse { flex: 1 1 auto; overflow: auto; padding: 4px 0; }
+.minipanel.minitimers, .minipanel.minidle,
+.minipanel.miniconf, .minipanel.minialerts { flex: none; }
+/* SHRINKS BUT DOES NOT GROW. It is still the one panel that gives up height
+   when the window is short — a countdown squeezed off the bottom is the row
+   that had to be visible — but it must not STRETCH to fill a tall window:
+   everything below it would be pushed to the bottom edge, and the notification
+   block belongs directly under the last stack of bars, not at the far end of a
+   column of empty space. */
+.miniparse { flex: 0 1 auto; overflow: auto; padding: 4px 0; }
 .miniparse.stale { opacity: 0.72; }
 .minipanel.minidle {
   padding: 12px 10px; text-align: center;
@@ -3661,9 +4101,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   flex: none; font-style: normal; font-size: var(--fs-label);
   color: var(--text-muted); letter-spacing: 0.01em;
 }
-/* Max hit. The only number besides the rate that survives the condensing,
-   because it is the only one the rate cannot imply — it rides in front of the
-   rate, muted, so the ranking still reads down one column.
+/* THE RATE SITS AGAINST THE NAME, and the max hit takes the outer column —
+   the opposite way round from the dashboard's meter, and the opposite of what
+   this drew first. A full-width meter has room for the eye to run along a row;
+   at 244px it does not, and what is read here is the RANKING, straight down the
+   rate. The rate is therefore the number that has to be next to the thing that
+   says whose it is. Max hit is the number you go looking for once — "what did
+   that crit for" — rather than the one you scan, so it goes outboard.
+   Each cell keeps its own weight through the swap: bold rate, muted max hit.
 
    Both numeric cells hold a MINIMUM WIDTH and set right, which is what makes
    them columns rather than two figures that happen to end the row. Ragged
@@ -3675,12 +4120,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: var(--text-muted); font-variant-numeric: tabular-nums;
   white-space: nowrap; min-width: 3.4em; text-align: right;
 }
+/* the row's slack falls here, between the name and the pair of numbers */
 .minirow .val {
   margin-left: auto; flex: none; font-weight: 600;
   font-variant-numeric: tabular-nums;
   min-width: 4em; text-align: right;
 }
-.minirow .best + .val { margin-left: 0; }
 /* The column heads. Quiet, uppercase and once per stack — they name the
    numbers for somebody who arrived mid-pull, and then get out of the way. */
 .minirow.minihdr {
@@ -3702,9 +4147,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-top: 0; border-left: 1px solid var(--row-line);
 }
 
-/* The timers lose the source and the hit/blocked split — at 244px the name
-   and the countdown are the row, and the split is what the dashboard's own
-   panel is for. */
+/* The timers lose the source, the hit/blocked split and the word saying where
+   the number came from — at 244px the name and the countdown ARE the row, and
+   all three are what the dashboard's own panel is for. */
 .aoetimers.mini { padding: 4px 0; border-top: 0; }
 .aoetimers.mini .aoerow { padding: 3px 9px; gap: 6px; }
 .aoetimers.mini .src, .aoetimers.mini .split { display: none; }
@@ -3714,6 +4159,116 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .aoetimers.mini .cd { margin-left: auto; }
 .aoetimers.mini .cd .digits { font-size: 0.95rem; min-width: 2.8em; }
 .aoetimers.mini .cd em.overlabel { display: none; }
+
+/* ---- what is on the rail (MiniRail.jsx: MiniConfig) ---- */
+
+/* The ⚙ panel, docked under the head — which meters, which countdowns, and
+   what is allowed to interrupt. It sits in the flex column like every other
+   panel rather than floating over the parse: the rail is 244px of somebody's
+   monitor and a popover here would cover the thing being configured. */
+.minipanel.miniconf {
+  padding: 7px 9px 9px; font-size: var(--fs-data);
+  display: flex; flex-direction: column; gap: 2px;
+  border-color: var(--gold-dim);
+}
+/* THE SAME HEAD THE OVERLAY'S PANEL WEARS (`.overlaypop .pophead`), because it
+   is the same panel one size down — a title in gold and the way out on the
+   right. It used to be an uppercase rail caption, which read as another one of
+   the strip's section labels rather than as the top of a dialog. */
+.miniconf .pophead { display: flex; align-items: center; gap: 6px; }
+.miniconf .pophead b { color: var(--gold-bright); font-weight: 600; }
+.miniconf .confsec {
+  margin-top: 5px; color: var(--text-muted); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+/* `SettingRow` at 244px. The row itself is the shared one (`Settings.jsx`) —
+   only the spacing is the rail's, because the panel it opens over is somebody's
+   game. */
+.miniconf .settingrow { gap: 8px; padding: 3px 0; }
+.miniconf .settingrow .t small { line-height: 1.3; }
+/* The bars row is the one with chips instead of a switch, and three of them
+   plus a name plus a line of hint do not share a line at this width — so that
+   row stacks, which is also the order it is read in. */
+.miniconf .settingrow.stack {
+  flex-direction: column; align-items: stretch; cursor: default;
+}
+.miniconf .settingrow .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.miniconf .settingrow .chips .chip { cursor: pointer; }
+/* The two that only mean anything while notifications are on, indented under
+   the switch that owns them the way `/sharing` indents its choices. */
+.miniconf .confopts {
+  padding-left: 8px; border-left: 1px solid var(--row-line); margin-left: 1px;
+}
+.miniconf .confnote {
+  margin: 2px 0 0; font-size: var(--fs-label); color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* ---- the notification block (MiniAlerts.jsx) ---- */
+
+/* Directly under the last stack of bars — the parse above it shrinks but never
+   stretches, so this sits against the bars rather than at the bottom of the
+   window. It is the part of the rail meant to be caught out of the corner of an
+   eye, and it is absent entirely when it has nothing to hold rather than
+   sitting there as an empty frame. */
+.minipanel.minialerts { padding: 4px 0; }
+/* The frame is drawn before the rows are: `MiniAlerts` asks whether there will
+   be a countdown with the same rule that picks them, but `AoeTimers` applies
+   the drop line a moment later off its own clock, so the panel can be right
+   and end up holding nothing. Rather than a bordered 8px strip appearing for a
+   poll, it collapses. */
+.minipanel.minialerts:empty { display: none; }
+/* THE SAME MISMATCH, ONE PANEL UP. `MiniParse` frames the compact countdowns
+   off the RAW payload and `AoeTimers` applies the drop line off this browser's
+   clock, which runs ahead of the payload by design — so the last row can go
+   past `aoe_missed_s` while the frame around it was already committed to. What
+   is left is a bordered strip holding nothing, plus a second hairline four
+   pixels from the next panel's. It collapses, for the reason above. */
+.minipanel.minitimers:empty { display: none; }
+
+/* THE COUNTDOWNS, ONE SIZE UP. Not a second implementation — this is
+   `AoeTimers` in compact mode again, with the same drain, the same JOUST flash
+   and the same landing flash, scaled here and nowhere else. Everything grows
+   in proportion: the digits are what has to be readable with the game in
+   front of you, and a row whose text stayed at the strip's size under bigger
+   digits would read as a mistake rather than as emphasis. */
+.minialerts .aoetimers.mini { padding: 0; }
+.minialerts .aoetimers.mini .aoerow {
+  padding: 6px 9px; gap: 7px; font-size: calc(var(--fs-data) * 1.12);
+}
+.minialerts .aoetimers.mini .ab { font-weight: 600; }
+.minialerts .aoetimers.mini .cd .digits {
+  font-size: 1.35rem; min-width: 3.1em;
+}
+.minialerts .aoetimers.mini .aoerow.burn .ab { font-size: var(--fs-data); }
+
+/* A DEATH CARD, which is the one thing on this rail that appears and
+   disappears. Above the clocks, because a tank already dead outranks an AoE
+   four seconds out. */
+.minialert {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 0 4px 4px; padding: 7px 9px; border-radius: var(--radius-sm);
+  /* A SOLID block rather than a tint: it has a few seconds to be noticed by an
+     eye that is on the game, and a solid fill is the loudest thing available
+     that does not blink. (Blinking is what the JOUST word does, and reduced
+     motion turns that into exactly this.) */
+  background: var(--danger); color: var(--bg);
+  /* A CROSS-FADE is the whole animation. It reads as an arrival without moving
+     anything, so it needs no reduced-motion variant — the same reasoning the
+     AoE landing flash is built on. */
+  animation: alertin 180ms ease-out 1 both;
+}
+@keyframes alertin { from { opacity: 0; } to { opacity: 1; } }
+/* The word first and biggest: it is what the card is FOR, and the raider's
+   name behind it is the detail you read second. */
+.minialert .what {
+  flex: none; font-size: 1rem; font-weight: 800; line-height: 1.1;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.minialert .who {
+  flex: 1 1 auto; min-width: 0; font-size: var(--fs-label); opacity: 0.85;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* a narrow window has no side to spare */
 @media (max-width: 900px) { .minirail { display: none; } }
@@ -3736,9 +4291,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .card.notes { margin-top: 0; max-height: calc(100vh - 24px); overflow: auto; }
 /* The heading IS the collapse control: the switch sits across from it and the
    word itself takes the click, because a title with a switch beside it that
-   only answers to the switch is a target people miss. Collapsed, the card is
-   this row and nothing else — a header the width of the column, holding the
-   count so it still says whether there is anything in there. */
+   only answers to the switch is a target people miss. */
 .notehead { display: flex; align-items: center; gap: 8px; }
 .notehead h2 { margin: 0; cursor: pointer; }
 .notehead .n {
@@ -3746,7 +4299,26 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: var(--text-muted);
 }
 .notehead .switch { margin-left: auto; }
-.card.notes.closed { padding-top: 10px; padding-bottom: 10px; overflow: visible; }
+
+/* Closed, the column is this tab and nothing else: the word down the edge of
+   the page and the count under it, so a collapsed column still says whether
+   there is anything in there. It is the whole control — a switch that can only
+   be turned on is not a switch — and it is narrow because the width is the
+   point (see the grid rule up in the dashboard's columns). */
+.notestab {
+  writing-mode: vertical-rl;
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+  margin: 0; padding: 14px 8px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); color: var(--text-muted);
+  font-family: var(--font-heading); font-size: var(--fs-label); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
+}
+.notestab:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
+.notestab .n {
+  font-family: var(--font-data); font-size: var(--fs-xs);
+  letter-spacing: 0.02em; color: var(--gold);
+}
 .card.notes > .notehead + * { margin-top: 8px; }
 .notetarget { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .notetarget .zonename, .notetarget .mobname {
@@ -3877,6 +4449,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .overlaypage { padding: 8px; display: grid; gap: 8px; }
 .overlaypage.empty { padding: 0; }
+/* …except while it is still asking. `empty` is for a page that is meant to
+   paint nothing; this one has not got its config yet and says so, because an
+   unpainted rectangle is indistinguishable from a broken one. */
+.overlaypage.empty.waiting { padding: 4px 6px; }
 /* Readable over anything: the meter keeps its own panel, and the type carries
    a shadow because the thing behind it is a moving game. */
 .overlaypage.theme-transparent .livemeter {
@@ -3970,6 +4546,267 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .overlaypage.theme-transparent .overlaytag {
   color: #c7cade; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
+
+/* ---------- the in-game window (/ingame/<token>) ---------- */
+
+/* THE SAME PAGE, READ ON THE OPPOSITE KIND OF SCREEN. The overlay is sized up
+   because a stream arrives at a viewer downscaled and encoded; this is read at
+   1:1 on the same monitor as the game, by the person playing it, inside a
+   window that is covering their UI. Every pixel it takes is a pixel of raid,
+   so the whole scope pulls in rather than out — the type scale does most of it
+   (`--ovl` defaults to 0.9 here against the overlay's 1.25), and this is the
+   rest: the gaps, the padding and the panel chrome that were sized for a scene
+   somebody composes rather than a corner they tolerate. */
+/* AFTER `:root[data-overlay]`, and it overrides it on purpose. A transparent
+   document is what an OBS source needs and the opposite of what this one does:
+   EQ2 puts the page in a WINDOW and composites nothing behind it, so a
+   transparent html/body is the browser's own default paint — a white margin
+   around a dark panel. The page div's background is not enough; the document
+   under it has to match, or the gap shows. */
+:root[data-ingame], :root[data-ingame] body {
+  background: #05070c;
+  /* The window IS the viewport, and it is a rectangle the player has already
+     decided to give up. Anything past it scrolls VERTICALLY — which the OBS
+     source must never do (a scrollbar on a stream is a grey bar over the game),
+     and which is exactly right here: the alternative is a countdown pushed out
+     of a window nobody can make taller without covering more of the fight.
+     SIDEWAYS it must not: a row that runs off the right edge takes the number
+     with it, and the number is the row. */
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+}
+:root[data-ingame][data-theme="light"],
+:root[data-ingame][data-theme="light"] body { background: #fffefb; }
+.overlaypage.ingame {
+  padding: 0; gap: 0;
+  /* No max-width games and no pinned width: the window sets both. */
+  width: 100%; min-height: 100vh; overflow-x: hidden;
+  /* AND THE PANELS DO NOT SHARE OUT THE SLACK.
+     This is a GRID, `min-height` gives it a height the content does not fill,
+     and a grid's default `align-content` is `stretch` — which grows every
+     auto-sized row EQUALLY. That is the difference from flex, where a child
+     stays its content size unless it asks to grow, and it is why every panel
+     here quietly padded itself out: a short pull in a tall window handed a
+     third of the leftover height to each of them. The mob name floated in the
+     middle of its own band (`.minihead` centres), and there was a void between
+     the headline and the column head.
+     It read as an AoE bug, because it was WORST when there were FEWEST panels
+     — no countdowns means a bigger share each, and a pull with countdowns
+     divides the same slack four ways and looks nearly right. The window is a
+     rectangle the player has already given up: the block sits at the top of it
+     and the rest stays black, which is what ACT's own does. */
+  align-content: start;
+}
+
+/* SMALL IS THE EASY HALF; READABLE AT SMALL IS THE POINT.
+
+   The thing being replaced is ACT's own mini parse, which is white and green
+   on flat black at about 9px and is perfectly legible at arm's length. The
+   first pass here was the dock's palette scaled down, and scaling down is
+   exactly what a palette cannot survive: `--text-muted` (#8b90ab on a
+   translucent #252840) sits at ~3.5:1, which is fine at 12.5px on a monitor
+   you are looking at and is a grey smudge at 8px in the corner of your eye
+   while you are fighting. Turning the type size down made it WORSE, which is
+   the whole complaint — smaller type needs MORE contrast, not the same.
+
+   So the dark in-game window re-declares the tokens rather than re-lighting
+   elements one at a time (which is what the OBS scope does, and which misses
+   every panel added after it). Flat and opaque, because translucency over a
+   moving game is contrast you do not control; near-white text; a muted that is
+   still ~10:1; and hairlines bright enough to be seen at one physical pixel.
+   Light theme is left alone — dark ink on parchment is already the contrast
+   this is trying to buy. */
+.overlaypage.ingame.theme-dark {
+  /* `--bg` too, so the page under the panels is the same flat black the
+     document is — the theme's own is a shade off and shows as a seam. */
+  --bg: #05070c;
+  --surface: #05070c;
+  --surface-raised: #080a12;
+  --border: #39415c;
+  --row-line: #2b3247;
+  --text: #ffffff;
+  --text-muted: #b9c0d6;
+  --gold-bright: #ffdca0;
+  color: var(--text);
+}
+/* SHARPNESS IS NOT WEIGHT, AND IT IS NOT SIZE EITHER — it is whole pixels and
+   a face that was drawn for them.
+
+   ACT's own window is Courier at about 9px and it is perfectly crisp, which is
+   the tell: the thing that reads well at this size is not a bigger or bolder
+   glyph, it is one whose stems land ON pixels. Three changes, in order of how
+   much they matter:
+
+   1. WHOLE PIXELS. Everything here used to derive from `calc(15px * --ovl)` —
+      0.7 gives 10.5px, and every `em` size under it landed on another fraction.
+      A stem on a half pixel is rasterised across two, at half strength each,
+      which is exactly the greyness that reads as "out of focus". `--ovl-px` is
+      rounded in `Overlay.jsx` and every size here is a whole-pixel `calc` off
+      it.
+   2. A FACE WITH HINTS. Tahoma and Verdana were drawn for small sizes on a
+      screen and are hinted down to about 8px; `system-ui`/`Segoe UI` is a
+      display face that goes soft there. This is the one scope on the site that
+      needs the old ones.
+   3. NOT BOLD. Weight was the first thing tried and it was the wrong lever:
+      at 9px a 700 stem is not a thicker stem, it is a smeared one — there is
+      no room for the extra weight to go, so it fills the counters instead.
+      Contrast carries the hierarchy here (white against #b9c0d6), which is how
+      ACT does it too, and every added 700 in this scope has come back out. */
+.overlaypage.ingame {
+  --font-data: Tahoma, Verdana, "Segoe UI", Geneva, sans-serif;
+  font-family: var(--font-data);
+  font-size: var(--ovl-px, 13px);
+  --fs-data: var(--ovl-px, 13px);
+  --fs-label: calc(var(--ovl-px, 13px) - 1px);
+}
+.overlaypage.ingame .minipanel { box-shadow: none; }
+/* NOTHING SCROLLS BUT THE PAGE. The parse panel is `overflow: auto` everywhere
+   else, which is right for a dock that has to give up height — but an inner
+   scrollbar is also a few pixels of width appearing and disappearing as the row
+   count changes, and every number in the panel moves when it does. The window
+   itself already scrolls (`:root[data-ingame]`), so this one does not need to,
+   and sideways it must not: the name gives way, never the number at the end of
+   the row. */
+.overlaypage.ingame .miniparse { overflow: visible; }
+/* One block, not a stack of cards. At this size a gap between panels is a row
+   of raiders, and six radiused edges read as clutter rather than as structure —
+   ACT's is one rectangle with lines in it, and it is right. The frame comes off
+   too: the WINDOW is the frame, and a border drawn just inside another border
+   is a pixel of raid spent saying nothing. */
+.overlaypage.ingame .minipanel { border: 0; border-radius: 0; }
+.overlaypage.ingame .minipanel + .minipanel {
+  border-top: 1px solid var(--border);
+}
+.overlaypage.ingame .minipanel:not(.minialerts) { padding: 2px 4px; }
+/* A GRID, NOT A FLEX RUN — and this is the fix for four complaints at once.
+
+   Every row here was a flex line sized by its own contents: a rank, a name that
+   took the slack, and numbers pushed right with `margin-left: auto`. That
+   layout has two failure modes and the in-game window hit both, because it is
+   the only surface narrow enough to reach them.
+
+   IT MOVES. A rate going from 9,999 to 10,000 is one more glyph, so the column
+   gets wider, so the name gets narrower — every row, mid-fight, while somebody
+   is reading down it. Nothing in a parse should change position because a
+   number changed value.
+
+   IT ESCAPES. When the contents no longer fit, flex has nowhere to put the
+   overflow but past the right edge, where the window clips it: `137,412 DP`,
+   and `JOUST` gone entirely. Squeezing the window made it worse, which is the
+   opposite of what a window you are meant to squeeze should do.
+
+   Three tracks that do not consult their contents fix both. The rank and the
+   figure are fixed in `ch` (the width of a digit — with tabular figures that is
+   exactly what a number column wants, and it scales with the type size on its
+   own). The NAME is the only elastic one, `minmax(0, 1fr)`, so it is the only
+   thing that ever gives — and it gives by ellipsising, which a name survives.
+   The right edge never moves and nothing can be pushed past it. */
+.overlaypage.ingame {
+  /* two digits of rank, and a figure up to `137,412` — seven digit widths,
+     which is comfortably past anything a TLE raid produces. A number wider
+     than its track overflows LEFT (it is right-aligned), over the tail of an
+     already-ellipsised name, rather than off the edge of the window. */
+  --ig-rank: 2ch;
+  --ig-val: 7ch;
+  --ig-cd: 5ch;
+}
+.overlaypage.ingame .minirow {
+  display: grid;
+  grid-template-columns: var(--ig-rank) minmax(0, 1fr) var(--ig-val);
+  align-items: center;
+  padding: 0 3px; gap: 3px; line-height: 1.35;
+}
+/* Everything at ONE weight, per note 3 above. The rank is muted and the name
+   and rate are not, which is all the hierarchy a row of this size can hold. */
+.overlaypage.ingame .minirow .who b { font-weight: 400; color: var(--text); }
+.overlaypage.ingame .minirow .who { overflow: hidden; }
+.overlaypage.ingame .minirow .val {
+  font-weight: 400; margin-left: 0; min-width: 0; text-align: right;
+}
+.overlaypage.ingame .minirow .rank { width: auto; text-align: right; }
+.overlaypage.ingame .minirow.minihdr {
+  color: var(--text-muted); font-weight: 400; letter-spacing: 0.03em;
+}
+/* The headline is two figures (`MiniParse`'s `dense`) on one thin line: the
+   clock on the left where a rank would be, and raid DPS on the RIGHT, directly
+   over the column of per-raider rates it totals. A total that does not line up
+   with its own column is a number you have to go looking for.
+
+   Two tracks again, and the CLOCK is the elastic one: if the pair ever will not
+   fit, the thing to give up is the word `time`, never a digit of the total. */
+.overlaypage.ingame .mininums {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px; padding: 1px 3px;
+}
+.overlaypage.ingame .mininums span {
+  flex-direction: row; align-items: baseline; gap: 3px;
+  min-width: 0; overflow: hidden;
+}
+/* Raid DPS reads `dps 137,412`, key first — so it is the FIGURE that ends at
+   the right edge, in line with the rates below it. Written `<b>` then `<i>`
+   like every other stat and reversed here, because the number is the thing
+   that has to line up and the key is the thing that can go anywhere. */
+.overlaypage.ingame .mininums span:last-child { flex-direction: row-reverse; }
+.overlaypage.ingame .mininums b {
+  font-size: calc(var(--ovl-px, 13px) + 1px); font-weight: 400;
+}
+.overlaypage.ingame .mininums i { font-size: var(--fs-label); }
+/* The head is the fight's NAME, and in a window this size the name is the one
+   thing the player already knows — they are looking at the mob. So it gets the
+   least of the window: one line, no more. */
+.overlaypage.ingame .minihead {
+  padding: 1px 4px; gap: 4px; font-size: var(--fs-label);
+}
+.overlaypage.ingame .minihead b { font-weight: 400; }
+/* ---- the countdowns, at a width you can drag narrower ---- */
+
+/* NOTHING LEAVES THE ROW — the same grid, for the same reason. `.cd` holds a
+   minimum-width digit cell and sometimes a word, neither of which can shrink
+   below its own text, so under flex the overflow went straight out of the
+   window and `JOUST` was simply not there.
+
+   Two tracks: the ability name gives (ellipsis), the countdown never does. */
+.overlaypage.ingame .aoerow {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--ig-cd);
+  align-items: center;
+  padding: 0 3px; gap: 3px; overflow: hidden;
+}
+.overlaypage.ingame .aoerow .cd { margin-left: 0; justify-content: flex-end; }
+/* THE BURN ROW CARRIES A WORD AS WELL AS A CLOCK, so its second track is sized
+   to hold both. `JOUST` is the one thing on this panel that is an instruction
+   rather than a reading — it is why the row exists — so it is the last thing
+   that may be squeezed, and the label beside it (`BURN WINDOW`, which never
+   changes and is already spelled out by the row's colour) is the first. */
+.overlaypage.ingame .aoerow.burn {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* An ability name is the longest string on this panel and the one that can
+   afford to be smallest: it is READ ONCE, when the row appears, and after that
+   the row is found by its position (nothing on this panel reorders). The
+   countdown beside it is what gets looked at every few seconds. */
+.overlaypage.ingame .aoerow .ab { font-size: var(--fs-label); }
+/* `.aoetimers.mini` sets these in `rem`, which ignores the scale entirely — so
+   at 60% the digits stayed their full size while the row shrank around them,
+   which is its own reason the row would not fit. Whole pixels off the base,
+   like everything else here. */
+.overlaypage.ingame .aoerow .cd .digits {
+  font-size: calc(var(--ovl-px, 13px) + 1px); font-weight: 400; min-width: 0;
+}
+.overlaypage.ingame .aoerow .cd { gap: 3px; }
+.overlaypage.ingame .aoerow .joustnow,
+.overlaypage.ingame .aoerow .hitnow {
+  font-size: var(--fs-label); font-weight: 400; letter-spacing: 0.02em;
+}
+.overlaypage.ingame .aoerow.burn .ab { letter-spacing: 0.02em; font-weight: 400; }
+
+/* Between pulls the numbers are the LAST pull's and still the thing being
+   read. The dock can afford to wash them out because the dashboard is right
+   there; here 0.72 on 8px type is the difference between quiet and gone. */
+.overlaypage.ingame .miniparse.stale { opacity: 0.88; }
+.overlaypage.ingame .overlaytag { padding: 0 4px; font-weight: 600; }
+/* The notification block is the reason this screen exists (`MiniAlerts`), so
+   it is the one thing here that is NOT pulled in — a card that has to be caught
+   out of the corner of an eye, in a window the eye is not on, cannot also be
+   the smallest thing in it. It keeps its own padding and its own scale. */
 
 /* The options window, opened from the dashboard bar beside Mini
    (OverlayPanel.jsx). Fixed and rendered into `document.body`, because every

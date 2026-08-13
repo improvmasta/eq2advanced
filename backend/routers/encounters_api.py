@@ -36,7 +36,7 @@ from census.roster import DEFAULT_WORLD
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
 from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
-from pipeline import aoes, classstats, loot
+from pipeline import aoelearn, aoes, classstats, loot
 from pipeline import classmetrics  # noqa: F401 — importing registers the metrics
 from pipeline.classguess import (backfill_session, parse_class_guess, resolve_class,
                                  strong_classes_here)
@@ -819,10 +819,20 @@ def encounters_aoes(ids: str = Query(...), user=Depends(optional_user)):
             "ts": r["ts"], "type": r["type"], "ability": r["ability"],
             "src_name": src["name"], "src_kind": src["kind"],
             "tgt_key": _ent_key(tgt["name"], tgt["kind"]), "tgt_kind": tgt["kind"],
+            # the mob a player hit, which is how a reuse debuff finds the AoE
+            # it slows: the timer belongs to whatever the swipe landed ON
+            "tgt_name": tgt["name"],
             "amount": r["amount"], "dtype": r["dtype"], "flags": r["flags"],
         })
+    detected = aoes.detect(rows, named_sources)
+    # What every raid on the site has measured about these same abilities, so
+    # the tab can put THIS selection next to the whole record: a fight with two
+    # agreeing intervals is an anecdote beside 42 of them, and which one you are
+    # reading should not have to be guessed (pipeline/aoelearn.py).
+    known = aoelearn.learn(conn, {r["source"] for r in detected})
     return {
-        "aoes": aoes.detect(rows, named_sources),
+        "aoes": detected,
+        "learned": {f"{k[0]}|{k[1]}": v for k, v in known.items()},
         "min_targets": aoes.MIN_TARGETS,
         "pruned_encounters": pruned_encounters,
         "pruned": False,

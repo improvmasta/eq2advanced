@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import SortableTable from './SortableTable.jsx'
 import { fmt } from '../lib/api.js'
 import { useCanCurate } from '../lib/session.jsx'
-import { MELEE_BUCKETS, critPct } from '../lib/stats.js'
+import { MELEE_BUCKETS, PET_COMMANDED, critPct } from '../lib/stats.js'
 
 /* The ACT-style ability breakdown — one combatant's actual parse, the table
    people screenshot and line up next to somebody else's. One implementation
@@ -51,24 +51,63 @@ export const availKinds = (actorRows) => KIND_FILTERS.filter(
   (f) => actorRows.some((r) => f.kinds.includes(r.kind) && didSomething(r)))
 
 /* Set-in-stone pet kits (the game hasn't changed): each pet ability belongs to
-   one summoned-pet archetype, so the bare-name own pet — whose identity the
-   log never states — is attributed by what it casts. Pet autoattack carries no
-   ability name, so it stays its own bucket. Curated with Lindsay from real
-   raid logs; the backend's CURATED_PET_ABILITIES (census/catalog.py) is the
-   flat superset. Fighter-pet entries pending a fighter-pet parse. */
-const PET_ARCHETYPE = {
-  // necromancer mage pet (Grim Sorcerer)
-  'Grim Wave': 'Mage Pet', 'Grim Embrace': 'Mage Pet',
-  'Grim Devastation': 'Mage Pet', 'Grim Lifetap': 'Mage Pet',
-  'Grim Bolt': 'Mage Pet', 'Grim Distortion': 'Mage Pet',
-  'Grisly Feedback': 'Mage Pet',
-  // necromancer scout pet
-  'Throat Gash': 'Scout Pet', 'Poisoned Spike': 'Scout Pet',
-  'Shadowy Garrote': 'Scout Pet', 'Unseen Blade': 'Scout Pet',
-  'Shadow Step': 'Scout Pet', 'Shadestrike': 'Scout Pet',
-  'Quick Strike': 'Scout Pet', 'Clawing of the Soul': 'Scout Pet',
-  'Acidity': 'Scout Pet', 'Shockwave': 'Scout Pet', 'Shout': 'Scout Pet',
-}
+   one summoned-pet archetype, so a pet whose identity the log never states is
+   attributed by what it casts. Ground truth, not inference — Lindsay ran one
+   fight per pet on 2026-08-11 (session 127) casting nothing of his own, so
+   each fight is one kit with nothing else in it. The backend's
+   CURATED_PET_ABILITIES (census/catalog.py) is the flat superset. */
+const PET_KITS = [
+  { label: 'Mage Pet', melee: 'piercing', abilities: [   // necromancer
+    'Grim Wave', 'Grim Embrace', 'Grim Devastation', 'Grim Lifetap',
+    'Grim Bolt', 'Grim Distortion'] },
+  { label: 'Scout Pet', melee: 'piercing', abilities: [  // necromancer
+    'Throat Gash', 'Poisoned Spike', 'Shadowy Garrote', 'Unseen Blade',
+    'Shadestrike', 'Acidity'] },
+  { label: 'Fighter Pet', melee: 'crushing', abilities: [  // necromancer
+    'Graven Strike', 'Graven Scream', 'Graven Breath', 'Graven Frenzy',
+    'Graven Assault', 'Graven Vanquishing'] },
+  /* Conjuror. Lindsay gave the complement — the conjuror's OWN book — and
+     Census agrees with all of it, so what is left over is the pets. Fire and
+     air are an either/or, which is what let the two kits fall out of the raid
+     data before he wrote the list: they anti-correlate at ≤0.15 over 419
+     windows. Earth is nobody's raid pet, so its kit is only the two abilities
+     that have ever shown up and its swing has never been seen. */
+  { label: 'Mage Pet', melee: 'crushing', abilities: [
+    'Searing Flames', 'Shocking Flames', 'Igneous Flames', 'Wave of Flames',
+    'Sphere of Flames', 'Storm of Flames'] },
+  { label: 'Scout Pet', melee: 'piercing', abilities: [
+    'Aery Whip', 'Wisp Blade', 'Storm Surge', 'Furystorm', 'Galestorm',
+    'Thunderous Attack'] },
+  { label: 'Fighter Pet', melee: null, abilities: [
+    'Telluric Bash', 'Telluric Retaliation'] },
+  /* Illusionist Personal Reflection, from the two illusionists who uploaded
+     their OWN parses (their pet splits off as `own_pet`). Deliberately absent
+     from the backend's curated list: that list is what promotes an ability
+     hiding under a PLAYER's name to a pet cast, and we only combine an
+     illusionist's pet where we can actually see it — which takes a parse from
+     that illusionist. Anyone else's stays part of their own line. */
+  { label: 'Personal Reflection', melee: 'mental', abilities: [
+    'Phantasmal Shock', 'Overwhelming Silence', 'Headache', 'Confusion',
+    'Color Shower', 'Stunning Array', 'Lock Mind', 'Illusory Taunt'] },
+]
+
+/* The kit is what a pet is known BY, so it carries the swing too: a
+   necromancer's mage pet pierces and a conjuror's crushes, which one archetype
+   label cannot hold. Measured within a single conjuror rather than across
+   several — the same player melees piercing with air out and crushing with
+   fire out, so it is the pet's weapon and not the raider's. */
+const PET_KIT_OF = Object.fromEntries(
+  PET_KITS.flatMap((k) => k.abilities.map((a) => [a, k])))
+const PET_ARCHETYPE = Object.fromEntries(
+  PET_KITS.flatMap((k) => k.abilities.map((a) => [a, k.label])))
+
+/* Cast by whichever pet is out, so they name no archetype — the STANCE is why
+   (Lindsay, 2026-08-11): defensive casts Shout and Grisly Feedback, offensive
+   casts Clawing of the Soul. All three fired for all three of his pets, which
+   is exactly why the old map — Shout under Scout, Grisly Feedback under Mage —
+   split single-pet fights across two rows. They join the archetype that IS
+   out, and fall back to a bare "Pet" only when the parse shows more than one. */
+const PET_SHARED = new Set(['Shout', 'Grisly Feedback', 'Clawing of the Soul'])
 
 /* "Bobby's blighted horde" -> "blighted horde"; own pets share the owner's
    bare name, so they read as just "Pet". */
@@ -79,25 +118,58 @@ function petShort(r) {
     : r.source_name
 }
 
+/* An auto-attack row's damage types, biggest first. */
+export function meleeDtypes(r) {
+  if (!MELEE_BUCKETS.has(r.ability) || !r.dtypes) return []
+  return Object.entries(r.dtypes).filter(([, amt]) => amt > 0)
+    .sort((a, b) => b[1] - a[1])
+}
+
+/* ACT names an auto-attack row by what the swing LANDED as, and on TLE that is
+   not the same thing as the weapon: infusions move a player's melee onto
+   disease, heat, whatever they infused. So the damage type IS the label —
+   `piercing (melee)` — and a row carrying more than one keeps the plain name
+   and expands into them. */
+const meleeLabel = (r) => {
+  const d = meleeDtypes(r)
+  return d.length === 1 ? `${d[0][0]} ${r.ability}` : r.ability
+}
+
 /* "Bobby's blighted horde" + "Grave Decay" -> "blighted horde's Grave Decay",
    the way ACT prints pet rows inside the owner's breakdown. The bare-name own
    pet is the exception: ACT prints its abilities with no prefix at all
    ("Poisoned Spike", not "Pet's Poisoned Spike"), and the pet badge already
    says whose swing it was. */
 export function abilityLabel(r) {
-  if (!PET_KINDS.has(r.source_kind)) return r.ability
+  const base = meleeLabel(r)
+  if (!PET_KINDS.has(r.source_kind)) return base
   const short = petShort(r)
-  if (r.ability === '(melee)') return short
-  if (r.ability.startsWith('(')) return `${short} ${r.ability}`
-  if (r.source_kind === 'own_pet') return r.ability
+  if (r.source_kind === 'own_pet') return base
+  if (r.__dtype || r.ability.startsWith('(')) return `${short} ${base}`
   return `${short}'s ${r.ability}`
 }
 
-/* Swarm/named pets are identified by name; the bare-name pet by its kit. */
-function petGroupLabel(r) {
+/* Which pet a parse actually shows, read off its kit abilities. With exactly
+   one pet out, everything kit-blind in the same parse — the stances, the
+   swings — belongs to it; with two, nothing can say which. */
+export function activeKit(rows) {
+  const seen = new Set()
+  for (const r of rows) {
+    if (!PET_KINDS.has(r.source_kind) && !r.via_pet) continue
+    const kit = PET_KIT_OF[r.ability]
+    if (kit) seen.add(kit)
+  }
+  return seen.size === 1 ? [...seen][0] : null
+}
+
+/* Swarm/named pets are identified by name; a same-name pet by its kit. */
+function petGroupLabel(r, only) {
   if (r.source_kind === 'swarm_pet' || r.source_kind === 'named_pet') return petShort(r)
+  const kit = PET_ARCHETYPE[r.ability]
+  if (kit) return kit
+  if (only && (PET_SHARED.has(r.ability) || MELEE_BUCKETS.has(r.ability))) return only
   if (MELEE_BUCKETS.has(r.ability)) return 'Pet Autoattack'
-  return PET_ARCHETYPE[r.ability] || 'Pet'
+  return 'Pet'
 }
 
 function addInto(g, r) {
@@ -119,9 +191,12 @@ function addInto(g, r) {
 function groupPets(rows) {
   const out = []
   const groups = new Map()
+  const kit = activeKit(rows)
   for (const r of rows) {
-    if (!PET_KINDS.has(r.source_kind) && !r.via_pet) { out.push(r); continue }
-    const label = petGroupLabel(r)
+    if ((!PET_KINDS.has(r.source_kind) && !r.via_pet) || PET_COMMANDED.has(r.ability)) {
+      out.push(r); continue
+    }
+    const label = petGroupLabel(r, kit?.label)
     const key = `petgroup:${label}|${r.kind}`
     let g = groups.get(key)
     if (g == null) {
@@ -158,6 +233,7 @@ export function actorRowsOf(abilities, actorKey) {
 export function breakdownRows(actorRows, kinds, combinePets) {
   const inTab = actorRows.filter((r) => kinds.includes(r.kind) && didSomething(r))
   const grouped = combinePets ? groupPets(inTab) : inTab.slice()
+  const kit = activeKit(actorRows)
   for (const r of grouped) {
     if (r.members) continue
     const extras = actorRows.filter((x) =>
@@ -167,8 +243,32 @@ export function breakdownRows(actorRows, kinds, combinePets) {
       r.extras = extras.map((x) => ({ ...x, __sub: true }))
         .sort((a, b) => (b.total || 0) - (a.total || 0))
     }
+    r.dtypeRows = dtypeRowsOf(r, kit)
   }
   return grouped
+}
+
+/* A swing chain that landed as more than one damage type, split out under its
+   own row. Display only, and the counts are deliberately blank: the log gives
+   a per-type TOTAL and nothing else, so hits, crit rate and delay belong to
+   the chain as a whole. Splitting them across the types would halve a
+   dual-wielder's swing count and double their AvgDelay.
+
+   Where one of those types is the swing of the pet that is out, the sub-row
+   says so. It is the one case a conflated pet CAN be picked apart — the pet is
+   in the player's row because it shares their name, but not their weapon. */
+function dtypeRowsOf(r, kit) {
+  const d = meleeDtypes(r)
+  if (d.length < 2) return null
+  const petType = kit && !PET_KINDS.has(r.source_kind) ? kit.melee : null
+  return d.map(([dt, amt]) => ({
+    __sub: true, __dtype: true, __petdtype: dt === petType,
+    source_key: r.source_key, source_name: r.source_name,
+    source_kind: r.source_kind, rollup_key: r.rollup_key,
+    kind: r.kind, ability: `${dt} ${r.ability}`, total: amt,
+    hits: null, crits: null, min: null, max: null, median: null,
+    avg_delay_s: null, press_delay_s: null, to_hit_pct: null, swings: null,
+  }))
 }
 
 export const rowKeyOf = (r) => (r.__all ? '__all'
@@ -233,7 +333,9 @@ export function CompositionStrip({ rows }) {
     if (r.kind !== 'damage') continue
     const amt = r.total || 0
     comp.total += amt
-    if (PET_KINDS.has(r.source_kind) || r.via_pet) comp.pet += amt
+    if ((PET_KINDS.has(r.source_kind) || r.via_pet) && !PET_COMMANDED.has(r.ability)) {
+      comp.pet += amt
+    }
     if (MELEE_BUCKETS.has(r.ability)) comp.auto += amt
     else if (r.proc) comp.proc += amt
     else comp.cast += amt
@@ -296,8 +398,13 @@ export default function BreakdownTable({
   }, [rows, duration])
 
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }))
+  /* Pet members, off-kind components and damage-type splits all hang off the
+     same … expander — a row has at most one KIND of child in practice, and a
+     second control on the name cell would cost more than it explains. */
+  const kidsOf = (r) => (r.members
+    || (r.extras || r.dtypeRows ? [...(r.extras || []), ...(r.dtypeRows || [])] : null))
   const childrenOf = (r) => {
-    const kids = r.members || r.extras
+    const kids = kidsOf(r)
     return kids && open[rowKeyOf(r)] ? kids : []
   }
 
@@ -306,7 +413,7 @@ export default function BreakdownTable({
       key: 'ability', label: 'Type', align: 'l', fixed: true,
       render: (r) => {
         const k = rowKeyOf(r)
-        const kids = r.members || r.extras
+        const kids = kidsOf(r)
         return (
           <span className="name">
             {/* The one part of the row that is allowed to be shortened, and
@@ -317,8 +424,20 @@ export default function BreakdownTable({
             <span className="abname" title={r.gkey ? r.ability : abilityLabel(r)}>
               {r.gkey ? r.ability : abilityLabel(r)}
             </span>
-            {(r.gkey || PET_KINDS.has(r.source_kind)) && <span className="badge pet">pet</span>}
-            {!r.gkey && r.via_pet && <span className="badge pet">pet cast</span>}
+            {/* A commanded attack wears no pet badge: the pet swung it, but
+                the parse is about who pressed it. */}
+            {(r.gkey || PET_KINDS.has(r.source_kind)) && !PET_COMMANDED.has(r.ability)
+              && <span className="badge pet">pet</span>}
+            {!r.gkey && r.via_pet && !PET_COMMANDED.has(r.ability)
+              && <span className="badge pet">pet cast</span>}
+            {r.__petdtype && (
+              <span
+                className="badge pet"
+                title="The pet out in this fight swings for this damage type and the player does not"
+              >
+                pet swing
+              </span>
+            )}
             {!r.gkey && r.proc && (
               <span
                 className="badge proc"
@@ -345,7 +464,9 @@ export default function BreakdownTable({
               <button
                 className="expandcol"
                 onClick={(e) => { e.stopPropagation(); toggle(k) }}
-                title={open[k] ? 'Collapse' : (r.members ? 'Expand pet abilities' : 'Expand components')}
+                title={open[k] ? 'Collapse'
+                  : r.members ? 'Expand pet abilities'
+                  : r.extras ? 'Expand components' : 'Expand damage types'}
               >{open[k] ? '▾' : '…'}</button>
             )}
           </span>

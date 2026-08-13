@@ -113,7 +113,7 @@ def refine_bare_pets(events: list[ParsedEvent], logger: str, roster: frozenset[s
     how `Viber`, `Knyi`, `Geker`, `Holmes` and `Reaper` ended up in the raid
     table with no class. But `Viber` cast Grisly Feedback (a necromancer Grim
     Sorcerer's), `Knyi` cast Confusion and Headache (an illusionist pet's) and
-    `Geker` cast Graven Vanquishing (a conjuror pet's) — `ability_catalog`
+    `Geker` cast Graven Vanquishing (a necromancer fighter pet's) — `ability_catalog`
     already knows every one of those is `unit='pet'`, because real pets under
     real owners taught it.
 

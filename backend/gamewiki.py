@@ -37,6 +37,7 @@ import urllib.parse
 import urllib.request
 
 import classtree
+import zones
 
 API = "https://eq2.fandom.com/api.php"
 # The wiki asks for a real user agent and a contact; a scraper that hides is a
@@ -178,6 +179,13 @@ def parse_page(page_title: str, wikitext: str, kind: str, era: str,
         "line": (deity if kind == "deity" else _field(text, "line")) or None,
         "activated": 1 if (recast or power) else 0,
         "recast_s": _seconds(recast),
+        # How long what it did LASTS. Read for the same reason `recast` is —
+        # both are stated in words in the same infobox — but it answers a
+        # different question, and one nothing else here can answer: a hostile
+        # debuff prints a damage line when it lands and prints NOTHING when it
+        # fades, so the duration is the only thing that turns that line into a
+        # window (refdata/reuse_debuffs.json, pipeline/aoes.py).
+        "duration_s": _seconds(_field(text, "duration")),
         "power": power or None,
         "target": _field(text, "target") or None,
         "descr": (_field(text, "desc") or None),
@@ -222,15 +230,16 @@ def collect_aa_titles(era: str) -> dict[str, set[str]]:
 
 UPSERT = (
     "INSERT INTO wiki_abilities (name, page_title, kind, era, tiers, line, "
-    "activated, recast_s, power, target, descr, effects, fetched_ts) "
+    "activated, recast_s, duration_s, power, target, descr, effects, fetched_ts) "
     "VALUES (:name,:page_title,:kind,:era,:tiers,:line,:activated,:recast_s,"
-    ":power,:target,:descr,:effects,:fetched_ts) "
+    ":duration_s,:power,:target,:descr,:effects,:fetched_ts) "
     # (name, kind) — a name really can be two abilities, so a deity miracle
     # must not overwrite the AA or spell that shares its name
     "ON CONFLICT(name, kind) DO UPDATE SET "
     "page_title=excluded.page_title, era=excluded.era, "
     "tiers=excluded.tiers, line=excluded.line, activated=excluded.activated, "
-    "recast_s=excluded.recast_s, power=excluded.power, target=excluded.target, "
+    "recast_s=excluded.recast_s, duration_s=excluded.duration_s, "
+    "power=excluded.power, target=excluded.target, "
     "descr=excluded.descr, effects=excluded.effects, "
     "fetched_ts=excluded.fetched_ts")
 
@@ -268,24 +277,51 @@ def collect_zone_titles() -> list[str]:
     return category_members(ZONE_CATEGORY)
 
 
-def parse_zone(page_title: str, wikitext: str) -> dict | None:
-    """The four facts an `IZoneInformation` box carries that we want.
+# WHICH BOX A ZONE PAGE WEARS IS ITSELF THE FACT. The wiki files an instance
+# under `IZoneInformation` (whose `instance` field then says Raid/Group/Solo)
+# and an outdoor zone under `ZoneBox`. That is structural and consistent —
+# checked across Antonica, The Commonlands, Greater Faydark, Enchanted Lands,
+# Lavastorm, The Feerrott and Rivervale — where the `instance` FIELD is not:
+# Antonica fills it in as `Public` and the other six leave it blank. So the
+# template answers "is this an instance", and the field is only consulted for
+# what KIND of instance it is.
+_ZONEBOX = re.compile(r"\{\{\s*ZoneBox\b", re.I)
+# "Original EQ2" is the first expansion, taken from the one list that has it
+# (`zones.EXPANSIONS`) rather than spelled out again here. `zones` imports
+# nothing of ours, so this direction is the safe one.
+ORIGINAL_ERA = zones.EXPANSIONS[0][0]
 
-    `introduced` is the expansion, and a page without one is not a zone record
-    we can use — better absent than guessed. `instance` says Raid/Group/Solo
-    and `zdiff` says x2/x4, which together are how "raid zones only" is decided
-    without a second list to maintain."""
+
+def parse_zone(page_title: str, wikitext: str) -> dict | None:
+    """The four facts a zone infobox carries that we want.
+
+    `instance` says Raid/Group/Solo and `zdiff` says x2/x4, which together are
+    how "raid zones only" is decided without a second list to maintain.
+
+    `introduced` is the expansion, and on an INSTANCE a page without one is not
+    a zone record we can use — better absent than guessed. On a `ZoneBox` a
+    blank one is an ANSWER rather than a gap, and the template says so in its
+    own comment: `leave blank if this is an original EQ2 zone`. Reading it as a
+    gap is why the outdoor zones were absent from this file altogether, and why
+    the app could not tell that an avatar killed in Rivervale was killed in a
+    contested overland zone rather than in a raid instance."""
     if is_disambiguation(wikitext):
         return None
     text = _COMMENT.sub("", wikitext or "")
+    outdoor = bool(_ZONEBOX.search(text))
     era = _field(text, "introduced")
     if not era:
-        return None
+        if not outdoor:
+            return None
+        era = ORIGINAL_ERA
     return {
         "zone": log_name(page_title),
         "page_title": page_title,
         "era": era,
-        "instance": _field(text, "instance") or None,
+        # `Public` is the wiki's OWN word for an outdoor zone (it is what the
+        # pages that fill the field in say), so a blank one is completed rather
+        # than given a term of ours that means the same thing.
+        "instance": _field(text, "instance") or ("Public" if outdoor else None),
         "size": _field(text, "zdiff") or None,
     }
 
@@ -364,6 +400,7 @@ def _merge(rows: list[dict]) -> list[dict]:
         # a button on any of its pages is a button
         prev["activated"] = max(prev["activated"], r["activated"])
         prev["recast_s"] = prev["recast_s"] or r["recast_s"]
+        prev["duration_s"] = prev["duration_s"] or r["duration_s"]
         prev["line"] = prev["line"] or r["line"]
         prev["effects"] = prev["effects"] or r["effects"]
     return list(out.values())

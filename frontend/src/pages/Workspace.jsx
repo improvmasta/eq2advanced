@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import EncounterTree from '../components/EncounterTree.jsx'
 import SortableTable from '../components/SortableTable.jsx'
+import { PET_KINDS, abilityLabel } from '../components/BreakdownTable.jsx'
 import { api, fmt } from '../lib/api.js'
+import { PET_COMMANDED } from '../lib/stats.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
 const KIND_FILTERS = [
@@ -15,19 +17,8 @@ const KIND_FILTERS = [
   { key: 'self', label: 'Self', kinds: ['self'] },
 ]
 
-const PET_KINDS = new Set(['own_pet', 'swarm_pet', 'named_pet'])
-
-/* "Bobby's blighted horde" + "Grave Decay" -> "blighted horde's Grave Decay",
-   the way ACT prints pet rows inside the owner's breakdown. */
-function abilityLabel(r) {
-  if (!PET_KINDS.has(r.source_kind)) return r.ability
-  const short = r.source_name.includes("'s ")
-    ? r.source_name.slice(r.source_name.indexOf("'s ") + 3)
-    : r.source_name
-  if (r.ability === '(melee)') return short
-  if (r.ability.startsWith('(')) return `${short} ${r.ability}`
-  return `${short}'s ${r.ability}`
-}
+/* The debug view prints a row the way the parse itself does — one
+   `abilityLabel`, so an auto-attack row names its damage type here too. */
 
 function kindBadge(kind) {
   if (kind === 'mob') return <span className="badge">mob</span>
@@ -179,8 +170,10 @@ export default function Workspace() {
       render: (r) => (
         <span className="name">
           {abilityLabel(r)}
-          {PET_KINDS.has(r.source_kind) && <span className="badge pet">pet</span>}
-          {r.via_pet && <span className="badge pet">pet cast</span>}
+          {PET_KINDS.has(r.source_kind) && !PET_COMMANDED.has(r.ability)
+            && <span className="badge pet">pet</span>}
+          {r.via_pet && !PET_COMMANDED.has(r.ability)
+            && <span className="badge pet">pet cast</span>}
         </span>
       ),
       sortValue: (r) => abilityLabel(r),

@@ -284,6 +284,170 @@ def test_a_named_is_never_explained_away_as_two_mobs():
     assert row["instances_hint"] is None
 
 
+# ------------------------------------------------------ one mob, or several ---
+# How many bodies wear a name is GAME KNOWLEDGE. It is a curated file plus the
+# one log signature specific enough to mean something, and deliberately not an
+# argument from the shape of a measurement (`aoes.several_bodies`).
+
+SPLITTER = "A Bisected Rumbler"
+
+
+def test_a_lone_add_that_measures_faster_than_act_keeps_its_number():
+    """The rule this replaced said "well under the reported timer, and not the
+    fight's named" — which takes `Ancient Grovebeast`'s `Tremerous Stomp`
+    (33.6s against ACT's 40) with it, and only one grovebeast is ever up. An
+    add is never the encounter's named however singular it is, and a wrong ACT
+    entry reads exactly like two mobs, so the test was measuring neither
+    thing."""
+    assert aoes.several_bodies("Ancient Grovebeast", False, 40, 33.6) is None
+
+
+def test_a_measurement_longer_than_the_act_timer_is_believed():
+    """The other direction was never in doubt: only a missed cast can stretch a
+    gap, and that is what `observed_period` already survives."""
+    assert aoes.several_bodies("a fallen paladin", False, 45, 52.0) is None
+
+
+def test_a_named_is_one_body_however_fast_it_measures():
+    """`Soul Paralysis` measures 43.6s against ACT's 37 over 42 intervals and
+    is adopted; the same rule has to leave a named that measures SHORTER alone,
+    because one boss is one body and there is no second explanation."""
+    assert aoes.several_bodies("Chel'Drak the Ancient Lord", True, 35, 29.2) is None
+
+
+def test_a_splitter_is_several_bodies_even_when_the_fight_is_named_for_it():
+    """The reference file outranks the named exemption both ways round: a mob
+    that splits is the thing the fight gets named after."""
+    assert aoes.several_bodies(SPLITTER, True, 50, 28.7) == "splits"
+
+
+def test_a_splitter_needs_no_act_entry_to_be_caught():
+    """The whole reason the list exists. `Engulfing Maw` is on nobody's timer
+    list, so there is no number to measure against and the inference has
+    nothing to work with — but the mechanic is a fact about the game."""
+    assert aoes.several_bodies(SPLITTER, False, None, 12.0) == "splits"
+
+
+def test_two_halves_of_one_mob_never_propose_a_config_edit():
+    """The Emerald Halls rumbler: two halves each on their own 50s recast
+    alternate into ~28s gaps, with enough agreeing intervals to look certain.
+    Telling the raid to type 28s into ACT would be wrong for both halves."""
+    rows = []
+    for t in range(0, 200, 28):
+        rows += cast(BASE_TS + t, ability="Rumbling of Earth", src=SPLITTER)
+    [row] = aoes.detect(rows, set())
+    assert row["reported_s"] == 50
+    assert row["observed_s"] == pytest.approx(28.0, abs=0.5)
+    assert row["several_bodies"] == "splits"
+    assert row["suggested_s"] is None
+
+
+def test_the_split_list_loads_and_keys_by_the_name_the_log_prints():
+    mobs = aoes.split_mobs()
+    assert SPLITTER in mobs and "A Trisected Rumbler" in mobs
+
+
+# ------------------------------------------------------- the reuse debuff ---
+# `Traumatic Swipe` slows an enemy's recast, so a cast made under it starts a
+# longer cycle than the same mob's own timer. That is the one thing a raider
+# can do that moves an AoE countdown out from under itself, and everything
+# below is about telling the two populations apart rather than averaging them.
+
+SWIPE = "Traumatic Swipe"
+
+
+def swipe(ts, *, enc=1, src="Klebb", tgt=NAMED):
+    """A rogue landing the debuff on the boss. A DAMAGE line from a player onto
+    a mob — which is the whole reason this is visible at all: the log prints no
+    cast line for somebody else's ability, and prints nothing when a hostile
+    debuff fades."""
+    return [{"encounter_id": enc, "ts": ts, "type": "damage", "ability": SWIPE,
+             "src_name": src, "src_kind": "player",
+             "tgt_key": f"{tgt}|mob", "tgt_kind": "mob", "tgt_name": tgt,
+             "amount": 3400, "dtype": "disease", "flags": 0}]
+
+
+def test_a_landed_swipe_opens_a_window_the_length_of_its_duration():
+    w = aoes.collect_windows([(NAMED, SWIPE, 100)])
+    assert w[NAMED] == [(100, 130)]                  # 30s, off the wiki infobox
+    assert aoes.debuffed_at(w, NAMED, 129)
+    assert not aoes.debuffed_at(w, NAMED, 130)
+
+
+def test_an_ability_that_is_not_a_reuse_debuff_opens_nothing():
+    assert aoes.collect_windows([(NAMED, "Backstab", 100)]) == {}
+
+
+def test_a_cycle_belongs_to_the_state_at_the_cast_that_started_it():
+    """Not to how much of the gap the debuff covered. A swipe landing halfway
+    through a recast does not retune it, and measured on a real kill the
+    covered FRACTION of a clean cycle and a stretched one overlap completely —
+    the state at the cast is what separates them."""
+    windows = aoes.collect_windows([(NAMED, SWIPE, 0)])       # up for 0..30
+    clean, swiped, flags = aoes.split_cycles([0, 60, 120], windows, NAMED)
+    assert flags == [True, False, False]
+    assert swiped == [60] and clean == [60]
+
+
+def test_the_two_populations_are_measured_apart():
+    """Cast under the debuff, the mob takes 60s; clean, it takes 45s."""
+    rows, t = [], 0
+    for gap in (60, 60, 60, 45, 45, 45):
+        rows += cast(BASE_TS + t)
+        if gap == 60:                    # swipe lands on the cast that starts it
+            rows += swipe(BASE_TS + t)
+        t += gap
+    rows += cast(BASE_TS + t)
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["clean_s"] == 45.0
+    assert row["swiped_s"] == 60.0
+    assert row["swipe_factor"] == pytest.approx(1.333, abs=0.01)
+    assert row["swiped_casts"] == 3
+    # the mob's OWN timer is the clean one; the other is a number about a debuff
+    assert row["observed_s"] == 45.0
+
+
+def test_a_swiped_fight_never_proposes_an_act_config_edit():
+    """The failure this whole split exists to stop. Six agreeing gaps at 72s
+    against a reported 45 looks exactly like a wrong ACT entry, and on the
+    avatar kill that turned this up it was two brigands holding a reuse debuff
+    for 98% of the fight."""
+    rows, t = [], 0
+    for _ in range(7):
+        rows += cast(BASE_TS + t) + swipe(BASE_TS + t)
+        t += 72
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["swiped_s"] == 72.0 and row["clean_s"] is None
+    assert row["suggested_s"] is None
+    # it still counts with something, and it says what that something is
+    assert row["observed_s"] == 72.0 and row["observed_swiped"] is True
+
+
+def test_a_swipe_on_a_different_mob_does_not_slow_this_one():
+    """Windows are keyed by what the swipe LANDED ON — the timer belongs to the
+    mob that was debuffed, not to everything in the zone."""
+    rows, t = [], 0
+    for _ in range(4):
+        rows += cast(BASE_TS + t) + swipe(BASE_TS + t, tgt="a sanctum chaperone")
+        t += 45
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["swiped_casts"] == 0 and row["clean_s"] == 45.0
+
+
+def test_a_swipe_that_missed_debuffs_nothing():
+    """An avoided attack applies no debuff. `collect_windows` is fed landed
+    hits for exactly this reason."""
+    rows, t = [], 0
+    for _ in range(4):
+        rows += cast(BASE_TS + t)
+        miss = swipe(BASE_TS + t)
+        miss[0]["type"] = "avoid"
+        rows += miss
+        t += 45
+    [row] = aoes.detect(rows, {NAMED})
+    assert row["swiped_casts"] == 0
+
+
 # --------------------------------------------------------------------- api ---
 
 def line(t: int, body: str) -> str:

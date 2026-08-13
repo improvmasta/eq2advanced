@@ -59,6 +59,13 @@ export const FAMILY_COLOR = {
   mage: 'var(--fam-mage)', scout: 'var(--fam-scout)',
 }
 
+/* The same four as rgb triplets, for the translucent one (`barFill`). Solid
+   uses keep `FAMILY_COLOR` — a plain colour needs no triplet. */
+const FAMILY_RGB = {
+  fighter: 'var(--fam-fighter-rgb)', priest: 'var(--fam-priest-rgb)',
+  mage: 'var(--fam-mage-rgb)', scout: 'var(--fam-scout-rgb)',
+}
+
 /* Decorative per-class tint, always shown next to the class name. */
 export const CLASS_COLOR = {
   // fighters — blue
@@ -115,10 +122,18 @@ export const classShort = (cls) => (cls ? CLASS_SHORT[cls] || classLabel(cls) : 
    It is deliberately faint. The bar is a LENGTH — you find the row by how far
    it reaches — and the tint is only there to say which archetype reached that
    far. At the fuller mix this used to be, the fill competed with the name and
-   the rate sitting on top of it, which is the text the row is actually for. */
+   the rate sitting on top of it, which is the text the row is actually for.
+
+   `rgba(triplet, 0.24)` AND NOT `color-mix(… 24%, transparent)`, which is what
+   this said and which made every bar INVISIBLE in EQ2's in-game browser and in
+   an OBS browser source. Both are embedded CEF builds years behind a current
+   Chrome, `color-mix()` needs Chrome 111, and a value an engine cannot parse
+   takes its whole declaration down with it — so the element kept its size and
+   its position and simply had no background, on the two surfaces nobody can
+   open devtools on. See the note by `--fam-*-rgb` in tokens.css. */
 export const barFill = (cls) => {
-  const tint = familyColor(cls)
-  return tint ? `color-mix(in oklab, ${tint} 24%, transparent)` : 'var(--bar-track)'
+  const rgb = FAMILY_RGB[CLASS_FAMILY[cls]]
+  return rgb ? `rgba(${rgb}, 0.24)` : 'var(--bar-track)'
 }
 export const roleOf = (actor) => actor?.archetype || CLASS_ROLE[actor?.class] || null
 export const classColor = (cls) => CLASS_COLOR[cls] || null

@@ -60,6 +60,10 @@ const QUIET_S = 120
 const HOLD_MS = 20000
 const MINI_KEY = 'eq2a.mini'
 const PARSE_KEY = 'eq2a.mainparse'
+const AOE_KEY = 'eq2a.mainaoes'
+/* Suffixed with the session id — see `cleared`. Per session because a rail
+   cleared for tonight has nothing to say about tomorrow's. */
+const CLEARED_KEY = 'eq2a.live.cleared'
 
 /* A fight that is OVER, on the dashboard: its parse, with a line above it
    saying which pull this is.
@@ -74,8 +78,14 @@ const PARSE_KEY = 'eq2a.mainparse'
 
    No rail (the dashboard's own is the column to the left) and no compare link
    (that needs the run these fights will land in, and it may not exist yet —
-   the way out to all of it is the bar's "Open the full parse"). */
-function DashParse({ selIds, encs, note }) {
+   the way out to all of it is the bar's "Open the full parse").
+
+   `pickerSlot` is where the parse puts its raider list once anybody's parse is
+   open in it: UNDER the dashboard's rail, which is where the raid page keeps
+   it too. Stacked in one column instead, a drilldown or a comparison got a
+   third of the width it needs, under the list it was picked from and often
+   below the fold. */
+function DashParse({ selIds, encs, note, pickerSlot }) {
   const idKey = selIds.join(',')
   const [report, setReport] = useState(null)
 
@@ -115,6 +125,7 @@ function DashParse({ selIds, encs, note }) {
         </div>
       </div>
       <ParseView selIds={selIds} report={report}
+                 pickerSlot={pickerSlot}
                  span={{ started_ts: first?.started_ts,
                          ended_ts: encs[encs.length - 1]?.ended_ts }} />
     </div>
@@ -204,7 +215,26 @@ export default function Live() {
   const [encounters, setEncounters] = useState([])
   const [status, setStatus] = useState(null)
   const [partial, setPartial] = useState(null)
-  /* Switches, not tabs: any subset of the meters can be on at once. */
+  /* CLEARING IS ABOUT THIS SCREEN AND NOTHING ELSE.
+
+     One ACT process is one session, and a session is a whole evening: by the
+     time the raid starts the rail already holds the afternoon's dungeon, the
+     writs, and every trash pull between them. What is wanted is a clean rail
+     for tonight — not an edit to the raid, which is what the raid page's Hide
+     and Delete are for. So a cleared fight is still parsed, still on
+     `/zones/:id`, still visible to everyone it was shared with; it is simply
+     not drawn here.
+
+     Kept per SESSION in localStorage, so it survives a reload of the page you
+     leave open all night, and so it cannot leak onto tomorrow's. Ids are the
+     key: they change when a live session is finalized and rebuilt from raw,
+     and a cleared id that no longer matches anything is just an entry nobody
+     reads. */
+  const [cleared, setCleared] = useState(() => new Set())
+  /* Switches, not tabs: any subset of the meters can be on at once. THE MIDDLE
+     COLUMN'S ONLY — the mini rail keeps its own, in its own settings panel
+     (`MiniRail`), because a page you read between pulls and a strip you read
+     mid-fight do not want the same three stacks of bars. */
   const [metrics, setMetrics] = useState(['damage'])
   /* The mini overlays docked to the window's edge (MiniRail.jsx). Remembered,
      because whether the game or the dashboard owns this monitor is a fact
@@ -218,11 +248,52 @@ export default function Live() {
      middle as its record, which is the between-pulls view either way. */
   const [parseOn, setParseOn] = useState(() => localStorage.getItem(PARSE_KEY) !== '0')
   useEffect(() => { localStorage.setItem(PARSE_KEY, parseOn ? '1' : '0') }, [parseOn])
+  /* The countdown panel on the MIDDLE COLUMN's meter, switchable like the
+     metric stacks are and remembered like them (the switch is in the meter's
+     own chip row, `LiveMeter`). Nothing to do with the rail's countdowns: that
+     panel has its own switch in its own ⚙, because a strip read mid-fight and a
+     page read between pulls do not want the same things on them. On by default
+     — an AoE audit you have to go and find is one nobody finds. */
+  const [aoesOn, setAoesOn] = useState(() => localStorage.getItem(AOE_KEY) !== '0')
+  useEffect(() => { localStorage.setItem(AOE_KEY, aoesOn ? '1' : '0') }, [aoesOn])
   /* The rail's own key grammar: a fight is its id, and a zone block or a
      collapsed Trash ×N is the comma-joined ids under it. `/encounters/agg`
      takes a set either way, so a trash group opens as one combined parse
      instead of being a click that does nothing. null is LIVE. */
   const [sel, setSel] = useState(null)
+  /* The rail's edit mode, the raid page's one verb short (see `onClear`). Not
+     remembered: it is a thing you open, use and close, and a dashboard that
+     came back in edit mode would be one nudge from clearing a pull you wanted. */
+  const [editing, setEditing] = useState(false)
+  /* The dock under the rail, for the raider list of a parse with somebody's
+     drilldown open in it (see DashParse). State rather than a ref: the parse
+     renders into this node, so it has to hear about it the render it appears. */
+  const [pickerSlot, setPickerSlot] = useState(null)
+
+  /* Load and store the cleared set as the session changes. Two effects rather
+     than one: the read has to happen when `sessionId` arrives (it is null on
+     the first render), and the write must not fire on that first empty set or
+     it would erase what the read is about to find. */
+  const clearKey = sessionId ? `${CLEARED_KEY}.${sessionId}` : null
+  useEffect(() => {
+    if (!clearKey) { setCleared(new Set()); return }
+    try {
+      setCleared(new Set(JSON.parse(localStorage.getItem(clearKey) || '[]')))
+    } catch { setCleared(new Set()) }
+  }, [clearKey])
+
+  const clearFights = useCallback((encs) => {
+    if (!clearKey) return
+    setCleared((prev) => {
+      const next = new Set(prev)
+      for (const e of encs || []) next.add(e.id)
+      localStorage.setItem(clearKey, JSON.stringify([...next]))
+      return next
+    })
+    /* A cleared fight must not stay SELECTED — the middle column would go on
+       rendering a parse whose row is gone from the rail. Back to live. */
+    setSel(null)
+  }, [clearKey])
 
   const toggleMetric = useCallback((k) => setMetrics((cur) => {
     const next = cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]
@@ -310,6 +381,20 @@ export default function Live() {
 
   const liveFight = partial?.fight || null
   const lastEnc = encounters.length ? encounters[encounters.length - 1] : null
+  /* What the RAIL draws. Only the rail: `lastEnc` and the commit count below
+     stay on the full list, because clearing a row off a screen must not make
+     the page think a fight it already saw is still saving. */
+  const visible = useMemo(
+    () => (cleared.size ? encounters.filter((e) => !cleared.has(e.id)) : encounters),
+    [encounters, cleared])
+
+  /* Edit mode lives on the rail's rows, so an empty rail has to leave it. The
+     Done button is docked to the fight count and the count only draws when
+     there are fights, so Clear all took its own way out with it: edit mode
+     stayed on with nothing to edit and no button to close it. */
+  useEffect(() => {
+    if (!visible.length) setEditing(false)
+  }, [visible.length])
 
   /* THE GAP, and why the rail's live row is never empty during a raid.
 
@@ -456,10 +541,14 @@ export default function Live() {
               its own — leave it open.
             </p>
           </div>
-          {/* Setting the overlay up is a BEFORE-the-raid job — the scene has
-              to be positioned while nothing is happening — so the panel is on
-              the idle page too. */}
+          {/* Setting these up is a BEFORE-the-raid job — an OBS scene has to
+              be positioned, and an in-game window has to be dragged where it
+              will not cover a hotbar, both while nothing is happening — so the
+              panels are on the idle page too. */}
           <div className="dashbar">
+            <ErrorBoundary resetKey="ingamepanel-idle">
+              <OverlayPanel kind="ingame" />
+            </ErrorBoundary>
             <ErrorBoundary resetKey="overlaypanel-idle"><OverlayPanel /></ErrorBoundary>
             {canCurate && (
               <>
@@ -488,8 +577,44 @@ export default function Live() {
             separate Live button above it any more. One list, in the order the
             night happened, and the pull in progress is its last row. */}
         <EncounterTree
-          encounters={encounters}
+          encounters={visible}
           live={liveRow}
+          /* The raid page's edit mode, one verb short. `onClear` is what makes
+             it the dashboard's: it takes a fight off this rail and changes
+             nothing about the raid (see `cleared`), so the rows get ✕ rather
+             than the raid page's Hide and Delete. */
+          editing={editing}
+          onClear={clearFights}
+          /* ONE button, in the line that already exists, docked to the left of
+             the fight count — the number it is about. It does not get a row of
+             its own (a row for one button is a row of rail the fights could
+             have had) and it is not gold: clearing rows off a screen is not an
+             action on the raid. Done takes the same spot rather than appearing
+             somewhere else, so the click that opens edit mode closes it and the
+             cursor never has to go looking. */
+          countAction={visible.length ? (
+            editing ? (
+              <button className="ebtn" aria-pressed title="Stop editing"
+                      onClick={() => setEditing(false)}>
+                ✓ Done
+              </button>
+            ) : (
+              <button className="ebtn" aria-pressed={false}
+                      title="Clear fights off tonight's rail"
+                      onClick={() => setEditing(true)}>
+                ✎ Edit
+              </button>
+            )
+          ) : null}
+          editbar={(
+            <span className="editopts">
+              <button className="chip" disabled={!visible.length}
+                      title="Clear every fight above off the dashboard. They stay on the raid page."
+                      onClick={() => clearFights(visible)}>
+                ✕ Clear all
+              </button>
+            </span>
+          )}
           sel={sel == null ? 'live' : String(sel)}
           onSelect={(key) => setSel(
             key === 'all' || key === 'live' || key == null ? null : String(key))}
@@ -515,12 +640,25 @@ export default function Live() {
                         : 'Bring the live parse back'}>
                 Parse
               </button>
-              {/* the stream overlay IS the mini parse, pointed at OBS instead
-                  of at this window — so its options belong beside Mini */}
+              {/* THE OTHER TWO SCREENS THE MINI PARSE IS DRAWN ON, in the
+                  order they sit further from this window: the game client's
+                  own browser, then OBS. Both are the same object as `Mini`
+                  pointed somewhere else, which is why all four switches are one
+                  group — this row is "where is the parse", top to bottom.
+
+                  In-game before Overlay because that is the one you reach
+                  during a raid; the OBS link is set up once and left. */}
+              <ErrorBoundary resetKey="ingamepanel">
+                <OverlayPanel kind="ingame" />
+              </ErrorBoundary>
               <ErrorBoundary resetKey="overlaypanel"><OverlayPanel /></ErrorBoundary>
             </>
           )}
         />
+        {/* Empty except while a parse is open in the middle column — that one
+            portals its raider list in here, under the fight rail, the way the
+            raid page stacks them. */}
+        <div className="dashpicker" ref={setPickerSlot} />
       </div>
 
       <div className="dashmain">
@@ -582,11 +720,11 @@ export default function Live() {
 
         {sel != null ? (
           <ErrorBoundary resetKey={`rec-${sel}`}>
-            <DashParse selIds={selIds} encs={selEncs} />
+            <DashParse selIds={selIds} encs={selEncs} pickerSlot={pickerSlot} />
           </ErrorBoundary>
         ) : showLastRecorded ? (
           <ErrorBoundary resetKey={`rec-last-${lastEnc.id}`}>
-            <DashParse selIds={[lastEnc.id]} encs={[lastEnc]}
+            <DashParse selIds={[lastEnc.id]} encs={[lastEnc]} pickerSlot={pickerSlot}
                        note={finished ? null : 'last pull — waiting for the next one'} />
           </ErrorBoundary>
         ) : (
@@ -595,10 +733,11 @@ export default function Live() {
               fight={parseOn ? shown : parked.current}
               metrics={metrics}
               onToggle={toggleMetric}
+              onToggleAoes={() => setAoesOn((v) => !v)}
               stale={stale}
               paused={!parseOn}
               showChart
-              showTimers
+              showTimers={aoesOn}
             />
           </ErrorBoundary>
         )}
@@ -618,9 +757,11 @@ export default function Live() {
         <ErrorBoundary resetKey="mini">
           {/* the last pull, not just the running one: the rail is what you
               read while looking at the game, and between pulls "what just
-              happened" is the question it is there to answer */}
-          <MiniRail fight={shown} metrics={metrics} stale={stale}
-                    onClose={() => setMini(false)} />
+              happened" is the question it is there to answer.
+
+              No `metrics`: which meters are on the rail is the RAIL's setting
+              now, kept beside which edge it is docked to. */}
+          <MiniRail fight={shown} stale={stale} onClose={() => setMini(false)} />
         </ErrorBoundary>
       )}
     </div>

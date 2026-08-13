@@ -52,7 +52,7 @@ container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/` and `noteshots/`
 (re-encoded screenshots) and `icons/` (item icons cached from the wiki, keyed
 by Census icon id — reference data about the game, not about a raid). Schema
-is at **v32**; migrations in
+is at **v35**; migrations in
 `db.py` are guarded by table SHAPE, not `user_version` (the dev reloader can
 stamp the version mid-edit).
 
@@ -193,9 +193,53 @@ Live, notes and replay — `docs/live.md`:
   hard `max_rows` cap instead — nobody can click a stream. **Max hit is the
   one exception** (`max_hit`/`max_heal`, by SOURCE): a nuke and a DoT with the
   same DPS are not the same thing.
+- **The live meter sizes itself and the middle column keeps the slack** —
+  `--live-w` (`fit-content`, so the panel ends at the headline's `deaths`
+  stat) and `--live-tbl-w` (360px, about where `raid HPS` ends) on
+  `.dashmain .livemeter`. A pull in progress is a name, a bar and a rate; the
+  column's width is for the PARSE a finished fight turns into, which still
+  extends. The countdown rows shed words by CONTAINER QUERY (`@container
+  aoepanel`), never a second `compact` flag.
 - **The mini parse and the stream overlay are ONE component** (`MiniParse.jsx`);
   `MiniRail` is only the dock. Don't give the overlay a meter of its own — a
   change to the mini parse IS a change to the overlay.
+- **The rail's switches are the RAIL's** (`MiniRail`'s ⚙, `eq2a.mini.cfg`) — the
+  meter's chips drive the middle column only. A page read between pulls can
+  spare three stacks of bars; 244px beside the game cannot, and the third stack
+  is what pushes the countdowns off. Switches say `DPS`/`HPS`/`TANK` on both
+  (`METRICS.short`); `rateLabel` still heads the FIGURE, so tank is `Inc/s`
+  there. Every meter off is a setting, not an empty state. **The AoE panel is
+  switchable on BOTH** — the rail's is in its ⚙, the middle column's is a chip
+  in the meter's own row (`eq2a.mainaoes`, ruled off from the metric chips with
+  `.tabsep`), and neither reaches the other. Not in the rail head: that says
+  which SURFACE is on, the chip row says what is in the column.
+- **One settings row, two panels** (`Settings.jsx`) — the mini rail's ⚙ and the
+  stream overlay's options are the same list at two sizes; the rail's lit-pill
+  grid is GONE (a pill you must press to learn what it does is what a 244px
+  strip really cannot afford). A chips row is `as="div"`, never a `<label>` (a
+  label adopts the first button, so clicking "Theme" pressed "Transparent"); a
+  switch held off by a master switch is `disabled`, never hidden.
+- **On a mini row the RATE sits against the name and max hit is outboard** —
+  the reverse of the dashboard meter. At 244px the ranking is read straight
+  down the rate; max hit is looked up once a pull, never scanned. Each cell
+  keeps its own weight through the swap.
+- **The notification block sits under the last stack of bars** (`MiniAlerts.
+  jsx`), which is why `.miniparse` shrinks but never GROWS. Its countdowns are
+  `AoeTimers` scaled in CSS — never a second countdown — and they are
+  PERSISTENT; only the death cards pop in and expire (WALL clock, ≤2 at once, a
+  wipe card supersedes a tank card). Nothing blinks: a solid danger block plus a
+  180ms cross-fade, so reduced motion has nothing to take away.
+- **The main tank is the FIGHTER who has taken the most damage this fight**,
+  the off tank the second (`MiniAlerts.tankOrder`, over `CLASS_ROLE` — all six
+  fighters, brawlers included). Nothing is configured and nothing is guessed:
+  an unclassed raider is nobody's tank. **A single dps dying earns no card** —
+  the deaths figure carries it; a tank dying, or more than five at once, is the
+  fight changing shape. Death cards ride the master Notifications switch and
+  have no switch of their own.
+- **Deaths are counted by DIFFERENCE and the first payload of a pull is a
+  BASELINE** — the payload carries a running total per actor and no death
+  events, so without the baseline (retaken on `started_ts`) every pull would
+  open by announcing the last one's dead.
 - **The parse does not ANIMATE; only its clocks move** (`lib/smooth.js`).
   Figures and bars change when the payload changes them. Tweened numbers and
   sliding bars were both built and both REMOVED — a rate counting up cannot be
@@ -239,12 +283,100 @@ Live, notes and replay — `docs/live.md`:
   (65→72, measured period 59.8s→40.3s). Merging is the failure to prefer: a
   merged cast makes a gap LONGER, which `observed_period` survives by design.
 - **A suggested timer is OFFERED, never applied** (`suggest_period`): 3+
-  agreeing intervals, past 15% and 3s, never when `instances_hint` explains it.
-  The countdown stays on the raid's configured number.
-- **Jousting is marked by hand and keyed by ability NAME** (`lib/joust.js`,
-  localStorage) — a log cannot tell running out from standing in. It drives the
-  burn-window row; an OBS browser source inherits no marks.
-- **A countdown overdue by `OVERDUE_DROP_S` (60s) leaves the panel** and comes
+  agreeing intervals, past 15% and 3s, never when `instances_hint` explains it,
+  and off CLEAN cycles only. It is an errand (edit your ACT config), not the
+  countdown — which now uses the learned number instead, see below.
+- **The countdown's number is LEARNED, not ACT's** (`pipeline/aoelearn.py`,
+  `aoe_cycles` v33): `learned` > `reported` > this pull. Adoption needs 6
+  agreeing CLEAN intervals across 2 fights, never when `instances_hint` explains
+  it. Pooled SITE-WIDE — a mob's recast is a fact about the game, like
+  `zone_eras.json`, and the rows carry no raider, parse or run. Observations are
+  stored, the conclusion is derived.
+- **A reuse debuff moves some AoE timers and not others, and which is MEASURED**
+  (`refdata/reuse_debuffs.json`): `Traumatic Swipe` is a damage line from a
+  player onto a mob, so it needs no cast line; recast 30s and duration 30s, so
+  one rogue is 100% uptime. **A swipe is matched on WHAT IT LANDED ON, never on
+  the source** — live, another raider's ability line is `Subject(name,
+  'unknown')`, so a `unit == "player"` test matches the logger and nobody else. The tooltip says -50% reuse speed and it measures
+  ~×1.3 on the abilities that respond, ×1.03 on the avatar's `Whirling
+  Bladestorm` in the same fight as ×1.47 and ×1.35. Never assume the magnitude;
+  never adjust an unmeasured ability.
+- **A cycle belongs to the state at the cast that STARTED it**
+  (`aoes.split_cycles`) — not to how much of the gap the debuff covered, which
+  does not separate the populations (60s and 77s `Blanket` cycles had
+  overlapping coverage fractions in one fight; at the cast they split cleanly).
+- **A swiped bar is ONE SPAN with a tick at the normal timer** (`NormalMark`) —
+  the stretched number from the first second, never a length that changes
+  mid-drain. The first build planned normal and grew past it: the bar resized
+  while being read and a cast that was never late opened at "+0:24". Overdue
+  counts up from the number the bar was running to. No pill — a word here has to
+  change what somebody does in the next few seconds, and that one restated the
+  bar in text.
+- **NOTHING ON THE AoE PANEL MOVES THAT DOES NOT HAVE TO** — it is read while
+  fighting, and motion costs you your place. Rows are ordered by FIRST CAST, not
+  soonest-due (a re-arm must never reshuffle the list); the compact panel keeps
+  3, chosen by damage but drawn in first-cast order; no dtype pill in compact.
+  Read by POSITION, not by rank.
+- **The exception is the landing: the row flashes red and says `HIT!`**
+  (`justHit`) — a reset countdown looks exactly like one that has been running,
+  so the flash is the only thing distinguishing "it fired" from "you looked
+  away". One pulse (a cross-fade, so reduced motion keeps it), NOT seeked (the
+  screen is ~1s behind the log; seeking would show the decay, not the flash),
+  and derived per render from `last_cast_ts` rather than remembered.
+- **The two hand marks are JOUST and MINI, keyed by ability NAME**
+  (`lib/marks.js` + `joust.js`/`minipin.js`) — a log cannot tell running out
+  from standing in, nor which AoE is worth a slot beside the game.
+  Stacked PILLS per row on the live panel and the AoE tab, never checkboxes (a
+  tick says what it does only in its tooltip, and these rows are read mid-pull).
+  A mark is an ANSWER — yes/no/nothing said — and **nothing said defaults to
+  whether ACT's list knows the ability** (`actListed`, off `reported_s`): the
+  raid's own callout list.
+- **A mark is on the ACCOUNT, and localStorage is now the CACHE in front of it**
+  (`user_marks` v35, `backend/marks.py`, `GET/PUT /api/marks`) — the same panels
+  are drawn in three browsers, and the in-game window is a different browser
+  read by the person who did the marking. Module state is seeded from
+  localStorage at import so the first paint awaits nothing, and the account's
+  answer corrects it; a click applies locally and pushes in the background, so
+  signed out or offline still marks. **The two token screens are handed the
+  marks with their config** — no cookie, so they cannot ask, and the poll they
+  already run means a pill toggled on the dashboard reaches the game window on
+  the next tick. **The first signed-in read MERGES per ability** (`syncMarks`):
+  every pre-v35 mark lives in one machine's localStorage and nowhere the server
+  can reach, so an ability the account has no answer for takes the browser's
+  and one it has an answer for keeps the account's.
+- **MINI decides eligibility, `MINI_TIMER_ROWS` still decides capacity** — a
+  mark says what matters, and a fixed scene is fixed however strongly somebody
+  feels about a sixth countdown.
+- **A timer is per (MOB, ability)** — cycle rows, `learn`, `timer_for` and the
+  live rows all key that way, so two mobs with different names casting one AoE
+  keep two timers and two countdowns. Only ACT's list is per ability, because
+  that is ACT's format.
+- **A mob that SPLITS is a SPECIAL CASE and is written down**
+  (`refdata/split_mobs.json`, `aoes.several_bodies`): one name on several
+  bodies, so its gaps are a superposition and not a recast. Never learned,
+  never suggested, and no live countdown at all. The Emerald Halls rumbler had
+  21 agreeing intervals across 4 uploads saying 28.7s against ACT's 50 and the
+  site had adopted it. Read at derive time — no reparse, no `PARSE_VERSION`.
+- **HOW MANY BODIES A NAME HAS IS GAME KNOWLEDGE, never inferred from parse
+  shape.** "Measures well under the ACT timer and isn't the fight's named" was
+  built and REVERTED — it killed `Ancient Grovebeast`'s `Tremerous Stomp` and
+  only one grovebeast is ever up; `is_named` is the ENCOUNTER's headline, so
+  every add fails it, and a wrong ACT entry looks identical. Most mobs sharing a
+  name never overlap their AoEs. Only `_instances_hint` survives, because a
+  clean whole fraction of the timer is a SIGNATURE, not a direction — and it
+  never takes a countdown away.
+- **A cast that NAMED A SECOND and did not happen is admitted MISSED at
+  `MISSED_S` (15s)** — a much shorter fuse than `OVERDUE_DROP_S`, and a
+  different question. Past it the mob was stunned, or every single person
+  blocked it so nothing printed to detect on, or the timer is wrong; none is a
+  countdown. It also stops anchoring the BURN WINDOW (`nextJoust` skips it):
+  the window belongs to the SOONEST jousted cast and a cast in the past is
+  soonest by a mile, so Mayong's skipped `Soul Paralysis` held the window at
+  `+0:47` through a stretch the raid could have burned in. Both numbers ride
+  the payload (`aoe_missed_s`/`aoe_drop_s`) because the browser clock runs
+  ahead of it.
+- **A countdown overdue by `OVERDUE_DROP_S` (60s) leaves the panel** — that
+  line is now for a row with NOTHING to be late for (no period) — and comes
   back on its own — snapshots are rebuilt, never accumulated. **A row with no
   timer leaves on the same line, measured from its last cast**: an avatar's
   irregular raid-wide abilities (`Stealth Assault`) have nothing to be late for,
@@ -252,7 +384,10 @@ Live, notes and replay — `docs/live.md`:
 - **The compact panel is not the dashboard's** (`AoeTimers: miniTimers`) — the
   dock and the stream overlay draw the meter UNDER the timers in a fixed scene,
   so a countdown-less row is a raider off the bottom: capped at
-  `MINI_TIMER_ROWS`, and rows with no period are dropped while the fight runs.
+  `MINI_TIMER_ROWS` = 3 (cut by DAMAGE, drawn in first-cast order), rows with no
+  period dropped while the fight runs, no dtype pill, and no `measured`/`timer`/
+  `seen` word — provenance is a thing you look up once (it stays on the title),
+  never the thing you read mid-pull, and it costs the name and the digits width.
 - **An audit's threshold is not a panel's** — five targets is a GROUP, and it
   drew 10 rows for 3 real abilities on a Mayong kill. The Spell timers panel
   additionally needs a reported timer OR `RAID_FRACTION` of the raid reached;
@@ -263,9 +398,15 @@ Live, notes and replay — `docs/live.md`:
   1 for every real AoE measured. Catch it explicitly; the clustering hides it
   by assembling a plausible timer out of melee windows, and `MIN_CASTS` only
   ever dropped the shields that never stop. A reported timer is exempt.
-- **The notes column collapses, and Enter files a note** (Shift+Enter is the
-  newline). The `File under X` button sits under the textarea, and the
-  screenshot drop is a strip — a paste needs no target.
+- **The notes column collapses SIDEWAYS, and Enter files a note** (Shift+Enter
+  is the newline). Closed it is a tab down the page's edge and its grid track
+  shrinks to it — a collapse that keeps 340px is no collapse. The `File under X`
+  button sits under the textarea, and the screenshot drop is a strip — a paste
+  needs no target.
+- **An open drilldown on the dashboard docks the raider list under the RAIL**
+  (`ParseView`'s `pickerSlot`) and takes the middle column, one parse or
+  several — the raid page's `.workspace.withpanel` layout, portalled because
+  the rail belongs to the page and the list to the parse.
 - **A note is keyed by (user, zone, named), NEVER by encounter** — encounter
   ids all change on rebuild; `encounter_id` is provenance, not identity. The
   zone is the BASE name (`zones.base_name`): "Castle Mistmoore 2" is a second
@@ -277,6 +418,26 @@ Live, notes and replay — `docs/live.md`:
   never fetched at runtime; a zone with no entry groups under "Other" rather
   than being dropped. An `introduced = LU22` zone resolves by that update's
   DATE to the expansion that was live.
+- **WHICH INFOBOX a zone page wears is itself the fact** — `IZoneInformation`
+  is an instance (its `instance` field says Raid/Group/Solo), `ZoneBox` is an
+  outdoor zone. The FIELD is unmaintained (Antonica fills it in, six others
+  leave it blank); the template is not. A blank `introduced` on a `ZoneBox` is
+  an ANSWER — the template's own comment says "leave blank if this is an
+  original EQ2 zone" — and reading it as a gap is why every original overland
+  zone was missing from the file.
+- **A run in a PUBLIC zone wears its named mob** (`_headline_named` +
+  `lib/raids.js: runLabel`): in an instance the zone IS the event, in a public
+  zone it is only where somebody stood. Needs `zones.is_public` (reference
+  data, so an unknown zone is left alone) and exactly ONE distinct named.
+- **Observed is CONTRIBUTION, not presence** (`_observed_runs`) — no damage,
+  heals, wards OR cures from the logger anywhere in the run; all four, or the
+  word is wrong about a healer, a defiler or a cure bot. Damage TAKEN is
+  deliberately out: an AoE reaches whoever is standing there. Derived at read
+  time, never stored, like the guild tag.
+- **The Live pill needs the zone LINE, not just the newest encounter**
+  (`_live_runs`) — an encounter is the last thing that FOUGHT, so a raid that
+  ended and went to sell lit its last pull for as long as ACT stayed open.
+  Leave the zone and the pill drops; the next fight lights the new run.
 - **The notes outline links every named out to eq2lexicon**
   (`lib/raids.js: lexiconRaid` → `/raids/<zone>/<named>`, new tab). The
   lexicon holds the strategy, the note holds what happened to us — don't
@@ -284,6 +445,94 @@ Live, notes and replay — `docs/live.md`:
 - **The overlay token is a capability in a URL** — it reaches the live meter
   and nothing else; revoked and never-existed answer the same. Its options live
   on the DASHBOARD (beside Mini) and `enabled:false` is not revoked.
+- **A translucent fill is `rgba(var(--x-rgb), 0.NN)`, NEVER `color-mix()`** —
+  the parse draws in four places and only the dashboard is a current browser;
+  an OBS browser source and EQ2's in-game browser are embedded CEF builds years
+  behind, `color-mix()` needs Chrome 111, and an unparseable VALUE takes its
+  whole declaration with it. Every bar on both was invisible while the plain-
+  coloured dot, `HIT!` and digits worked. `-rgb` triplets live beside their
+  colours in `tokens.css` in BOTH themes — keep the pairs in step.
+  `stats.rankColor` is the one exception (mixes toward `--text`, not
+  transparent; dashboard-only; degrades to no tint). On the surfaces nobody can
+  open devtools on, prefer the older construct.
+- **A correct token is not a guess — `_resolve` looks it up BEFORE the rate
+  limiter** and a hit no longer `clear()`s the bucket. The bucket is per
+  ADDRESS and these pages re-ask every 5s forever, so one forgotten revoked
+  link was 12 failures a minute and locked the same machine's VALID overlay out
+  of the whole feature (429 on a good token → black window). Misses still cost
+  and still get refused; clear-on-success belongs to the login route, not here.
+  Guarded by `test_a_stale_link_cannot_lock_out_a_good_one`.
+- **A failed request is not a dead link** (`pages/Overlay.jsx`) — only a 404
+  latches "no longer active" (`_resolve` gives it for revoked and never-existed
+  alike) and it STOPS the poll (nothing can un-revoke a token); a
+  429/502/restart/dropped request keeps the screen and retries with backoff,
+  and a good read clears it. Same rule for the stream: EventSource reconnects a
+  dropped connection itself but gives up permanently on a non-2xx, so
+  `readyState === CLOSED` schedules a reopen. And "not yet" is not "nothing" —
+  no config yet says `connecting…`, because a blank rectangle on a black
+  document is how a 429 spent an evening looking like a broken page. These
+  pages cannot be refreshed — never let a hiccup become a permanent state on
+  one.
+- **Two kinds of that token, one page** (`overlay_tokens.kind` v34;
+  `/overlay/<t>` for OBS, `/ingame/<t>` for EQ2's own browser window). Separate
+  ROWS because revoking is per URL — a link in a VOD must be killable without
+  taking the window beside somebody's hotbars with it — and `kind` is fixed at
+  creation. The public half never branches on kind; only the config defaults
+  and clamps do, and they point OPPOSITE ways: `text_scale` 1.25 on a stream
+  (read after a downscale and an encode), 0.9 in-game (read at 1:1, where every
+  pixel is a pixel of raid). In-game gets the NOTIFICATION block and the stream
+  never does — a card is an instruction, and a stream audience can't follow
+  one — plus a painted document (EQ2 composites nothing, so transparent is a
+  white margin), no `width_px`/`layout`, and overflow that scrolls.
+  Button order in the rail head is `Mini · Parse · In-game · Overlay`: where is
+  the parse, nearest window outward.
+- **Smaller type needs MORE contrast, not the same contrast smaller** — the
+  in-game window is competing with ACT's mini parse (white on flat black, ~9px,
+  legible while fighting), and the dock's palette scaled down is a grey smudge:
+  `--text-muted` is ~3.5:1, fine at 12.5px and gone at 8px. So
+  `.overlaypage.ingame.theme-dark` re-declares the TOKENS (flat opaque black,
+  `#fff` text, ~10:1 muted, bright hairlines) rather than re-lighting elements
+  one at a time like the OBS scope — an element list misses every panel added
+  after it. Weight is free width; radii, gaps, shadows and the outer frame are
+  not (the window is the frame).
+- **`dense` is the mini parse's THIRD size** (`MiniParse`) — ~180px inside the
+  game's UI. The class goes so the NAME fits (`S… Swash` identifies nobody, and
+  the bar's hue still carries the archetype); MAX HIT goes (looked for after a
+  pull, not scanned); HPS and deaths come off the headline, leaving the clock
+  LEFT and raid DPS RIGHT over the column it totals (key-first, so the figure
+  meets the column edge). Nothing scrolls sideways and nothing leaves a row —
+  the name ellipsises, the clock never shrinks, the row clips the rest.
+- **In-game rows are a GRID with content-independent tracks, never a flex run**
+  — rank and figure fixed in `ch`, the NAME the only elastic track. A flex row
+  sized by its contents both MOVES (a rate gaining a digit re-widths every row)
+  and ESCAPES (overflow goes off the right edge and the window clips it:
+  `137,412 DP`, no `JOUST`). The burn row's second track is `auto` because it
+  carries a word as well as a clock. `.miniparse` is `overflow: visible` here
+  too — an inner scrollbar appearing is a horizontal shift of every number.
+- **The in-game PAGE grid packs to the top** (`align-content: start`) — the
+  page is a grid, `min-height: 100vh` gives it a height the content does not
+  fill, and a grid's default `align-content` is STRETCH, which grows every auto
+  row equally (flex children don't). Each panel padded itself out with a third
+  of the leftover window: the mob name floating in its band, a void over the
+  column head. It presented as "looks stupid when there are no AoEs" and had
+  nothing to do with them — FEWER panels is a BIGGER share each. An empty
+  `.minitimers` frame collapses too (`:empty`, like `.minialerts`): `MiniParse`
+  frames off the raw payload, `AoeTimers` drops rows off a clock that runs
+  ahead of it.
+- **Sharpness is whole pixels and a hinted face, NOT weight** — `calc(15px *
+  0.7)` is 10.5px and every `em` under it lands on another fraction, which is
+  what "small but mushy" was; `--ovl-px` is rounded in `Overlay.jsx` and the
+  scope calcs off it in whole px (so the in-game size chips read in **px**, not
+  percent). Tahoma/Verdana are hinted to ~8px where `system-ui` is not. At 9px
+  a 700 stem smears rather than thickens — contrast carries the hierarchy, the
+  way ACT does it. Don't re-add bold here. Watch for `rem` in the compact
+  rules: it ignores the scale entirely.
+- **Clearing the dashboard rail is about the SCREEN, never the raid**
+  (`Live.jsx: cleared`, `EncounterTree`'s `onClear`) — one ACT process is a
+  whole evening, so by raid time the rail already holds the afternoon. A
+  cleared fight is still parsed, still on `/zones/:id`, still shared; it is
+  per-SESSION in localStorage. That is why the rows get ✕ and no confirmation
+  rather than the raid page's Hide and Delete.
 - **A replay is the live meter fed from a file, and it is TWO gates**:
   `require_curator` gates the TOOL, `visible_encounters` gates the FIGHT. It
   writes NOTHING.
@@ -380,9 +629,10 @@ Details per area live in the `docs/` file named beside it.
 - **The raid dashboard** `/live` (`docs/live.md`): fight rail, ACT-shaped
   live meter with AoE countdowns, ACT-style **mini overlays** docked to either
   window edge (`MiniRail.jsx`), notes + pasted screenshots by zone/named,
-  OBS stream overlay by token URL — the same mini parse, configured from the
-  bar beside Mini — and curator replay of any visible fight, which the overlay
-  can watch too.
+  OBS stream overlay and an EQ2 in-game browser window, each its own token URL
+  — the same mini parse at three sizes, configured from the rail head beside
+  Mini — and curator replay of any visible fight, which the overlay can watch
+  too.
 - **Compare** `/compare` (`docs/compare-import.md`): any parses side by side,
   signed-out too; the whole comparison lives in `?c=` so a link IS the
   comparison; the picker is a faceted band computed in the browser; the last
@@ -441,6 +691,7 @@ with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
 - 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
 - 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page
 - 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
@@ -460,4 +711,3 @@ with `bash build.sh`.
 - 2026-08-03 (claude): Fix Insights crash (coach.character is an object, render its name) + error boundaries at route and panel level
 - 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of), docs (ARCHITECTURE/CLAUDE/codex zone-runs sections)
 - 2026-08-03 (claude): Zone runs phase 5: checkbox multi-select + ComparePanel (per-metric grouped bars from agg + report data)
-- 2026-08-03 (claude): Zone runs phase 4: zone-page tabs (Overview/Damage/Healing/Defense/Insights), right-side ActorPanel, shared stats.js, coach resurfaced

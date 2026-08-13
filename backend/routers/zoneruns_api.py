@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 import groups as groupsmod
 import memo
 import raidmatch
+import zones
 from db import get_db, row_to_dict, rows_to_dicts
 from groups import (LISTED_RUN_IDS, PERSONAL_RUN_IDS, SHARED_RUN_IDS,
                     VISIBLE_UNHIDDEN_RUN_IDS)
@@ -95,19 +96,116 @@ def _live_runs(conn, run_ids: list[int]) -> set[int]:
     Only the run the lines are currently arriving in is live; the rest are
     ordinary history that happens to share a session.
 
+    The newest ENCOUNTER is not on its own enough, and the zone line is what
+    finishes the job. An encounter is the last thing that FOUGHT, so a raid that
+    ended and went to sell lit its last pull for as long as ACT stayed open:
+    Rivervale sat live for half an hour while the log said `The City of Freeport
+    4`, because standing in a city produces no encounter to move the mark on.
+    The lines are arriving in Freeport, so Freeport is where the session is, and
+    a run in a zone the character has left is history whatever it was the last
+    thing to fight. A session with no zone line at all (ACT attached mid-zone)
+    keeps the encounter's answer rather than losing its pill to a missing fact.
+
     `live.reap_idle_live_sessions` is what makes this expire — without it a
     crashed ACT would leave the pill up forever."""
     if not run_ids:
         return set()
     ph = ",".join("?" * len(run_ids))
-    return {r[0] for r in conn.execute(
-        f"SELECT e.zone_run_id FROM encounters e "
+    candidates = conn.execute(
+        f"SELECT s.id AS session_id, e.zone_run_id AS run_id, r.zone AS zone "
+        f"FROM encounters e "
         f"JOIN sessions s ON s.id = e.session_id "
+        f"JOIN zone_runs r ON r.id = e.zone_run_id "
         f"WHERE e.zone_run_id IS NOT NULL "
         f"AND s.source='live' AND s.status='receiving' "
         f"GROUP BY s.id "
         f"HAVING e.started_ts = MAX(e.started_ts) "
-        f"AND e.zone_run_id IN ({ph})", run_ids)}
+        f"AND e.zone_run_id IN ({ph})", run_ids).fetchall()
+    live = set()
+    for row in candidates:
+        here = conn.execute(
+            "SELECT extra FROM events WHERE session_id=? AND type='zone' "
+            "ORDER BY ts DESC, seq DESC LIMIT 1", (row["session_id"],)).fetchone()
+        zone = None
+        if here and here["extra"]:
+            try:
+                zone = json.loads(here["extra"]).get("zone")
+            except (TypeError, ValueError):
+                zone = None
+        # compared RAW, not by `zones.base_name`: re-zoning into a fresh
+        # instance of the same raid zone is a new lockout and a new run, and
+        # the old one must not keep the pill until the new one has fought
+        if zone is None or zone == row["zone"]:
+            live.add(row["run_id"])
+    return live
+
+
+def _observed_runs(conn, run_ids: list[int]) -> set[int]:
+    """Runs the logger WATCHED rather than fought in.
+
+    Standing near somebody else's pull to gather data is a real way to use this
+    — an avatar in a contested zone is parsed by whoever is in range, not by
+    whoever is in the raid — and the parse that comes back is a good one that
+    says nothing about the person who took it. Without a word for that, their
+    own raid list reads as if they were in 28-person fights all evening.
+
+    The test is CONTRIBUTION, not presence: the logger's own entity has no
+    damage, no heals, no wards and no cures anywhere in the run. Every one of
+    those four has to be in it or the word is wrong about somebody — a pure
+    healer deals no damage, a defiler's output is wards, and an inquisitor
+    carrying a cure assignment can do a fight's real work with neither. Damage
+    TAKEN is deliberately not in the list: an avatar's raid-wide AoE reaches
+    whoever is standing there, and being hit by something is not fighting it.
+
+    Derived at read time and never stored, for the reason the guild tag is
+    recomputed (`census/guilds.retag_runs`): it is a fact about the parse, so a
+    reparse must not be able to leave a stale one behind."""
+    if not run_ids:
+        return set()
+    ph = ",".join("?" * len(run_ids))
+    return {r[0] for r in conn.execute(
+        f"SELECT r.id FROM zone_runs r "
+        f"JOIN characters c ON c.id = r.character_id "
+        f"JOIN encounters e ON e.zone_run_id = r.id "
+        f"JOIN encounter_actor_stats a ON a.encounter_id = e.id "
+        f"JOIN entities en ON en.id = a.entity_id "
+        f"WHERE r.id IN ({ph}) "
+        f"GROUP BY r.id "
+        f"HAVING COALESCE(SUM(CASE WHEN en.name = c.name THEN "
+        f"  a.damage + a.heals + a.wards_absorbed + a.cure_count "
+        f"  ELSE 0 END), 0) = 0", run_ids)}
+
+
+def _headline_named(conn, runs: list[dict]) -> dict[int, str]:
+    """run id -> the named mob a run in a PUBLIC zone should wear.
+
+    In an instance the zone IS the event: "The Emerald Halls" books a night,
+    names it and is what anybody asks about. A public zone is not — it is a
+    place several guilds pass through, and "Rivervale" says only where somebody
+    was standing. What happened there was the Avatar of Mischief, so the run
+    says `Rivervale - Avatar of Mischief` and the list stops reading like four
+    identical visits to a halfling town.
+
+    Two conditions and both are needed. `zones.is_public` comes from reference
+    data, so a zone we have never heard of is left alone rather than guessed at
+    (the ZoneBox pages are what put the outdoor zones in that file at all —
+    before it, every original EQ2 zone was simply absent). And there has to be
+    exactly ONE distinct named: two makes it a tour of the zone, and the zone's
+    own name is the honest label for that."""
+    ids = [r["id"] for r in runs if zones.is_public(r.get("zone"))]
+    if not ids:
+        return {}
+    ph = ",".join("?" * len(ids))
+    out: dict[int, str] = {}
+    for row in conn.execute(
+            f"SELECT e.zone_run_id AS run_id, COUNT(DISTINCT e.name) AS kinds, "
+            f"MIN(e.name) AS name FROM encounters e "
+            f"WHERE e.zone_run_id IN ({ph}) AND e.is_named = 1 "
+            f"AND e.hidden_ts IS NULL "
+            f"GROUP BY e.zone_run_id", ids):
+        if row["kinds"] == 1 and row["name"]:
+            out[row["run_id"]] = row["name"]
+    return out
 
 
 @router.get("/zone-runs")
@@ -170,8 +268,12 @@ def list_zone_runs(scope: str = "all", roster: int = 0, dismissed: int = 0,
     # somebody published it", which is exactly what the list's switch filters
     personal = {r["id"] for r in conn.execute(PERSONAL_RUN_IDS, {"uid": uid})} if uid else set()
     live = _live_runs(conn, run_ids)
+    observed = _observed_runs(conn, run_ids)
+    headline = _headline_named(conn, runs)
     for r in runs:
         r["live"] = r["id"] in live
+        r["observed"] = r["id"] in observed
+        r["headline_named"] = headline.get(r["id"])
         r["spark"] = spark.get(r["id"], [])
         r["raid_dps"] = round(run_dmg.get(r["id"], 0) / max(r["combat_s"] or 0, 1))
         r["mine"] = r["id"] in mine_ids
@@ -260,6 +362,8 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
     payload["shared_with"] = (
         groupsmod.shares_for_runs(conn, [run_id]).get(run_id, []) if mine else [])
     payload["live"] = run_id in _live_runs(conn, [run_id])
+    payload["observed"] = run_id in _observed_runs(conn, [run_id])
+    payload["headline_named"] = _headline_named(conn, [payload]).get(run_id)
     payload.pop("roster_json", None)
     # Somebody else parsed the same night: the page says so and offers the
     # switch, rather than leaving a link somewhere else as the only way across.

@@ -104,15 +104,59 @@ def test_subset_file_dup_marked(conn):
     assert enc(conn, a1)["dup_of"] is None
 
 
-def test_mixed_parse_version_not_deduped(conn):
+def test_mixed_parse_version_deduped_to_the_newer_parse(conn):
+    """The group key IS the segmentation result, so two versions that landed in
+    one group have already agreed about this fight and there is nothing for the
+    reparse sweep to converge. Waiting for it anyway left permanent duplicates
+    behind every session that stopped being sweepable — `_reparse_stale` walks
+    `ready`/`parsing` only, so an `error` session holds its old version for
+    good."""
     add_session(conn, 1, T0 - 100_000, T0 + 100_000, parse_version=7)
     add_session(conn, 2, T0, T0 + 400, parse_version=6)
-    add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    a = add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
     b = add_enc(conn, 2, "Zone A", "Boss 1", T0, T0 + 100)
     rebuild_zone_runs(conn, 1)
+    assert enc(conn, b)["dup_of"] == a
+    assert enc(conn, a)["dup_of"] is None
+    assert runs(conn)[0]["encounter_count"] == 1
+
+
+def test_the_newer_parse_wins_even_from_the_narrower_file(conn):
+    """Version leads coverage. Coverage decides which FILE saw more around a
+    fight and is the right tiebreak between two parses of equal age; once the
+    key says both versions segmented the fight identically, the only thing left
+    to choose between is two analyses of it."""
+    add_session(conn, 1, T0 - 100_000, T0 + 100_000, parse_version=6)   # wider
+    add_session(conn, 2, T0, T0 + 400, parse_version=7)                 # newer
+    a = add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    b = add_enc(conn, 2, "Zone A", "Boss 1", T0, T0 + 100)
+    rebuild_zone_runs(conn, 1)
+    assert enc(conn, a)["dup_of"] == b
     assert enc(conn, b)["dup_of"] is None
-    # both stay canonical until the reparse sweep converges versions
+
+
+def test_a_fight_the_two_versions_segmented_differently_is_not_deduped(conn):
+    """The case the old partition was really guarding, and the group key
+    already handles it: different segmentation is a different key, so these
+    never meet."""
+    add_session(conn, 1, T0 - 100_000, T0 + 100_000, parse_version=7)
+    add_session(conn, 2, T0, T0 + 400, parse_version=6)
+    a = add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    b = add_enc(conn, 2, "Zone A", "Boss 1", T0, T0 + 150)
+    rebuild_zone_runs(conn, 1)
+    assert enc(conn, a)["dup_of"] is None and enc(conn, b)["dup_of"] is None
     assert runs(conn)[0]["encounter_count"] == 2
+
+
+def test_an_unparsed_session_never_outranks_a_parsed_one(conn):
+    add_session(conn, 1, T0, T0 + 400, parse_version=6)
+    conn.execute("UPDATE sessions SET parse_version=NULL WHERE id=1")
+    add_session(conn, 2, T0, T0 + 400, parse_version=6)
+    a = add_enc(conn, 1, "Zone A", "Boss 1", T0, T0 + 100)
+    b = add_enc(conn, 2, "Zone A", "Boss 1", T0, T0 + 100)
+    rebuild_zone_runs(conn, 1)
+    assert enc(conn, a)["dup_of"] == b
+    assert enc(conn, b)["dup_of"] is None
 
 
 def test_rebuild_is_idempotent_and_ids_stable(conn):

@@ -198,14 +198,12 @@ export default function RaidNotes({ zone, mob }) {
 
   /* The heading is the collapse control: the switch across from it, and the
      word itself taking the click too, because a title with a switch beside it
-     that only answers to the switch is a target people miss. Collapsed, the
-     card is this row alone — with the count on it, so it still says whether
-     there is anything in there. */
+     that only answers to the switch is a target people miss. */
   const head = (count) => {
-    const hint = open ? 'Collapse the notes column' : 'Open the notes column'
+    const hint = 'Collapse the notes column'
     return (
       <div className="notehead">
-        <h2 onClick={() => setOpen(!open)} title={hint}>Notes</h2>
+        <h2 onClick={() => setOpen(false)} title={hint}>Notes</h2>
         {count > 0 && <span className="n" title={`${count} in this zone`}>{count}</span>}
         {/* the site's switch, not a bespoke one: same control, same shape as
             every other on/off on the site */}
@@ -218,23 +216,39 @@ export default function RaidNotes({ zone, mob }) {
     )
   }
 
+  /* CLOSED, THE COLUMN IS A TAB — not a card with its body hidden.
+     Collapsing used to leave a 340px column holding one header row, which is
+     the whole width the parse beside it was asking for: two raiders side by
+     side do not fit next to a strip of empty. So the closed state gives the
+     width back and keeps only what a closed column has to say — that it is
+     there, and whether anything is in it. The tab IS the control (a switch
+     that can only be turned on, in a column 34px wide, is not a switch), and
+     it is the first thing rendered because a column with no zone yet collapses
+     the same as one with notes in it. */
+  if (!open) {
+    return (
+      <button className="notestab" title="Open the notes column"
+              onClick={() => setOpen(true)}>
+        <span className="lbl">Notes</span>
+        {notes.length > 0 && <span className="n">{notes.length}</span>}
+      </button>
+    )
+  }
+
   if (!zone) {
     return (
       <div className="card notes">
         {head(0)}
-        {open && (
-          <p className="note">
-            Notes file themselves against the zone you are in, or the named you
-            are pulling. They start once the raid does.
-          </p>
-        )}
+        <p className="note">
+          Notes file themselves against the zone you are in, or the named you
+          are pulling. They start once the raid does.
+        </p>
       </div>
     )
   }
 
   const subject = target.mob || zone
   const groups = groupBySubject(notes, target.mob)
-  if (!open) return <div className="card notes closed">{head(notes.length)}</div>
 
   return (
     <div className="card notes">

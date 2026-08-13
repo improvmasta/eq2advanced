@@ -6,6 +6,7 @@ import ParseView, { ANCHOR_LABEL } from '../components/ParseView.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import { api, fmt } from '../lib/api.js'
 import { ROLE_LABEL, classLabel, roleOf } from '../lib/classes.js'
+import { runLabel } from '../lib/raids.js'
 import { consistency, decompose, reportRollup } from '../lib/stats.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
@@ -603,7 +604,9 @@ export default function ZoneRun({ user }) {
   if (error) return <p className="err">{error}</p>
   if (!run || !encounters) return <p className="muted">Loading…</p>
 
-  const zoneLabel = run.zone || 'Unknown zone'
+  /* Display only — the notes are keyed by the BASE zone on the backend
+     (`zones.base_name`) and nothing here is allowed to change that. */
+  const zoneLabel = runLabel(run)
   // this run's fight selection as a Compare-page token ('.' joins ids there —
   // ',' is the column separator and '+' reads as a space in a query string)
   const cmpSel = sel === 'all' ? 'all' : (selIds || []).join('.')
@@ -658,6 +661,16 @@ export default function ZoneRun({ user }) {
             {run.guild && (
               <span className="badge guild" title="Majority guild of the roster, from Census">
                 {run.guild}
+              </span>
+            )}
+            {/* Kept out of the guild string on purpose — see the note on the
+                raid list. The guild is a vote over the roster; this is about
+                the one person who logged it, and it is the caption that stops
+                the page reading as if they were in the fight. */}
+            {run.observed && (
+              <span className="badge observed"
+                    title="Logged without fighting in it — no damage, heals, wards or cures">
+                Observed
               </span>
             )}
             {/* Beside the guild, because both caption WHO this parse is — and a

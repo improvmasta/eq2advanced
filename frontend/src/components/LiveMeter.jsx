@@ -47,13 +47,20 @@ import LiveTimeline, { peakRate } from './LiveTimeline.jsx'
    every pull. It is the biggest single line of the fight so far, so it only
    ever goes up — which is fine for a number nobody averages. */
 
+/* `short` is what the SWITCHES say, here and in the mini rail's config, and it
+   is deliberately the word a raid says out loud rather than the metric's name:
+   nobody asks who is top of "Healing". `label` stays the prose form for
+   sentences and column captions, and `rateLabel` stays the head over the
+   NUMBER — which is why tank keeps `Inc/s` there and is `TANK` on its switch:
+   the switch names the stack, the head names the figure under it. */
 export const METRICS = {
-  damage: { key: 'damage', rate: 'dps', label: 'Damage', rateLabel: 'DPS',
+  damage: { key: 'damage', rate: 'dps', label: 'Damage', short: 'DPS', rateLabel: 'DPS',
             best: { key: 'max_hit', label: 'max hit' } },
-  heal: { key: 'heals', rate: 'hps', label: 'Healing', rateLabel: 'HPS',
+  heal: { key: 'heals', rate: 'hps', label: 'Healing', short: 'HPS', rateLabel: 'HPS',
           extra: { key: 'cures', label: 'cures' },
           best: { key: 'max_heal', label: 'max heal' } },
-  tank: { key: 'damage_taken', rate: 'dtps', label: 'Tank', rateLabel: 'Inc/s' },
+  tank: { key: 'damage_taken', rate: 'dtps', label: 'Tank', short: 'TANK',
+          rateLabel: 'Inc/s' },
 }
 
 /* Past this many bars a meter stops being readable at a glance and the raid is
@@ -151,7 +158,7 @@ function MeterSection({ fight, mkey, maxRows, labelled }) {
 }
 
 export default function LiveMeter({
-  fight, metrics = ['damage'], onToggle, stale, maxRows, paused,
+  fight, metrics = ['damage'], onToggle, onToggleAoes, stale, maxRows, paused,
   showTimers = true, showChart = true, idleNote,
 }) {
   const active = metrics.filter((k) => METRICS[k])
@@ -237,20 +244,53 @@ export default function LiveMeter({
           rail or over somebody's stream. */}
       {showTimers && !paused && (
         <AoeTimers aoes={fight.aoes} logTs={fight.log_ts ?? fight.last_ts}
-                   running={!frozen} dropS={fight.aoe_drop_s}
+                   running={!frozen} dropS={fight.aoe_drop_s} missedS={fight.aoe_missed_s}
                    editable showSuggest />
       )}
 
-      {onToggle && (
+      {/* THESE SWITCH THIS METER AND NOTHING ELSE. They used to drive the mini
+          rail as well, on the reasoning that a raid wants one answer to "which
+          meters am I watching" — which is exactly wrong: the middle column is
+          read between pulls and the strip beside the game is read during one,
+          so the middle can afford three stacks and the strip cannot. The rail
+          keeps its own switches, in its own settings panel (`MiniRail`). */}
+      {(onToggle || onToggleAoes) && (
         <div className="metertabs">
-          {Object.entries(METRICS).map(([k, v]) => (
+          {onToggle && Object.entries(METRICS).map(([k, v]) => (
             <button key={k} className={`chip ${active.includes(k) ? 'on' : ''}`}
-                    title={active.includes(k) ? `Hide ${v.label}` : `Show ${v.label}`}
+                    aria-pressed={active.includes(k)}
+                    title={active.includes(k)
+                      ? `Hide ${v.label} on this meter`
+                      : `Show ${v.label} on this meter`}
                     onClick={() => onToggle(k)}>
-              {v.label}
+              {v.short}
             </button>
           ))}
-          {active.length === 1 && (
+          {/* THE COUNTDOWNS ARE A SWITCH HERE TOO, and it belongs in this row
+              rather than beside Mini and Parse in the rail head: those say
+              which SURFACE is on, this says what is in the middle column —
+              exactly what the metric chips say. It is the rail's AoE switch
+              (`MiniRail`'s ⚙) one panel over, and for the same reason the
+              metric chips split: the strip beside the game and the page read
+              between pulls do not want the same things on them.
+
+              Ruled off from the metric chips because it is not one of them: a
+              chip to the left of the rule adds a stack of BARS, this one adds
+              a panel. */}
+          {onToggleAoes && (
+            <>
+              {onToggle && <i className="tabsep" aria-hidden="true" />}
+              <button className={`chip ${showTimers ? 'on' : ''}`}
+                      aria-pressed={showTimers}
+                      title={showTimers
+                        ? 'Hide the AoE countdowns on this meter — the mini rail keeps its own'
+                        : 'Show the AoE countdowns above the bars'}
+                      onClick={onToggleAoes}>
+                AoEs
+              </button>
+            </>
+          )}
+          {onToggle && active.length === 1 && (
             <span className="collabel">{METRICS[active[0]].rateLabel}</span>
           )}
         </div>

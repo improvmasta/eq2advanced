@@ -1,0 +1,20 @@
+{
+  "source": "Curated by hand from measured parses. The machine nominates, a human rules.",
+  "why": [
+    "A mob that reflects is not automatically a mob worth a row. Nine mobs in",
+    "the corpus reflect something; on most of them the raid neither notices nor",
+    "cares, and a countdown that appears for those is a countdown people learn",
+    "to ignore. So this file is an ALLOWLIST, the same shape of decision as",
+    "`ability_rulings` (docs/census-abilities.md): detection nominates, a human",
+    "decides, and an unlisted mob gets nothing rather than a guess.",
+    "",
+    "window_s is measured, not configured — see docs/live.md. Add a mob here",
+    "only with the measurement that justifies it in `note`."
+  ],
+  "mobs": {
+    "Treyloth D'Kulvith": {
+      "window_s": 30,
+      "note": "18 windows across 6 kills, every one 28-31s, three per kill at roughly 75%/50%/25% health. The reflect returns the spell to its CASTER (113 of 115 paired returns) and at p90 costs that caster 79% of their max health, 96.8% at worst - which is why this one earns a row and Mayong's (p90 22.7%, never above 26%) does not."
+    }
+  }
+}

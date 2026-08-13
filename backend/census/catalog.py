@@ -29,21 +29,57 @@ Master's-Strike class of misjoin), raidreport's engagement classifier never
 anchors on a proc ability.
 """
 
-# Pet-kit abilities seen under pet possessive chains in bobby.txt
-# (necromancer Grim Sorcerer + scout pet + swarm pets, conjuror equivalents).
+# Pet-kit abilities. The three summoner kits below are GROUND TRUTH rather
+# than sightings: Lindsay fought one pet per fight on 2026-08-11 (session 127)
+# and cast nothing of his own, so each fight holds one kit and nothing else.
+# The frontend's PET_ARCHETYPE (BreakdownTable.jsx) splits this flat list into
+# those kits; a name may only be there if it is here.
 CURATED_PET_ABILITIES = (
-    # necromancer mage pet (Grim Sorcerer)
+    # necromancer mage pet
     "Grim Wave", "Grim Embrace", "Grim Devastation", "Grim Lifetap",
-    "Grim Bolt", "Grim Distortion", "Grisly Feedback",
+    "Grim Bolt", "Grim Distortion",
     # necromancer scout pet
     "Throat Gash", "Poisoned Spike", "Shadowy Garrote", "Unseen Blade",
-    "Shadow Step", "Shadestrike", "Quick Strike", "Clawing of the Soul",
-    "Acidity", "Shockwave", "Shout",
+    "Shadestrike", "Acidity",
+    # necromancer fighter pet. Filed as a CONJUROR's until Lindsay's fighter
+    # fight showed the whole Graven kit under a necromancer's pet — and every
+    # one of the 21 windows that has it also has Shout and Grisly Feedback,
+    # which is the defensive stance, not a conjuror.
+    "Graven Strike", "Graven Scream", "Graven Breath", "Graven Frenzy",
+    "Graven Assault", "Graven Vanquishing",
+    # Cast by whichever pet is out: the pet STANCES (defensive = Shout +
+    # Grisly Feedback, offensive = Clawing of the Soul). All three fired for
+    # all three of his pets, so they say a pet acted and never which one.
+    "Shout", "Grisly Feedback", "Clawing of the Soul",
     # necromancer swarm pets (Blighted Horde / Awaken Grave / Rending Frenzy)
     "Grave Decay", "Rapid Decay",
-    # conjuror pets seen in the same raid
-    "Protofire", "Graven Frenzy", "Graven Vanquishing", "Graven Scream",
+    # conjuror swarm pet
+    "Protofire",
+    # Conjuror pet kits, settled the other way round: Lindsay wrote down the
+    # conjuror's OWN book and Census confirms every entry of it, so what is
+    # left over on a conjuror's line is the pet. Fire and air are an either/or,
+    # and the two blocks anti-correlate at <=0.15 over 419 raid windows.
+    # conjuror fire (mage) pet
+    "Searing Flames", "Shocking Flames", "Igneous Flames", "Wave of Flames",
+    "Sphere of Flames", "Storm of Flames",
+    # conjuror air (scout) pet
+    "Aery Whip", "Wisp Blade", "Storm Surge", "Furystorm", "Galestorm",
+    "Thunderous Attack",
+    # conjuror earth (fighter) pet — nobody raids it, so this is everything it
+    # has ever been seen to cast
+    "Telluric Bash", "Telluric Retaliation",
 )
+# Not claimed, on purpose: "Shadow Step" and "Shockwave". The pet is what
+# swings them, but the OWNER presses them (Lindsay, 2026-08-11) — which is why
+# they show up across all three archetypes' raid fights and in none of the
+# three where he cast nothing himself. A button the player pressed is the
+# player's, so they are never labelled pet, never folded into a pet row and
+# never counted as pet damage (`PET_COMMANDED`, frontend lib/stats.js).
+#
+# Dropped 2026-08-11: "Quick Strike". This table is keyed by NAME alone, and
+# that name belongs to mobs and players at least as much as to a pet — 454 mob
+# rows and 518 player rows against 6 pet-cast ones across the real database —
+# so claiming it hung a "pet cast" badge on everyone else's combat art.
 
 # Buff/item procs that print as a player's own ability line. Observed as YOUR
 # damage in bobby.txt with zero `You prepare` lines across the whole night and
@@ -60,6 +96,19 @@ CURATED_PROCS = (
     "Najena's Empowerment",
     "Arcane Fury",
     "Arcane Storm",
+    # Conjuror buff procs, each confirmed by the caster's own Census effect
+    # text rather than by where the damage landed:
+    #   Fire Seed   "On a combat hit this spell has a 20% chance to cast Seed
+    #                of Fire on target of attack" (+ Blooming Flames on death)
+    #   Flameshield "When damaged with a melee weapon this spell will cast
+    #                Flameshield on target's attacker"
+    # Fire Seed and Flameshield go on an ALLY, so the damage line lands under
+    # whoever was wearing the buff, not the conjuror who cast it.
+    "Seed of Fire", "Blooming Flames", "Flameshield",
+    # Deity procs — cast by the PLAYER and available to anyone who worships
+    # there, so they belong to no class (Lindsay uses Ro's Flames on a
+    # necromancer; Census files it under Ro's Fury with no class at all)
+    "Ro's Flames", "Incinerate",
 )
 
 # `class` carries two different meanings depending on which statement wrote it,
@@ -86,7 +135,14 @@ _PROC_UPSERT = (
 
 def seed_curated(conn) -> None:
     """Idempotent curated seed; called at startup. Curated rows always win, and
-    they are now the ONLY rows that carry a pet or proc verdict."""
+    they are now the ONLY rows that carry a pet or proc verdict.
+
+    A name DROPPED from either tuple is RETIRED here, back to a candidate. The
+    seed is the whole claim, so without this an edit to these lists is a no-op
+    on any database that has already been seeded — `reset_verdicts` runs first
+    but deliberately spares `source='curated'`, and the retired name would have
+    kept its badge forever. A human ruling still outranks both (`_PET_NAMES`)."""
+    claimed = CURATED_PET_ABILITIES + CURATED_PROCS
     with conn:
         conn.executemany(
             "INSERT INTO ability_catalog "
@@ -95,6 +151,13 @@ def seed_curated(conn) -> None:
             "unit=excluded.unit, proc=excluded.proc, source='curated'",
             [(n, "pet", 0) for n in CURATED_PET_ABILITIES]
             + [(n, "player", 1) for n in CURATED_PROCS])
+        conn.execute(
+            "UPDATE ability_catalog SET "
+            "  pet_seen = MAX(pet_seen, CASE WHEN unit='pet' THEN 1 ELSE 0 END), "
+            "  proc_candidate = MAX(proc_candidate, proc), "
+            "  unit = 'player', proc = 0, source = 'observed' "
+            "WHERE source='curated' AND ability_name NOT IN "
+            f"({','.join('?' * len(claimed))})", claimed)
 
 
 def reset_verdicts(conn) -> int:

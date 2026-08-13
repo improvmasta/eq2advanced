@@ -11,10 +11,28 @@ encounter rows by `pipeline/zoneruns.py`:
 - **Dedupe**: overlapping uploads produce byte-identical encounters
   (segmentation is deterministic per parse_version). `rebuild_zone_runs`
   groups a character's encounters by `(started_ts, ended_ts, zone, name)`;
-  the copy from the widest-coverage session is canonical, the rest get
-  `encounters.dup_of` and never join a run. Marking, not deleting — every
-  parse stays complete and the marks re-derive after any reparse. Sessions
-  only dedupe against equal `parse_version` (mid-sweep safety).
+  the newest parse wins, then widest coverage, then lowest session id. The
+  rest get `encounters.dup_of` and never join a run. Marking, not deleting —
+  every parse stays complete and the marks re-derive after any reparse.
+
+  **Scope is ONE CHARACTER's own files.** Two raiders who both logged the same
+  pull are two observations, not a duplicate: each parse has its own `YOU`
+  lines and its own visibility, and a run is one character's visit by
+  definition. What genuinely needs "one real pull" across characters is timer
+  learning, and it derives its own (`aoelearn.pull_keys`).
+
+  **`parse_version` is not a partition, and used to be.** The guard read
+  "differing versions may segment differently, so let the reparse sweep
+  converge them first" — true of segmentation generally, and impossible here,
+  because the group key *is* the segmentation result. Every member of a group
+  has already agreed on `(started_ts, ended_ts, zone, name)`; a fight the two
+  versions really did segment differently lands in two groups and is untouched.
+  What the partition actually did was leave permanent duplicates behind every
+  session that stopped being sweepable: `_reparse_stale` walks `ready`/`parsing`
+  only, so 20 sessions sitting at `error` held an older version forever and
+  every fight they shared with a healthy session stayed doubled — 28 encounters,
+  and `encounters.dup_of` was set on **zero rows in the whole database** as a
+  result. A guard waiting for an event that will never happen is not caution.
 - **Segmentation**: canonical encounters in time order split on a zone change
   or an idle gap > `ZONE_RUN_GAP_S` (3600s). NULL-zone encounters (log began
   mid-zone) form their own "Unknown zone" runs.
@@ -306,6 +324,30 @@ one tab where the NPC switch adds nothing and that is honest, not a bug: a
 death is credited to a player or their pet only (`rollup` is NULL for a mob),
 which is the ACT residual already recorded at the end of CLAUDE.md.
 
+### An auto-attack row is named by what it LANDED as (2026-08-11)
+
+`piercing (melee)`, not `(melee)` — ACT names the row that way, and on TLE the
+damage type is doing real work: **infusions move a player's melee onto disease,
+heat, whatever they infused, and a pet cannot be infused.** So the type stops
+tracking the weapon for the player and keeps tracking the pet, which is what
+makes the label worth reading rather than decorative.
+
+That is also the one case a CONFLATED pet can be picked apart. A remote
+summoner's pet shares their name, so its swings sit inside their own melee row
+— but not their weapon: a conjuror's crushing wand beside their air pet's
+piercing is two damage types in one row, and where one of them is the swing of
+the archetype the parse shows out (`PET_MELEE_DTYPE`), that sub-row is badged
+`pet swing`. It fires when it can and stays quiet when it can't (Lindsay: "we
+won't always, but sometimes we will").
+
+**The split is a DISPLAY of the row, never a second row.** The rollup already
+stores the per-type totals (`dtypes`), so this needed no `PARSE_VERSION` bump
+and no reparse — and the counts stay on the parent on purpose. The log gives a
+per-type total and nothing else, so hits, crit rate and AvgDelay belong to the
+swing chain as a whole; splitting them would halve a dual-wielder's swing count
+and double the AvgDelay on each fragment. A row with one damage type just wears
+its name and has no children at all.
+
 ### The Deaths tab is two columns (`TankDeaths.jsx` + `DeathList.jsx`)
 
 Two different questions were sharing one full-width table. *How did the tank
@@ -520,6 +562,98 @@ fights deleted -> "this log has nothing left in it, delete it too?"
 
 ## The raid list as a list
 
+### Three things a run row says that the run row does not store
+
+All three are derived at READ time and none is written to `zone_runs`, for the
+reason the guild tag is recomputed rather than maintained
+(`census/guilds.retag_runs`): they are facts about the parse, so a reparse must
+not be able to leave a stale one behind.
+
+**`live` needs the zone LINE, not just the newest encounter**
+(`_live_runs`). The `MAX(started_ts)` per session was already there and was
+already load-bearing — a plugin left running all evening puts Freeport, Loping
+Plains, the Sinking Sands and the Emerald Halls in ONE session, and "any run
+belonging to a receiving session" lit ten rows. But the newest ENCOUNTER is the
+last thing that FOUGHT, which is not where the character is: a raid that killed
+its avatar and went to sell left Rivervale lit for half an hour while the log
+said `The City of Freeport 4`, because standing in a city produces no encounter
+to move the mark on. The lines are arriving in Freeport, so that is where the
+session is. Leave the zone and the pill drops; the next fight in the new zone
+lights that run instead. A session with no zone line at all (ACT attached
+mid-zone) keeps the encounter's answer rather than losing its pill to a missing
+fact, and the zones are compared RAW rather than by `zones.base_name` — a
+second lockout of the same raid zone is a new run and the old one must not hold
+the pill until the new one has fought.
+
+**`observed` is CONTRIBUTION, not presence** (`_observed_runs`). Standing near
+somebody else's pull to gather data is a real way to use this — a contested
+avatar is parsed by whoever is in range, not by whoever is in the raid — and
+the parse that comes back is a good one that says nothing about the person who
+took it. Without a word for it their own list reads as if they spent the
+evening in 28-person fights. The test is that the logger's entity has no
+damage, no heals, no wards and no cures anywhere in the run, and all four have
+to be in it or the word is wrong about somebody: a templar deals no damage, a
+defiler's output is wards, and an inquisitor on cure duty can do a fight's real
+work with neither. Damage TAKEN is deliberately out of the list — an avatar's
+raid-wide AoE reaches whoever is standing there, and being hit by something is
+not fighting it. Measured on the pull that prompted this: 0 and 0 in Rivervale
+against 19.9M in the Emerald Halls the same evening.
+
+It is drawn BESIDE the guild tag and never folded into it. The guild is a
+majority vote over the ROSTER and this is a fact about the one person who
+logged it, so one string carrying both would make the guild badge lie about
+where it came from; read together on the row they still say "Dead on Arrival,
+observed".
+
+On the LIST it is an eye glyph (`IconEye`, `.observedeye`) with the sentence on
+its title, not the word: it is a footnote on one row of forty, and a badge
+reading `Observed` cost real width in the widest column. Not a pill — a boxed
+glyph would be louder than the word it replaced. The raid PAGE still writes it
+out, where there is one of them and it is the caption that stops the whole page
+reading as if the logger had fought.
+
+**`headline_named` is what a run is CALLED when its zone is not the event**
+(`_headline_named`, formatted by `lib/raids.js: runLabel`). In an instance the
+zone IS the event: "The Emerald Halls" books a night, names it, and is what
+anybody asks about. A public zone is not — it is a place several guilds pass
+through, so "Rivervale" says only where somebody was standing and four visits
+read as four identical rows. What happened there was the Avatar of Mischief, so
+the run says `Rivervale - Avatar of Mischief`.
+
+Two conditions, both needed. `zones.is_public` is reference data, so a zone the
+file has never heard of is left alone rather than guessed at. And there has to
+be exactly ONE distinct named — two makes it a tour of the zone, and the zone's
+own name is the honest label for that. A hidden named does not count either:
+hiding a fight says it does not count, and the run's own name is the loudest
+place that could contradict it.
+
+### The zone file had no outdoor zones in it at all
+
+That last rule could not be written until the reference data could answer it,
+and it could not. `refdata/zone_eras.json` held 961 zones and Rivervale was not
+one of them — nor Enchanted Lands, Everfrost, Lavastorm, Nektulos Forest or The
+Thundering Steppes. The collector was not the problem (they are all in
+`Category:Zones` and were always fetched); `gamewiki.parse_zone` was, in two
+ways that only bite outdoor zones:
+
+- **The infobox is a different template.** An instance is `IZoneInformation`,
+  an outdoor zone is `ZoneBox`. WHICH BOX A PAGE WEARS IS ITSELF THE FACT, and
+  it is the reliable one: the `instance` FIELD is unmaintained — Antonica fills
+  it in as `Public` and Greater Faydark, The Commonlands, Enchanted Lands,
+  Lavastorm, The Feerrott and Rivervale all leave it blank — while the template
+  is consistent across every page checked. So the template answers "is this an
+  instance" and the field is only consulted for what KIND of instance it is. A
+  blank one on a `ZoneBox` is completed with `Public`, which is the wiki's own
+  word for it rather than a term of ours meaning the same thing.
+- **A blank `introduced` is an ANSWER, not a gap.** The template says so in its
+  own comment: `leave blank if this is an original EQ2 zone`. Requiring the
+  field — right for an instance, where a page without one is not a record we
+  can use — dropped every original EQ2 zone on the floor.
+
+After the re-sync: 975 zones, public 88 → 161, and **155 raid zones before and
+after**, which is the number that matters — nothing was misfiled as a raid on
+the way in.
+
 - **`raid_dps`**: player damage over the run's `combat_s`, from the same
   grouped query that builds the sparkline (`_spark` returns both). It replaced
   "Peak DPS", which ranked nights by their single best pull. **Named is gone
@@ -537,16 +671,21 @@ fights deleted -> "this log has nothing left in it, delete it too?"
   above the table and not in a bar pinned to the bottom. A selection with
   nothing you own says "shared with you — read only" rather than showing an
   empty row of buttons.
-- **Somebody else's raid opens the same pencil onto ONE button**: off my list,
-  or back onto it (`api.dismissZoneRun`, `docs/sharing.md` → `run_dismissals`).
-  Same column, same gesture, and the wording is "off your list", never
-  "hidden" — hiding is the owner's and it reaches everybody. The sweep is the
-  only narrowing on this page that OUTLIVES the page, so it is the only one
-  that has to announce itself: an `N off your list` chip beside the source
-  filter lists them again (a refetch, `?dismissed=1`, because the filter is the
-  server's), each wearing an `off your list` badge. A raid that just stopped
-  appearing, with nothing on screen about it, is indistinguishable from a share
-  that was revoked.
+- **Somebody else's raid opens the same pencil onto ONE button**: dismiss it,
+  or take it back (`api.dismissZoneRun`, `docs/sharing.md` → `run_dismissals`).
+  Same column, same gesture, and the wording is "dismiss", never "hide" —
+  hiding is the owner's and it reaches everybody. The word is the backend's own
+  and it replaced "off your list", which was four words doing one word's job
+  and read as an idiom rather than a verb. A dismissal is the only narrowing on
+  this page that OUTLIVES the page, so it is the only one that has to announce
+  itself: an `N dismissed` chip beside the source filter lists them again (a
+  refetch, `?dismissed=1`, because the filter is the server's), each wearing a
+  `dismissed` badge. A raid that just stopped appearing, with nothing on screen
+  about it, is indistinguishable from a share that was revoked.
+- **The page is titled by what is ON it** (`listTitle`). The size toggles
+  PARTITION the list, so the heading follows them: *Raid Parses*, *Solo/Group
+  Parses*, or *All Parses* with both on. A fixed "Raid Parses" over a list that
+  was half group runs was naming one half of its own contents.
 - **One raid is edited from its own row**, without checking anything first: a
   pencil in the last column, on your own rows opening Hide and Delete
   SIDEWAYS beside it (`.rowedits`, a max-width reveal that degrades to a
@@ -629,8 +768,8 @@ overlapping window still stands, an unknown zone does not).
   shared. Your numbers are the ones you can check against what you remember,
   and yours is the one that survives the sharer leaving the group.
 
-The list draws one row per raid with a `Parse` select naming the uploaders
-(`character_name`, fight count, "(yours)"); the raid page carries the same
+The list draws one row per raid with a **`Character`** select naming the
+uploaders (`character_name`, fight count, "(yours)"); the raid page carries the same
 control in its head and switching NAVIGATES, because the fights and the vantage
 point are all theirs. `GET /api/zone-runs/{id}` serves `alternates` for it,
 filtered through `VISIBLE_RUN_IDS` — the switch re-sorts raids the viewer was
@@ -638,6 +777,16 @@ always allowed to open, it is not a directory of who else parsed the night.
 
 Clustering happens AFTER the source/size filters, so narrowing to one group
 narrows the menu with it rather than offering parses that are no longer listed.
+
+**One `Character` column, not two.** "Which of my characters logged this" and
+"whose upload am I reading" are the same question with the same answer, so the
+old `Character` column (`character_name`, shown once you had more than one
+alt) is gone and the switch answers both: it appears when either is true, and
+a night nobody else parsed is just the name in plain text. It is the site's
+normal text colour on the list rather than gold — it sits in a column of names,
+where gold read as a link out — and keeps its border and arrow to stay a
+control. The raid page's copy of the switch is still gold; there it sits in a
+head, not in a column.
 
 
 ### `GET /api/encounters/timeline?ids=…&bucket=auto`
@@ -676,15 +825,31 @@ Corsolander tries to crush Brandomar with War Stomp, but Brandomar resists" is
 the AoE, while a bare "tries to crush X, but X parries" is a melee swing and
 carries no ability, so it never enters.
 
-Two timers sit side by side and the gap between them is the point:
+Three timers sit side by side and the gaps between them are the point:
 
+- **measured** — what every raid ON THIS SITE has seen this (mob, ability) do,
+  from clean cycles only (`pipeline/aoelearn.py`, `aoe_cycles`). It is the
+  number the countdown counts with once there is one, so it is the column the
+  other two are read against. Absent until 6 agreeing intervals across 2
+  fights; shown parenthesised while it is still short of that.
 - **reported** — ACT's spell-timer list, shipped as `backend/refdata/
   act_spell_timers.json` (446 entries extracted from Lindsay's ACT config;
   only `<SpellTimers>` name/duration/category, not the chat triggers). Joined
   by ability NAME, which works because ACT keys off the same log string.
 - **observed** — the shortest interval between two casts that REPEATS, within
   one fight (the wait between two pulls is a raid taking a break, not a
-  cooldown).
+  cooldown). Clean cycles when there are any; when there are none it falls back
+  to the swiped ones and says so (`observed_swiped`), because a fight somebody
+  debuffed end to end still has a number worth printing and it is not this
+  mob's own timer.
+
+A fourth column, **Swiped**, is what makes the other three trustworthy: whether
+a reuse debuff moves this ability, measured per (mob, ability) rather than taken
+from the tooltip. `Traumatic Swipe` is a damage line from a player onto a mob,
+so it needs no cast line and arrives with the events already being read; the
+drilldown marks which casts started a cycle under it. Full reasoning, and why
+the state at the CAST is what classifies a cycle, in `docs/live.md` → "The timer
+is LEARNED, and a reuse debuff moves it".
 
 Shortest-repeating rather than mean or median because of how the measurement
 fails: an AoE that never reached five people is a cast we cannot see, and a

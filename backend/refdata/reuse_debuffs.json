@@ -1,0 +1,31 @@
+{
+  "_note": [
+    "Player abilities that slow an ENEMY's ability recast, which is the one",
+    "thing a raider can do that moves a mob's AoE timer out from under the",
+    "countdown watching it. Reference data about the GAME, like zone_eras.json",
+    "and act_spell_timers.json — never about anybody's raid.",
+    "",
+    "`duration_s` is the load-bearing number: it is what turns a damage line",
+    "into a WINDOW, and the window is what says whether the cast that started a",
+    "recast was made under the debuff. Both numbers come off the ability's own",
+    "wiki infobox (gamewiki captures them; wiki_abilities.duration_s / recast_s)",
+    "so they can be re-checked rather than remembered.",
+    "",
+    "How MUCH it stretches a given AoE is deliberately NOT here. The tooltip",
+    "says -50% reuse speed; measured against clean cycles of the same ability in",
+    "the same fight it comes out near x1.31, and Whirling Bladestorm does not",
+    "move at all. So the magnitude is LEARNED per (mob, ability) from cycles we",
+    "actually watched — see pipeline/aoelearn.py — and this file only says which",
+    "abilities open a window and how long it stays open."
+  ],
+  "debuffs": {
+    "Traumatic Swipe": {
+      "duration_s": 30,
+      "recast_s": 30,
+      "effect": "reuse",
+      "magnitude_pct": 50,
+      "grant": "Rogue / Strength AA line (EoF)",
+      "note": "duration == recast, so ONE rogue holds it at 100% uptime and two make it permanent. That is why a fight where anybody is pressing it usually has no clean cycle left to compare against."
+    }
+  }
+}

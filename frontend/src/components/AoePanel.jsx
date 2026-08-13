@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import SortableTable from './SortableTable.jsx'
-import { DtypePill } from './AoeTimers.jsx'
+import { DtypePill, MarkPills } from './AoeTimers.jsx'
 import { fmt } from '../lib/api.js'
-import { toggleJoust, useJoust } from '../lib/joust.js'
+import { isJousted, useJoust } from '../lib/joust.js'
+import { isMiniPinned, useMiniPins } from '../lib/minipin.js'
 
 /* Incoming raid AoEs: what the enemy pulled, how often it really landed, and
    how much of the raid was covered when it did.
@@ -20,14 +21,30 @@ import { toggleJoust, useJoust } from '../lib/joust.js'
    longer, never shorter, which is why the observed timer is the shortest
    repeating gap rather than the mean.
 
-   Two things here are not readings. The JOUST tick is the one fact a log
-   cannot supply — whether the raid leaves for this one — and it is marked
-   here because this is the tab you have open when you are working out what
-   went wrong; the dashboard turns it into a burn-window countdown
-   (`lib/joust.js`). And a SUGGESTED timer is what to go and type into ACT: it
-   appears only when this log measured a period that disagrees with the
-   configured one by more than the noise, over enough agreeing intervals to
-   mean it (`aoes.suggest_period`). */
+   Three things here are not readings. The JOUST and MINI pills are the two
+   facts no log holds — whether the raid leaves for this one, and whether it is
+   worth a slot on the mini parse — and they are marked HERE as well as on the
+   dashboard because this is the tab you have open when you are working out
+   what went wrong, which is when you know the answers (`AoeTimers.MarkPills`,
+   `lib/joust.js`, `lib/minipin.js`). And a SUGGESTED timer is what to go and
+   type into ACT: it appears only when this log measured a period that
+   disagrees with the configured one by more than the noise, over enough
+   agreeing intervals to mean it, and never when several mobs wearing one name
+   is as good an explanation (`aoes.suggest_period`, `aoes.several_bodies`). */
+
+/* Why a measurement with every gate cleared is still not the countdown's
+   number. Spelled out per reason rather than as one sentence about "several
+   mobs", because what a reader does next differs: a splitter is settled and
+   written down, and `instances` is an invitation to go and check whether that
+   name really did come in a pack. */
+const BODIES_WHY = (r, k) => ({
+  splits: `${r.source} splits — several of them wear this name at once, so`
+    + ` these ${k.base_agree} intervals are the gaps between DIFFERENT mobs'`
+    + " casts. The countdown keeps ACT's number, which is one body's recast.",
+  instances: `${k.clean_s}s is a clean fraction of ACT's ${r.reported_s}s,`
+    + ' which is what several mobs of one name look like — they cast on their'
+    + ' own timers and read as one mob casting faster.',
+}[k.several_bodies])
 
 const clock = (ts, base) => {
   const s = Math.max(0, ts - base)
@@ -47,7 +64,19 @@ function Casts({ row, base }) {
         <tbody>
           {row.cast_list.map((c, i) => (
             <tr key={i}>
-              <td className="name l">{clock(c.ts, base)}</td>
+              <td className="name l">
+                {clock(c.ts, base)}
+                {/* which cycle this cast STARTED — the state at the cast is
+                    what the interval after it belongs to (aoes.split_cycles),
+                    so the mark reads forward down the column, not back */}
+                {c.swiped && (
+                  <span className="selfmark"
+                        title={'A reuse debuff was on the mob when it cast this,'
+                          + ' so the gap below belongs to the swiped population'}>
+                    swiped
+                  </span>
+                )}
+              </td>
               <td>{c.targets}</td>
               <td>{c.hit}</td>
               <td>{c.avoided || ''}</td>
@@ -67,6 +96,7 @@ function Casts({ row, base }) {
 export default function AoePanel({ data, err, base }) {
   const [open, setOpen] = useState(null)
   const jousted = useJoust()
+  const pinned = useMiniPins()
 
   if (err) return <p className="err">{err}</p>
   if (!data) return <p className="muted">Loading…</p>
@@ -88,25 +118,26 @@ export default function AoePanel({ data, err, base }) {
   }
 
   const key = (r) => `${r.source}|${r.ability}`
-  const delta = (r) => (r.reported_s && r.observed_s
-    ? r.observed_s - r.reported_s : null)
+  const known = (r) => data.learned?.[key(r)]
+  /* Δ is against the number the countdown is actually going to use, which is
+     the learned one wherever there is one — comparing this fight to a list
+     entry the panel has already stopped believing measures nothing. */
+  const baseline = (r) => known(r)?.base_s ?? r.reported_s
+  const delta = (r) => (baseline(r) && r.observed_s
+    ? r.observed_s - baseline(r) : null)
 
   const columns = [
     {
       key: 'ability', label: 'AoE', align: 'l', fixed: true,
       render: (r) => (
         <span className="name">
-          {/* The tick, ahead of the name: it is an input, and an input that
-              sits after the thing it acts on reads as a result of it. */}
-          <label className="joustbox"
-                 title={jousted.has(r.ability)
-                   ? `${r.ability} is jousted — it drives the burn window on the`
-                     + ' raid dashboard'
-                   : `Mark ${r.ability} as one you joust`}
-                 onClick={(e) => e.stopPropagation()}>
-            <input type="checkbox" checked={jousted.has(r.ability)}
-                   onChange={() => toggleJoust(r.ability)} />
-          </label>
+          {/* The marks, ahead of the name: they are inputs, and an input that
+              sits after the thing it acts on reads as a result of it. The same
+              stacked pair the dashboard's panel carries, from one component —
+              two places to mark an ability is fine, two ways to draw the mark
+              is how they come to mean different things. */}
+          <MarkPills row={r} jousted={isJousted(jousted, r)}
+                     pinned={isMiniPinned(pinned, r)} />
           {r.ability}
           <DtypePill row={r} />
           {/* A CONDITION, not a cast: it kept meeting the raid-wide anchor
@@ -153,18 +184,99 @@ export default function AoePanel({ data, err, base }) {
       sortValue: (r) => r.reported_s ?? null,
     },
     {
+      /* WHAT THE SITE HAS LEARNED, from every raid on this mob rather than
+         from this selection. It is the number the countdown counts with when
+         it exists, so it belongs beside the ACT entry it replaced — and when
+         it does not exist yet, the count of clean intervals says how far off
+         it is (`aoelearn.MIN_AGREE`). */
+      key: 'base_s', label: 'Measured',
+      render: (r) => {
+        const k = known(r)
+        if (!k) return <span className="muted">—</span>
+        if (k.base_s) {
+          return (
+            <span title={`${k.base_agree} clean intervals across ${k.base_fights}`
+              + ' fights, every raid on this site. This is what the countdown uses.'}>
+              {k.base_s}s
+            </span>
+          )
+        }
+        /* MEASURED AND STILL NOT USED is a third state, and it needs the
+           because on the end. Everywhere else a bracketed number means "not
+           enough of it yet" and one more fight fixes it; here more fights make
+           it worse, because every one of them counts the same several mobs
+           (`aoes.several_bodies`). Two halves of The Emerald Halls rumbler had
+           21 agreeing intervals saying 28.7s against ACT's 50. */
+        if (k.several_bodies && k.clean_s) {
+          return (
+            <span className="muted" title={BODIES_WHY(r, k)}>
+              ({k.clean_s}s){' '}
+              <span className="selfmark">{k.several_bodies === 'splits'
+                ? 'splits' : 'not 1 mob'}</span>
+            </span>
+          )
+        }
+        return (
+          <span className="muted"
+                title={k.clean_s
+                  ? `${k.clean_s}s so far, on ${k.base_agree} clean interval(s) across`
+                    + ` ${k.base_fights} fight(s) — not enough to replace the ACT`
+                    + ' number yet'
+                  : 'No clean cycles yet — every one we have was under a reuse debuff'}>
+            {k.clean_s ? `(${k.clean_s}s)` : '—'}
+          </span>
+        )
+      },
+      sortValue: (r) => known(r)?.base_s ?? null,
+    },
+    {
       key: 'observed_s', label: 'Observed',
       /* Confidence is the number of intervals that agreed, and it is printed
          rather than folded into a badge: two agreeing gaps is a guess, twenty
          is a measurement. */
       render: (r) => (r.observed_s != null
         ? <span title={`${r.observed_agree} intervals agreed`
+            + (r.observed_swiped
+              ? ' — and every one of them was cast under a reuse debuff, so this'
+                + ' is not this mob\'s own timer'
+              : '')
             + (r.missed_hint ? ` · ${r.missed_hint} cast(s) look missed` : '')}>
             {r.observed_s}s
             {r.observed_agree < 3 && <span className="selfmark">?</span>}
+            {r.observed_swiped && <span className="selfmark">swiped</span>}
           </span>
         : <span className="muted" title="No interval repeated — too few casts">—</span>),
       sortValue: (r) => r.observed_s ?? null,
+    },
+    {
+      /* Whether a reuse debuff moves THIS ability, and by how much. The whole
+         reason the two columns either side of it can be trusted: before this
+         was separated out, "observed disagrees with the ACT timer" had two
+         explanations and no way to choose. */
+      key: 'swipe', label: 'Swiped',
+      render: (r) => {
+        const k = known(r)
+        const seen = r.swiped_casts || 0
+        if (!seen && !k?.swipe_factor) return ''
+        const v = k?.swipe_verdict
+        return (
+          <span className={v === 'affected' ? 'swipehit' : 'muted'}
+                title={`${seen} of ${r.casts} casts here started under a reuse debuff.`
+                  + (k?.swipe_factor
+                    ? ` Site-wide this ability measures ×${k.swipe_factor}`
+                      + ` (clean ${k.clean_s}s vs ${k.swiped_s}s under it).`
+                    : ' Not enough of both kinds to compare yet.')
+                  + (v === 'affected' ? ' The countdown is adjusted for it.'
+                    : v === 'immune' ? ' Measured not to move — no adjustment.'
+                      : ' Unconfirmed — the countdown plans the normal timer'
+                        + ' and runs on past it.')}>
+            {v === 'affected' ? `×${k.swipe_factor}`
+              : v === 'immune' ? 'no'
+                : seen ? `${seen}?` : '?'}
+          </span>
+        )
+      },
+      sortValue: (r) => known(r)?.swipe_factor ?? null,
     },
     {
       key: 'delta', label: 'Δ',

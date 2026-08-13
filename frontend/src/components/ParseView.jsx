@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ActorPanel from './ActorPanel.jsx'
 import AoePanel from './AoePanel.jsx'
 import ClassPanel from './ClassPanel.jsx'
@@ -124,7 +125,7 @@ function kindBadge(kind) {
 }
 
 export default function ParseView({
-  selIds, report, rail, span, cmpPrefix, insights, notice,
+  selIds, report, rail, span, cmpPrefix, insights, notice, pickerSlot,
 }) {
   const [detail, setDetail] = useState(null)
   const [detailErr, setDetailErr] = useState(null)
@@ -885,6 +886,264 @@ export default function ParseView({
     />
   ) : null
 
+  /* The raider list, the tabs, and every panel that is not the drilldown.
+
+     `pickerSlot` is the dashboard's answer to the layout below: there the
+     fight rail belongs to the PAGE, not to the parse, so an open panel docks
+     this column under that rail through a portal and the parse takes the
+     middle of the screen — the raid page's shape, assembled across two
+     components that cannot nest. One drilldown or a comparison, no difference:
+     the same gesture puts the list beside the rail and the parse in the middle,
+     which is exactly the rule `.workspace.withpanel` follows. */
+  const docked = !!(panelOpen && detail && pickerSlot)
+  const mainCol = (
+    <div className={`wsmain${docked ? ' wsdock' : ''} ${stale && detail ? 'stale' : ''}`}>
+      {/* The raid's headline numbers come before the tabs, not after: they
+          describe the night itself, and the tabs choose which view of it you
+          are reading. With a panel open neither one is here — the column is
+          a picker, and a stat grid stacked down it shouts over the parse
+          someone opened. */}
+      {detail && headTiles[tab] && !panelOpen && (
+        <div className="metrics">
+          {headTiles[tab].map((t) => (
+            <div className="metric" key={t.k} title={t.title}>
+              <div className="v">{t.v}</div><div className="k">{t.k}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!panelOpen && (
+        <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'damage' ? null : k)} />
+      )}
+      {detailErr && <p className="err">{detailErr}</p>}
+      {/* A selection with nothing in it — every fight of the raid hidden —
+          is a parse with nothing to count, and it must not sit on "Loading…"
+          forever pretending otherwise. Only the caller knows why there is
+          nothing, so the caller says so. */}
+      {notice}
+      {!notice && !detail && !detailErr && tab !== 'insights' && tab !== 'aoes' && (
+        <p className="muted">Loading…</p>
+      )}
+      {stale && detail && <div className="stalebar" aria-live="polite">Updating…</div>}
+
+      {detail && tabCols[tab] && (
+        <div className="card">
+          <SortableTable
+            /* the filters ride on the table's own tools line, beside Columns
+               — they are all controls for the same table */
+            tools={(
+              <div className="filterbar">
+                <input
+                  type="text" value={q || ''} placeholder="Find a raider…"
+                  onChange={(e) => setQ(e.target.value || null)}
+                  aria-label="Filter combatants by name or class"
+                />
+                {/* one control, not four loose chips — they stay on a line
+                    together however narrow the column gets */}
+                <span className="roles">
+                  {rolesPresent.map((r) => (
+                    <button
+                      key={r}
+                      className={`chip role ${roleSet.has(r) ? 'on' : ''}`}
+                      onClick={() => toggleRole(r)}
+                      title={`Show only ${ROLE_LABEL[r].toLowerCase()}`}
+                    >
+                      {ROLE_LABEL[r]}
+                    </button>
+                  ))}
+                </span>
+                {/* Who is in the table, right beside who is filtered out of
+                    it — the role chips narrow the raid, these two decide
+                    whether anything but the raid is in it at all. On every
+                    parse tab, not just Defense, and off by default: a mob is
+                    a combatant with a parse worth reading (click its row),
+                    but the table opens as the raid. */}
+                <label
+                  className="chip toggle"
+                  title="Show pet rows. An owned pet's damage is credited to its owner, so its row usually carries only what it took."
+                >
+                  <input
+                    type="checkbox"
+                    checked={showPets}
+                    onChange={(e) => setShowPets(e.target.checked)}
+                  /> Pets
+                </label>
+                <label
+                  className="chip toggle"
+                  title="Show mob and environment rows. Click one to read its parse."
+                >
+                  <input
+                    type="checkbox"
+                    checked={showNpcs}
+                    onChange={(e) => setShowNpcs(e.target.checked)}
+                  /> NPCs
+                </label>
+                {(roleSet.size > 0 || q) && (
+                  <button className="chip" onClick={() => { setRolesQ(null); setQ(null) }}>Reset</button>
+                )}
+              </div>
+            )}
+            columns={panelOpen
+              ? [nameCol, leadCol[tab] || dpsCol]
+              : (tabCols[tab] || damageCols)}
+            /* layout is per tab, and the condensed picker beside an open
+               drilldown is not a layout anyone wants remembered */
+            prefsKey={panelOpen ? undefined : `zonerun:${tab}`}
+            defaultHidden={TAB_HIDDEN[tab]}
+            rows={currentRows}
+            defaultSort={tabSort[tab] || tabSort.damage}
+            rowKey={(a) => a.key}
+            selectedKey={selectedActor}
+            wrapClass={currentRows.length > 14 ? 'sticky' : ''}
+            /* The name column and the header hold still: reading Crit % off
+               row nineteen of a raid table means carrying a name across ten
+               columns and a label down nineteen rows, and a table that
+               scrolls both of them away is read from memory. */
+            frozen
+            /* Click a raider to READ them — the panel switches to that one
+               parse, whatever was in it. Their box is what builds a
+               comparison. Mobs and pets have no checkbox, so theirs stays a
+               plain drilldown. */
+            onRowClick={(a) => {
+              if (a.kind === 'player') focusActor(a.key)
+              else setActorQ(a.key === selectedActor ? null : a.key)
+            }}
+            checkable={(a) => a.kind === 'player'}
+            checkedKeys={cmpKeys}
+            onCheck={toggleCmp}
+          />
+          {!currentRows.length && (
+            <p className="muted">
+              {tab === 'deaths' && !q && !roleSet.size
+                ? 'Nobody died.' : 'Nothing matches that filter.'}
+            </p>
+          )}
+        </div>
+      )}
+
+      {detail && tab === 'aoes' && (
+        <ErrorBoundary resetKey={`aoes:${idKey}`}>
+          <AoePanel data={aoeData} err={aoeErr}
+                    base={enc?.started_ts ?? span?.started_ts} />
+        </ErrorBoundary>
+      )}
+
+      {detail && tab === 'loot' && (
+        <ErrorBoundary resetKey={`loot:${idKey}`}>
+          <LootPanel data={lootData} err={lootErr} />
+        </ErrorBoundary>
+      )}
+
+      {detail && tab === 'class' && (
+        <ErrorBoundary resetKey={`class:${idKey}:${clsQ}`}>
+          <ClassPanel data={classData} err={classErr} cls={clsQ}
+                      onPick={setClsQ} />
+        </ErrorBoundary>
+      )}
+
+      {detail && tab === 'timeline' && (
+        <div className="card">
+          <div className="drillhead">
+            <h2>Over the fight</h2>
+            <span className="muted">
+              {checkedActors.length
+                ? `${checkedActors.length} checked`
+                : `top 5 by ${{ heals: 'healing', taken: 'damage taken' }[metric] || 'damage'}`
+                  + ' — check rows on another tab to choose'}
+            </span>
+          </div>
+          {timelineErr && <p className="err">{timelineErr}</p>}
+          {!timeline && !timelineErr && <p className="muted">Loading…</p>}
+          {timeline?.pruned && (
+            <p className="muted">
+              No timeline — this run&apos;s raw events were pruned. The other tabs
+              read from frozen rollups and are unaffected.
+            </p>
+          )}
+          {timeline && !timeline.pruned && (
+            <>
+              <TimelineChart
+                data={timeline}
+                keys={timelineKeys}
+                actorsByKey={actorsByKey}
+                metric={metric}
+                onMetric={setMetric}
+              />
+              {timeline.pruned_encounters > 0 && (
+                <p className="note">
+                  {timeline.pruned_encounters} of the selected fights had their events
+                  pruned and are missing from the plot.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Two questions, two columns. "How did the tank die" is answered by
+          one death in detail and "who died tonight" by all of them in a
+          list, and the list is what was eating the page's whole width.
+          Narrow when a drilldown is open — the main column is half a page
+          then, and two of these inside it is four columns of nothing. */}
+      {detail && tab === 'deaths' && recaps?.deaths?.length > 0 && (
+        <ErrorBoundary resetKey={`deaths:${idKey}`}>
+          <div className={`deathcols${
+            hasTankDeath(recaps.deaths, actorsByKey) && !panelOpen ? ' two' : ''}`}>
+            <TankDeaths
+              key={`tanks:${idKey}`}
+              deaths={recaps.deaths}
+              windowS={recaps.window_s}
+              actorsByKey={actorsByKey}
+            />
+            <DeathList
+              /* what is expanded is indexed into THIS list of deaths, so a
+                 new fight selection starts the list closed rather than
+                 leaving a recap open on whatever death now sits at that
+                 index */
+              key={`deaths:${idKey}`}
+              deaths={recaps.deaths}
+              windowS={Math.min(RAID_WINDOW_S, recaps.window_s)}
+              prunedEncounters={recaps.pruned_encounters}
+              actorsByKey={actorsByKey}
+            />
+          </div>
+        </ErrorBoundary>
+      )}
+      {detail && tab === 'deaths' && !recaps?.deaths?.length && deaths.length > 0 && (
+        <div className="card">
+          <h2>Deaths by fight</h2>
+          <div className="tablewrap">
+            <table className="data">
+              <thead>
+                <tr><th className="l">Fight</th><th>Time</th><th className="l">Player</th><th>Deaths</th><th>Time dead</th><th>Dmg lost</th></tr>
+              </thead>
+              <tbody>
+                {deaths.map((d, i) => (
+                  <tr key={i}>
+                    <td className="name l">{d.encounter.name || 'trash'}</td>
+                    <td>{fmt.time(d.encounter.started_ts)}</td>
+                    <td className="l">{d.name}</td>
+                    <td>{d.deaths}</td>
+                    <td>{fmt.dur(d.time_dead_s)}</td>
+                    <td>{fmt.num(d.death_dps_lost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Insights is the raid page's own tab — it reads the coach engine,
+          which is per SESSION and not part of a parse. So it is handed in as
+          a function of the parse it needs (the actor rows carry the class,
+          and the ability decomposition is off `derived`), and it is hidden
+          besides (see TABS). */}
+      {tab === 'insights' && insights?.({ actors, derived })}
+
+    </div>
+  )
+
   /* `norail` is the parse rendered somewhere that already has a fight rail of
      its own (the dashboard): one column, with the drilldown under the table
      instead of beside it. */
@@ -893,251 +1152,7 @@ export default function ParseView({
                     + `${panelOpen ? ' withpanel' : ''}`
                     + `${comparing && detail ? ' withcmp' : ''}`}>
       {rail}
-      <div className={`wsmain ${stale && detail ? 'stale' : ''}`}>
-        {/* The raid's headline numbers come before the tabs, not after: they
-            describe the night itself, and the tabs choose which view of it you
-            are reading. With a panel open neither one is here — the column is
-            a picker, and a stat grid stacked down it shouts over the parse
-            someone opened. */}
-        {detail && headTiles[tab] && !panelOpen && (
-          <div className="metrics">
-            {headTiles[tab].map((t) => (
-              <div className="metric" key={t.k} title={t.title}>
-                <div className="v">{t.v}</div><div className="k">{t.k}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        {!panelOpen && (
-          <Tabs tabs={TABS} value={tab} onChange={(k) => setTab(k === 'damage' ? null : k)} />
-        )}
-        {detailErr && <p className="err">{detailErr}</p>}
-        {/* A selection with nothing in it — every fight of the raid hidden —
-            is a parse with nothing to count, and it must not sit on "Loading…"
-            forever pretending otherwise. Only the caller knows why there is
-            nothing, so the caller says so. */}
-        {notice}
-        {!notice && !detail && !detailErr && tab !== 'insights' && tab !== 'aoes' && (
-          <p className="muted">Loading…</p>
-        )}
-        {stale && detail && <div className="stalebar" aria-live="polite">Updating…</div>}
-
-        {detail && tabCols[tab] && (
-          <div className="card">
-            <SortableTable
-              /* the filters ride on the table's own tools line, beside Columns
-                 — they are all controls for the same table */
-              tools={(
-                <div className="filterbar">
-                  <input
-                    type="text" value={q || ''} placeholder="Find a raider…"
-                    onChange={(e) => setQ(e.target.value || null)}
-                    aria-label="Filter combatants by name or class"
-                  />
-                  {/* one control, not four loose chips — they stay on a line
-                      together however narrow the column gets */}
-                  <span className="roles">
-                    {rolesPresent.map((r) => (
-                      <button
-                        key={r}
-                        className={`chip role ${roleSet.has(r) ? 'on' : ''}`}
-                        onClick={() => toggleRole(r)}
-                        title={`Show only ${ROLE_LABEL[r].toLowerCase()}`}
-                      >
-                        {ROLE_LABEL[r]}
-                      </button>
-                    ))}
-                  </span>
-                  {/* Who is in the table, right beside who is filtered out of
-                      it — the role chips narrow the raid, these two decide
-                      whether anything but the raid is in it at all. On every
-                      parse tab, not just Defense, and off by default: a mob is
-                      a combatant with a parse worth reading (click its row),
-                      but the table opens as the raid. */}
-                  <label
-                    className="chip toggle"
-                    title="Show pet rows. An owned pet's damage is credited to its owner, so its row usually carries only what it took."
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showPets}
-                      onChange={(e) => setShowPets(e.target.checked)}
-                    /> Pets
-                  </label>
-                  <label
-                    className="chip toggle"
-                    title="Show mob and environment rows. Click one to read its parse."
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showNpcs}
-                      onChange={(e) => setShowNpcs(e.target.checked)}
-                    /> NPCs
-                  </label>
-                  {(roleSet.size > 0 || q) && (
-                    <button className="chip" onClick={() => { setRolesQ(null); setQ(null) }}>Reset</button>
-                  )}
-                </div>
-              )}
-              columns={panelOpen
-                ? [nameCol, leadCol[tab] || dpsCol]
-                : (tabCols[tab] || damageCols)}
-              /* layout is per tab, and the condensed picker beside an open
-                 drilldown is not a layout anyone wants remembered */
-              prefsKey={panelOpen ? undefined : `zonerun:${tab}`}
-              defaultHidden={TAB_HIDDEN[tab]}
-              rows={currentRows}
-              defaultSort={tabSort[tab] || tabSort.damage}
-              rowKey={(a) => a.key}
-              selectedKey={selectedActor}
-              wrapClass={currentRows.length > 14 ? 'sticky' : ''}
-              /* The name column and the header hold still: reading Crit % off
-                 row nineteen of a raid table means carrying a name across ten
-                 columns and a label down nineteen rows, and a table that
-                 scrolls both of them away is read from memory. */
-              frozen
-              /* Click a raider to READ them — the panel switches to that one
-                 parse, whatever was in it. Their box is what builds a
-                 comparison. Mobs and pets have no checkbox, so theirs stays a
-                 plain drilldown. */
-              onRowClick={(a) => {
-                if (a.kind === 'player') focusActor(a.key)
-                else setActorQ(a.key === selectedActor ? null : a.key)
-              }}
-              checkable={(a) => a.kind === 'player'}
-              checkedKeys={cmpKeys}
-              onCheck={toggleCmp}
-            />
-            {!currentRows.length && (
-              <p className="muted">
-                {tab === 'deaths' && !q && !roleSet.size
-                  ? 'Nobody died.' : 'Nothing matches that filter.'}
-              </p>
-            )}
-          </div>
-        )}
-
-        {detail && tab === 'aoes' && (
-          <ErrorBoundary resetKey={`aoes:${idKey}`}>
-            <AoePanel data={aoeData} err={aoeErr}
-                      base={enc?.started_ts ?? span?.started_ts} />
-          </ErrorBoundary>
-        )}
-
-        {detail && tab === 'loot' && (
-          <ErrorBoundary resetKey={`loot:${idKey}`}>
-            <LootPanel data={lootData} err={lootErr} />
-          </ErrorBoundary>
-        )}
-
-        {detail && tab === 'class' && (
-          <ErrorBoundary resetKey={`class:${idKey}:${clsQ}`}>
-            <ClassPanel data={classData} err={classErr} cls={clsQ}
-                        onPick={setClsQ} />
-          </ErrorBoundary>
-        )}
-
-        {detail && tab === 'timeline' && (
-          <div className="card">
-            <div className="drillhead">
-              <h2>Over the fight</h2>
-              <span className="muted">
-                {checkedActors.length
-                  ? `${checkedActors.length} checked`
-                  : `top 5 by ${{ heals: 'healing', taken: 'damage taken' }[metric] || 'damage'}`
-                    + ' — check rows on another tab to choose'}
-              </span>
-            </div>
-            {timelineErr && <p className="err">{timelineErr}</p>}
-            {!timeline && !timelineErr && <p className="muted">Loading…</p>}
-            {timeline?.pruned && (
-              <p className="muted">
-                No timeline — this run&apos;s raw events were pruned. The other tabs
-                read from frozen rollups and are unaffected.
-              </p>
-            )}
-            {timeline && !timeline.pruned && (
-              <>
-                <TimelineChart
-                  data={timeline}
-                  keys={timelineKeys}
-                  actorsByKey={actorsByKey}
-                  metric={metric}
-                  onMetric={setMetric}
-                />
-                {timeline.pruned_encounters > 0 && (
-                  <p className="note">
-                    {timeline.pruned_encounters} of the selected fights had their events
-                    pruned and are missing from the plot.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Two questions, two columns. "How did the tank die" is answered by
-            one death in detail and "who died tonight" by all of them in a
-            list, and the list is what was eating the page's whole width.
-            Narrow when a drilldown is open — the main column is half a page
-            then, and two of these inside it is four columns of nothing. */}
-        {detail && tab === 'deaths' && recaps?.deaths?.length > 0 && (
-          <ErrorBoundary resetKey={`deaths:${idKey}`}>
-            <div className={`deathcols${
-              hasTankDeath(recaps.deaths, actorsByKey) && !panelOpen ? ' two' : ''}`}>
-              <TankDeaths
-                key={`tanks:${idKey}`}
-                deaths={recaps.deaths}
-                windowS={recaps.window_s}
-                actorsByKey={actorsByKey}
-              />
-              <DeathList
-                /* what is expanded is indexed into THIS list of deaths, so a
-                   new fight selection starts the list closed rather than
-                   leaving a recap open on whatever death now sits at that
-                   index */
-                key={`deaths:${idKey}`}
-                deaths={recaps.deaths}
-                windowS={Math.min(RAID_WINDOW_S, recaps.window_s)}
-                prunedEncounters={recaps.pruned_encounters}
-                actorsByKey={actorsByKey}
-              />
-            </div>
-          </ErrorBoundary>
-        )}
-        {detail && tab === 'deaths' && !recaps?.deaths?.length && deaths.length > 0 && (
-          <div className="card">
-            <h2>Deaths by fight</h2>
-            <div className="tablewrap">
-              <table className="data">
-                <thead>
-                  <tr><th className="l">Fight</th><th>Time</th><th className="l">Player</th><th>Deaths</th><th>Time dead</th><th>Dmg lost</th></tr>
-                </thead>
-                <tbody>
-                  {deaths.map((d, i) => (
-                    <tr key={i}>
-                      <td className="name l">{d.encounter.name || 'trash'}</td>
-                      <td>{fmt.time(d.encounter.started_ts)}</td>
-                      <td className="l">{d.name}</td>
-                      <td>{d.deaths}</td>
-                      <td>{fmt.dur(d.time_dead_s)}</td>
-                      <td>{fmt.num(d.death_dps_lost)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Insights is the raid page's own tab — it reads the coach engine,
-            which is per SESSION and not part of a parse. So it is handed in as
-            a function of the parse it needs (the actor rows carry the class,
-            and the ability decomposition is off `derived`), and it is hidden
-            besides (see TABS). */}
-        {tab === 'insights' && insights?.({ actors, derived })}
-
-      </div>
+      {docked ? createPortal(mainCol, pickerSlot) : mainCol}
       {/* One column for whatever is open. A comparison and a single drilldown
           are the same move — you picked people and want their parses beside
           the raid — so they get the same element in the same grid slot, and

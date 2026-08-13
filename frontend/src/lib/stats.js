@@ -3,6 +3,24 @@
 
 export const MELEE_BUCKETS = new Set(['(melee)', '(multi attack)', '(aoe attack)', '(flurry)'])
 
+/* Pet attacks the OWNER presses. The log credits these to the pet because the
+   pet is what swings, but a button the player pressed is the player's
+   (Lindsay, 2026-08-11) — so they are never folded into a pet row and never
+   counted as pet damage, wherever the parse is drawn. They are the necromancer
+   abilities that appear in raids across every archetype and in NONE of the
+   three fights where he cast nothing himself, which is the same fact seen from
+   the other side. */
+export const PET_COMMANDED = new Set([
+  'Shadow Step', 'Shockwave',              // necromancer: pressed pet attacks
+  /* Conjuror buffs the PET delivers. Census names each damage line in the
+     caster's own effect text — Blazing Avatar "will cast Blaze on target of
+     attack", Elemental Unity "will cast Force of the Elements", Plane Shift
+     its three Planar procs, one per pet type. The pet swings them and the
+     player cast them, which is Consume's rule (Lindsay): credit the player. */
+  'Blaze', 'Force of the Elements',
+  'Planar Igneous Flames', 'Planar Thunderous Roar', 'Planar Telluric Strike',
+])
+
 const AVOID_COLS = ['misses', 'parries', 'ripostes', 'dodges', 'blocks']
 
 /* Per player-credit key: damage-kind rollup of crits/hits/casts, the
@@ -35,7 +53,7 @@ export function damageDerived(abilities) {
     d.swings += r.swings || 0
     d.resists += r.resists || 0
     for (const c of AVOID_COLS) d.avoided += r[c] || 0
-    if (r.rollup_key === k && r.source_key !== k) d.pet += amt
+    if (r.rollup_key === k && r.source_key !== k && !PET_COMMANDED.has(r.ability)) d.pet += amt
     if (MELEE_BUCKETS.has(r.ability)) d.auto += amt
     else if (r.proc) d.proc += amt
     else d.cast += amt

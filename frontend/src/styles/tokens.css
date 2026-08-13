@@ -37,6 +37,15 @@
      the four archetype colours. */
   --joust: #5eead4;
 
+  /* THE SAME COLOURS AS RGB TRIPLETS, and they are not a duplicate for its own
+     sake — they are the only way to write a translucent fill that renders
+     EVERYWHERE. See the note by `--fam-*-rgb` below. */
+  --bg-rgb: 15, 17, 23;
+  --danger-rgb: 248, 113, 113;
+  --success-rgb: 74, 222, 128;
+  --warning-rgb: 251, 191, 36;
+  --joust-rgb: 94, 234, 212;
+
   --rarity-common: #9d9d9d;
   --rarity-treasured: #93d9ff;
   --rarity-legendary: #ffc993;
@@ -49,6 +58,28 @@
   --fam-priest: #4aa05f;
   --fam-mage: #e05c54;
   --fam-scout: #c9a227;
+
+  /* AND AS TRIPLETS, FOR EVERY TRANSLUCENT FILL ON THE SITE.
+
+     `color-mix(in oklab, var(--fam-mage) 24%, transparent)` is the natural way
+     to write "this colour at 24%" and it is the wrong way here. This app has
+     four rendering targets and only one of them is a current browser: the
+     dashboard is, but the parse also draws inside an OBS browser source and
+     inside EQ2's own in-game browser, and both are embedded CEF builds years
+     behind. `color-mix()` needs Chrome 111 (2023); an older parser does not
+     understand the value, throws the whole DECLARATION away, and the element
+     is left with no background at all — so it renders as nothing, silently,
+     while every neighbouring rule with a plain colour works fine. That is
+     exactly how it presented: the in-game window drew the countdown digits,
+     the HIT! word and the live dot, and not one of the bars.
+
+     `rgba(var(--x-rgb), 0.24)` says the same thing and has worked since IE9.
+     Keep the pairs in step, and reach for the triplet whenever a fill is
+     translucent. */
+  --fam-fighter-rgb: 61, 143, 214;
+  --fam-priest-rgb: 74, 160, 95;
+  --fam-mage-rgb: 224, 92, 84;
+  --fam-scout-rgb: 201, 162, 39;
 
   --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.07), transparent 55%),
           radial-gradient(150% 120% at 50% 45%, transparent 50%, #060810b8);
@@ -150,6 +181,13 @@
      is a figure somebody reads off a light surface, not decoration */
   --joust: #0f6f6a;
 
+  /* the triplets, in step with the five above — see the dark theme's note */
+  --bg-rgb: 242, 239, 232;
+  --danger-rgb: 181, 52, 52;
+  --success-rgb: 27, 110, 60;
+  --warning-rgb: 138, 93, 0;
+  --joust-rgb: 15, 111, 106;
+
   --rarity-common: #71716f;
   --rarity-treasured: #1c6f9e;
   --rarity-legendary: #a4632a;
@@ -159,6 +197,10 @@
   --fam-priest: #1f7a42;
   --fam-mage: #b02a26;
   --fam-scout: #8a6a10;
+  --fam-fighter-rgb: 31, 111, 168;
+  --fam-priest-rgb: 31, 122, 66;
+  --fam-mage-rgb: 176, 42, 38;
+  --fam-scout-rgb: 138, 106, 16;
 
   /* the vignette is warm and much lighter than dark mode's. A grey one over
      parchment is what made the edges of the page look dingy — the glow was

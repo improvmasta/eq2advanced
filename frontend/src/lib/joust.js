@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { actListed, markSet } from './marks.js'
 
 /* Which AoEs the raid jousts, and the burn window that falls out of saying so.
 
@@ -10,75 +10,48 @@ import { useEffect, useState } from 'react'
    but "you have 24 seconds in melee", which is the number a raid actually
    calls out.
 
-   A mark is keyed by ABILITY NAME, not by source or by fight. Jousting is a
-   property of the ability — if you joust Mayong's Soul Paralysis you joust it
-   on every Mayong, in every zone, next week as well — so the mark has to
-   outlive the pull it was made on or it would have to be re-made every night.
+   AN ABILITY ON ACT'S LIST IS JOUSTED UNTIL SOMEBODY SAYS OTHERWISE. Somebody
+   typed that entry in because the raid calls the ability out, and a raid that
+   calls an AoE out is a raid that leaves for it — so the burn window is there
+   on the first pull, rather than after everyone has remembered to tick four
+   rows. What the mark is FOR is the two exceptions: the listed AoE you stand
+   in, and the unlisted one you run from (`lib/marks.js` on the third state).
 
-   It lives in localStorage, which is per browser and deliberately not per
-   account: this is a note-to-self about how you play, it is worth nothing to
-   the server, and the alternative is a settings table and a round trip before
-   a countdown can draw. The consequence to know is that an OBS browser source
-   is a different browser — the stream overlay will not inherit marks made on
-   the dashboard, and would need them passed through the overlay config. */
+   How a mark is stored, why it is on the account and why localStorage is still
+   read first: `lib/marks.js`, which both hand-marked sets share. */
 
-const KEY = 'eq2adv:joust'
+const marks = markSet('eq2adv:joust', 'joust')
 
-const read = () => {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(KEY) || '[]'))
-  } catch {
-    return new Set()   // private mode, or somebody's hand-edited value
-  }
-}
+export const toggleJoust = marks.toggle
+export const useJoust = marks.use
 
-/* Module state, so the raid page's checkboxes and the dashboard's countdown
-   are looking at one set rather than two copies that drift. */
-let marked = read()
-const subs = new Set()
-
-export function isJousted(ability) {
-  return marked.has(ability)
-}
-
-export function toggleJoust(ability) {
-  const next = new Set(marked)
-  if (!next.delete(ability)) next.add(ability)
-  marked = next
-  try {
-    localStorage.setItem(KEY, JSON.stringify([...next]))
-  } catch { /* nothing to do — the marks are still live for this session */ }
-  for (const fn of Array.from(subs)) fn(next)
-}
-
-export function useJoust() {
-  const [set, setSet] = useState(marked)
-  useEffect(() => {
-    subs.add(setSet)
-    /* The dashboard in one tab and the raid page in another are the normal
-       way this gets used, and `storage` is the only event that crosses. */
-    const onStorage = (e) => {
-      if (e.key !== KEY) return
-      marked = read()
-      setSet(marked)
-    }
-    window.addEventListener('storage', onStorage)
-    return () => {
-      subs.delete(setSet)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
-  return set
-}
+/* Is this row jousted right now: what was said about it, or the default. */
+export const isJousted = (answers, row) => answers[row.ability] ?? actListed(row)
 
 /* The next jousting cast to leave for — the SOONEST of them, because the burn
    window ends at whichever one comes first and a second countdown behind it is
    a countdown to standing in the first one. Rows with no period are skipped:
-   an AoE nobody can time is not a window anybody can burn in. */
-export function nextJoust(aoes, marked) {
+   an AoE nobody can time is not a window anybody can burn in.
+
+   AND A CAST THAT IS BADLY PAST DUE IS SKIPPED TOO, which is the whole reason
+   `at` and `missedS` are here. "Soonest" was doing something silly with an
+   overdue row: a cast due thirty seconds AGO is soonest by a mile, so it won
+   this comparison every time and held the burn window against every real cast
+   behind it. Vampire Lord Mayong Mistmoore's `Soul Paralysis` gets skipped a
+   minute or two into the fight, and the window it owned then read `+0:47` —
+   counting UP, through a stretch the raid could have been burning in — until
+   the server finally dropped the row.
+
+   Past `missedS` (`livemeter.MISSED_S`) the honest reading is that the cast did
+   not happen: the mob was stunned, or every single person blocked it so nothing
+   printed to detect it on, or the timer is wrong. None of those is a window,
+   and the window moves to the next jousted ability — or there is none, which is
+   also an answer. */
+export function nextJoust(aoes, answers, at = null, missedS = 0) {
   let soonest = null
   for (const r of aoes) {
-    if (!marked.has(r.ability) || !r.period_s || r.next_due_ts == null) continue
+    if (!isJousted(answers, r) || !r.period_s || r.next_due_ts == null) continue
+    if (at != null && missedS > 0 && at - r.next_due_ts > missedS) continue
     if (!soonest || r.next_due_ts < soonest.next_due_ts) soonest = r
   }
   return soonest

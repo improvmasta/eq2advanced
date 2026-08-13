@@ -8,9 +8,10 @@ sessions (files) stay the ingest unit, runs are what the UI navigates.
    encounters (segmentation is deterministic per parse_version, so identical
    log bytes yield identical (started_ts, ended_ts, zone, name)). Duplicates
    are MARKED (`encounters.dup_of` -> canonical id), never deleted, so every
-   parse stays complete and the marking re-derives after any reparse. Only
-   sessions at the same parse_version dedupe against each other — mid-sweep,
-   differing versions may segment differently; the post-sweep relink converges.
+   parse stays complete and the marking re-derives after any reparse. The
+   newest parse of a fight is canonical. Scope is ONE CHARACTER's own
+   overlapping files: two raiders who both logged the same pull are two
+   observations, not a duplicate (see `_dedupe`).
 
 2. Segmentation — canonical encounters in time order split into runs on a
    zone change or an idle gap > ZONE_RUN_GAP_S. Encounters before any zone
@@ -59,7 +60,31 @@ ZONE_RUN_GAP_S = 3600
 
 
 def _dedupe(encs: list[sqlite3.Row]) -> tuple[list[sqlite3.Row], dict[int, int]]:
-    """-> (canonical encounters in time order, {dup encounter id: canonical id})."""
+    """-> (canonical encounters in time order, {dup encounter id: canonical id}).
+
+    ONE CHARACTER'S OWN OVERLAPPING FILES, and nothing wider. Two RAIDERS who
+    both upload the same pull are not duplicates and must never be merged here:
+    each parse is that player's own observation, with their own `YOU` lines and
+    their own visibility, and a run is one character's visit by definition. The
+    thing that genuinely wants a notion of "one real pull" across characters is
+    timer learning, and it has its own (`aoelearn.pull_key`).
+
+    PARSE VERSION IS NOT A PARTITION, and used to be. The guard read "differing
+    versions may segment differently, so let the reparse sweep converge them
+    first" — which is true of segmentation in general and cannot apply here,
+    because the group key IS the segmentation result. Every member of a group
+    already agreed on `(started_ts, ended_ts, zone, name)`; there is no
+    disagreement left for a sweep to converge. A fight the two versions really
+    did segment differently lands in two different groups and is untouched by
+    any of this, exactly as before.
+
+    What the partition actually did was leave permanent duplicates behind
+    whenever a session STOPPED being sweepable. `_reparse_stale` only walks
+    `ready`/`parsing`, so 20 sessions sitting at `error` held an older
+    `parse_version` forever, and every fight they shared with a healthy session
+    stayed doubled — 28 encounters, and one of them is why `aoelearn.MIN_FIGHTS`
+    could be satisfied by a single pull. A guard that waits for an event that
+    will never happen is not being careful."""
     groups: dict[tuple, list[sqlite3.Row]] = {}
     for e in encs:
         key = (e["started_ts"], e["ended_ts"], e["zone"] or "", e["name"] or "")
@@ -68,16 +93,21 @@ def _dedupe(encs: list[sqlite3.Row]) -> tuple[list[sqlite3.Row], dict[int, int]]
     canonical: list[sqlite3.Row] = []
     dup_of: dict[int, int] = {}
     for members in groups.values():
-        by_version: dict[int | None, list[sqlite3.Row]] = {}
-        for e in members:
-            by_version.setdefault(e["parse_version"], []).append(e)
-        for rows in by_version.values():
-            # widest raw coverage wins (the superset file); tie -> lowest session
-            rows.sort(key=lambda e: (-e["coverage"], e["session_id"]))
-            winner = rows[0]
-            canonical.append(winner)
-            for loser in rows[1:]:
-                dup_of[loser["id"]] = winner["id"]
+        # NEWEST PARSE FIRST, then widest raw coverage (the superset file),
+        # then lowest session. Version leads because the fight is settled — the
+        # group key says both versions segmented it the same way — so the only
+        # thing left to choose between is two analyses of it, and the later one
+        # is the better one by construction. Coverage stays the tiebreak it was
+        # for the far commoner case of two files at the SAME version, where it
+        # is the only thing separating them. `-1` sorts a NULL version (a
+        # session that has never been parsed) last rather than crashing.
+        members.sort(key=lambda e: (-(e["parse_version"] if e["parse_version"]
+                                      is not None else -1),
+                                    -e["coverage"], e["session_id"]))
+        winner = members[0]
+        canonical.append(winner)
+        for loser in members[1:]:
+            dup_of[loser["id"]] = winner["id"]
     canonical.sort(key=lambda e: (e["started_ts"], e["ended_ts"], e["session_id"]))
     return canonical, dup_of
 

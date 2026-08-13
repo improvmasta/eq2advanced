@@ -458,10 +458,11 @@ file, so `petnames` can never reach it and the grammar makes it a raider.
 `Viber`, `Knyi`, `Geker`, `Holmes` and `Reaper` sat in raid tables with no
 class — the "?" rows. Two independent tells, either sufficient:
 
-- **their KIT** — `Viber` cast Grisly Feedback (a necromancer Grim Sorcerer's),
-  `Knyi` cast Confusion and Headache (an illusionist pet's), `Geker` cast Graven
-  Vanquishing (a conjuror pet's). `ability_catalog` already knows those are
-  `unit='pet'` because real pets under real owners taught it.
+- **their KIT** — `Viber` cast Grisly Feedback (a summoned pet's defensive
+  stance), `Knyi` cast Confusion and Headache (an illusionist pet's), `Geker`
+  cast Graven Vanquishing (a necromancer fighter pet's). `ability_catalog`
+  already knows those are `unit='pet'` because real pets under real owners
+  taught it.
 - **Census has never heard of them**, and neither has the log. `Holmes` only
   ever melees, so no kit gives it away, but no character by that name exists on
   the server and it never chatted, looted, joined a raid or was resurrected.

@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 35
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -256,6 +256,11 @@ CREATE TABLE IF NOT EXISTS wiki_abilities (
   line TEXT,                              -- the AA line ("Rotting", "Intelligence")
   activated INTEGER,                      -- 1 = has a recast/cost, so it is PRESSED
   recast_s REAL,
+  duration_s REAL,                        -- how long the effect LASTS. The only source
+                                          -- for it: a hostile debuff prints a line when
+                                          -- it lands and nothing when it fades, so this
+                                          -- is what makes a window out of that line
+                                          -- (refdata/reuse_debuffs.json)
   power TEXT,
   target TEXT,
   descr TEXT,
@@ -451,6 +456,37 @@ CREATE TABLE IF NOT EXISTS loot_drops (
 );
 CREATE INDEX IF NOT EXISTS idx_loot_encounter ON loot_drops(encounter_id);
 CREATE INDEX IF NOT EXISTS idx_loot_session ON loot_drops(session_id, ts);
+-- One enemy AoE recast we WATCHED: the gap between two casts, and whether the
+-- cast that started that recast was made while a reuse debuff was on the mob
+-- (pipeline/aoes.py owns both definitions; pipeline/aoecycles.py writes here).
+--
+-- An OBSERVATION table, not an answer. What the timer for a (mob, ability)
+-- actually is, and whether a swipe moves it, is derived from these rows across
+-- every raid on the site — see pipeline/aoelearn.py. Storing the cycles rather
+-- than the conclusion is what lets the conclusion be recomputed when the
+-- thresholds change, and what lets a fight be re-parsed without the site
+-- forgetting what it learned from the fights either side of it.
+--
+-- Rows are per ENCOUNTER and are cleared with the rest of a session's derived
+-- data (clear_derived), so a rebuild replaces them rather than double-counting.
+-- The mob is keyed by NAME because that is the only identity that survives a
+-- reparse and the only one that is comparable between two guilds' logs — which
+-- is also why `instances` is carried: six mobs sharing a name read as one mob
+-- casting six times as often, and that is a fact about the row, not the mob.
+CREATE TABLE IF NOT EXISTS aoe_cycles (
+  encounter_id INTEGER NOT NULL REFERENCES encounters(id),
+  session_id INTEGER NOT NULL REFERENCES sessions(id),
+  source_name TEXT NOT NULL,              -- the mob, by name
+  ability TEXT NOT NULL,
+  cast_ts INTEGER NOT NULL,               -- the cast that STARTED this recast
+  gap_s INTEGER NOT NULL,                 -- to the next cast of the same ability
+  swiped INTEGER NOT NULL,                -- was a reuse debuff up at cast_ts
+  is_named INTEGER NOT NULL,              -- a named is one mob; trash may be many
+  PRIMARY KEY (encounter_id, source_name, ability, cast_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_aoe_cycles_ability ON aoe_cycles(source_name, ability);
+CREATE INDEX IF NOT EXISTS idx_aoe_cycles_session ON aoe_cycles(session_id);
+
 -- The display record for an item the log named: Census answers what it IS, the
 -- wiki answers what it LOOKS like and where to read about it. Reference data
 -- about the game — one row serves every account, and it is never per-raid.
@@ -689,17 +725,60 @@ CREATE INDEX IF NOT EXISTS idx_raid_note_shots ON raid_note_shots(note_id, id);
 -- session ids, no history, no account. Revoking is a row update, which is the
 -- only reason it is a row rather than a signed string: a URL that is on
 -- somebody's stream needs to be killable without changing anything else.
+--
+-- v34: `kind` — the same capability, two screens. `overlay` is the OBS browser
+-- source; `ingame` is EQ2's own browser window, which is the same page read at
+-- a completely different size (a stream is watched after a downscale and an
+-- encode and wants type BIGGER than 1:1; the in-game window is a corner of
+-- somebody's UI and wants it smaller). Separate ROWS rather than one row with
+-- two config blocks, for one reason that matters: revoking is per URL. A link
+-- that ended up in a VOD has to be killable without taking the window beside
+-- the hotbars down with it.
 CREATE TABLE IF NOT EXISTS overlay_tokens (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
   token TEXT NOT NULL UNIQUE,
   label TEXT,
+  kind TEXT NOT NULL DEFAULT 'overlay',
   config_json TEXT NOT NULL DEFAULT '{}',
   created_ts INTEGER NOT NULL,
   revoked_ts INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_overlay_tokens_user
   ON overlay_tokens(user_id, created_ts DESC);
+
+-- v35: the two HAND MARKS — which AoEs you joust, and which belong on the mini
+-- parse (`frontend/src/lib/marks.js`). One row per answer.
+--
+-- These lived in localStorage, and that was right for exactly as long as the
+-- only other surface was a stream: a mark is a note about how somebody plays,
+-- it is worth nothing to the server, and a settings table was a round trip in
+-- front of a countdown. What broke it is the IN-GAME window (v34). EQ2's own
+-- browser is a different browser too, so a raider who had spent a night marking
+-- rows on the dashboard opened the window beside their hotbars and found none
+-- of it there — jousting whatever their ACT list happened to list, and nothing
+-- they had said by hand. The stream overlay had the same hole and nobody
+-- noticed, because nobody reads their own stream.
+--
+-- THE ROW'S ABSENCE IS THE THIRD STATE, and that is why this is a row per
+-- ability rather than a JSON blob of names. A mark is an ANSWER — yes, no, or
+-- nothing said — and `nothing said` takes the default (whether ACT's spell
+-- timer list knows the ability). A set of names could only ever say "these are
+-- on", which makes a good default impossible to overrule downwards.
+--
+-- Keyed by ability NAME, never by source, fight or run: both marks are
+-- properties of the ABILITY (joust Mayong's Soul Paralysis and you joust it on
+-- every Mayong, in every zone, next week as well), so a mark outlives the pull
+-- it was made on. Nothing here is derived and nothing rebuilds it, so it
+-- survives a reparse without being carried.
+CREATE TABLE IF NOT EXISTS user_marks (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,                     -- 'joust' | 'mini'
+  ability TEXT NOT NULL,
+  marked INTEGER NOT NULL,                -- 1 yes, 0 no; no row = nothing said
+  updated_ts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind, ability)
+);
 """
 
 
@@ -1163,6 +1242,37 @@ def init_db() -> None:
         # filled by `tools/backfill_loot.py` re-reading stored raw, which is why
         # this needs no PARSE_VERSION bump — loot is written BESIDE the parse,
         # never inside its arithmetic.
+        # v33: `aoe_cycles` — one watched enemy recast per row, with whether a
+        # reuse debuff was on the mob when it started. New table, so an old
+        # database gets it empty and every consumer falls back to exactly the
+        # pre-v33 behaviour: no cycles is no learned timer, and no learned
+        # timer is ACT's list, which is what the countdown used before.
+        # It fills from the PARSE_VERSION sweep rather than a backfill script —
+        # the cycles come out of the same segmentation the rollups do, so the
+        # reparse that stamps the new version writes them on its way past.
+        # `duration_s` on wiki_abilities lands with it, guarded by SHAPE: the
+        # column carries how long an effect lasts, which is what makes a debuff
+        # window out of the single damage line that is all a debuff ever prints.
+        wiki_cols = {r[1] for r in conn.execute("PRAGMA table_info(wiki_abilities)")}
+        if wiki_cols and "duration_s" not in wiki_cols:
+            conn.execute("ALTER TABLE wiki_abilities ADD COLUMN duration_s REAL")
+        # v34: `overlay_tokens.kind` — the same capability pointed at a second
+        # screen (EQ2's own browser window). Guarded by SHAPE like every other
+        # column here, and the DEFAULT is what makes it a no-op for anybody
+        # already holding a link: every existing row is an `overlay`, which is
+        # the only kind that existed, and the page it serves is unchanged.
+        ovl_cols = {r[1] for r in conn.execute("PRAGMA table_info(overlay_tokens)")}
+        if ovl_cols and "kind" not in ovl_cols:
+            conn.execute("ALTER TABLE overlay_tokens ADD COLUMN kind TEXT "
+                         "NOT NULL DEFAULT 'overlay'")
+        # v35: `user_marks` — the joust and mini marks, on the account instead
+        # of in one browser's localStorage. New table, so an old database gets
+        # it empty and every reader falls back to exactly the pre-v35 answer:
+        # no row is "nothing said", and nothing said is the ACT-list default.
+        # It is not backfilled and cannot be — what is in a raider's
+        # localStorage is only reachable from that browser — so the SPA adopts
+        # what it finds there on the first signed-in read (`lib/marks.js:
+        # syncMarks`), which is the only place those answers exist.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

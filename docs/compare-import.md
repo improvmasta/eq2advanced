@@ -349,7 +349,9 @@ There is deliberately **no review step**. One was designed and dropped on
 Lindsay's call, and the reasoning holds: a confirm grid cannot make an
 unverifiable number true, and the cells it would have caught are exactly the
 ones nobody can check against anything anyway. What survives instead is the
-labelling — an imported column says `imported` wherever it appears.
+labelling — an imported column says `imported` wherever it appears. (Naming a
+shot afterwards is a different thing and is allowed — see "On the page": it
+touches the metadata around the table, never a figure in it.)
 
 ### On the page
 
@@ -370,6 +372,33 @@ screenshot on a pale card is otherwise invisible; either way it stays faint
 enough that the caption is the only thing you read. Reading takes seconds rather than milliseconds, so the
 endpoint is a plain `def` — FastAPI runs it in the threadpool and one import
 does not stall the event loop.
+
+**On Import, the shots are a COLUMN and the same slot heads it** (`.importcols`
+— logs two thirds, shots one third, stacking under 900px). They were a
+full-width card UNDER the log table, where a fifty-file backfill put them below
+the fold, and they were a seven-column table, which a third of a page cannot
+draw. So the shots are a list of entries — thumbnail, fight, who and where,
+kind/length/when — and the slot at the top of the column is Compare's,
+picture and all, because dropping a screenshot is one gesture and it should not
+wear two shapes. The log drop box beside it took the same dress (2px dash, the
+same +): it had grown its own arrow glyph, sitting a few inches from the box
+everybody else's + is on.
+
+**A shot can be NAMED after the fact** (`PATCH /api/parseshots/{id}`,
+`ShotEdit`). A screenshot cropped to the table carries no title bar, so the
+character, the zone, the fight and the date arrive empty and the import stays
+`Unnamed fight` forever — while the person who dropped it knows exactly whose
+parse it is. Character, zone, fight, when and damage-vs-healing are editable;
+they are CLAIMS, which is what the row already was.
+
+This is not the review step. **Not one figure out of the table is editable** —
+those are checked against each other at import, and a typed cell would be the
+only number on the page with no evidence behind it. The LENGTH is the one
+number and only where there isn't one: it is fitted from the table (the mode of
+`Damage / EncDPS`, forty readings against the title's one), so a shot that has
+one refuses a replacement with a 409 and the field is disabled. A shot with
+none has nothing to overrule — without it the column declines to show
+per-second numbers at all, and the reader's own clock beats that refusal.
 
 The token grammar keeps three fields, `shot:<id>:parse`, so the CSV, the
 ordering and the remove logic never learn which kind a column is; only the

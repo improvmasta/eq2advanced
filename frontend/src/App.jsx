@@ -21,6 +21,7 @@ import AdminAbilities from './pages/AdminAbilities.jsx'
 import JoinGroup from './pages/JoinGroup.jsx'
 import Login from './pages/Login.jsx'
 import { api } from './lib/api.js'
+import { syncMarks } from './lib/marks.js'
 import { LEXICON } from './lib/raids.js'
 import { SessionContext } from './lib/session.jsx'
 import { currentTheme, toggleTheme } from './theme.js'
@@ -117,6 +118,16 @@ export default function App() {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
   }, [])
 
+  /* The hand marks follow the ACCOUNT now (schema v35), so they are read once
+     per sign-in and merged with whatever this browser already had — see
+     `lib/marks.js: syncMarks` for why the merge goes that way round. Nothing
+     waits on it: the panels have already drawn from localStorage, and this
+     corrects them. A failure leaves this browser's own marks in force, which
+     is exactly the behaviour every version before v35 had. */
+  useEffect(() => {
+    if (user) syncMarks().catch(() => {})
+  }, [user?.id])
+
   /* Asked once per sign-in, not polled: a plugin release happens a few times a
      year and the answer cannot change while somebody sits on a page. */
   useEffect(() => {
@@ -154,15 +165,24 @@ export default function App() {
     return () => { dead = true; clearInterval(t) }
   }, [user, live])
 
-  /* The stream overlay renders BEFORE the shell, not inside it. Everything the
-     shell provides — nav, theme toggle, account icon, the container's own
-     background — is furniture on somebody's stream, and the page is authorized
-     by the token in its URL rather than by the session this provider carries.
-     It is a different surface that happens to share a bundle. */
-  if (location.pathname.startsWith('/overlay/')) {
+  /* The token-authorized screens render BEFORE the shell, not inside it.
+     Everything the shell provides — nav, theme toggle, account icon, the
+     container's own background — is furniture on somebody's stream or in the
+     corner of their game UI, and the page is authorized by the token in its URL
+     rather than by the session this provider carries. They are a different
+     surface that happens to share a bundle.
+
+     Two paths, one page (`pages/Overlay.jsx`): `/overlay/` is the OBS browser
+     source, `/ingame/` is EQ2's own browser window. Separate URLs because they
+     are separate LINKS — separate rows, separately revokable (schema v34) —
+     and because the path is what tells the page which size it is being read
+     at. */
+  if (location.pathname.startsWith('/overlay/')
+      || location.pathname.startsWith('/ingame/')) {
     return (
       <Routes>
         <Route path="/overlay/:token" element={<Overlay />} />
+        <Route path="/ingame/:token" element={<Overlay kind="ingame" />} />
       </Routes>
     )
   }
@@ -183,16 +203,25 @@ export default function App() {
               {/* a curator's only door — they have no /admin to reach it from */}
               {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
               {/* Last, and dressed differently on purpose: every other tab is a
-                  place, this one is a state. The label answers the question a
-                  raider actually has — is the raid in a pull right now — before
-                  they click. */}
+                  place, this one is a state — and while a raid is being
+                  uploaded it is the most important thing in the bar, so it goes
+                  GREEN rather than merely underlined. The label answers the
+                  question a raider actually has — is the raid in a pull right
+                  now — before they click.
+
+                  Three states, one hue: not connected is the plain tab dress
+                  (there is no parser running to shout about), connected is an
+                  outlined green with a dim light, and a pull in progress fills
+                  it in. Colour, never motion: this sits in the corner of the eye
+                  for a whole raid night. */}
               <NavLink to="/live"
-                       className={`navlive ${combat ? 'combat' : 'idle'}`}
-                       title={combat ? 'A fight is in progress'
-                         : live === 'on' ? 'Connected — between pulls'
-                           : 'The live raid dashboard'}>
-                Live
-                <em>{combat ? 'In Combat' : 'Idle'}</em>
+                       className={`navlive ${combat ? 'combat' : live === 'on' ? 'on' : 'off'}`}
+                       title={combat ? 'The live parser — a fight is in progress'
+                         : live === 'on' ? 'The live parser — connected, between pulls'
+                           : 'The live parser — ACT is not sending right now'}>
+                {live === 'on' && <i className="dot" />}
+                Live Parser
+                <em>{combat ? 'In Combat' : live === 'on' ? 'Idle' : 'Off'}</em>
               </NavLink>
             </>}
             {/* Signed-out only. A raider who already uploads does not need the
@@ -223,16 +252,15 @@ export default function App() {
               those is a raider with the plugin sitting idle at 2pm, who needs
               neither — they know they have it, and they are not raiding. */}
           <div className="navtools">
-            {user && (live === 'on' || live === 'parsing') && (
-              /* A status light, not an alarm: the green dot carries the state
-                 because the connection working is the GOOD case. Just "ACT" —
-                 the Live tab owns the raid's state now, this only says the
-                 plugin's line is up. */
-              <NavLink to="/live" className={`actpill ${live}`}
-                       title={live === 'on' ? 'Connected to ACT — streaming'
-                         : 'A log is being parsed'}>
+            {user && live === 'parsing' && (
+              /* The one thing the Live Parser tab does NOT say: a log sitting
+                 in the parser. Streaming used to light this pill too, and with
+                 a green tab three inches to the left saying the same thing it
+                 was two objects making one statement. */
+              <NavLink to="/import" className="actpill parsing"
+                       title="A log is being parsed">
                 <IconSignal />
-                ACT
+                Parsing
                 <i className="dot" />
               </NavLink>
             )}

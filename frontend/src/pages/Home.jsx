@@ -8,7 +8,7 @@ import SortableTable from '../components/SortableTable.jsx'
 import SourceFilter from '../components/SourceFilter.jsx'
 import Sparkline from '../components/Sparkline.jsx'
 import { api, fmt } from '../lib/api.js'
-import { RAID_MIN_RAIDERS, isRaid } from '../lib/raids.js'
+import { RAID_MIN_RAIDERS, isRaid, runLabel } from '../lib/raids.js'
 
 /* Landing page: every zone run as a row in one sortable table. Files are an
    ingest detail — the raid nights themselves are the navigation, and they read
@@ -36,15 +36,28 @@ const byCoverage = (a, b) => (b.encounter_count || 0) - (a.encounter_count || 0)
    a run is a raid or it isn't. Both on is what "all" used to mean, so a third
    button for it was a synonym taking up room. Raids on, group off. */
 const SIZES = {
-  raid: { label: 'Raids', of: isRaid, hint: `${RAID_MIN_RAIDERS}+ raiders` },
+  /* `label` is the toggle (a plural, because it filters a list), `title` is the
+     page heading over what the toggle left. */
+  raid: { label: 'Raids', title: 'Raid', of: isRaid, hint: `${RAID_MIN_RAIDERS}+ raiders` },
   group: {
     /* "Group" alone read as a SHARING group (the pills one control over); this
        button is about the size of the night, and a solo zone is on this side
        of the line too. */
     label: 'Solo/Group',
+    title: 'Solo/Group',
     of: (r) => !isRaid(r),
     hint: `Fewer than ${RAID_MIN_RAIDERS} raiders — group and solo runs`,
   },
+}
+
+/* The page is titled by what is ON it. The size toggles PARTITION the list, so
+   with both on the title cannot go on saying "Raid Parses" over a page that is
+   also half group runs — and with only the second on it was naming the one kind
+   of run that had been filtered out. */
+function listTitle(sizes) {
+  if (sizes.size === 0) return 'Parses'
+  if (sizes.size > 1) return 'All Parses'
+  return `${SIZES[[...sizes][0]].title} Parses`
 }
 
 /* "Today" / "Yesterday" / the weekday — how a raid night is actually referred
@@ -67,6 +80,21 @@ function Clock({ ts }) {
   return <span className="clock">{t}{ap && <span className="ap">{ap}</span>}</span>
 }
 
+/* "You watched this one" — a glyph rather than the word, because on a list
+   where every row is a night out it is a footnote, and the word `Observed` was
+   taking badge-width on the widest thing in the row. The eye says it in one
+   character and the title says it in a sentence; the raid PAGE still writes it
+   out, where there is one of them and it is the caption that stops the whole
+   page reading as if you had fought. `currentColor` and a 16-box, same as the
+   header icons. */
+const IconEye = () => (
+  <svg viewBox="0 0 16 16" width={13} height={13} fill="none" stroke="currentColor"
+       strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M1.7 8S4 4 8 4s6.3 4 6.3 4-2.3 4-6.3 4-6.3-4-6.3-4z" />
+    <circle cx="8" cy="8" r="1.9" />
+  </svg>
+)
+
 /* What is true of THIS visit rather than of the zone it was to, so it rides
    along whether or not the zone's name is printed beside it. */
 function runBadges(r) {
@@ -81,19 +109,31 @@ function runBadges(r) {
           hidden
         </span>
       )}
-      {/* And only ever on somebody else's: a raid you swept off your list,
-          drawn because you asked to see them. The same badge as `hidden` and a
-          different word, because they are different facts — that one is the
-          owner withdrawing a raid from everybody, this one is you declining
-          to read it. */}
+      {/* And only ever on somebody else's: a raid you dismissed, drawn because
+          you asked to see them. The same badge as `hidden` and a different
+          word, because they are different facts — that one is the owner
+          withdrawing a raid from everybody, this one is you declining to read
+          it. The word is the backend's own (`run_dismissals`), which is also
+          the shortest true one. */}
       {r.dismissed && (
-        <span className="badge hidden" title="You took this off your list">
-          off your list
+        <span className="badge hidden" title="You dismissed this raid">
+          dismissed
         </span>
       )}
       {r.guild && (
         <span className="badge guild" title="Majority guild of the roster, from Census">
           {r.guild}
+        </span>
+      )}
+      {/* Beside the guild rather than folded into it, and that is deliberate:
+          the guild tag is a majority vote over the ROSTER and this is a fact
+          about the one person who logged it, so one string carrying both would
+          make the guild badge lie about where it came from. Read together on
+          the row they still say "Dead on Arrival, observed". */}
+      {r.observed && (
+        <span className="observedeye" role="img" aria-label="Observed"
+              title="Observed — you logged this raid without fighting in it: no damage, heals, wards or cures">
+          <IconEye />
         </span>
       )}
       {/* Still being streamed — the plugin is sending this night in as it
@@ -147,12 +187,12 @@ export default function Home({ user }) {
      the true thing in both directions with nothing to cross-reference. */
   const [sources, setSources] = useState(() => new Set())
   const [myGroups, setMyGroups] = useState([])
-  /* Raids somebody shared with you that you swept off the list. Unlike every
+  /* Raids somebody shared with you that you dismissed. Unlike every
      other narrowing here this one is the SERVER's — it is a stored decision,
      not a view — so asking to see them again is a refetch, and the count comes
      back with the list either way so the offer can be made without one. */
-  const [showSwept, setShowSwept] = useState(false)
-  const [sweptCount, setSweptCount] = useState(0)
+  const [showDismissed, setShowDismissed] = useState(false)
+  const [dismissedCount, setDismissedCount] = useState(0)
   /* Which parse of a shared night to show, per raid — {raid_key: run id}, and
      only where the reader has said. Everything else follows the precedence in
      `chooseParse`. */
@@ -167,11 +207,11 @@ export default function Home({ user }) {
      the server is the only thing that knows it, so asking for those rows is a
      request, not a filter. */
   const refresh = useCallback(() => {
-    api.zoneRuns('all', { dismissed: showSwept })
-      .then((d) => { setRuns(d.zone_runs); setSweptCount(d.dismissed_count || 0) })
+    api.zoneRuns('all', { dismissed: showDismissed })
+      .then((d) => { setRuns(d.zone_runs); setDismissedCount(d.dismissed_count || 0) })
       .catch((e) => setError(e.message))
     if (user) api.sessions().then((d) => setSessions(d.sessions)).catch(() => {})
-  }, [user, showSwept])
+  }, [user, showDismissed])
 
   // the groups you're in, for the filter and for whether Manage is yours to offer
   useEffect(() => {
@@ -354,7 +394,7 @@ export default function Home({ user }) {
      above does in bulk, reached without checking anything first. */
   const doHideRun = (r) => perform(() => api.hideZoneRun(r.id, !r.hidden))
 
-  /* The reader's verb, on somebody else's raid: off my list, or back onto it.
+  /* The reader's verb, on somebody else's raid: dismiss it, or take it back.
      Nothing about the raid changes, so there is nothing to confirm and nothing
      to undo beyond pressing it again. */
   const doDismissRun = (r) => perform(async () => {
@@ -409,14 +449,21 @@ export default function Home({ user }) {
       key: 'zone', label: 'Zone', align: 'l', headAlign: 'c',
       render: (r) => (
         <span className="runzone">
-          {r.zone || 'Unknown zone'}
+          {runLabel(r)}
           {runBadges(r)}
         </span>
       ),
       /* Grouped by zone the heading names it, so the name goes and the badges
          stay: merged, guild and live are facts about THIS visit, and two runs
-         under one Emerald Halls heading can differ on all three. */
-      groupedRender: (r) => <span className="runzone">{runBadges(r)}</span>,
+         under one Emerald Halls heading can differ on all three. The NAMED
+         stays for the same reason the badges do — grouping is by zone, so in a
+         public zone it is the only thing left telling two rows apart. */
+      groupedRender: (r) => (
+        <span className="runzone">
+          {r.headline_named}
+          {runBadges(r)}
+        </span>
+      ),
       sortValue: (r) => r.zone || '',
     },
     {
@@ -454,21 +501,30 @@ export default function Home({ user }) {
     },
     {
       key: 'spark', label: 'Timeline', sortable: false, align: 'c',
-      render: (r) => <Sparkline values={r.spark} title="Raid DPS by fight" />,
+      /* Half the component's default width. This column is decoration beside
+         numbers that are already written out — the shape of a night, not a
+         reading of it — so it is the first place to take width back from when
+         the list is fighting for room. The header word is the floor on how
+         narrow the column can actually get. */
+      render: (r) => <Sparkline values={r.spark} width={48} title="Raid DPS by fight" />,
     },
-    /* Which of YOUR characters logged the night, and only once you have more
-       than one. Whose parse a shared raid is was a column of its own ("From")
-       and is gone: the Shared column already names the group it reached you
-       through, which is the answer people actually wanted from it. */
-    ...(multiChar ? [{ key: 'character_name', label: 'Character', align: 'l' }] : []),
-    /* Whose parse you are reading, and only once a night has more than one.
+    /* Whose parse you are reading — ONE column, because "which of my
+       characters logged this" and "whose upload am I reading" are the same
+       question answered by the same name. It appears once you have more than
+       one character, or once a night has more than one parse.
+
        Several people in a raid all upload it, so the same evening arrives as
        several parses — the list shows ONE (yours first, otherwise the site's
-       pick) and this is how you read somebody else's. A select rather than a
-       row of names: the answer is one of a short list, and the current one has
-       to be legible without opening anything. */
-    ...(anyAlts ? [{
-      key: 'parse', label: 'Parse', sortable: false, align: 'l',
+       pick) and the select is how you read somebody else's. A select rather
+       than a row of names: the answer is one of a short list, and the current
+       one has to be legible without opening anything. A night nobody else
+       parsed is just the name.
+
+       Whose parse a shared raid is was ALSO a column of its own ("From") and
+       is gone: the Shared column already names the group it reached you
+       through, which is the answer people actually wanted from it. */
+    ...(multiChar || anyAlts ? [{
+      key: 'parse', label: 'Character', sortable: false, align: 'l',
       render: (r) => (r.alts ? (
         <span className="parsepick" onClick={(ev) => ev.stopPropagation()}>
           <select
@@ -485,7 +541,7 @@ export default function Home({ user }) {
             ))}
           </select>
         </span>
-      ) : <span className="muted">{r.character_name}</span>),
+      ) : r.character_name),
     }] : []),
     {
       key: 'shared', label: 'Shared', sortable: false, align: 'l',
@@ -531,10 +587,9 @@ export default function Home({ user }) {
        arms in the same spot: the second click is the confirmation.
 
        Somebody else's raid opens the same pencil onto ONE button, because
-       there is exactly one thing you may do to it: take it off your list. It
-       is the same column and the same gesture as your own rows, and it says
-       "off my list", never "hidden" — hiding is what the owner does, and it
-       reaches everyone. */
+       there is exactly one thing you may do to it: dismiss it. It is the same
+       column and the same gesture as your own rows, and it says "dismiss",
+       never "hide" — hiding is what the owner does, and it reaches everyone. */
     ...(user ? [{
       key: 'edit', label: '', sortable: false, align: 'r', menuLabel: 'Edit',
       render: (r) => (
@@ -543,7 +598,7 @@ export default function Home({ user }) {
             className={`ebtn ${editRow === r.id ? 'on' : ''}`}
             aria-expanded={editRow === r.id}
             title={editRow === r.id ? 'Done'
-              : r.mine ? 'Hide or delete this raid' : 'Take this raid off your list'}
+              : r.mine ? 'Hide or delete this raid' : 'Dismiss this raid'}
             onClick={() => {
               setEditRow(editRow === r.id ? null : r.id)
               setRowConfirm(null)
@@ -577,9 +632,9 @@ export default function Home({ user }) {
               <button
                 className={`ebtn ${r.dismissed ? 'on' : ''}`} disabled={busy}
                 title={r.dismissed
-                  ? 'Off your list. Click to put it back.'
-                  : "Take this raid off your list. Nothing changes for whoever "
-                    + 'shared it, and the link still opens.'}
+                  ? 'Dismissed. Click to put it back.'
+                  : 'Dismiss this raid — it stops being listed here. Nothing '
+                    + 'changes for whoever shared it, and the link still opens.'}
                 onClick={() => doDismissRun(r)}
               >{r.dismissed ? '⊙' : '⊘'}</button>
             </span>
@@ -601,7 +656,7 @@ export default function Home({ user }) {
   return (
     <>
       <div className="pagehead">
-        <h1>Raid Parses</h1>
+        <h1>{listTitle(sizes)}</h1>
         {/* Signed out, the subtitle is the pitch: what signing in gets you, and
             the three things people ask before they do it. */}
         {!user && (
@@ -654,14 +709,14 @@ export default function Home({ user }) {
             page, so it is the only one that has to say it is on — a raid that
             simply stopped appearing, with nothing on the screen about it, is
             indistinguishable from a share that was revoked. */}
-        {user && (sweptCount > 0 || showSwept) && (
-          <button className={`chip ${showSwept ? 'on' : ''}`}
-                  aria-pressed={showSwept}
-                  title={showSwept
-                    ? 'Stop listing the raids you took off your list'
+        {user && (dismissedCount > 0 || showDismissed) && (
+          <button className={`chip ${showDismissed ? 'on' : ''}`}
+                  aria-pressed={showDismissed}
+                  title={showDismissed
+                    ? 'Stop listing the raids you dismissed'
                     : 'List them again, so you can put one back'}
-                  onClick={() => { setShowSwept((v) => !v); setPicked(new Set()) }}>
-            {sweptCount ? `${sweptCount} off your list` : 'Off your list'}
+                  onClick={() => { setShowDismissed((v) => !v); setPicked(new Set()) }}>
+            {dismissedCount ? `${dismissedCount} dismissed` : 'Dismissed'}
           </button>
         )}
 

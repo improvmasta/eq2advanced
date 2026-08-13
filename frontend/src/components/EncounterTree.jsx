@@ -189,7 +189,8 @@ export default function EncounterTree({
   encounters, sel, onSelect, sessionLabel, sub, who, subTitle, actions, seenBy,
   headActions = null,
   titled = false, hideZones = false, selectedIds, onToggle,
-  editing = false, editbar = null, onHide, onDelete, live = null,
+  editing = false, editbar = null, onHide, onDelete, onClear, live = null,
+  countAction = null,
 }) {
   const blocks = useMemo(() => buildTree(encounters), [encounters])
   const attempts = useMemo(() => attemptNumbers(encounters), [encounters])
@@ -268,7 +269,19 @@ export default function EncounterTree({
           {tag && <span className="rn">{tag}</span>}
           <span className="rd">{dur}</span>
         </button>
-        {edits && editing && (
+        {edits && editing && onClear ? (
+          /* THE DASHBOARD'S EDIT MODE, which is the same mode with one verb.
+             Clearing takes a fight off tonight's rail and touches nothing else
+             — the parse is written, the raid page still has it, anyone it was
+             shared with still sees it. So there is no confirmation (nothing is
+             lost) and no hide (hiding is a fact about the raid, and this is a
+             fact about a screen). One button, and it says the true word. */
+          <span className="railedit">
+            <button className="ebtn" title={`Clear ${what} off the dashboard`}
+                    aria-label={`Clear ${what} off the dashboard`}
+                    onClick={() => onClear(all)}>✕</button>
+          </span>
+        ) : edits && editing && (
           <span className="railedit">
             {confirm === key ? (
               /* The confirmation is the second click on the same row, so the
@@ -364,18 +377,26 @@ export default function EncounterTree({
         )}
         {/* The count rides at the right end of the who line — the same line, so
             it costs no vertical space, and right-aligned so it never gets in
-            the way of a long character name or a wide parse picker. */}
+            the way of a long character name or a wide parse picker.
+            `countAction` is a single small control docked to its left (the
+            dashboard's Edit/Done): a row of its own for one button is a row
+            wasted, and the count is the one thing on this line the button is
+            about. Quiet, not gold — it is a switch on the list, not an action
+            on the raid. */}
         <span className="railwho">
           {who}
-          <span className="railcount">
-            {shown.length} fight{shown.length === 1 ? '' : 's'}
-            {/* the count is what the page counts, so the ones held out of it are
-                said beside it rather than folded into it */}
-            {hiddenCount > 0 && (
-              <span className="hid" title="Hidden fights: not shared, not counted in stats.">
-                {' · '}{hiddenCount} hidden
-              </span>
-            )}
+          <span className="railtail">
+            {countAction}
+            <span className="railcount">
+              {shown.length} fight{shown.length === 1 ? '' : 's'}
+              {/* the count is what the page counts, so the ones held out of it
+                  are said beside it rather than folded into it */}
+              {hiddenCount > 0 && (
+                <span className="hid" title="Hidden fights: not shared, not counted in stats.">
+                  {' · '}{hiddenCount} hidden
+                </span>
+              )}
+            </span>
           </span>
         </span>
       </div>

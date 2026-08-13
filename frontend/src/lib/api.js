@@ -154,6 +154,11 @@ export const api = {
     fd.append('file', file)
     return req('/api/parseshots', { method: 'POST', body: fd })
   },
+  /* Naming a shot after the fact: who, where, which fight, when — the metadata
+     a cropped screenshot never carried. Never the figures in the table; see
+     backend/routers/parseshots_api.py. */
+  updateParseshot: (id, patch) => req(`/api/parseshots/${id}`,
+    { ...json(patch), method: 'PATCH' }),
   deleteParseshot: (id) => req(`/api/parseshots/${id}`, { method: 'DELETE' }),
   /* The kept screenshot. A plain URL rather than a fetch — it goes straight
      into an <img>, and the session cookie authorises it exactly as it does
@@ -186,6 +191,16 @@ export const api = {
     `/api/notes/${noteId}/shots/${shotId}`, { method: 'DELETE' }),
   noteShotImage: (noteId, shotId, thumb) => (
     `/api/notes/${noteId}/shots/${shotId}/image${thumb ? '?thumb=1' : ''}`),
+
+  /* The two hand marks, on the account (`lib/marks.js`). A PATCH, never the
+     world: `{joust: {ability: true|false|null}}` names the abilities it has
+     something to say about and leaves the rest alone, so a pill clicked on the
+     dashboard cannot undo one clicked on the raid page in another tab. `null`
+     is the way back to nothing-said. The in-game window and the stream overlay
+     never call either of these — they have no cookie, and their marks ride in
+     with the token config they already poll. */
+  marks: () => req('/api/marks'),
+  setMarks: (patch) => req('/api/marks', { ...json({ marks: patch }), method: 'PUT' }),
 
   /* Stream overlay links. The overlay PAGE never calls these — it is
      authorized by the token in its own URL and fetches `/api/overlay/<token>`

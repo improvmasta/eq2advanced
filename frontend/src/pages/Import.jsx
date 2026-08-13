@@ -65,7 +65,9 @@ function Method({ title, blurb, state, children }) {
         <h2>{title}</h2>
         {state && <span className={`badge ${state === 'live' ? 'live' : ''}`}>{state}</span>}
       </div>
-      <p className="note">{blurb}</p>
+      {/* A box that explains itself needs no line above it saying so — the
+          drop target for log files is a drop target for log files. */}
+      {blurb && <p className="note">{blurb}</p>}
       {children}
     </section>
   )
@@ -270,7 +272,7 @@ export default function Import() {
 
               {receiving.length > 0 && (
                 <p className="livecta">
-                  <Link className="btnlink" to="/live">Watch the live raid →</Link>
+                  <Link className="btnlink" to="/live">Live Parser →</Link>
                 </p>
               )}
 
@@ -314,14 +316,18 @@ export default function Import() {
           </p>
         </Method>
 
-        <Method
-          title="Log files"
-          blurb="Drag in log files. Nothing to install."
-        >
+        <Method title="Log files">
           <UploadDrop onUploaded={refresh} />
         </Method>
       </div>
 
+      {/* Two lists of what has come in, and they are not the same size of
+          thing: the logs are the site's own parses and the shots are claims
+          read off somebody else's picture. Two thirds and one third, side by
+          side — the shot column is a narrow strip of entries rather than a
+          table, because seven columns squeezed into a third of the page is a
+          table nobody can read. */}
+      <div className="importcols">
       <div className="card">
         <div className="drillhead">
           <h2>Imported logs</h2>
@@ -330,11 +336,6 @@ export default function Import() {
             {fmt.num(fightTotal)} fights · {fmt.num(lineTotal)} lines
           </span>
         </div>
-        <p className="note">
-          Filtered files are kept so parser improvements can be replayed over
-          them. Deleting one removes every fight it contributed.
-          <b> Chat cut</b> is the private lines dropped on import.
-        </p>
 
         {working.length > 0 && (
           <p className="muted">
@@ -346,8 +347,12 @@ export default function Import() {
           <p className="muted">No logs yet.</p>
         )}
 
+        {/* Ten rows and then it scrolls, header pinned. A backfill of somebody's
+            logs folder is fifty files, and fifty rows of ingest detail pushed
+            the screenshot imports off the bottom of the page — this card is a
+            record, not the thing you came to read. */}
         {sessions?.length > 0 && (
-          <div className="tablewrap">
+          <div className="tablewrap sticky rows10">
             <table className="data">
               <thead>
                 <tr>
@@ -416,6 +421,7 @@ export default function Import() {
       </div>
 
       <Parseshots />
+      </div>
     </div>
   )
 }
@@ -423,12 +429,20 @@ export default function Import() {
 /* Parses imported from a screenshot. They live here beside the logs because
    this is the page that answers "what have I put in", but they are a separate
    card and say so plainly: a shot is somebody else's parse read off an image,
-   it contributes no fights, and it is only ever seen on /compare. */
+   it contributes no fights, and it is only ever seen on /compare.
+
+   It is a COLUMN, a third of the page wide, and the drop slot at the top of it
+   is Compare's — a + in a heavy dashed box over a dimmed ACT window, the same
+   object saying "another parse goes here" and taking one. What follows is a
+   list of entries rather than a table: seven columns in a third of a page is a
+   table that can only be read sideways, and the thumbnail is the widest thing
+   in each row anyway. */
 function Parseshots() {
   const [items, setItems] = useState(null)
   const [error, setError] = useState('')
   const [confirm, setConfirm] = useState(null)
   const [viewing, setViewing] = useState(null)   // the shot whose image is open
+  const [editing, setEditing] = useState(null)   // the shot being named
 
   const refresh = useCallback(() => {
     api.parseshots().then((d) => setItems(d.items)).catch((e) => setError(e.message))
@@ -442,83 +456,193 @@ function Parseshots() {
   }
 
   return (
-    <div className="card">
+    <div className="card shotcol">
       <div className="drillhead">
         <h2>Screenshot imports</h2>
         <span className="muted" style={{ marginLeft: 'auto' }}>
           {items?.length ?? 0} parse{items?.length === 1 ? '' : 's'}
         </span>
       </div>
-      <p className="note">
-        A parse read off an ACT screenshot — the way somebody else's numbers
-        arrive when all you have is an image from Discord. These add no fights
-        and change no totals; they exist to sit beside your own parse on{' '}
-        <Link to="/compare">Compare</Link>. Click a thumbnail to see the
-        screenshot it was read from — a re-encoded copy, kept private to you.
-      </p>
       {error && <p className="err">{error}</p>}
-      <ShotDrop onImported={refresh} />
+      <ShotDrop
+        className="shotslot"
+        label={<p className="muted">Drop an ACT screenshot to import a parse…</p>}
+        onImported={refresh}
+      />
 
       {items === null && <p className="muted">Loading…</p>}
-      {items?.length === 0 && <p className="muted">Nothing imported yet.</p>}
+      {items?.length === 0 && (
+        <p className="fineprint">
+          Somebody else's numbers, read off an image from Discord. They add no
+          fights and change no totals — they sit beside your own parse on{' '}
+          <Link to="/compare">Compare</Link>.
+        </p>
+      )}
       {items?.length > 0 && (
-        <div className="tablewrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th className="l">Shot</th>
-                <th className="l">Fight</th>
-                <th className="l">Character</th>
-                <th className="l">Zone</th>
-                <th>Length</th>
-                <th className="l">Imported</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((s) => (
-                <tr key={s.id}>
-                  {/* The picture is the only evidence behind the columns
-                      arithmetic can't check, so it sits in the row rather than
-                      a detail page. */}
-                  <td className="l">
-                    {s.has_image
-                      ? <ShotThumb shot={s} onOpen={() => setViewing(s)} />
-                      : <span className="muted">—</span>}
-                  </td>
-                  <td className="l">
-                    <Link to={`/compare?c=shot:${s.id}:parse`}>
-                      {s.encounter || 'Unnamed fight'}
-                    </Link>
-                    {s.kind === 'heal' && <span className="muted"> healing</span>}
-                  </td>
-                  <td className="l">{s.character_name || '—'}</td>
-                  <td className="l">{s.zone || '—'}</td>
-                  <td>{s.duration_s ? fmt.dur(s.duration_s) : '—'}</td>
+        <ul className="shotlist">
+          {items.map((s) => (
+            <li key={s.id}>
+              {/* The picture is the only evidence behind the columns
+                  arithmetic can't check, so it travels with the entry rather
+                  than living on a detail page. */}
+              {s.has_image && <ShotThumb shot={s} onOpen={() => setViewing(s)} />}
+              <div className="sl">
+                <Link className="t" to={`/compare?c=shot:${s.id}:parse`}>
+                  {s.encounter || 'Unnamed fight'}
+                </Link>
+                <span className="m">
+                  {[s.character_name, s.zone].filter(Boolean).join(' · ') || (
+                    <i>nothing read off the title bar</i>
+                  )}
+                </span>
+                <span className="m">
+                  {s.kind === 'heal' ? 'Healing' : 'Damage'}
+                  {s.duration_s ? ` · ${fmt.dur(s.duration_s)}` : ''}
                   {/* when_text is what ACT PRINTED, kept as a string: an
                       undated shot has none, and inventing one from the import
                       time would date somebody else's raid to today. */}
-                  <td className="l">{s.when_text || fmt.date(s.created_ts)}</td>
-                  <td className="r">
-                    {confirm === s.id ? (
-                      <>
-                        <span className="muted">Delete? </span>
-                        <button className="chip danger armed" onClick={() => remove(s.id)}>Yes</button>
-                        <button className="chip" onClick={() => setConfirm(null)}>No</button>
-                      </>
-                    ) : (
-                      <button className="chip danger" onClick={() => setConfirm(s.id)}>
-                        delete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {' · '}{s.when_text || fmt.date(s.created_ts)}
+                </span>
+              </div>
+              <span className="sa">
+                <button className={`chip ${editing === s.id ? 'on' : ''}`}
+                        title="Name this parse — who, where, which fight"
+                        onClick={() => setEditing(editing === s.id ? null : s.id)}>
+                  ✎
+                </button>
+                {confirm === s.id ? (
+                  <>
+                    <button className="chip danger armed" onClick={() => remove(s.id)}>Yes</button>
+                    <button className="chip" onClick={() => setConfirm(null)}>✕</button>
+                  </>
+                ) : (
+                  <button className="chip danger" title="Delete this import"
+                          onClick={() => setConfirm(s.id)}>🗑</button>
+                )}
+              </span>
+              {editing === s.id && (
+                <ShotEdit shot={s} onDone={(saved) => {
+                  setEditing(null)
+                  if (saved) refresh()
+                }} />
+              )}
+            </li>
+          ))}
+        </ul>
       )}
       {viewing && <ShotViewer shot={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  )
+}
+
+/* Naming a shot the reader can read and the OCR could not.
+
+   A screenshot cropped to the table carries no title bar, so the character,
+   the zone and the fight arrive empty and the import stays `Unnamed fight` for
+   the rest of its life — while the person who dropped it knows perfectly well
+   whose parse it is. These are all CLAIMS, which is what the row already was;
+   nothing here touches a figure in the table. Those are checked against each
+   other at import and a typed cell would be the only number on the page with
+   no evidence behind it — the review step this feature deliberately does not
+   have (docs/compare-import.md).
+
+   The LENGTH is the one number, and only where there isn't one: it is fitted
+   from the table (the mode of Damage/EncDPS over every row), which beats both
+   the title bar and any human — so a shot that has one shows it and won't take
+   a replacement. A shot with none refuses to show per-second numbers at all,
+   and a length off the reader's own clock beats that refusal. */
+/* `mm:ss` or `h:mm:ss`, which is how ACT prints it and how anybody reading a
+   screenshot would type it back. Null for anything else — a length that failed
+   to parse must not silently become a number. */
+function parseClock(text) {
+  const parts = text.trim().split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  if (!parts.every((p) => /^\d{1,3}$/.test(p))) return null
+  const n = parts.map(Number)
+  if (n.slice(1).some((v) => v > 59)) return null
+  return parts.length === 3 ? (n[0] * 3600) + (n[1] * 60) + n[2] : (n[0] * 60) + n[1]
+}
+
+function ShotEdit({ shot, onDone }) {
+  const [form, setForm] = useState(() => ({
+    character_name: shot.character_name || '',
+    zone: shot.zone || '',
+    encounter: shot.encounter || '',
+    when_text: shot.when_text || '',
+    kind: shot.kind === 'heal' ? 'heal' : 'damage',
+    length: shot.duration_s ? fmt.clock(shot.duration_s) : '',
+  }))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k) => (ev) => setForm((f) => ({ ...f, [k]: ev.target.value }))
+  const fitted = shot.duration_s != null
+
+  async function save() {
+    const patch = {
+      character_name: form.character_name.trim() || null,
+      zone: form.zone.trim() || null,
+      encounter: form.encounter.trim() || null,
+      when_text: form.when_text.trim() || null,
+      kind: form.kind,
+    }
+    if (!fitted && form.length.trim()) {
+      const secs = parseClock(form.length)
+      if (!secs) { setErr('Length is mm:ss — 4:30, or 1:04:30 for an hour.'); return }
+      patch.duration_s = secs
+    }
+    setBusy(true)
+    setErr('')
+    try {
+      await api.updateParseshot(shot.id, patch)
+      onDone(true)
+    } catch (e) {
+      setErr(e.message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    // Enter files it, Escape drops it — from a FIELD only, so Enter on the
+    // Cancel button still cancels.
+    <div className="shotedit" onKeyDown={(ev) => {
+      if (ev.key === 'Enter' && ev.target.tagName === 'INPUT' && !busy) save()
+      if (ev.key === 'Escape') onDone(false)
+    }}>
+      <label>Character
+        <input type="text" value={form.character_name} onChange={set('character_name')}
+               placeholder="whose parse this is" autoFocus />
+      </label>
+      <label>Zone
+        <input type="text" value={form.zone} onChange={set('zone')} placeholder="where" />
+      </label>
+      <label>Fight
+        <input type="text" value={form.encounter} onChange={set('encounter')}
+               placeholder="which pull" />
+      </label>
+      <label>When
+        <input type="text" value={form.when_text} onChange={set('when_text')}
+               placeholder="as ACT printed it" />
+      </label>
+      <label>Shows
+        <select value={form.kind} onChange={set('kind')}>
+          <option value="damage">Damage</option>
+          <option value="heal">Healing</option>
+        </select>
+      </label>
+      <label>Length
+        <input type="text" value={form.length} onChange={set('length')} disabled={fitted}
+               placeholder="mm:ss"
+               title={fitted
+                 ? 'Read off the table — every row agreeing on Damage ÷ EncDPS, '
+                   + 'which is a better clock than the title bar'
+                 : 'The shot carries no clock, so per-second numbers cannot be '
+                   + 'worked out until you give it one'} />
+      </label>
+      {err && <p className="err">{err}</p>}
+      <div className="row">
+        <button disabled={busy} onClick={save}>Save</button>
+        <button className="chip" disabled={busy} onClick={() => onDone(false)}>Cancel</button>
+      </div>
     </div>
   )
 }

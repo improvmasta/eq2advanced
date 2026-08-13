@@ -27,7 +27,7 @@ from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
-from pipeline import livebus, livemeter
+from pipeline import aoelearn, livebus, livemeter
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.redact import keep_line
 from pipeline.refine import roster_prescan
@@ -97,6 +97,12 @@ class LiveState:
         # file them as a mob.
         self.known_players: frozenset[str] = frozenset()
         self.known_pets: frozenset[str] = frozenset()    # see snapshot_context
+        # (mob, ability) -> the recast every raid on the site measured, and
+        # what a reuse debuff did to it (pipeline/aoelearn.py). Read once with
+        # the rest of the context: it is the output of finished parses, so it
+        # cannot change during a pull, and a countdown that had to wait for it
+        # would be wrong for exactly the first casts anybody is watching.
+        self.known_timers: dict = {}
         # Replaced whole, never mutated: the SSE generators read this attribute
         # from the event loop while a batch is being processed in a worker
         # thread, and swapping one reference is the only thing they can observe
@@ -127,6 +133,7 @@ def _get_state(conn, session_id: int, logger: str) -> LiveState:
                 state.zone = json.loads(zrow["extra"]).get("zone")
             (state.roster, state.known_mobs, state.known_players,
              state.known_pets) = snapshot_context(conn)
+            state.known_timers = aoelearn.learned(conn)
             wrow = conn.execute(
                 "SELECT c.world_id AS world_id FROM sessions s "
                 "JOIN characters c ON c.id = s.character_id WHERE s.id=?",
@@ -571,7 +578,8 @@ def _publish_snapshot(state: LiveState, mode: str, now: int) -> None:
             state.open_events, state.logger, state.open_zone,
             state.open_start_ts, state.roster,
             livemeter.Knowledge(state.known_mobs, state.known_players,
-                                state.known_pets, state.pet_names),
+                                state.known_pets, state.pet_names,
+                                state.known_timers),
             # the newest line the plugin has sent: the log clock that says
             # whether the open segment is still a fight (livemeter.build_snapshot)
             now_ts=state.last_line_ts)

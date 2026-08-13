@@ -217,7 +217,7 @@
    "zone": "Aether Wroughtlands",
    "page_title": "Aether Wroughtlands",
    "era": "Ballads of Zimara",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -526,6 +526,13 @@
    "size": "Event Heroic"
   },
   {
+   "zone": "Awuidor: Trench of Terrors",
+   "page_title": "Awuidor: Trench of Terrors",
+   "era": "Visions of Vetrovia",
+   "instance": "Solo-Group",
+   "size": null
+  },
+  {
    "zone": "Azhar's Penitence",
    "page_title": "Azhar's Penitence",
    "era": "Desert of Flames",
@@ -564,7 +571,7 @@
    "zone": "Bastion of Thunder: Lightning Strikes",
    "page_title": "Bastion of Thunder: Lightning Strikes (Tradeskill)",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -744,7 +751,7 @@
    "zone": "Buried Takish'Hiz: Empire of Antiquity",
    "page_title": "Buried Takish'Hiz: Empire of Antiquity (Contested)",
    "era": "Renewal of Ro",
-   "instance": null,
+   "instance": "Public",
    "size": null,
    "update": "LU122"
   },
@@ -773,7 +780,7 @@
    "zone": "Butcherblock Mountains",
    "page_title": "Butcherblock Mountains",
    "era": "Echoes of Faydwer",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -995,14 +1002,14 @@
    "zone": "City of Fordel Midst",
    "page_title": "City of Fordel Midst",
    "era": "Reign of Shadows",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
    "zone": "City of Shar Vahl",
    "page_title": "City of Shar Vahl",
    "era": "Reign of Shadows",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1031,7 +1038,7 @@
    "zone": "Cobalt Scar",
    "page_title": "Cobalt Scar",
    "era": "LU66",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1045,7 +1052,7 @@
    "zone": "Coliseum of Valor",
    "page_title": "Coliseum of Valor",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1224,7 +1231,7 @@
    "zone": "Detroxxulous, the Plaguelands",
    "page_title": "Detroxxulous, the Plaguelands",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1266,7 +1273,7 @@
    "zone": "Doomfire, the Burning Lands",
    "page_title": "Doomfire, the Burning Lands",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1497,6 +1504,13 @@
    "update": "LU52"
   },
   {
+   "zone": "Enchanted Lands",
+   "page_title": "Enchanted Lands",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
    "zone": "Enchanted Naiad Grotto",
    "page_title": "Enchanted Naiad Grotto",
    "era": "The Shadow Odyssey",
@@ -1523,7 +1537,7 @@
    "zone": "Eryslai, the Kingdom of Wind",
    "page_title": "Eryslai, the Kingdom of Wind",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1552,6 +1566,13 @@
    "page_title": "Eryslai: Trials of Air (Event Heroic)",
    "era": "Chaos Descending",
    "instance": "Event Heroic",
+   "size": null
+  },
+  {
+   "zone": "Everfrost",
+   "page_title": "Everfrost",
+   "era": "Shattered Lands",
+   "instance": "Public",
    "size": null
   },
   {
@@ -1607,7 +1628,7 @@
    "zone": "Fabled Kael Drakkel",
    "page_title": "Fabled Kael Drakkel",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null,
    "update": "LU111"
   },
@@ -1630,7 +1651,7 @@
    "zone": "Fens of Nathsar",
    "page_title": "Fens of Nathsar",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1709,7 +1730,7 @@
    "zone": "Forlorn Gist",
    "page_title": "Forlorn Gist",
    "era": "Visions of Vetrovia",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -1894,7 +1915,7 @@
    "zone": "Greater Faydark",
    "page_title": "Greater Faydark",
    "era": "Echoes of Faydwer",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2164,7 +2185,7 @@
    "zone": "Jarsath Wastes",
    "page_title": "Jarsath Wastes",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2178,7 +2199,7 @@
    "zone": "Kael Drakkel",
    "page_title": "Kael Drakkel",
    "era": "Destiny of Velious",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2199,21 +2220,21 @@
    "zone": "Kaladim",
    "page_title": "Kaladim",
    "era": "Echoes of Faydwer",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
    "zone": "Karnor's Castle",
    "page_title": "Karnor's Castle",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
    "zone": "Karuupa Jungle",
    "page_title": "Karuupa Jungle",
    "era": "Visions of Vetrovia",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2354,7 +2375,7 @@
    "zone": "Kunzar Jungle",
    "page_title": "Kunzar Jungle",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2391,7 +2412,7 @@
    "zone": "Kylong Plains",
    "page_title": "Kylong Plains",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2415,6 +2436,13 @@
    "instance": "Solo",
    "size": null,
    "update": "LU08"
+  },
+  {
+   "zone": "Lavastorm",
+   "page_title": "Lavastorm",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
   },
   {
    "zone": "Legends of Norrath Museum",
@@ -2507,7 +2535,7 @@
    "zone": "Mahngavi Wastes",
    "page_title": "Mahngavi Wastes",
    "era": "Visions of Vetrovia",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2716,7 +2744,7 @@
    "zone": "Myrist, the Great Library",
    "page_title": "Myrist, the Great Library",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2776,6 +2804,13 @@
    "instance": "Group",
    "size": null,
    "update": "LU26"
+  },
+  {
+   "zone": "Nektulos Forest",
+   "page_title": "Nektulos Forest",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
   },
   {
    "zone": "Neriak, City of Hate",
@@ -2845,7 +2880,14 @@
    "zone": "Obulus Frontier",
    "page_title": "Obulus Frontier",
    "era": "Kunark Ascending",
-   "instance": null,
+   "instance": "Public",
+   "size": null
+  },
+  {
+   "zone": "Oogothl Sprawl",
+   "page_title": "Oogothl Sprawl",
+   "era": "Shattered Lands",
+   "instance": "Public",
    "size": null
   },
   {
@@ -2888,7 +2930,7 @@
    "zone": "Ossuary of Malevolence",
    "page_title": "Ossuary of Malevolence (Contested)",
    "era": "Altar of Malice",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2930,7 +2972,7 @@
    "zone": "Outer Kael",
    "page_title": "Outer Kael",
    "era": "Destiny of Velious",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -2981,14 +3023,14 @@
    "zone": "Phantom Sea",
    "page_title": "Phantom Sea",
    "era": "Altar of Malice",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
    "zone": "Plane of Disease: Crypt of Decay",
    "page_title": "Plane of Disease: Crypt of Decay (Tradeskill)",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3065,7 +3107,7 @@
    "zone": "Plane of Magic",
    "page_title": "Plane of Magic",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3200,7 +3242,7 @@
    "zone": "Raj'Dur Plateaus",
    "page_title": "Raj'Dur Plateaus",
    "era": "Renewal of Ro",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3315,6 +3357,13 @@
    "instance": "Solo-Group",
    "size": null,
    "update": "LU63"
+  },
+  {
+   "zone": "Rivervale",
+   "page_title": "Rivervale",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
   },
   {
    "zone": "Roekillik Den",
@@ -3441,7 +3490,7 @@
    "zone": "Sandstone Delta",
    "page_title": "Sandstone Delta",
    "era": "Renewal of Ro",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3483,7 +3532,7 @@
    "zone": "Savage Weald",
    "page_title": "Savage Weald",
    "era": "Reign of Shadows",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3648,7 +3697,7 @@
    "zone": "Shard of Hate: Eye Spy",
    "page_title": "Shard of Hate: Eye Spy (Tradeskill)",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3789,7 +3838,7 @@
    "zone": "Skyshrine: The Forbidden City of Dracur",
    "page_title": "Skyshrine: The Forbidden City of Dracur",
    "era": "Destiny of Velious",
-   "instance": null,
+   "instance": "Public",
    "size": null,
    "update": "LU63"
   },
@@ -3849,7 +3898,7 @@
    "zone": "Sodden Archipelago",
    "page_title": "Sodden Archipelago",
    "era": "Scars of Destruction",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3898,7 +3947,7 @@
    "zone": "Solusek Ro's Tower: From the Ashes",
    "page_title": "Solusek Ro's Tower: From the Ashes (Tradeskill)",
    "era": "Planes of Prophecy",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -3954,7 +4003,7 @@
    "zone": "Spiral of Vul",
    "page_title": "Spiral of Vul (Contested)",
    "era": "Scars of Destruction",
-   "instance": null,
+   "instance": "Public",
    "size": null,
    "update": "LU128"
   },
@@ -3992,7 +4041,7 @@
    "zone": "Splendor Sky Aerie",
    "page_title": "Splendor Sky Aerie",
    "era": "Ballads of Zimara",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4147,8 +4196,8 @@
    "update": "LU60"
   },
   {
-   "zone": "Sultan's Mahala: Daggers Drawn",
-   "page_title": "Sultan's Mahala: Daggers Drawn (Raid)",
+   "zone": "Sultan's Mahallah: Daggers Drawn",
+   "page_title": "Sultan's Mahallah: Daggers Drawn (Raid)",
    "era": "Renewal of Ro",
    "instance": "Raid",
    "size": "x4"
@@ -4234,7 +4283,7 @@
    "zone": "Svarni Expanse",
    "page_title": "Svarni Expanse",
    "era": "Visions of Vetrovia",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4248,7 +4297,7 @@
    "zone": "Takish Badlands",
    "page_title": "Takish Badlands",
    "era": "Renewal of Ro",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4377,7 +4426,7 @@
    "zone": "Tenebrous Tangle",
    "page_title": "Tenebrous Tangle",
    "era": "Kingdom of Sky",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4427,7 +4476,7 @@
    "zone": "The Barren Sky",
    "page_title": "The Barren Sky",
    "era": "Kingdom of Sky",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4441,7 +4490,7 @@
    "zone": "The Blinding",
    "page_title": "The Blinding",
    "era": "Blood of Luclin",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4462,7 +4511,7 @@
    "zone": "The Bonemire",
    "page_title": "The Bonemire",
    "era": "Kingdom of Sky",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4504,7 +4553,7 @@
    "zone": "The Celestial Conveyance",
    "page_title": "The Celestial Conveyance",
    "era": "Ballads of Zimara",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4581,10 +4630,17 @@
    "size": null
   },
   {
+   "zone": "The Coalition of Tradesfolke Workshop",
+   "page_title": "The Coalition of Tradesfolke Workshop",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
    "zone": "The Commonlands",
    "page_title": "The Commonlands",
    "era": "Shattered Lands",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -4766,6 +4822,13 @@
    "size": "x4"
   },
   {
+   "zone": "The Down Below",
+   "page_title": "The Down Below",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
    "zone": "The Dreadcutter",
    "page_title": "The Dreadcutter (Advanced Solo)",
    "era": "Chains of Eternity",
@@ -4832,7 +4895,7 @@
    "zone": "The Eidolon Jungle",
    "page_title": "The Eidolon Jungle",
    "era": "Chains of Eternity",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -5124,7 +5187,7 @@
    "zone": "The Feerrott",
    "page_title": "The Feerrott",
    "era": "Shattered Lands",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -5157,10 +5220,17 @@
    "size": "Solo"
   },
   {
+   "zone": "The Forsaken City",
+   "page_title": "The Forsaken City",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
    "zone": "The Fortress of Drunder",
    "page_title": "The Fortress of Drunder",
    "era": "Destiny of Velious",
-   "instance": null,
+   "instance": "Public",
    "size": null,
    "update": "LU60"
   },
@@ -5216,6 +5286,13 @@
    "update": "LU38"
   },
   {
+   "zone": "The Graveyard",
+   "page_title": "The Graveyard",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": "Solo"
+  },
+  {
    "zone": "The Greenmist",
    "page_title": "The Greenmist",
    "era": "Shattered Lands",
@@ -5269,7 +5346,7 @@
    "zone": "The Hole",
    "page_title": "The Hole",
    "era": "Sentinel's Fate",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -5473,6 +5550,13 @@
    "page_title": "The Obelisk of Blight",
    "era": "Echoes of Faydwer",
    "instance": "Group",
+   "size": null
+  },
+  {
+   "zone": "The Obelisk of Lost Souls",
+   "page_title": "The Obelisk of Lost Souls",
+   "era": "Shattered Lands",
+   "instance": "Public",
    "size": null
   },
   {
@@ -5756,7 +5840,7 @@
    "zone": "The Stonebrunt Highlands",
    "page_title": "The Stonebrunt Highlands",
    "era": "Sentinel's Fate",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -5857,6 +5941,13 @@
    "instance": "Solo",
    "size": null,
    "update": "LU36"
+  },
+  {
+   "zone": "The Thundering Steppes",
+   "page_title": "The Thundering Steppes",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
   },
   {
    "zone": "The Tomb of Thuuga",
@@ -6139,14 +6230,14 @@
    "zone": "Thurgadin, City of the Coldain",
    "page_title": "Thurgadin, City of the Coldain",
    "era": "Destiny of Velious",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
    "zone": "Timorous Deep",
    "page_title": "Timorous Deep",
    "era": "Rise of Kunark",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6256,6 +6347,13 @@
    "size": null
   },
   {
+   "zone": "Tradeskiller's Workshop",
+   "page_title": "Tradeskiller's Workshop",
+   "era": "Shattered Lands",
+   "instance": "Public",
+   "size": null
+  },
+  {
    "zone": "Trakanon's Lair",
    "page_title": "Trakanon's Lair",
    "era": "Rise of Kunark",
@@ -6266,7 +6364,7 @@
    "zone": "Tranquil Sea",
    "page_title": "Tranquil Sea",
    "era": "Altar of Malice",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6530,7 +6628,7 @@
    "zone": "Vegarlson, the Earthen Badlands",
    "page_title": "Vegarlson, the Earthen Badlands",
    "era": "Chaos Descending",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6664,7 +6762,7 @@
    "zone": "Western Wastes",
    "page_title": "Western Wastes",
    "era": "Scars of Destruction",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6699,7 +6797,7 @@
    "zone": "Wracklands",
    "page_title": "Wracklands",
    "era": "Blood of Luclin",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6755,7 +6853,7 @@
    "zone": "Yon Gorroth",
    "page_title": "Yon Gorroth",
    "era": "Rage of Cthurath",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {
@@ -6818,7 +6916,7 @@
    "zone": "Zimara Breadth",
    "page_title": "Zimara Breadth",
    "era": "Ballads of Zimara",
-   "instance": null,
+   "instance": "Public",
    "size": null
   },
   {

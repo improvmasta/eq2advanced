@@ -1,0 +1,43 @@
+{
+  "_note": [
+    "Mobs that put SEVERAL BODIES WEARING ONE NAME on the field at once.",
+    "Reference data about the GAME, like zone_eras.json and reuse_debuffs.json",
+    "— never about anybody's raid.",
+    "",
+    "Everything in this parser keys an enemy by NAME, because a name is the",
+    "only identity that survives a reparse and the only one comparable between",
+    "two guilds' logs. That is exactly right for a boss and exactly wrong for a",
+    "mob that splits: two halves each on their own 50s recast interleave into",
+    "apparent 25s gaps, and nothing in a log can tell that from one mob on a",
+    "25s timer. `aoes.several_bodies` infers it where a reported timer gives it",
+    "something to compare against; this file is for the cases where nothing",
+    "does — an ability ACT's list has never heard of, or a first pull.",
+    "",
+    "What a name in here BUYS: no learned timer is ever adopted for it, no",
+    "config edit is ever suggested for it, and the live panel draws its rows",
+    "without a countdown (they still say how many times the ability fired, and",
+    "still flash on the landing). Nothing else changes — the audit tab still",
+    "lists every cast, and the damage is still the damage.",
+    "",
+    "It is read at RUN TIME by `aoelearn.learn` and the live snapshot, never",
+    "baked into a rollup, so adding a name here re-decides every fight the site",
+    "already holds without a reparse and without a PARSE_VERSION bump.",
+    "",
+    "`bodies` is how many of that name are up at once when the mechanic has",
+    "fully run — a floor and a description, not something any code arithmetics",
+    "with. The guard is binary."
+  ],
+  "mobs": {
+    "A Bisected Rumbler": {
+      "bodies": 2,
+      "zone": "The Emerald Halls",
+      "splits_into": "A Trisected Rumbler",
+      "note": "The Segmented Rumbler splits into two of these on death, and each of those splits into three Trisected. Measured on four uploads: `Rumbling of Earth` reads 28.7s across 21 agreeing intervals against ACT's 50s, and the site had ADOPTED that number — two halves alternating, not a fast mob."
+    },
+    "A Trisected Rumbler": {
+      "bodies": 6,
+      "zone": "The Emerald Halls",
+      "note": "Two Bisected halves make three of these each, so six wear this name at once. Its gaps are the superposition of six clocks and mean nothing at all."
+    }
+  }
+}

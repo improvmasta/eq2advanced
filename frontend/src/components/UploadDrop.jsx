@@ -96,7 +96,7 @@ export default function UploadDrop({ onUploaded }) {
   return (
     <div className="uploader">
       <div
-        className={`dropzone ${drag ? 'drag' : ''}`}
+        className={`dropzone logslot ${drag ? 'drag' : ''}`}
         onClick={() => !busy && fileRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
         onDragLeave={() => setDrag(false)}
@@ -105,12 +105,15 @@ export default function UploadDrop({ onUploaded }) {
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click() }}
       >
-        <div className="dropicon" aria-hidden="true">↥</div>
-        <div className="dropmain">Drag log files here, or click to browse</div>
-        <div className="dropsub">
-          <b>eq2log_*.txt</b> from your EverQuest II logs folder. As many as you like —
-          re-uploading a log you already sent is safe, only new lines are kept.
-        </div>
+        {/* The + is what makes a bordered rectangle read as somewhere you PUT
+            something — the same mark the screenshot slot wears, because they
+            are the same gesture. The line under it names the files and stops;
+            re-uploads being safe and backfills spanning alts are things this
+            box handles on its own, and a paragraph promising so was reading
+            time spent on a box nobody has failed to use yet. */}
+        <span className="plus" aria-hidden="true">+</span>
+        <div className="dropmain">Drop log files, or click to browse</div>
+        <div className="dropsub"><b>eq2log_*.txt</b></div>
         <input
           ref={fileRef} type="file" accept=".txt,.log,.act" multiple style={{ display: 'none' }}
           onChange={(e) => { stage(e.target.files); e.target.value = '' }}

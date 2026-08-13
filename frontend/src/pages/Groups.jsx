@@ -40,6 +40,9 @@ export default function Groups() {
   // deleting a group asks for its name back, typed exactly (case included)
   const [confirming, setConfirming] = useState(false)
   const [confirmName, setConfirmName] = useState('')
+  // renaming happens in place of the title, not in a form under it
+  const [renaming, setRenaming] = useState(false)
+  const [newName, setNewName] = useState('')
   const [error, setError] = useState(null)
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -69,6 +72,7 @@ export default function Groups() {
   const openGroup = useCallback((id) => {
     setOpen(id); setDetail(null); setInvitee('')
     setConfirming(false); setConfirmName('')   // never carries to the next group
+    setRenaming(false); setNewName('')
     api.group(id).then((d) => setDetail(d.group)).catch((e) => setError(e.message))
   }, [])
 
@@ -225,12 +229,49 @@ export default function Groups() {
               {detail === null && <p className="muted">Loading…</p>}
               {detail && (
                 <>
+                  {/* Renaming replaces the title rather than opening a form
+                      under it: the name is one field, everyone in the group
+                      keeps seeing the same group, and nothing else about it
+                      changes — so it is an edit of the heading, not a section.
+                      Owner and admins both, which is what the API allows. */}
                   <div className="panehead">
-                    <span className="cardtitle">{detail.name}</span>
-                    <span className="muted">
-                      {detail.members.length} member{detail.members.length === 1 ? '' : 's'} ·
-                      {' '}you are {detail.my_role}
-                    </span>
+                    {renaming ? (
+                      <form className="row" style={{ gap: 8 }}
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              run(async () => {
+                                await api.updateGroup(detail.id, { name: newName.trim() })
+                                setRenaming(false)
+                              }, 'Group renamed.')
+                            }}>
+                        <input type="text" value={newName} autoFocus maxLength={40}
+                               aria-label="Group name" style={{ width: 220 }}
+                               onChange={(e) => setNewName(e.target.value)} />
+                        <button className="chip" type="submit"
+                                disabled={busy || newName.trim().length < 2
+                                          || newName.trim() === detail.name}>
+                          Save
+                        </button>
+                        <button className="linklike muted" type="button" disabled={busy}
+                                onClick={() => setRenaming(false)}>
+                          cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <span className="cardtitle">{detail.name}</span>
+                        {manage && (
+                          <button className="chip" disabled={busy}
+                                  onClick={() => { setNewName(detail.name); setRenaming(true) }}>
+                            rename
+                          </button>
+                        )}
+                        <span className="muted">
+                          {detail.members.length} member{detail.members.length === 1 ? '' : 's'} ·
+                          {' '}you are {detail.my_role}
+                        </span>
+                      </>
+                    )}
                   </div>
                   {detail.description && <p className="note">{detail.description}</p>}
 

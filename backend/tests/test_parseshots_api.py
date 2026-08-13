@@ -192,6 +192,68 @@ def test_rubbish_is_refused_without_a_traceback(client):
     assert r.status_code == 422
 
 
+def test_naming_a_shot_the_ocr_could_not_read(client, imported):
+    """A screenshot cropped to the table carries no title bar, so the metadata
+    around the numbers is the reader's to supply."""
+    sign_in(client, "shotowner")
+    r = client.patch(f"/api/parseshots/{imported['id']}",
+                     json={"character_name": "Zylphax", "zone": "Ascent of the Awakened",
+                           "encounter": "Mayong Mistmoore", "kind": "heal",
+                           "when_text": "8/2/2026 21:14"})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["character_name"] == "Zylphax"
+    assert got["zone"] == "Ascent of the Awakened"
+    assert got["encounter"] == "Mayong Mistmoore"
+    assert got["kind"] == "heal"
+    assert got["when_text"] == "8/2/2026 21:14"
+    # the numbers are untouched: this names a parse, it does not review one
+    assert got["total"]["damage"] == 5386632
+    assert len(got["rows"]) == 43
+    # and back, so the rest of the module reads the shot it expects
+    client.patch(f"/api/parseshots/{imported['id']}",
+                 json={"character_name": "Bobby", "zone": "The Emerald Halls",
+                       "encounter": "Galiel Spirithoof", "kind": "damage",
+                       "when_text": None})
+
+
+def test_a_fitted_length_is_not_typed_over(client, imported):
+    """The duration is arithmetic over every row of the table, which beat the
+    title bar in a way that was measured. A shot that has one keeps it."""
+    sign_in(client, "shotowner")
+    r = client.patch(f"/api/parseshots/{imported['id']}", json={"duration_s": 12})
+    assert r.status_code == 409
+    assert client.get(f"/api/parseshots/{imported['id']}").json()["duration_s"] == 391
+
+
+def test_a_shot_with_no_clock_takes_one(client, imported):
+    """Without a length the column refuses per-second numbers entirely, so the
+    reader's own clock beats the refusal."""
+    sign_in(client, "shotowner")
+    conn = dbmod.get_db()
+    with conn:
+        conn.execute("UPDATE imported_parses SET duration_s=NULL WHERE id=?",
+                     (imported["id"],))
+    r = client.patch(f"/api/parseshots/{imported['id']}", json={"duration_s": 391})
+    assert r.status_code == 200, r.text
+    assert r.json()["duration_s"] == 391
+
+
+def test_only_a_kind_the_app_knows(client, imported):
+    sign_in(client, "shotowner")
+    assert client.patch(f"/api/parseshots/{imported['id']}",
+                        json={"kind": "threat"}).status_code == 422
+
+
+def test_nobody_else_can_name_it(client, imported):
+    sign_in(client, "stranger")
+    assert client.patch(f"/api/parseshots/{imported['id']}",
+                        json={"zone": "somewhere else"}).status_code == 404
+    client.cookies.clear()
+    assert client.patch(f"/api/parseshots/{imported['id']}",
+                        json={"zone": "somewhere else"}).status_code == 401
+
+
 def test_delete_is_the_owners_and_takes_the_files(client):
     sign_in(client, "shotowner")
     before = {p.name for p in dbmod.PARSESHOTS_DIR.glob("*.webp")}

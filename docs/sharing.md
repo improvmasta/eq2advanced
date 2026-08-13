@@ -412,6 +412,14 @@ question. Rule weight carries the structure: heavy under a section head, full
 between subject blocks (six alts must read as six blocks), hairlines within
 one, and a vertical rule down the subject column.
 
+**Renaming is an edit of the pane's heading** (`PATCH /api/groups/{id}`, which
+already existed and is owner-or-admin like every other manage action). The
+title turns into a field with Save and cancel rather than opening a form of its
+own: a group has exactly one editable field, and nothing about who is in it or
+what it can see changes when the name does. Everyone in the group sees the new
+name on their next read — the name lives in one row, and the raid list's group
+pills read it there.
+
 ## The manage pages
 
 Manage pages (Import / Sharing / Account / Admin) share one pattern: pagehead

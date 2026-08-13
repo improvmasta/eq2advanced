@@ -127,6 +127,37 @@ def test_join_by_code_and_by_invite(client, world):
     assert client.get("/api/groups").json()["groups"] == []
 
 
+def test_rename_is_owner_or_admin(client, world):
+    """A group's name is the only thing about it a group ADMIN may edit, and
+    renaming moves nobody in or out of it — the members and what they can see
+    come back unchanged."""
+    gid = world["group"]["id"]
+    sign_in(client, "owner")
+    code = client.get(f"/api/groups/{gid}").json()["group"]["join_code"]
+    sign_in(client, "mate")
+    client.post("/api/groups/join", json={"code": code})
+    assert client.patch(f"/api/groups/{gid}", json={"name": "Wednesday Raid"}
+                        ).status_code == 403
+
+    sign_in(client, "owner")
+    mate_id = [m["user_id"] for m in client.get(f"/api/groups/{gid}").json()["group"]
+               ["members"] if m["username"] == "mate"][0]
+    client.post(f"/api/groups/{gid}/members/{mate_id}/role", json={"role": "admin"})
+
+    sign_in(client, "mate")
+    assert client.patch(f"/api/groups/{gid}", json={"name": " x "}).status_code == 422
+    out = client.patch(f"/api/groups/{gid}", json={"name": "  Wednesday Raid  "})
+    assert out.status_code == 200
+    assert out.json()["group"]["name"] == "Wednesday Raid"
+    assert sorted(m["username"] for m in out.json()["group"]["members"]) == \
+        ["mate", "owner"]
+    # the rename reaches everyone in it, not just the person who typed it
+    sign_in(client, "owner")
+    assert client.get(f"/api/groups/{gid}").json()["group"]["name"] == "Wednesday Raid"
+    assert client.patch(f"/api/groups/{gid}", json={"name": "Tuesday Raid"}
+                        ).status_code == 200
+
+
 def test_create_claims_the_code_it_showed_you(client):
     """The create form shows a code and its link while you're still typing the
     name, so the group has to end up with THAT code — otherwise the link

@@ -287,6 +287,110 @@ deliberately different strengths:
 evidence instead of inflating it — "seen in 4 raids" has to keep meaning four
 raids.
 
+### The pet kits, and the stance that is not one (2026-08-11)
+
+A summoner's pets share their owner's name, so which pet acted is only ever
+readable from WHAT IT CAST. That map used to be co-occurrence guesswork; it is
+now measured. Lindsay fought **one pet per fight with none of his own spells
+cast** (session 127, three fights), which makes each fight one kit and nothing
+else:
+
+| pet | kit |
+| --- | --- |
+| mage | Grim Wave / Embrace / Devastation / Lifetap / Bolt / Distortion |
+| scout | Throat Gash, Poisoned Spike, Shadowy Garrote, Unseen Blade, Shadestrike, Acidity |
+| fighter | Graven Strike / Scream / Breath / Frenzy / Assault / Vanquishing |
+
+**Three abilities fired for all three pets, and they are the STANCE, not a
+kit** — defensive casts `Shout` and `Grisly Feedback`, offensive casts `Clawing
+of the Soul` (Lindsay). The old map had `Shout` under the scout pet and `Grisly
+Feedback` under the mage pet, which split every single-pet fight across two
+rows and made the two look 0.99-correlated in the co-occurrence pass. They now
+join whichever archetype the parse shows, and a parse showing two pets keeps
+them on a bare "Pet" — with two pets out, nothing can say which one shouted.
+
+**A pet attack the OWNER presses is not pet damage** (`PET_COMMANDED`, frontend
+`lib/stats.js`): `Shadow Step` and `Shockwave` are cast BY the pet and pressed
+BY the summoner, which is exactly why they appear across all three archetypes'
+raid fights and in none of the three where Lindsay cast nothing himself. His
+ruling — "even though they're technically pet attacks, i dont count them under
+pet because im pressing the button" — so they carry no pet badge, never fold
+into a pet row, and never count toward the pet share of an actor's damage. They
+are deliberately absent from `CURATED_PET_ABILITIES` for the same reason.
+
+The same measurement corrected two claims made from sightings: the whole
+`Graven` kit was filed as a CONJUROR's (it is the necromancer fighter pet — all
+21 of its windows also carry the defensive stance), and `Quick Strike` was
+claimed at all. This table is keyed by NAME alone, and that name is a mob's and
+a player's far more than a pet's (454 and 518 rows against 6), so the claim hung
+a "pet cast" badge on everyone else's combat art.
+
+**`seed_curated` RETIRES a name dropped from either tuple.** `reset_verdicts`
+spares `source='curated'` by design, so without the retirement pass an edit to
+those lists is a no-op on any database that has already been seeded, and the
+dropped name keeps its badge forever. A human ruling still outranks both.
+
+**The illusionist's Personal Reflection is deliberately NOT in the curated
+list** (`Phantasmal Shock`, `Overwhelming Silence`, `Headache`, `Confusion`,
+`Color Shower`, `Stunning Array`, `Lock Mind`, `Illusory Taunt`). Its kit is
+just as well evidenced — two illusionists uploaded their own parses, where the
+pet splits off as `own_pet` — but that list is what promotes an ability hiding
+under a PLAYER's name to a pet cast. Combining a pet we cannot see means
+claiming a remote illusionist's own line is their pet's, so the archetype is
+carried in the frontend map alone and only groups a pet with rows of its own
+(Lindsay: "only offering illusionist pet combine if we have a parse from that
+illy, otherwise we can't").
+
+### The conjuror kits, settled from the COMPLEMENT (2026-08-11)
+
+No conjuror has ever uploaded a parse, so their pet has never split off as
+`own_pet` and no fight isolates a kit. It did not need one: Lindsay wrote down
+the conjuror's OWN book, **Census confirms every entry** (`Crystal Blast`,
+`Fiery Annihilation`, `Earthquake`, `Shattered Earth`, `Ice Storm`, `Petrify`,
+`Winds of Velious`, `Aqueous Swarm`, `Roaring Flames`, `Plane Shift`, `Fire
+Seed`, `Elemental Unity`, `Blazing Avatar`, `Flameshield` — all conjuror-
+scribed), and what is left over on a conjuror's line is the pet. The two kits
+that fell out of the raid data before the list existed — fire and air,
+anti-correlating at ≤0.15 across 419 windows because they are an either/or —
+are exactly the remainder. Earth is nobody's raid pet; `Telluric Bash` and
+`Telluric Retaliation` are all it has ever been seen to cast.
+
+**Four leftovers are the player's, and Census says so in the CASTER's effect
+text** — the same `may cast X` grammar that used to invent proc labels, read
+the right way round (from a named spell to its damage line, not from a damage
+line to a guess):
+
+| damage line | cast by | verdict |
+| --- | --- | --- |
+| `Blaze` | Blazing Avatar — *"will cast Blaze on target of attack"* | player (Consume's rule) |
+| `Force of the Elements` | Elemental Unity | player (Consume's rule) |
+| `Seed of Fire`, `Blooming Flames` | Fire Seed, a buff on an ALLY | proc |
+| `Planar Igneous Flames`, `Planar Thunderous Roar`, `Planar Telluric Strike` | Plane Shift, one per pet type | player |
+
+`Blaze` is why this had to be read and not guessed: it is the conjuror's second
+biggest damage line, it is delivered by the pet, and Census ALSO knows it as a
+level 10 **warlock/wizard** spell. A name-keyed pet claim would have been wrong
+for two classes at once. `Ro's Flames` and `Incinerate` are deity procs — cast
+by the player, worshipper-gated rather than class-gated (Lindsay uses Ro's
+Flames on a necromancer).
+
+**A pet's swing type belongs to the KIT, not to the archetype label.** A
+necromancer's mage pet pierces and a conjuror's crushes, so `PET_KITS` carries
+`melee` per kit. Measured WITHIN one conjuror rather than across several
+(pet choice correlates with who the player is, so the across-players split is
+confounded): Beavera melees 100% piercing over 31 air windows and 99% crushing
+over 113 fire windows, and Roku and Flume agree. That is the pet's weapon, not
+the raider's.
+
+**The coercer's Possessed Essence cannot be separated by analysis and needs a
+coercer's log.** Conjuror pets split because air and fire are an either/or —
+their two kits anti-correlate at ≤0.15 across 419 raid windows. A coercer
+always has the essence out, so its abilities co-occur with the coercer's own
+book at 0.85–1.00 and no block falls out. Subtracting the Census class book
+does not rescue it either: only ~40 base names per class are ingested, so real
+coercer spells (`Lash`, `Convulsions`, `Despotic Mind`) read as "not in the
+book".
+
 ### Provenance comes from Census, not from a guess
 
 `Fae Fires` is not "a gear proc". Census holds `Fae Fire`, a level 35 **fury**

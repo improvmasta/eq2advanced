@@ -43,7 +43,7 @@ from fastapi.responses import StreamingResponse
 from db import get_db
 from parser import parse_lines, petnames
 from parser.prefix import split_prefix
-from pipeline import livemeter, replaybus
+from pipeline import aoelearn, livemeter, replaybus
 from pipeline.live import snapshot_context
 from pipeline.refine import roster_prescan
 # `_iter_lines` is private by convention and shared here rather than copied:
@@ -153,7 +153,8 @@ async def replay_stream(encounter_id: int, speed: float = Query(1.0),
     # raid would have seen rather than a better-informed hindsight version
     zone = enc["zone"]
     roster, mobs, players, pets = snapshot_context(conn)
-    know = livemeter.Knowledge(mobs, players | proven, pets, petnames.load(conn))
+    know = livemeter.Knowledge(mobs, players | proven, pets, petnames.load(conn),
+                               aoelearn.learned(conn))
     span = max(end - t0, 1)
     stamps = [ev.ts for ev in events]
     head = {

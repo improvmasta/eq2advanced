@@ -149,3 +149,14 @@ def era_label(era: str | None) -> str:
 def is_raid(zone: str | None) -> bool:
     row = info(zone)
     return bool(row and row.get("instance") == "Raid")
+
+
+def is_public(zone: str | None) -> bool:
+    """An OUTDOOR zone — the wiki's own word for it, off the `ZoneBox` pages
+    (`gamewiki.parse_zone`). Not the same question as `is_raid`, and the
+    difference is the whole point: an instance is booked and named by its
+    zone, while a public zone is a place several guilds pass through and a
+    contested named in one is an event that happened there. A zone with NO
+    entry answers False to both — unknown is not a claim."""
+    row = info(zone)
+    return bool(row and row.get("instance") == "Public")

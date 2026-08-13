@@ -136,9 +136,41 @@ def read_stream(token, want, limit=8):
 def test_the_public_config_carries_no_account(client, overlay):
     client.cookies.clear()
     body = client.get(f"/api/overlay/{overlay['token']}").json()
-    assert set(body) == {"config"}
+    # config, and the hand marks that ride in on the same poll (v35) — ability
+    # names and nothing else. Still no account, no character, no session.
+    assert set(body) == {"config", "marks"}
     assert body["config"]["theme"] == "transparent"
     assert json.dumps(body).find("streamer") == -1
+
+
+def test_the_marks_reach_the_screens_that_cannot_ask_for_them(client, overlay):
+    """The reason the marks moved onto the account at all.
+
+    EQ2's in-game browser and an OBS source are DIFFERENT BROWSERS from the one
+    the dashboard is marked in, and neither can authenticate to `/api/marks` —
+    the token in the URL is their whole credential. So the marks ride in with
+    the config, on the poll those pages already run to pick up a setting
+    changed mid-raid, and a pill toggled on the dashboard reaches the window
+    beside somebody's hotbars on the next tick.
+
+    They are the TOKEN OWNER's, like everything else a token reaches."""
+    client.put("/api/marks", json={"marks": {
+        "joust": {"Soul Paralysis": True, "Blanket of Eternal Night": False},
+        "mini": {"Soul Paralysis": True}}})
+    client.cookies.clear()
+    body = client.get(f"/api/overlay/{overlay['token']}").json()
+    assert body["marks"]["joust"] == {"Soul Paralysis": True,
+                                      "Blanket of Eternal Night": False}
+    assert body["marks"]["mini"] == {"Soul Paralysis": True}
+
+    # somebody else's link carries their own marks, which is none of these
+    client.post("/api/auth/register",
+                json={"username": f"other{uuid.uuid4().hex[:8]}",
+                      "password": "hunter2hunter2"})
+    theirs = client.post("/api/overlay-tokens", json={"label": "theirs"}).json()
+    client.cookies.clear()
+    assert client.get(f"/api/overlay/{theirs['token']}").json()["marks"] == {
+        "joust": {}, "mini": {}}
 
 
 def test_a_bad_token_and_a_revoked_one_answer_the_same(client, overlay):
@@ -263,3 +295,95 @@ def test_a_revoked_overlay_leaves_the_list(client):
                for o in client.get("/api/overlay-tokens").json()["overlays"])
     assert client.post(
         f"/api/overlay-tokens/{made['id']}/revoke").status_code == 404
+
+
+def clean_slate(client):
+    """Revoke everything this account holds.
+
+    `MAX_TOKENS` is 10 and the module shares one account, so tests that mint
+    several have to start from a known count rather than from whatever the ones
+    before them left behind."""
+    for o in client.get("/api/overlay-tokens").json()["overlays"]:
+        client.post(f"/api/overlay-tokens/{o['id']}/revoke")
+
+
+def test_an_ingame_link_is_its_own_row_with_its_own_config(client):
+    """The in-game window and the OBS overlay are the same capability pointed at
+    two screens, and the whole reason they are separate ROWS is that they are
+    separately sized and separately revokable."""
+    clean_slate(client)
+    obs = client.post("/api/overlay-tokens",
+                      json={"kind": "overlay", "label": "obs"}).json()
+    game = client.post("/api/overlay-tokens",
+                       json={"kind": "ingame", "label": "window"}).json()
+    assert obs["token"] != game["token"]
+    assert game["kind"] == "ingame"
+    assert game["url"] == f"/ingame/{game['token']}"
+    assert obs["url"] == f"/overlay/{obs['token']}"
+
+    # the two configs do not share a shape: notifications exist only in the
+    # game window, scene geometry only on the stream
+    assert game["config"]["notify"] is True
+    assert "width_px" not in game["config"] and "layout" not in game["config"]
+    assert "notify" not in obs["config"]
+
+    # and the type scale points in opposite directions by DEFAULT
+    assert game["config"]["text_scale"] < 1 < obs["config"]["text_scale"]
+    # clamped to the in-game range, not the overlay's
+    r = client.patch(f"/api/overlay-tokens/{game['id']}",
+                     json={"config": {"text_scale": 2.5}})
+    assert r.json()["config"]["text_scale"] == 1.6
+    r = client.patch(f"/api/overlay-tokens/{game['id']}",
+                     json={"config": {"text_scale": 0.1}})
+    assert r.json()["config"]["text_scale"] == 0.5
+
+    # a kind is fixed at creation: a link that changed what it draws under
+    # somebody's OBS source is a different feature, not a setting
+    r = client.patch(f"/api/overlay-tokens/{obs['id']}",
+                     json={"kind": "ingame", "config": {"theme": "dark"}})
+    assert r.json()["kind"] == "overlay"
+
+    # revoking one leaves the other alone — the point of two rows
+    assert client.post(f"/api/overlay-tokens/{obs['id']}/revoke").status_code == 200
+    client.cookies.clear()
+    assert client.get(f"/api/overlay/{obs['token']}").status_code == 404
+    assert client.get(f"/api/overlay/{game['token']}").status_code == 200
+
+
+def test_an_unknown_kind_is_an_overlay(client):
+    """A kind decides which settings a row HAS, so an unrecognised one falls
+    back rather than minting a link nothing knows how to configure."""
+    clean_slate(client)
+    made = client.post("/api/overlay-tokens", json={"kind": "hologram"}).json()
+    assert made["kind"] == "overlay"
+    assert made["url"].startswith("/overlay/")
+
+
+def test_a_stale_link_cannot_lock_out_a_good_one(client):
+    """The regression that took the in-game window black.
+
+    Every screen in this feature re-asks for its own config every five seconds
+    forever, and the failure bucket is keyed by client ADDRESS. So one revoked
+    link left open in a browser somebody forgot about is twelve failed
+    attempts a minute from the same machine as every working overlay — and
+    while the limiter was consulted BEFORE the token was looked up, that took
+    the valid ones down with it and kept them down: the request never reached
+    the success that would have cleared the bucket."""
+    clean_slate(client)
+    good = client.post("/api/overlay-tokens", json={"kind": "ingame"}).json()
+    dead = client.post("/api/overlay-tokens", json={"kind": "ingame"}).json()
+    client.post(f"/api/overlay-tokens/{dead['id']}/revoke")
+    client.cookies.clear()
+
+    # the forgotten window, polling a link that is never coming back
+    for _ in range(12):
+        assert client.get(f"/api/overlay/{dead['token']}").status_code in (404, 429)
+    # ...must not have cost the live one anything
+    r = client.get(f"/api/overlay/{good['token']}")
+    assert r.status_code == 200, "a valid token was refused for somebody else's misses"
+    # and holding the right token is enough even while the bucket is full
+    for _ in range(5):
+        client.get("/api/overlay/definitely-not-a-real-token")
+    assert client.get(f"/api/overlay/{good['token']}").status_code == 200
+    # the brake still bites on the guesses themselves
+    assert client.get("/api/overlay/another-bad-guess").status_code == 429

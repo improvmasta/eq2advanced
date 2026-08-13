@@ -166,6 +166,77 @@ def test_a_ruling_beats_the_curated_seed(client):
     conn.close()
 
 
+def test_dropping_a_name_from_the_seed_retires_its_verdict(client):
+    """Editing CURATED_PET_ABILITIES has to reach a database that was already
+    seeded. `reset_verdicts` spares curated rows on purpose, so without the
+    retirement pass in `seed_curated` a dropped name (`Quick Strike`) keeps its
+    pet badge forever and the tuple is decoration."""
+    from census import catalog
+    conn = db()
+    with conn:
+        conn.execute(
+            "INSERT INTO ability_catalog (ability_name, class, unit, proc, source) "
+            "VALUES ('Retired Swing', NULL, 'pet', 0, 'curated') "
+            "ON CONFLICT(ability_name) DO UPDATE SET unit='pet', source='curated'")
+    assert "Retired Swing" in catalog.pet_ability_names(conn)
+
+    catalog.seed_curated(conn)          # the name is in no curated tuple
+    assert "Retired Swing" not in catalog.pet_ability_names(conn)
+    row = conn.execute("SELECT unit, source, pet_seen FROM ability_catalog "
+                       "WHERE ability_name='Retired Swing'").fetchone()
+    assert (row["unit"], row["source"]) == ("player", "observed")
+    assert row["pet_seen"] == 1         # the sighting survives the demotion
+    # and the seed itself is untouched by its own retirement pass
+    assert "Grim Wave" in catalog.pet_ability_names(conn)
+    conn.close()
+
+
+def test_the_pet_stances_are_claimed_and_quick_strike_is_not(client):
+    """The kits from Lindsay's 2026-08-11 one-pet-per-fight session. The two
+    stance abilities are pet-cast for every archetype (which is why they name
+    none of them), and `Quick Strike` is nobody's claim — mobs and players use
+    that name far more than any pet does."""
+    from census.catalog import pet_ability_names
+    conn = db()
+    pets = pet_ability_names(conn)
+    assert {"Shout", "Grisly Feedback", "Clawing of the Soul"} <= pets
+    assert {"Graven Strike", "Graven Vanquishing"} <= pets   # fighter pet
+    assert "Quick Strike" not in pets
+    # the pet swings these, but the owner presses them, and the parse is about
+    # who pressed it (PET_COMMANDED in the frontend keeps them off pet rows)
+    assert {"Shadow Step", "Shockwave"}.isdisjoint(pets)
+    conn.close()
+
+
+def test_a_conjurors_own_book_is_never_claimed_as_its_pets(client):
+    """The conjuror kits were settled from the COMPLEMENT — Lindsay wrote down
+    the conjuror's own spells and Census confirms every one, so what is left on
+    a conjuror's line is the pet. The failure mode that matters is the reverse
+    of a missing kit: claiming a spell the conjuror presses, which would badge
+    their own book as their pet's."""
+    from census.catalog import pet_ability_names, proc_ability_names
+    conn = db()
+    pets, procs = pet_ability_names(conn), proc_ability_names(conn)
+    assert {"Aery Whip", "Wisp Blade", "Storm Surge"} <= pets          # air pet
+    assert {"Searing Flames", "Wave of Flames"} <= pets                # fire pet
+    assert pets.isdisjoint({                       # his own book, Census-backed
+        "Crystal Blast", "Fiery Annihilation", "Earthquake", "Shattered Earth",
+        "Ice Storm", "Petrify", "Winds of Velious", "Aqueous Swarm",
+        "Roaring Flames", "Plane Shift", "Fire Seed", "Elemental Unity",
+        "Blazing Avatar"})
+    # a buff that goes on an ALLY lands its damage under the ally, so the line
+    # is a proc on whoever wore it and never the conjuror's pet
+    assert {"Seed of Fire", "Blooming Flames", "Flameshield"} <= procs
+    assert {"Seed of Fire", "Blooming Flames", "Flameshield"}.isdisjoint(pets)
+    # deity procs belong to the player and to no class at all
+    assert {"Ro's Flames", "Incinerate"} <= procs
+    # the illusionist kit is deliberately NOT claimed here: promoting it would
+    # relabel every illusionist's own line, and we only combine a pet we can
+    # see, which takes a parse from that illusionist
+    assert "Phantasmal Shock" not in pets
+    conn.close()
+
+
 def test_learned_name_applies_to_later_sessions(client):
     # no death evidence in THIS file — knowledge carried from the previous one
     sid = upload(client, "b.txt", [

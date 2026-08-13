@@ -408,6 +408,243 @@ def test_a_players_own_aoe_is_never_an_incoming_cast():
     assert snap(events, logger="Bobby")["aoes"] == []
 
 
+# --- the countdown under a reuse debuff -------------------------------------
+# `Traumatic Swipe` slows a mob's recast, so a countdown watching that mob is
+# watching the wrong number while it is up. What the panel does about it turns
+# on one question — has THIS ability been measured to move — and the three
+# answers are three different drawings (AoeTimers.jsx).
+
+SWIPE = "Traumatic Swipe"
+BOSS = "The Corsolander"
+STOMP = "War Stomp"          # on the shipped ACT list at 45s
+
+
+def swipe(ts, tgt=BOSS, src="Klebb"):
+    """`unit="unknown"` is not incidental — it is what a real log gives.
+
+    `Tezen's Traumatic Swipe hits Avatar of Mischief` parses to
+    `Subject('Tezen', 'unknown')`: a bare possessive name is precisely what the
+    parser cannot classify on its own. An earlier version of this helper passed
+    `unit="player"` and hid a bug where the live path only ever saw the LOGGER's
+    swipes — which is the one person in the raid who usually is not the rogue
+    pressing it. Today's avatar was swiped 35 times and the panel saw none."""
+    return dmg(ts, src, tgt, 3400, ability=SWIPE, unit="unknown")
+
+
+def known(ability=STOMP, source=BOSS, base=45.0, factor=None, verdict=None):
+    return livemeter.Knowledge(timers={(source, ability): {
+        "base_s": base, "swipe_factor": factor, "swipe_verdict": verdict,
+        "clean_s": base, "swiped_s": None, "base_agree": 9, "base_fights": 3}})
+
+
+def test_the_learned_timer_beats_the_uploaded_act_list():
+    """The crowdsourced half: what every raid on this mob measured outranks the
+    number somebody typed into ACT once."""
+    fight = snap(aoe_cast(T0, ability=STOMP), know=known(base=52.0))
+    row = fight["aoes"][0]
+    assert row["period_src"] == "learned"
+    assert row["period_s"] == 52.0 and row["next_due_ts"] == T0 + 52
+
+
+def test_the_act_list_is_still_the_fallback():
+    """A mob nobody has parsed enough times yet is exactly when the raid's own
+    configured number is the best thing available."""
+    row = snap(aoe_cast(T0, ability=STOMP))["aoes"][0]
+    assert row["period_src"] == "reported" and row["period_s"] == 45
+
+
+def test_whether_the_act_list_knows_the_ability_is_always_sent():
+    """Sent whether or not the countdown is using it, because the browser wants
+    it for something else: it is what the JOUST and MINI marks default to
+    (`lib/marks.js`), and a stream overlay inherits no marks at all."""
+    listed = snap(aoe_cast(T0, ability=STOMP), know=known(base=52.0))["aoes"][0]
+    assert listed["period_src"] == "learned" and listed["reported_s"] == 45
+    # and an ability the list has never heard of says so rather than omitting it
+    events = aoe_cast(T0, ability="Overnuke") + aoe_cast(T0 + 40, ability="Overnuke")
+    assert snap(events)["aoes"][0]["reported_s"] is None
+
+
+def test_an_ability_measured_to_stretch_counts_the_stretched_timer():
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0)]
+    row = snap(events, know=known(factor=1.3, verdict="affected"))["aoes"][0]
+    assert row["swiped"] is True
+    assert row["period_s"] == pytest.approx(58.5, abs=0.1)
+    # and it keeps the number it would have been, which is the mark on the bar
+    assert row["normal_period_s"] == 45.0
+    assert row["next_due_ts"] == T0 + 58.5
+
+
+def test_an_ability_measured_not_to_move_is_left_alone():
+    """`Whirling Bladestorm` ran 53s against its own 50 through a fight two
+    brigands swiped for 98% of. Adjusting it would be wrong on purpose."""
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0)]
+    row = snap(events, know=known(factor=1.05, verdict="immune"))["aoes"][0]
+    assert row["swiped"] is True and row["swipe_verdict"] == "immune"
+    assert row["period_s"] == 45.0 and row["normal_period_s"] is None
+
+
+def test_an_unmeasured_ability_still_counts_the_swiped_number():
+    """ONE SPAN, decided before the countdown starts. An earlier build planned
+    the normal timer and grew past it, which resized the bar mid-drain and made
+    a cast that was never late read "+0:24" at the normal mark. The tick carries
+    what the growth was trying to say and holds still."""
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0)]
+    row = snap(events, know=known())["aoes"][0]
+    assert row["swiped"] is True and row["swipe_verdict"] is None
+    assert row["period_s"] > 45.0                  # the stretched number
+    assert row["normal_period_s"] == 45.0          # and the mark on the bar
+    assert row["next_due_ts"] == T0 + row["period_s"]
+
+
+def test_an_unmeasured_ability_uses_its_own_ratio_over_the_site_median():
+    """The verdict decides what we CLAIM; this only decides where the bar ends.
+    `Wave of Sophistry` measures x1.47 on too few agreeing intervals to rule on,
+    and a bar running to 66s is closer to its real 71s than the site-wide 58s."""
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0)]
+    row = snap(events, know=known(factor=1.5))["aoes"][0]
+    assert row["period_s"] == pytest.approx(67.5, abs=0.1)
+
+
+def test_the_recast_belongs_to_the_state_at_the_cast_that_started_it():
+    """Not to whether a debuff is on the mob right now. A swipe landing after
+    the cast does not retune a recast already running."""
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0 + 40)]
+    row = snap(events, know=known(factor=1.3, verdict="affected"),
+               now_ts=T0 + 41)["aoes"][0]
+    assert row["swiped"] is False and row["period_s"] == 45.0
+
+
+def test_a_swipe_on_something_else_does_not_slow_this_mob():
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0, tgt="a sanctum chaperone")]
+    row = snap(events, know=known(factor=1.3, verdict="affected"))["aoes"][0]
+    assert row["swiped"] is False
+
+
+def test_somebody_elses_rogue_is_still_a_swipe():
+    """The case that matters and the one that broke: the person holding the
+    debuff is almost never the person whose log this is. Another guild's
+    brigand standing in your raid is a bare name the parser cannot class, and
+    the countdown has to follow the mob regardless of who slowed it."""
+    events = aoe_cast(T0, ability=STOMP) + [swipe(T0, src="Stickyy")]
+    row = snap(events, logger="Bobby",
+               know=known(factor=1.3, verdict="affected"))["aoes"][0]
+    assert row["swiped"] is True
+    assert row["period_s"] == pytest.approx(58.5, abs=0.1)
+
+
+def test_a_swipe_on_a_raider_is_not_a_reuse_debuff_on_the_boss():
+    """Same ability name, wrong side of the fight. Only an ENEMY target opens a
+    window."""
+    events = aoe_cast(T0, ability=STOMP) + [
+        dmg(T0, "Klebb", "Raider1", 3400, ability=SWIPE, unit="player")]
+    row = snap(events, know=known(factor=1.3, verdict="affected"))["aoes"][0]
+    assert row["swiped"] is False
+
+
+def test_a_swiped_pull_still_never_proposes_an_act_edit():
+    """The suggestion comes off clean cycles alone, live as well as on the tab
+    — a number measured under somebody else's debuff is not a config edit."""
+    events = []
+    for i in range(4):
+        events += aoe_cast(T0 + i * 72, ability=STOMP) + [swipe(T0 + i * 72)]
+    row = snap(events, now_ts=T0 + 3 * 72)["aoes"][0]
+    assert row["suggested_s"] is None
+
+
+# --- one mob, or several --------------------------------------------------
+
+SPLITTER = "A Bisected Rumbler"
+RUMBLE = "Rumbling of Earth"          # on the ACT list at 50s
+
+
+def test_a_mob_that_splits_gets_no_countdown_at_all():
+    """Two halves each on their own 50s recast: the next `Rumbling of Earth`
+    lands somewhere between 0 and 50 seconds from the last one, so every number
+    on offer — measured, learned, or ACT's — is a bar that would be wrong on
+    nearly every cast while looking exactly like the bars either side of it
+    that are right. The row still says how many times it fired."""
+    events = aoe_cast(T0, ability=RUMBLE, src=SPLITTER) \
+        + aoe_cast(T0 + 28, ability=RUMBLE, src=SPLITTER)
+    row = snap(events, now_ts=T0 + 30)["aoes"][0]
+    assert row["several_bodies"] == "splits"
+    assert row["period_s"] is None and row["next_due_ts"] is None
+    assert row["casts"] == 2 and row["last_cast_ts"] == T0 + 28
+
+
+def test_a_splitter_never_proposes_an_act_edit_either():
+    events = []
+    for i in range(5):
+        events += aoe_cast(T0 + i * 28, ability=RUMBLE, src=SPLITTER)
+    row = snap(events, now_ts=T0 + 4 * 28)["aoes"][0]
+    assert row["suggested_s"] is None
+
+
+def test_an_inferred_second_body_still_keeps_its_countdown():
+    """The deliberate limit. `instances` is computed off this pull's own
+    measurement, so a row that lost its countdown to it would gain and lose one
+    as the number moved — and a countdown that comes and goes mid-fight is
+    worse than either answer. Only the reference file, which is known before
+    the pull starts, takes a countdown away."""
+    events = []
+    for i in range(4):
+        events += aoe_cast(T0 + i * 10, ability="Faith Strike",
+                           src="a fallen paladin")
+    row = snap(events, now_ts=T0 + 3 * 10)["aoes"][0]
+    assert row["several_bodies"] == "instances"
+    assert row["period_src"] == "reported" and row["period_s"] == 20
+    assert row["suggested_s"] is None
+
+
+def test_two_mobs_casting_one_ability_get_a_row_and_a_countdown_each():
+    """Rows are keyed by (source, ability), so the same AoE from two different
+    names is two countdowns — they do not pool and neither inherits the
+    other's timing."""
+    events = (aoe_cast(T0, ability=STOMP, src="a fairy honorguard")
+              + aoe_cast(T0 + 7, ability=STOMP, src="a fallen paladin"))
+    rows = {r["source"]: r for r in snap(events, now_ts=T0 + 8)["aoes"]}
+    assert set(rows) == {"a fairy honorguard", "a fallen paladin"}
+    assert rows["a fairy honorguard"]["next_due_ts"] == T0 + 45
+    assert rows["a fallen paladin"]["next_due_ts"] == T0 + 7 + 45
+
+
+def test_rows_never_move_once_they_have_appeared():
+    """Soonest-due first reshuffles the panel on every re-arm, so the row
+    somebody is tracking is somewhere else each glance — and they are glancing
+    while fighting. First cast fixes the order, and a cast cannot un-happen."""
+    events = []
+    # Four casts, not three, so the fast row is exactly DUE at the clock below
+    # rather than overdue. This test is about the ORDER rows appear in, and a
+    # row that has been admitted missed (MISSED_S) is not on the panel to be
+    # ordered at all.
+    for i in range(4):                       # A re-arms fast, B slowly
+        events += aoe_cast(T0 + i * 20, ability="Ruinous Slam")
+    for i in range(2):
+        events += aoe_cast(T0 + 5 + i * 70, ability="Sundering Wave")
+    order = [r["ability"] for r in snap(events, now_ts=T0 + 80)["aoes"]]
+    later = [r["ability"] for r in snap(
+        events + aoe_cast(T0 + 90, ability="Ruinous Slam"),
+        now_ts=T0 + 95)["aoes"]]
+    assert order == ["Ruinous Slam", "Sundering Wave"] == later
+
+
+def test_a_new_ability_joins_at_the_bottom_and_disturbs_nothing():
+    events = aoe_cast(T0) + aoe_cast(T0 + 40)
+    events += aoe_cast(T0 + 50, ability="Sundering Wave")
+    events += aoe_cast(T0 + 90, ability="Sundering Wave")
+    rows = [r["ability"] for r in snap(events, now_ts=T0 + 95)["aoes"]]
+    assert rows == ["Ruinous Slam", "Sundering Wave"]
+
+
+def test_a_row_carries_what_the_compact_panel_ranks_it_by():
+    """The dock and the overlay draw three rows in a fixed scene, so something
+    has to say which three: total damage, which is not the sum of the school
+    breakdown (a school is only named on a line that dealt damage)."""
+    events = aoe_cast(T0) + aoe_cast(T0 + 40)
+    row = snap(events)["aoes"][0]
+    assert row["damage"] == 3000 * len(RAIDERS) * 2
+    assert row["first_cast_ts"] == T0
+
+
 def test_a_one_word_boss_still_gets_a_countdown():
     """The reason nothing filters on name grammar: live, "Venekor" reads as a
     raider by name and only behaviour says otherwise."""
@@ -477,14 +714,26 @@ def test_a_reported_ability_counts_down_however_few_it_reached():
     assert row["next_due_ts"] == T0 + 55 + 45
 
 
-def test_a_countdown_that_has_been_wrong_for_a_minute_leaves():
+def test_a_cast_that_had_a_time_and_did_not_happen_is_admitted_missed():
     """Overdue is information right up until it is not telling anybody when
-    anything is due — and the panel is a shortlist (OVERDUE_DROP_S)."""
+    anything is due, and for a row that NAMED A SECOND that runs out fast
+    (MISSED_S, 15s — not the minute a row with nothing to be late for gets).
+
+    Vampire Lord Mayong Mistmoore's `Soul Paralysis` gets skipped a minute or
+    two in. At a minute's grace the row sat there counting up — and because the
+    burn window belongs to the SOONEST jousted cast, and a cast in the past is
+    soonest by a mile, it held the window with it: the one number the raid acts
+    on read `+0:47` through a stretch they could have been burning in."""
     events = full_raid(T0) + [dmg(T0 + 10, "The Corsolander", p, 4000,
                                   ability=REPORTED) for p in RAID]
     due = T0 + 10 + 45
-    assert snap(events, now_ts=due + livemeter.OVERDUE_DROP_S)["aoes"]
-    assert snap(events, now_ts=due + livemeter.OVERDUE_DROP_S + 1)["aoes"] == []
+    assert snap(events, now_ts=due + livemeter.MISSED_S)["aoes"]
+    assert snap(events, now_ts=due + livemeter.MISSED_S + 1)["aoes"] == []
+    # and it is decisively shorter than the line a row with no period gets
+    assert livemeter.MISSED_S < livemeter.OVERDUE_DROP_S
+    # the browser re-applies the same two lines, so it is handed both
+    assert snap(events)["aoe_missed_s"] == livemeter.MISSED_S
+    assert snap(events)["aoe_drop_s"] == livemeter.OVERDUE_DROP_S
 
 
 def test_a_row_with_no_timer_leaves_on_the_same_line():

@@ -41,9 +41,12 @@ from typing import NamedTuple
 from parser.events import F_SELF_FOCUS, F_ZERO
 from parser.subjects import classify_entity_kind, decompose
 from pipeline.aoes import (DEFAULT_CLUSTER_S, CLUSTER_FRACTION, MIN_CASTS,
-                           PET_KINDS, SUSTAINED_RUN, _cluster, _instances_hint,
-                           anchors, observed_period, reported_timers,
-                           suggest_period)
+                           PET_KINDS, SUSTAINED_RUN, _cluster, anchors,
+                           collect_windows, debuffed_at, observed_period,
+                           REFLECT_EDGE_S, reflect_bursts, reflect_windows,
+                           reported_timers, reuse_debuff_names, several_bodies,
+                           split_cycles, suggest_period)
+from pipeline import aoelearn
 from pipeline.encounters import GAP_S, _is_named_mob
 from pipeline.refine import refine_known_mobs
 
@@ -64,7 +67,46 @@ RAID_FRACTION = 0.6
 # anything, and the panel is a shortlist. It leaves, and it comes back on its
 # own the moment the ability lands again, because every snapshot is rebuilt
 # from the fight's events rather than accumulated.
+#
+# This is the line for a row with NOTHING TO BE LATE FOR — no period, measured
+# from its last cast. An avatar's irregular raid-wides (`Stealth Assault`) have
+# no next cast to miss, so the only honest thing they say is "this happened
+# recently", and a minute is how long that stays true.
 OVERDUE_DROP_S = 60
+# WHEN A CAST THAT HAD A TIME IS ADMITTED TO HAVE BEEN MISSED, which is a much
+# shorter fuse than the one above and a different question.
+#
+# A row WITH a period is a claim about the next few seconds, and once it is
+# badly past due that claim is simply wrong: either the mob was stunned, or the
+# cast landed and nothing detected it (a raid-wide that every single person
+# blocked or absorbed prints no damage, so there is nothing to anchor on), or
+# the timer is off. Whichever it was, the ability did not fire when it said, and
+# a countdown reading `+0:47` is not telling anybody when anything is due.
+#
+# The COST of getting this wrong is not symmetric, which is why it is 15s and
+# not 60. Vampire Lord Mayong Mistmoore's `Soul Paralysis` gets skipped a minute
+# or two into the fight; at 60s the row sat there overdue for a full minute AND
+# — because the burn window belongs to the SOONEST jousted cast, and a cast in
+# the past is soonest by a mile — it held the burn window with it. So the one
+# number a raid acts on said "you are 47 seconds into an AoE you already left
+# for", all the way through a window they could have been burning in.
+MISSED_S = 15
+# HOW LONG A FINISHED REFLECT WINDOW STAYS ON SCREEN, saying it is over.
+#
+# Every other row here counts toward something. A reflect row counts toward the
+# moment it stops mattering, and that moment is the only thing anybody is
+# waiting for — so vanishing silently at 0:00 throws away the one announcement
+# the row exists to make. It holds the slot briefly, says CLEAR, and goes.
+#
+# Short, because it is a statement about the present tense and stops being true
+# almost immediately; the AoE rows' `OVERDUE_DROP_S` minute would leave a stale
+# all-clear on screen most of the way to the next window.
+REFLECT_CLEAR_S = 5
+# Pairing a reflected cast to the damage that came back. The log prints the
+# deny line and the return as separate lines in the same second or the next
+# one; two seconds is slack for a tick that lands late, and is tight enough
+# that the mob's own use of a same-named ability cannot be swept in.
+REFLECT_RETURN_S = 2
 
 
 class Knowledge(NamedTuple):
@@ -78,6 +120,13 @@ class Knowledge(NamedTuple):
     players: frozenset[str] = frozenset()    # names that have been raiders
     pets: frozenset[str] = frozenset()       # bare-named dumbfires
     pet_names: frozenset[str] = frozenset()  # named pets, for `decompose`
+    # (mob, ability) -> what every raid on the site measured about its recast,
+    # and about what a reuse debuff does to it (`pipeline/aoelearn.py`). The
+    # same argument as the rest of this tuple, applied to timers: it is the
+    # output of parses that already finished, it cannot be derived from one
+    # open segment, and having it is what makes the first cast of a pull count
+    # down against the right number instead of the third.
+    timers: dict = {}
 
 
 NO_KNOWLEDGE = Knowledge()
@@ -214,6 +263,31 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         lambda: defaultdict(lambda: {"hit": set(), "avoided": set(),
                                      "absorbed": set(), "touched": set()}))
     schools: dict[tuple, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    totals: dict[tuple, int] = defaultdict(int)
+    # When a reuse debuff was on each mob, off the SAME events. A swipe is a
+    # damage line a raider put on a boss, so the live path sees it exactly as
+    # the audit does and needs no cast line — which matters, because a cast
+    # line from somebody who is not the logger is the one thing this parser
+    # deliberately drops (`parser/buffs.py`).
+    swipes = []
+    debuff_names = reuse_debuff_names()
+    for ev in events:
+        if ev.type != "damage" or ev.ability not in debuff_names or not ev.tgt:
+            continue
+        # WHAT IT LANDED ON is the whole test, and the source deliberately is
+        # not part of it. A registry entry is a player ability by definition —
+        # no mob casts `Traumatic Swipe` — and the source side cannot carry the
+        # test anyway: another raider's ability line gives `Subject('Tezen',
+        # 'unknown')`, because a bare possessive name is exactly what the
+        # parser cannot classify without the roster. Requiring `player` there
+        # matched the LOGGER and nobody else, which is the one person who
+        # usually is not the rogue pressing it.
+        tgt, kind = names.target(ev.tgt)
+        if kind in ("player", "pet"):
+            continue          # a raider debuffing a raider is not this
+        swipes.append((tgt, ev.ability, ev.ts))
+    windows = collect_windows(swipes)
+
     for ev in events:
         if ev.type not in ("damage", "avoid") or not ev.ability or not ev.tgt:
             continue
@@ -254,8 +328,15 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         # shares, not a reconciliation — see the same accumulation in aoes.py
         if ev.type == "damage" and ev.dtype:
             schools[key][ev.dtype] += ev.amount or 0
+        # and the total, which is not the sum of those: a school is only named
+        # on a line that dealt damage, and this is what RANKS the abilities for
+        # a panel that can only draw three of them
+        if ev.type == "damage":
+            totals[key] += ev.amount or 0
 
     timers = reported_timers()
+    timers_known = names.know.timers or {}
+    typical_factor = aoelearn.typical_factor(timers_known)
     out = []
     for (src, ability), seconds in by_ability.items():
         reported = (timers.get(ability) or {}).get("timer_s")
@@ -289,11 +370,77 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         if not reported and runs[len(runs) // 2] >= SUSTAINED_RUN:
             continue
         gaps = [b - a for a, b in zip(starts, starts[1:])]
-        period, agree = observed_period(gaps) if gaps else (None, 0)
-        # reported wins: it is what the raid was told to expect, and one gap
-        # inside one pull is a weak measurement
-        period_s, period_src = ((reported, "reported") if reported
-                                else (period, "observed") if period else (None, None))
+        clean_gaps, swiped_gaps, _flags = split_cycles(starts, windows, src)
+        # the SUGGESTION still comes off this pull's clean cycles alone, which
+        # is what stops a fight somebody swiped end to end from proposing a
+        # config edit measured under somebody else's debuff
+        period, agree = observed_period(clean_gaps) if clean_gaps else (None, 0)
+
+        # IS THIS NAME ONE MOB? (`aoes.several_bodies`). Only the reference
+        # file's answer reaches the countdown, and the two INFERRED reasons
+        # deliberately do not, for a reason particular to this panel: they are
+        # computed off this pull's own measurement, so a row would gain and
+        # lose its countdown as the number moved, and a countdown that comes
+        # and goes mid-fight is worse than either answer. The list is known
+        # before the pull starts and never changes during it.
+        bodies = several_bodies(src, _is_named_mob(src, logger, names.mobs),
+                                reported, period)
+
+        # What to count with. Order of authority: what the site has MEASURED
+        # over several clean fights, then ACT's list, then this pull's own
+        # clean cycles. The learned number wins because it is the same
+        # measurement as the last one with more of it behind it — 8 uploaded
+        # Mayong kills put `Soul Paralysis` at 43.6s against the list's 37, and
+        # a countdown that keeps insisting on 37 is not being cautious, it is
+        # being wrong six seconds at a time (pipeline/aoelearn.py).
+        #
+        # A SPLITTER GETS NO COUNTDOWN AT ALL, from any of the three. Not
+        # because the numbers are unknown but because none of them answers the
+        # question the countdown asks: two halves of The Emerald Halls rumbler
+        # are each on their own 50s recast, so the next `Rumbling of Earth`
+        # lands in something between 0 and 50 seconds and a bar draining to 50
+        # would be wrong on nearly every cast — while looking exactly like the
+        # bars either side of it that are right. The row stays, says how many
+        # times it fired and still flashes on the landing, which is the same
+        # treatment a damage shield gets and for the same reason: what it has
+        # to say is that this just happened.
+        known = timers_known.get((src, ability))
+        if bodies == "splits":
+            base_s, period_src = None, None
+        elif known and known["base_s"]:
+            base_s, period_src = known["base_s"], "learned"
+        elif reported:
+            base_s, period_src = float(reported), "reported"
+        else:
+            base_s, period_src = period, ("observed" if period else None)
+
+        # THE RECAST BELONGS TO THE STATE AT THE CAST THAT STARTED IT
+        # (`aoes.split_cycles`), so the question is not whether a debuff is on
+        # the mob right now — it is whether one was on it when it last cast.
+        swiped = bool(starts) and debuffed_at(windows, src, starts[-1])
+        verdict = (known or {}).get("swipe_verdict")
+        factor = (known or {}).get("swipe_factor")
+        # ONE SPAN, DECIDED BEFORE THE COUNTDOWN STARTS. A swiped row counts
+        # the stretched number from the first second and marks where the
+        # un-slowed timer would have fired; it never changes length partway
+        # through. The first build did change — an unconfirmed row planned the
+        # normal timer and grew past it — and a bar that resizes mid-drain is
+        # exactly the thing this panel cannot afford: somebody is reading it
+        # while fighting, and a length that means one thing at 0:30 and another
+        # at 0:10 costs them their place. The mark carries what the growth was
+        # trying to say, and it holds still.
+        period_s = base_s
+        normal_s = None
+        if swiped and base_s and verdict != "immune":
+            # This ability's OWN ratio when it has one, the median of the
+            # confirmed rows when it does not. Weaker evidence than the verdict
+            # asks for, deliberately: the verdict decides what we CLAIM, and
+            # this only decides where the bar ends — with the normal timer
+            # marked on it, so both numbers are on screen either way and a cast
+            # landing on the tick says "immune" as loudly as one landing at the
+            # end says "affected".
+            period_s = round(base_s * (factor or typical_factor), 1)
+            normal_s = base_s
         # one cast, no timer, nothing to count down to: a row that can only
         # say "that happened" is noise on a screen meant to be read at a glance
         if len(starts) < MIN_CASTS and not period_s:
@@ -331,8 +478,12 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         # screen, two of them saying only "2×", and the raiders pushed off the
         # scene. What a row with no timer has to say is that this just
         # happened, so it says it for as long as that is true.
+        # Two lines, because the two kinds of row are late about different
+        # things: a timed row has MISSED a cast it named a second for, an
+        # untimed one has only stopped being recent. See both constants.
         stale_ts = next_due_ts if next_due_ts is not None else starts[-1]
-        if now_ts - stale_ts > OVERDUE_DROP_S:
+        if now_ts - stale_ts > (MISSED_S if next_due_ts is not None
+                                else OVERDUE_DROP_S):
             continue
         hit, avoided, absorbed = reach[-1]
         # a player who ate it is not also a player who dodged it
@@ -341,30 +492,209 @@ def _live_aoes(events, names: Names, players: set[str], now_ts: int) -> list[dic
         by_damage = dict(sorted(schools[(src, ability)].items(),
                                 key=lambda kv: (-kv[1], kv[0])))
         out.append({
+            # What KIND of row this is, so the browser branches on one field
+            # rather than on which fields happen to be present. Everything
+            # built here counts toward the next cast; `reflect` rows count
+            # toward the end of a state (`_live_reflect`).
+            "kind": "aoe",
             "source": src,
             "ability": ability,
             "casts": len(starts),
+            # what fixes this row's place in the list, for the whole fight
+            "first_cast_ts": starts[0],
             "last_cast_ts": starts[-1],
+            # what decides whether the compact panel has room for it
+            "damage": totals[(src, ability)],
             "since_s": max(0, now_ts - starts[-1]),
             "dtype": next(iter(by_damage), None),
             "dtypes": by_damage,
             # a timer the raid could go and fix, measured off this pull. Live
             # it needs the same three agreeing gaps the audit asks for, so it
             # appears late in a long fight or not at all — which is the point.
-            "suggested_s": suggest_period(
-                reported, period, agree,
-                _instances_hint(period, reported,
-                                _is_named_mob(src, logger, names.mobs))),
+            "suggested_s": suggest_period(reported, period, agree, bodies),
+            # why this name's gaps may not be one mob's recast, or None. The
+            # panel puts it on the row's title and never in a word beside the
+            # name: it explains a countdown that is missing or a number that
+            # is not being believed, and neither changes what anybody does in
+            # the next few seconds.
+            "several_bodies": bodies,
+            # WHETHER ACT'S LIST KNOWS THIS ABILITY, which the countdown may or
+            # may not be using — a learned number outranks it and a splitter
+            # refuses both. It is sent regardless because the browser needs it
+            # for something else entirely: it is what the JOUST and MINI marks
+            # default to (`lib/marks.js: actListed`), on the reasoning that the
+            # raid's own callout list is the best available guess at which AoEs
+            # somebody leaves for and which are worth a slot beside the game.
+            "reported_s": reported,
             "period_s": period_s,
             "period_src": period_src,
             "next_due_ts": next_due_ts,
+            # Was a reuse debuff on the mob when it last cast — the state this
+            # recast is running under, not the state right now.
+            "swiped": swiped,
+            "swipe_verdict": verdict,
+            "swipe_factor": factor,
+            # the timer it WOULD have had, when we stretched it: the mark
+            "normal_period_s": normal_s,
             "last_hit": len(hit),
             "last_blocked": len(avoided | absorbed),
             "last_targets": len(hit | avoided | absorbed),
         })
     # soonest first, then the ones with no timer at all
-    out.sort(key=lambda r: (r["next_due_ts"] is None, r["next_due_ts"] or 0))
+    # ROWS DO NOT MOVE. Soonest-due first is the obvious order and it was the
+    # wrong one: every re-arm reshuffles the list, so the thing somebody is
+    # tracking is somewhere else each time they glance back — and they are
+    # glancing while fighting. Ordered by FIRST CAST instead, which is a fact
+    # about the fight that cannot change once it has happened: a row appears at
+    # the bottom when its ability first goes off and holds that slot until it
+    # expires. The countdown moves; nothing else does.
+    #
+    # The cost is real and is accepted: the next cast due is no longer the top
+    # row, so the panel is read by position rather than by rank. That is the
+    # trade a raid wants — a position can be learned once, a rank has to be
+    # re-read every glance.
+    out.sort(key=lambda r: (r["first_cast_ts"], r["source"], r["ability"]))
     return out[:MAX_AOES]
+
+
+def _live_reflect(events, names: Names, now_ts: int) -> list[dict]:
+    """The reflect window the raid is standing in, if it is standing in one.
+
+    A DURATION, NOT A PERIOD, and that is the whole reason this is a separate
+    builder rather than another branch of `_live_aoes`. Every row up there is
+    anchored on a cast and counts toward the next one; this is anchored on
+    entering a state and counts toward LEAVING it. The two look alike on screen
+    and share the drain bar, but nothing about how they are derived is shared:
+    there is no ability, no reach, no period to measure, and no cast line —
+
+    THE MECHANIC ANNOUNCES ITSELF NOWHERE. Checked against every non-damage
+    line at all three window starts on six Treyloth kills: no emote, no buff,
+    no `X begins to cast`. The only evidence a window has opened is a raider
+    getting denied — `<caster> tries to <verb> <mob> with <spell>, but <mob>
+    reflects` — so the row cannot exist until somebody has already paid for it.
+    That cost is bounded and small: of 1,073 casts eaten across those 18
+    windows, 55 (5%) landed in the trigger second itself. The other 95% is what
+    this row is for.
+
+    WHICH MOBS GET ONE IS A HUMAN'S CALL (`aoes.reflect_windows`), not a
+    detection. Nine mobs reflect; on most of them nobody cares.
+
+    Only the CURRENT window is returned. A window that closed two minutes ago
+    is a fact for the audit and clutter on a countdown panel."""
+    curated = reflect_windows()
+    if not curated:
+        return []
+
+    denies: dict[str, list[tuple[int, str, str | None]]] = defaultdict(list)
+    # (mob, ability, victim) -> the mob's own damage lines, which is where a
+    # reflected spell comes back from: the log re-attributes it to the MOB and
+    # keeps the player's spell name on it.
+    returns: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    for ev in events:
+        if (ev.type == "avoid" and ev.src is not None and ev.tgt
+                and ev.extra.get("how") == "reflect"):
+            mob, _kind = names.target(ev.tgt)
+            if mob in curated:
+                denies[mob].append((ev.ts, ev.src.name, ev.ability))
+            continue
+        if (ev.type == "damage" and ev.src is not None and ev.tgt
+                and ev.ability and ev.amount and ev.src.name in curated):
+            victim, _kind = names.target(ev.tgt)
+            returns[(ev.src.name, ev.ability, victim)].append((ev.ts, ev.amount))
+
+    out = []
+    for mob, hits in denies.items():
+        window_s = int(curated[mob].get("window_s") or 0)
+        if window_s <= 0:
+            continue
+        # THE LATEST WINDOW THAT HAS ACTUALLY STARTED, which under live ingest
+        # is simply the latest — events arrive up to now and no further. It is
+        # spelled out because REPLAY does not work that way (`replaybus`, and
+        # `simulate_live.py` without `--restamp`): there the whole fight's
+        # events exist and the cursor moves through them, so taking the last
+        # burst outright showed the third window's countdown from the pull
+        # timer, counting down five minutes to a mechanic that had not fired.
+        bursts = [b for b in reflect_bursts([ts for ts, _c, _a in hits],
+                                            window_s) if b[0] <= now_ts]
+        if not bursts:
+            continue
+        start = bursts[-1][0]
+        ends_ts = start + window_s
+        if now_ts > ends_ts + REFLECT_CLEAR_S:
+            continue        # over, and said so for long enough
+        # MEMBERSHIP IS THE BURST'S RULE, NOT THE BAR'S. `reflect_bursts` lets
+        # a deny land a second or two past the duration (REFLECT_EDGE_S — a log
+        # stamps whole seconds), and filtering the tally on `ends_ts` instead
+        # would silently drop exactly those casts from the count while
+        # `reflect_bursts` still called them part of this window. Two rules for
+        # one boundary is how a tally and a countdown come to disagree.
+        current = [h for h in hits
+                   if start <= h[0] <= start + window_s + REFLECT_EDGE_S]
+
+        # WHAT IT HAS COST, paired cast by cast. A reflected spell returns to
+        # the CASTER — 113 of 115 pairings on the fight this was measured on —
+        # so the pairing is (this ability, this caster) and not merely "damage
+        # the mob did during the window", which would sweep in everything else
+        # the boss was doing and read as a far scarier number than the truth.
+        taken = 0
+        used: dict[tuple, int] = defaultdict(int)
+        for ts, caster, ability in current:
+            key = (mob, ability, caster)
+            back = returns.get(key) or []
+            for i in range(used[key], len(back)):
+                rts, amount = back[i]
+                if rts < ts:
+                    continue
+                if rts - ts > REFLECT_RETURN_S:
+                    break
+                taken += amount
+                used[key] = i + 1
+                break
+
+        out.append({
+            "kind": "reflect",
+            "source": mob,
+            # There is no ability to name — the mob is not casting anything,
+            # it is refusing to be cast at — so this names the MECHANIC. It is
+            # also the row's identity in the browser (`source|ability`) and in
+            # the hand marks, both of which are keyed by name.
+            "ability": "Damage reflect",
+            "window_s": window_s,
+            "started_ts": start,
+            "ends_ts": ends_ts,
+            "casts": len(current),
+            "casters": len({c for _t, c, _a in current}),
+            "damage": taken,
+            # `next_due_ts` + `period_s` are what the browser's countdown, its
+            # drain bar and its ticker all read, and they are reused verbatim
+            # so a reflect row needs no second implementation of any of them.
+            # The MEANING is the one thing that differs: this is when the
+            # window ENDS, not when the next one starts. Nothing predicts the
+            # next one — see `docs/live.md`.
+            "period_s": float(window_s),
+            "period_src": "curated",
+            "next_due_ts": ends_ts,
+            "first_cast_ts": start,
+            "last_cast_ts": start,
+            "since_s": max(0, now_ts - start),
+            # Fields the AoE rows carry that have no meaning here. Sent as
+            # None rather than omitted so one row shape reaches the browser and
+            # `kind` is the only thing anybody has to branch on.
+            "dtype": None,
+            "dtypes": {},
+            "reported_s": None,
+            "suggested_s": None,
+            "several_bodies": None,
+            "swiped": False,
+            "swipe_verdict": None,
+            "swipe_factor": None,
+            "normal_period_s": None,
+            "last_hit": 0,
+            "last_blocked": 0,
+            "last_targets": 0,
+        })
+    out.sort(key=lambda r: (r["started_ts"], r["source"]))
+    return out
 
 
 def build_snapshot(events, logger: str, zone: str | None, start_ts: int,
@@ -541,11 +871,23 @@ def build_snapshot(events, logger: str, zone: str | None, start_ts: int,
         },
         # against the LOG clock, not the last cast: a countdown has to keep
         # counting while the raid stands still between pulls
-        "aoes": _live_aoes(events, names, players, log_ts),
+        # A REFLECT ROW GOES FIRST AND IS EXEMPT FROM `MAX_AOES`, which is the
+        # one place this breaks the panel's own "rows do not move" rule — and
+        # it does not really break it, because that rule protects rows somebody
+        # LEARNS BY POSITION over a whole fight. A reflect row exists for 30
+        # seconds and then is gone; there is no position to learn, and while it
+        # is up it is the only thing on the panel that is true right now.
+        # Capping it away behind twelve AoEs would be capping away the row most
+        # likely to change what somebody does in the next second.
+        "aoes": (_live_reflect(events, names, log_ts)
+                 + _live_aoes(events, names, players, log_ts)),
         # the browser drains its own bars between partials, so it needs the
         # same drop rule the payload was built with or a row it is still
-        # drawing outlives the one the server has already dropped
+        # drawing outlives the one the server has already dropped. BOTH
+        # numbers, because the rule has two sides (see the constants) and the
+        # browser clock runs ahead of the payload on both of them.
         "aoe_drop_s": OVERDUE_DROP_S,
+        "aoe_missed_s": MISSED_S,
     }
 
 

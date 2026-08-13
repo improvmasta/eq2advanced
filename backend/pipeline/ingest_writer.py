@@ -17,6 +17,7 @@ from parser import parse_lines
 from parser import petnames
 from parser.events import ParsedEvent, Subject
 from parser.subjects import classify_entity_kind, decompose
+from pipeline import aoecycles
 from pipeline.classguess import guess_session_classes
 from pipeline.encounters import (encounter_label, segment_events,
                                  split_trailing_corpse)
@@ -26,7 +27,7 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 21    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 22    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
 #                      15: the clock stops at the group's last action; a dead
 #                            mob's trailing ticks leave the fight
@@ -69,6 +70,12 @@ PARSE_VERSION = 21    # 13: every rez family, revives + time dead, intercepts,
 #                            which hard-cuts the segment, the way ACT splits
 #                            the encounter on the same line (parser/classify.py,
 #                            pipeline/encounters.py)
+#                      22: `aoe_cycles` — every enemy recast the fight showed,
+#                            tagged with whether a reuse debuff was on the mob
+#                            when it started. A WRITE the rollup did not make
+#                            before, so the sweep is how a year of raids gets
+#                            one; no stat, segment or attribution moves
+#                            (pipeline/aoecycles.py)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -289,6 +296,10 @@ def clear_derived(conn: sqlite3.Connection, session_id: int) -> None:
     conn.execute(
         "DELETE FROM encounter_ability_stats WHERE encounter_id IN "
         "(SELECT id FROM encounters WHERE session_id=?)", (session_id,))
+    # Before the encounters they point at. A rebuild must REPLACE what this
+    # session taught the site about a mob's timers, never add a second copy of
+    # it — and the rows are rewritten by the rollup a few lines further on.
+    conn.execute("DELETE FROM aoe_cycles WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM encounters WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM events WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM entities WHERE session_id=?", (session_id,))
@@ -441,6 +452,14 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                     name for (src, name, _kind) in ability_stats
                     if not name.startswith("(")     # skip (melee)/(multi attack)/…
                     and res.kind_of(src) in PET_KINDS)
+
+                # What this fight taught the site about enemy recasts: every
+                # interval between two casts of one AoE, tagged with whether a
+                # reuse debuff was on the mob when the first one went off. Read
+                # back across every raid to learn the real timer and what a
+                # swipe does to it (pipeline/aoelearn.py).
+                aoecycles.record(conn, seg_events, res.name_of, res.kind_of,
+                                 enc_id, session_id, is_named, name)
 
             conn.executemany(
                 "INSERT INTO events (session_id, encounter_id, ts, seq, type, src_entity, "

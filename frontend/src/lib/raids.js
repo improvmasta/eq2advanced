@@ -13,6 +13,22 @@ export const RAID_MIN_RAIDERS = 7
 
 export const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
 
+/* What a run is CALLED. Usually its zone, because in an instance the zone is
+   the event — "The Emerald Halls" books a night, names it and is what anybody
+   asks about.
+
+   A public zone is not that. It is a place several guilds pass through, so
+   "Rivervale" says only where somebody was standing, and four visits to a
+   halfling town read as four identical rows. What happened there was the
+   Avatar of Mischief, so it is what the run wears. The backend decides WHEN
+   this applies (`zoneruns_api._headline_named`: a public zone off the wiki's
+   reference data, and exactly one distinct named) — this only formats it, so
+   that the list, the raid page and anything later all say it the same way. */
+export const runLabel = (r, fallback = 'Unknown zone') => {
+  const zone = r?.zone || fallback
+  return r?.headline_named ? `${zone} - ${r.headline_named}` : zone
+}
+
 /* eq2lexicon's raid pages, which are the strategy half of what this site's
    notes are the other half of: a zone is `/raids/<zone>` and a named inside it
    is `/raids/<zone>/<named>`. Deep-linking there rather than restating any of

@@ -37,6 +37,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from PIL import Image
+from pydantic import BaseModel, Field
 
 from db import PARSESHOTS_DIR, get_db, json_dumps, row_to_dict, rows_to_dicts
 from pipeline.actshot import ShotError, extract
@@ -188,6 +189,68 @@ def import_shot(file: UploadFile, user=Depends(require_user)):
              img["image_name"], img["thumb_name"], img["image_w"],
              img["image_h"], img["image_bytes"], now))
     return get_shot(cur.lastrowid, user)
+
+
+class ShotPatch(BaseModel):
+    """What a reader may say about a shot the reader can see and OCR could not.
+
+    NAMES only, plus the two things that decide how the parse is read. Not one
+    number out of the table: those are checked against each other at import
+    (`pipeline/actshot.py`), and a hand-typed cell would be the one figure on
+    the page with no evidence behind it — the review step this deliberately
+    does not have. What is here is the metadata around the numbers, which is
+    exactly what OCR misses when somebody crops the title bar away.
+    """
+
+    character_name: str | None = Field(default=None, max_length=64)
+    zone: str | None = Field(default=None, max_length=200)
+    encounter: str | None = Field(default=None, max_length=200)
+    when_text: str | None = Field(default=None, max_length=64)
+    kind: str | None = Field(default=None, pattern="^(damage|heal)$")
+    # Seconds. Accepted ONLY into a shot that has none — see below.
+    duration_s: int | None = Field(default=None, ge=1, le=86_400)
+
+
+@router.patch("/parseshots/{shot_id}")
+def edit_shot(shot_id: int, patch: ShotPatch, user=Depends(require_user)):
+    """Name a shot the reader can read and the OCR could not.
+
+    A screenshot cropped to the table carries no title bar, so the character,
+    the zone, the fight and the date arrive empty and the import is called
+    `Imported parse #12` for the rest of its life. Everything here is a CLAIM
+    by the person who imported it, which is what the row already was.
+
+    The LENGTH is the exception, and only half an exception: it is arithmetic
+    (`_duration_from_table` — the mode of Damage/EncDPS over forty rows, which
+    beats the title bar and beat it in a way that was measured), so a shot that
+    HAS one does not take a typed replacement. A shot with none has nothing to
+    overrule: without it the column refuses to show per-second numbers at all,
+    and a length off the reader's own clock is better than that refusal.
+    """
+    conn = get_db()
+    row = conn.execute(
+        "SELECT duration_s FROM imported_parses WHERE id=? AND user_id=?",
+        (shot_id, user["id"])).fetchone()
+    if row is None:
+        raise HTTPException(404, "no such imported parse")
+
+    fields = patch.model_dump(exclude_unset=True)
+    if "duration_s" in fields and row["duration_s"] is not None:
+        raise HTTPException(
+            409, "the fight length was read off the table — it can't be typed over")
+
+    sets, values = [], []
+    for key, value in fields.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        sets.append(f"{key}=?")
+        values.append(value)
+    if sets:
+        with conn:
+            conn.execute(
+                f"UPDATE imported_parses SET {', '.join(sets)} WHERE id=? AND user_id=?",
+                (*values, shot_id, user["id"]))
+    return get_shot(shot_id, user)
 
 
 @router.get("/parseshots/{shot_id}/image")
