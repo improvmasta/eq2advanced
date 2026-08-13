@@ -1,12 +1,17 @@
 # eq2advanced
 
-EQ2 TLE raid parser: upload logs or stream live from the ACT plugin, get per-fight and per-night stats (damage, healing, defense, AoEs, deaths) and ability coaching (what an ability should do vs. what it did).
+EverQuest II TLE raid parser and coaching site — <https://eq2advanced.com>
 
-https://eq2advanced.com
+Upload logs or stream live from the ACT plugin, and get per-fight and per-night
+stats (damage, healing, defense, AoEs, deaths, loot), a live raid dashboard with
+measured AoE countdowns, and ability coaching (what an ability should do at your
+stats vs. what it did).
 
-Logs from multiple people on the same raid collapse into one entry; shared via groups or character/guild auto-shares.
+Logs from several people on the same raid collapse into one entry; sharing is by
+group, or automatic by character or guild tag.
 
-FastAPI + SQLite (`backend/`), Vite + React SPA (`frontend/`). See `ARCHITECTURE.md` for design.
+FastAPI + SQLite (`backend/`), Vite + React SPA (`frontend/`).
+See `ARCHITECTURE.md` for the design reference.
 
 ## Dev
 
