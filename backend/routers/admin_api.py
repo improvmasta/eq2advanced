@@ -22,6 +22,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 import auth
 import classtree
 import groups as g
+import ratelimit
 import visitors
 from db import UPLOADS_DIR, get_db, get_int_setting, rows_to_dicts, set_setting
 from security import require_admin, require_curator
@@ -498,12 +499,19 @@ def dashboard(admin=Depends(require_admin)):
         "AND (ac.pet_seen>0 OR ac.proc_candidate>0)").fetchone()[0]
     reference = conn.execute("SELECT MAX(fetched_ts) FROM wiki_abilities").fetchone()[0]
     census = conn.execute("SELECT MAX(fetched_ts) FROM census_spells").fetchone()[0]
+    security = ratelimit.security_stats()
+    stuck = [row for row in _incident_rows(conn) if row["kind"] == "stuck"]
     return {
         "status": {"ingest": {"state": "active" if conn.execute(
             "SELECT 1 FROM sessions WHERE status='receiving' LIMIT 1").fetchone() else "quiet"},
             "parsing": {"state": "degraded" if failures else "healthy", "failures_24h": failures,
                         "oldest_job_age_s": max(0, now - oldest) if oldest else None},
             "storage": {"state": "healthy", "used_bytes": usage["storage_bytes"]},
+            "processing": {"state": "stuck" if stuck else "healthy",
+                           "stuck_count": len(stuck),
+                           "oldest_stuck_age_s": max((r["age_s"] for r in stuck), default=None)},
+            "security": {"state": "attention" if security["blocked_buckets"] else "quiet",
+                         **security},
             "reference": {"state": "healthy" if reference or census else "quiet",
                           "wiki_refreshed_ts": reference, "census_refreshed_ts": census}},
         "actions": {"incidents": _incident_rows(conn)[:5], "feedback_open": feedback_open,

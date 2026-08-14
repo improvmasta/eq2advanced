@@ -1,7 +1,46 @@
 # Admin redesign
 
-Status: implemented on 2026-08-14 in commit `131ae8e`. This document is the
-product and implementation reference for the current admin experience.
+Status: overhauled again on 2026-08-14 after the first implementation proved
+too spacious and still exposed too many equal-weight destinations. This
+document is the product and implementation reference for the admin experience.
+
+## Compact workspace revision
+
+The first implementation respected the route hierarchy below but rendered all
+eight leaf routes in the permanent rail. It also turned dashboard concepts into
+separate full-width cards, leaving healthy states with almost as much visual
+weight as actual work. The current interface deliberately goes further:
+
+- Permanent navigation has two destinations only: Overview and Game data.
+  Account management is part of Overview because it is the admin's normal job,
+  not a separate mode.
+- Visitor analytics, the immutable activity log, and deleted-group recovery are
+  low-frequency Utilities. Their routes remain linkable, but they no longer
+  compete with daily work.
+- Overview is a cockpit: one status band for storage growth, stuck processing,
+  aggregate credential failures, and account activity; then the compact account
+  list and inspector; then review work. Healthy telemetry does not become a
+  card.
+- Review and diagnostics is the last low-frequency Utility, not a primary tab.
+  It combines genuinely stuck processing and feedback summaries. Failed parses
+  remain technical history; deterministic errors are not presented with a
+  hopeful Retry button as though that were routine administration.
+- Accounts is list-and-inspector. Selecting an account opens its controls beside
+  the list rather than inserting a large form above it and moving the table. A
+  selected row gets only a thin marker, never a full warning-colored fill.
+- Feedback is a master-detail inbox. The reporter's message is the subject; its
+  workflow controls live in the inspector instead of seven crowded table
+  columns.
+- Abilities and AoE timers live inside the same shell and use a two-view local
+  switch. Curators see only those game-data destinations.
+- At narrow widths, primary destinations become one compact scrolling section
+  menu; dense master-detail workspaces stack without changing their route or
+  action model.
+
+Authentication pressure is kept only in process for the same 15-minute window
+as the limiter. Admin receives aggregate failed-request and blocked-bucket
+counts; usernames and addresses are deliberately never returned. A restart
+clears both the limiter and this operational signal.
 
 The shipped implementation includes:
 

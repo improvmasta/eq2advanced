@@ -17,12 +17,14 @@ it is not a substitute for fail2ban at the edge.
 
 import threading
 import time
+from collections import deque
 
 WINDOW_S = 900          # 15 minutes
 MAX_FAILURES = 5        # then the bucket is locked for the rest of its window
 
 _lock = threading.Lock()
 _buckets: dict[tuple[str, str], list] = {}   # (scope, key) -> [count, window_start]
+_events = deque(maxlen=4096)  # (timestamp, scope), one per failed request
 
 
 def _bucket(scope: str, key: str, now: float) -> list:
@@ -54,6 +56,40 @@ def fail(scope: str, key: str) -> None:
         _bucket(scope, key, now)[0] += 1
 
 
+def fail_many(scope: str, keys: list[str]) -> None:
+    """Count one request against its keys, but record no username or address."""
+    clean = list(dict.fromkeys(k for k in keys if k))
+    if not clean:
+        return
+    now = time.time()
+    with _lock:
+        for key in clean:
+            _bucket(scope, key, now)[0] += 1
+        _events.append((now, scope))
+
+
+def security_stats() -> dict:
+    """Aggregate credential pressure for Admin; never expose limiter keys."""
+    now = time.time()
+    scopes = {"login", "reauth", "reset"}
+    with _lock:
+        while _events and now - _events[0][0] > WINDOW_S:
+            _events.popleft()
+        counts = {scope: sum(1 for _, seen in _events if seen == scope)
+                  for scope in scopes}
+        blocked = sum(1 for (scope, _), bucket in _buckets.items()
+                      if scope in scopes and now - bucket[1] <= WINDOW_S
+                      and bucket[0] >= MAX_FAILURES)
+    return {
+        "window_s": WINDOW_S,
+        "failed_attempts": sum(counts.values()),
+        "login_failures": counts["login"],
+        "recovery_failures": counts["reset"],
+        "reauth_failures": counts["reauth"],
+        "blocked_buckets": blocked,
+    }
+
+
 def clear(scope: str, key: str) -> None:
     """A success wipes the record — an honest user who mistypes twice is not
     then locked out for fifteen minutes."""
@@ -73,3 +109,4 @@ def reset_all() -> None:
     """Tests only."""
     with _lock:
         _buckets.clear()
+        _events.clear()

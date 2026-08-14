@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmt } from '../lib/api.js'
+import AdminShell from '../components/AdminShell.jsx'
 
 /* Deciding what an ability IS — a person's job, with the evidence in front of
    them.
@@ -298,10 +299,11 @@ export default function AdminAbilities({ user }) {
   }
 
   return (
-    <div className="manage abilities">
-      <div className="pagehead">
-        <div><h1>Abilities</h1><p className="muted">Review consecutive game-knowledge decisions without losing your queue.</p></div>
-        <div className="actions">{user?.role === 'admin' && <Link to="/admin">Admin dashboard</Link>}<Link to="/admin/timers">AoE timers</Link></div>
+    <AdminShell user={user}>
+    <div className="abilities adminworkspace">
+      <div className="adminpagehead compact">
+        <div><p className="adminkicker">Game data</p><h1>Ability review</h1><p>Resolve consecutive decisions without losing your queue.</p></div>
+        <div className="adminviewswitch"><Link className="on" to="/admin/abilities">Abilities</Link><Link to="/admin/timers">AoE timers</Link></div>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -339,5 +341,6 @@ export default function AdminAbilities({ user }) {
         </div>
       }
     </div>
+    </AdminShell>
   )
 }

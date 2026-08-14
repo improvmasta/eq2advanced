@@ -139,8 +139,7 @@ def login(creds: Credentials, request: Request, response: Response):
     conn = get_db()
     user = auth.verify_password(conn, username, creds.password)
     if user is None:
-        for key in _keys(username, request):
-            ratelimit.fail("login", key)
+        ratelimit.fail_many("login", _keys(username, request))
         raise HTTPException(401, "wrong username or password")
     for key in _keys(username, request):
         ratelimit.clear("login", key)
@@ -176,8 +175,7 @@ def change_password(change: PasswordChange, request: Request,
     conn = get_db()
     _guard("reauth", user["username"], request)
     if auth.verify_password(conn, user["username"], change.current) is None:
-        for key in _keys(user["username"], request):
-            ratelimit.fail("reauth", key)
+        ratelimit.fail_many("reauth", _keys(user["username"], request))
         raise HTTPException(401, "current password is wrong")
     _check_password(change.new)
     with conn:
@@ -196,8 +194,7 @@ def change_question(change: QuestionChange, request: Request,
     conn = get_db()
     _guard("reauth", user["username"], request)
     if auth.verify_password(conn, user["username"], change.password) is None:
-        for key in _keys(user["username"], request):
-            ratelimit.fail("reauth", key)
+        ratelimit.fail_many("reauth", _keys(user["username"], request))
         raise HTTPException(401, "password is wrong")
     if change.sq_id not in auth.QUESTION_TEXT:
         raise HTTPException(422, "pick one of the listed security questions")
@@ -221,8 +218,7 @@ def reset_start(body: ResetStart, request: Request):
     row = conn.execute("SELECT sq_id, disabled_ts FROM users WHERE username=?",
                        (username,)).fetchone()
     if row is None or row["sq_id"] is None or row["disabled_ts"] is not None:
-        for key in _keys(username, request):
-            ratelimit.fail("reset", key)
+        ratelimit.fail_many("reset", _keys(username, request))
         raise HTTPException(404, "no reset question is set for that account — ask the admin")
     return {"username": username, "sq_id": row["sq_id"],
             "question": auth.QUESTION_TEXT[row["sq_id"]]}
@@ -237,8 +233,7 @@ def reset_complete(body: ResetComplete, request: Request):
     row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if row is None or row["disabled_ts"] is not None or not auth.verify_answer(
             conn, row, body.answer):
-        for key in _keys(username, request):
-            ratelimit.fail("reset", key)
+        ratelimit.fail_many("reset", _keys(username, request))
         raise HTTPException(401, "that answer doesn't match")
     with conn:
         auth.set_password(conn, row["id"], body.new_password)

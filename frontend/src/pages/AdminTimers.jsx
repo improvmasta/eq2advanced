@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, fmt } from '../lib/api.js'
+import AdminShell from '../components/AdminShell.jsx'
 
 const STATES = [
   ['needs_review', 'Needs review'], ['all', 'All'], ['disagreement', 'Disagreement'],
@@ -110,8 +111,8 @@ export default function AdminTimers({ user }) {
   useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t) }, [load])
   const setFilter = (next) => { const p = new URLSearchParams(params); Object.entries(next).forEach(([k, v]) => v ? p.set(k, v) : p.delete(k)); setParams(p, { replace: true }) }
   const counts = useMemo(() => data?.items.reduce((a, r) => ({ ...a, [r.state]: (a[r.state] || 0) + 1 }), {}) || {}, [data])
-  return <div className="manage timersworkbench">
-    <div className="pagehead"><div><h1>AoE timers</h1><p className="muted">Reported, measured, and curated game knowledge.</p></div><div className="actions">{user?.role === 'admin' && <Link to="/admin">Admin dashboard</Link>}<Link to="/admin/abilities">Abilities</Link></div></div>
+  return <AdminShell user={user}><div className="timersworkbench adminworkspace">
+    <div className="adminpagehead compact"><div><p className="adminkicker">Game data</p><h1>AoE timers</h1><p>Reported, measured, and curated timer knowledge.</p></div><div className="adminviewswitch"><Link to="/admin/abilities">Abilities</Link><Link className="on" to="/admin/timers">AoE timers</Link></div></div>
     <div className="workbenchfilters">
       <input value={q} onChange={(e) => { setQ(e.target.value); setFilter({ q: e.target.value }) }} placeholder="Search mob or ability…" />
       <select value={state} onChange={(e) => setFilter({ state: e.target.value })}>{STATES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
@@ -125,5 +126,5 @@ export default function AdminTimers({ user }) {
       </button>)}</div>
       {selected ? <TimerDetail row={selected} onChanged={load} /> : <div className="timerdetail"><p className="muted">No timer matches this queue.</p></div>}
     </div>
-  </div>
+  </div></AdminShell>
 }

@@ -153,7 +153,23 @@ def test_dashboard_is_decision_oriented(client, accounts):
     d = client.get("/api/admin/dashboard").json()
     assert set(d) == {"status", "actions", "usage", "recent_changes"}
     assert "visitor_days" in d["usage"] and "storage_growth_bytes" in d["usage"]
-    assert set(d["status"]) == {"ingest", "parsing", "storage", "reference"}
+    assert set(d["status"]) == {
+        "ingest", "parsing", "processing", "security", "storage", "reference"}
+    assert d["status"]["processing"]["stuck_count"] >= 1
+
+
+def test_dashboard_security_is_aggregate_and_counts_requests_once(client, accounts):
+    import ratelimit
+    ratelimit.reset_all()
+    client.cookies.clear()
+    assert client.post("/api/auth/login", json={
+        "username": "not-an-account", "password": "wrong-password",
+    }).status_code == 401
+    sign_in(client, "boss")
+    security = client.get("/api/admin/dashboard").json()["status"]["security"]
+    assert security["failed_attempts"] == 1
+    assert security["login_failures"] == 1
+    assert "username" not in security and "address" not in security
 
 
 def test_incidents_can_be_filtered_and_acknowledged(client, accounts, sessions):
