@@ -193,6 +193,8 @@ def learn(conn, sources: set[str] | None = None) -> dict[tuple[str, str], dict]:
             d["clean_fights"].add(pull)
         d["is_named"] = max(d["is_named"], r["is_named"])
 
+    rulings = {(r["source_name"], r["ability"]): dict(r) for r in conn.execute(
+        "SELECT * FROM timer_rulings")}
     out = {}
     for key, d in acc.items():
         clean_s, clean_agree = _period(d["clean"])
@@ -216,7 +218,10 @@ def learn(conn, sources: set[str] | None = None) -> dict[tuple[str, str], dict]:
         # every fight the site already holds, with no reparse.
         from pipeline.aoes import reported_timers, several_bodies
         rep = (reported_timers().get(key[1]) or {}).get("timer_s")
+        ruling = rulings.get(key)
         bodies = several_bodies(key[0], bool(d["is_named"]), rep, clean_s)
+        if ruling and ruling["split_mob"] is not None:
+            bodies = "curated_split" if ruling["split_mob"] else None
         adopt = bool(clean_s and clean_agree >= MIN_AGREE
                      and len(d["clean_fights"]) >= MIN_FIGHTS
                      and not bodies)
@@ -238,7 +243,13 @@ def learn(conn, sources: set[str] | None = None) -> dict[tuple[str, str], dict]:
             # the reason — the tab prints it, because "we measured 28.7s and
             # are counting 50" is only honest with the because on the end
             "several_bodies": bodies,
+            "ruling": ruling,
         }
+        if ruling:
+            if ruling["excluded"]:
+                out[key]["base_s"] = None
+            elif ruling["override_s"] is not None:
+                out[key]["base_s"] = ruling["override_s"]
     return out
 
 
@@ -249,14 +260,17 @@ expensive thing — while a live payload asks for this every couple of seconds.
 Keyed on the row COUNT rather than a timestamp because that is what a reparse
 changes and what `clear_derived` changes back, and because it costs one count
 against a table this process is the only writer of."""
-_CACHE: dict = {"rows": None, "n": -1}
+_CACHE: dict = {"rows": None, "n": -1, "rulings": None}
 
 
 def learned(conn) -> dict[tuple[str, str], dict]:
     """`learn` over everything, cached until the cycle table changes."""
     n = conn.execute("SELECT COUNT(*) FROM aoe_cycles").fetchone()[0]
-    if _CACHE["n"] != n or _CACHE["rows"] is None:
-        _CACHE["rows"], _CACHE["n"] = learn(conn), n
+    rulings = conn.execute(
+        "SELECT COUNT(*), COALESCE(MAX(decided_ts),0) FROM timer_rulings").fetchone()
+    revision = tuple(rulings)
+    if _CACHE["n"] != n or _CACHE["rulings"] != revision or _CACHE["rows"] is None:
+        _CACHE["rows"], _CACHE["n"], _CACHE["rulings"] = learn(conn), n, revision
     return _CACHE["rows"]
 
 
@@ -290,6 +304,10 @@ def timer_for(learned_rows: dict, source: str, ability: str,
     being retired, because a mob nobody has parsed enough times yet is exactly
     when the raid's configured number is the best thing available."""
     row = learned_rows.get((source, ability))
+    if row and row.get("ruling") and row["ruling"]["excluded"]:
+        return None, "excluded"
+    if row and row.get("ruling") and row["ruling"]["override_s"] is not None:
+        return float(row["ruling"]["override_s"]), "curated"
     if row and row["base_s"]:
         return row["base_s"], "learned"
     if reported:

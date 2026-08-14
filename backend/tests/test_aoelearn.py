@@ -181,6 +181,23 @@ def test_enough_agreeing_intervals_across_fights_replaces_the_act_number(conn):
     assert got == row["base_s"] and src == "learned"
 
 
+def test_curator_override_beats_learned_and_reported(conn):
+    cycles(conn, gaps=(44, 44, 43, 44), fight=1)
+    cycles(conn, gaps=(43, 44, 44, 43), fight=2, ts=90000)
+    conn.execute("INSERT INTO timer_rulings(source_name,ability,override_s,note,"
+                 "decided_ts) VALUES('Mayong Mistmoore','Soul Paralysis',46,'verified',1)")
+    rows = aoelearn.learn(conn)
+    assert aoelearn.timer_for(rows, "Mayong Mistmoore", "Soul Paralysis", 37) == (46.0, "curated")
+
+
+def test_curator_exclusion_turns_countdown_off(conn):
+    cycles(conn, gaps=(44, 44, 43, 44), fight=1)
+    conn.execute("INSERT INTO timer_rulings(source_name,ability,excluded,note,"
+                 "decided_ts) VALUES('Mayong Mistmoore','Soul Paralysis',1,'shield',1)")
+    rows = aoelearn.learn(conn)
+    assert aoelearn.timer_for(rows, "Mayong Mistmoore", "Soul Paralysis", 37) == (None, "excluded")
+
+
 def test_a_swiped_cycle_never_teaches_a_base_timer(conn):
     """A fight everybody swiped through says nothing about the mob's own
     recast, however many intervals agree."""

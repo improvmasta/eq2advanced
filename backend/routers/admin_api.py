@@ -12,6 +12,8 @@ Admin mutations are written to `audit_log` and served back by `/admin/audit` —
 a promise nobody can check is not worth much.
 """
 
+import json
+import threading
 import time
 from pathlib import Path
 
@@ -56,18 +58,7 @@ def overview(admin=Depends(require_admin)):
     # there is already somebody's job; what is left is a parse that errored and
     # a parse that has been running far too long to still be running.
     now = int(time.time())
-    alerts = rows_to_dicts(conn.execute(
-        "SELECT s.id, s.source, s.status, s.error, s.created_ts, "
-        "  COALESCE(s.last_ingest_ts, s.created_ts) AS last_seen_ts, "
-        "  c.name AS character, u.username "
-        "FROM sessions s JOIN characters c ON c.id = s.character_id "
-        "JOIN users u ON u.id = c.user_id "
-        "WHERE s.status='error' OR (s.status='parsing' "
-        "  AND COALESCE(s.last_ingest_ts, s.created_ts) < ?) "
-        "ORDER BY s.created_ts DESC LIMIT 50", (now - STUCK_PARSE_S,)))
-    for a in alerts:
-        a["kind"] = "error" if a["status"] == "error" else "stuck"
-        a["age_s"] = max(0, now - a["last_seen_ts"])
+    alerts = _incident_rows(conn)[:50]
     live = {"receiving": 0, "parsing": 0}
     for row in conn.execute(
             "SELECT status, COUNT(*) AS n FROM sessions "
@@ -86,6 +77,150 @@ def overview(admin=Depends(require_admin)):
                      for k in SETTINGS_KEYS},
         "memo": __import__("memo").stats(),
     }
+
+
+def _incident_row(conn, session_id: int):
+    return conn.execute(
+        "SELECT s.id, s.source, s.status, s.error, s.created_ts, s.last_ingest_ts, "
+        "s.raw_deleted_ts, s.pruned, s.upload_sha256, c.name AS character, u.username "
+        "FROM sessions s JOIN characters c ON c.id=s.character_id "
+        "JOIN users u ON u.id=c.user_id WHERE s.id=?", (session_id,)).fetchone()
+
+
+def _incident_rows(conn, include_acknowledged=False):
+    now = int(time.time())
+    sql = (
+        "SELECT s.id, s.source, s.status, s.error, s.created_ts, "
+        "COALESCE(s.last_ingest_ts,s.created_ts) last_seen_ts, c.name character, "
+        "u.username, ia.note acknowledgement_note, ia.acknowledged_ts, "
+        "au.username acknowledged_by FROM sessions s "
+        "JOIN characters c ON c.id=s.character_id JOIN users u ON u.id=c.user_id "
+        "LEFT JOIN incident_acknowledgements ia ON ia.session_id=s.id "
+        "LEFT JOIN users au ON au.id=ia.actor_user_id "
+        "WHERE (s.status='error' OR (s.status='parsing' AND "
+        "COALESCE(s.last_ingest_ts,s.created_ts)<?))")
+    if not include_acknowledged:
+        sql += " AND ia.session_id IS NULL"
+    sql += " ORDER BY s.created_ts DESC"
+    rows = rows_to_dicts(conn.execute(sql, (now - STUCK_PARSE_S,)))
+    for row in rows:
+        row["kind"] = "error" if row["status"] == "error" else "stuck"
+        row["severity"] = "high" if row["kind"] == "stuck" or row["error"] else "medium"
+        row["age_s"] = max(0, now - row["last_seen_ts"])
+        row["summary"] = (str(row["error"] or "Parse stopped making progress").splitlines()[-1])
+        source = _incident_row(conn, row["id"])
+        retryable = False
+        if source and not source["pruned"] and not source["raw_deleted_ts"]:
+            if source["source"] == "upload" and source["upload_sha256"]:
+                retryable = (Path(UPLOADS_DIR) / f"{source['upload_sha256']}.txt.gz").exists()
+            else:
+                # A live session can own tens of thousands of chunk rows. The
+                # previous list endpoint materialized and stat()ed every one,
+                # making Dashboard take seconds. Recent chunks are the useful
+                # retry signal; the detail/action path performs the exhaustive
+                # source resolution only when an admin actually opens it.
+                recent = conn.execute(
+                    "SELECT path FROM raw_chunks WHERE session_id=? ORDER BY seq DESC LIMIT 20",
+                    (row["id"],)).fetchall()
+                retryable = any(Path(r["path"]).exists() for r in recent)
+        row["retryable"] = retryable
+        row["support_instruction"] = None if row["retryable"] else \
+            "Ask the account owner to upload the original log again; no stored source remains."
+    return rows
+
+
+@router.get("/admin/incidents")
+def list_incidents(state: str = "open", type: str = "", severity: str = "",
+                   age: int = 0, admin=Depends(require_admin)):
+    if state not in ("open", "acknowledged", "all"):
+        raise HTTPException(422, "state is open, acknowledged or all")
+    rows = _incident_rows(get_db(), include_acknowledged=state != "open")
+    if state == "acknowledged":
+        rows = [r for r in rows if r["acknowledged_ts"]]
+    if type:
+        rows = [r for r in rows if r["kind"] == type]
+    if severity:
+        rows = [r for r in rows if r["severity"] == severity]
+    if age:
+        rows = [r for r in rows if r["age_s"] >= age]
+    return {"items": rows, "total": len(rows), "state": state}
+
+
+@router.post("/admin/incidents/{session_id}/acknowledge")
+def acknowledge_incident(session_id: int, payload: dict = Body(...),
+                         admin=Depends(require_admin)):
+    note = str(payload.get("note") or "").strip()
+    if not note:
+        raise HTTPException(422, "an acknowledgement note is required")
+    conn = get_db()
+    if _incident_row(conn, session_id) is None:
+        raise HTTPException(404, "no such incident")
+    now = int(time.time())
+    with conn:
+        conn.execute(
+            "INSERT INTO incident_acknowledgements(session_id,note,actor_user_id,acknowledged_ts) "
+            "VALUES(?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET note=excluded.note, "
+            "actor_user_id=excluded.actor_user_id, acknowledged_ts=excluded.acknowledged_ts",
+            (session_id, note, admin["id"], now))
+        g.audit(conn, admin["id"], "acknowledge_incident", f"session:{session_id}", note)
+    return {"session_id": session_id, "acknowledged": True}
+
+
+@router.get("/admin/incidents/{session_id}")
+def incident_detail(session_id: int, admin=Depends(require_admin)):
+    """Operational metadata and sanitized parser evidence; never log content."""
+    conn = get_db()
+    row = _incident_row(conn, session_id)
+    if row is None:
+        raise HTTPException(404, "no such incident")
+    now = int(time.time())
+    stuck = row["status"] == "parsing" and \
+        (row["last_ingest_ts"] or row["created_ts"]) < now - STUCK_PARSE_S
+    if row["status"] != "error" and not stuck:
+        raise HTTPException(404, "that session is not an incident")
+    from pipeline.ingest_writer import session_raw_paths
+    retryable = not row["pruned"] and not row["raw_deleted_ts"] \
+        and bool(session_raw_paths(conn, session_id))
+    return {**dict(row), "kind": "stuck" if stuck else "error",
+            "age_s": max(0, now - (row["last_ingest_ts"] or row["created_ts"])),
+            "retryable": retryable,
+            "support_instruction": None if retryable else
+            "Ask the account owner to upload the original log again; no stored source remains."}
+
+
+@router.post("/admin/incidents/{session_id}/retry")
+def retry_incident(session_id: int, admin=Depends(require_admin)):
+    """Claim and rerun a failed or abandoned parse from its stored source."""
+    from pipeline.ingest_writer import parse_session, session_raw_paths
+
+    conn = get_db()
+    row = _incident_row(conn, session_id)
+    if row is None:
+        raise HTTPException(404, "no such incident")
+    now = int(time.time())
+    stuck = row["status"] == "parsing" and \
+        (row["last_ingest_ts"] or row["created_ts"]) < now - STUCK_PARSE_S
+    if row["status"] != "error" and not stuck:
+        raise HTTPException(409, f"session is {row['status']}")
+    if row["pruned"] or row["raw_deleted_ts"]:
+        raise HTTPException(409, "no stored source remains; ask the account owner to upload the original log again")
+    paths = session_raw_paths(conn, session_id)
+    if not paths:
+        raise HTTPException(409, "no stored source remains; ask the account owner to upload the original log again")
+    # `queued` is a short-lived claim. It makes two concurrent clicks unable to
+    # launch two destructive rebuilds; parse_session immediately changes it to
+    # `parsing` in its own connection.
+    expected = row["status"]
+    with conn:
+        claimed = conn.execute(
+            "UPDATE sessions SET status='queued', error=NULL WHERE id=? AND status=?",
+            (session_id, expected)).rowcount
+        if not claimed:
+            raise HTTPException(409, "that incident is already being retried")
+        g.audit(conn, admin["id"], "retry_parse" if expected == "error" else "restart_parse",
+                f"session:{session_id}")
+    threading.Thread(target=parse_session, args=(session_id, paths), daemon=True).start()
+    return {"session_id": session_id, "status": "parsing"}
 
 
 @router.get("/admin/visitors")
@@ -148,6 +283,12 @@ def list_users(q: str = "", sort: str = "stored_bytes", dir: str = "desc",
     total = conn.execute(
         "SELECT COUNT(*) FROM users u WHERE (? = '' OR u.username LIKE '%' || ? || '%')",
         (q, q)).fetchone()[0]
+    defaults = {k: get_int_setting(conn, k, 0)
+                for k in ("upload_max_bytes", "storage_max_bytes")}
+    for row in rows:
+        for key, default in defaults.items():
+            row[f"effective_{key}"] = default if row[key] is None else row[key]
+            row[f"{key}_source"] = "site default" if row[key] is None else "account override"
     return {"users": rows, "total": total, "limit": limit, "offset": offset}
 
 
@@ -281,19 +422,94 @@ def update_settings(payload: dict = Body(...), admin=Depends(require_admin)):
             for k in SETTINGS_KEYS}
 
 
+def _audit_label(row):
+    action = row["action"].replace("_", " ")
+    who = row.get("actor") or "System"
+    target = (row.get("target") or "").replace(":", " ")
+    detail = row.get("detail") or ""
+    return f"{who} {action}{' ' + target if target else ''}{' — ' + detail if detail else ''}"
+
+
 @router.get("/admin/audit")
-def audit_log(limit: int = 200, offset: int = 0, admin=Depends(require_admin)):
+def audit_log(limit: int = 200, offset: int = 0, q: str = "", actor: str = "",
+              family: str = "", date_from: int = 0, date_to: int = 0,
+              admin=Depends(require_admin)):
     conn = get_db()
     limit = max(1, min(limit, 1000))
     offset = max(0, offset)
+    where, params = [], []
+    if q:
+        where.append("(a.action LIKE ? OR a.target LIKE ? OR a.detail LIKE ? OR u.username LIKE ?)")
+        params += [f"%{q}%"] * 4
+    if actor:
+        where.append("u.username=?"); params.append(actor)
+    if family:
+        where.append("a.action LIKE ?"); params.append(f"{family}%")
+    if date_from:
+        where.append("a.ts>=?"); params.append(date_from)
+    if date_to:
+        where.append("a.ts<=?"); params.append(date_to)
+    clause = " WHERE " + " AND ".join(where) if where else ""
     entries = rows_to_dicts(conn.execute(
         "SELECT a.*, u.username AS actor FROM audit_log a "
         "LEFT JOIN users u ON u.id = a.actor_user_id "
         # id breaks the tie: several actions land in the same second and the
         # order they happened in is the whole point of a log
-        "ORDER BY a.ts DESC, a.id DESC LIMIT ? OFFSET ?", (limit, offset)))
-    total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+        f"{clause} ORDER BY a.ts DESC, a.id DESC LIMIT ? OFFSET ?", (*params, limit, offset)))
+    total = conn.execute(
+        "SELECT COUNT(*) FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id" + clause,
+        params).fetchone()[0]
+    for entry in entries:
+        entry["label"] = _audit_label(entry)
     return {"entries": entries, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/admin/dashboard")
+def dashboard(admin=Depends(require_admin)):
+    """Small decision-oriented summaries; workspaces fetch their own detail."""
+    conn = get_db()
+    now, since = int(time.time()), int(time.time()) - 30 * 86400
+    visits = visitors.timeline(conn, 30)
+    usage = {
+        "visitor_days": visits["totals"]["visitor_days"],
+        "signed_in_visitor_days": visits["totals"]["visitor_days"] - visits["totals"]["anon_days"],
+        "uploads": conn.execute("SELECT COUNT(*) FROM sessions WHERE created_ts>=?", (since,)).fetchone()[0],
+        "completed_raids": conn.execute("SELECT COUNT(*) FROM zone_runs WHERE started_ts>=?", (since,)).fetchone()[0],
+        "active_accounts": conn.execute(
+            "SELECT COUNT(*) FROM users WHERE last_login_ts>=?", (since,)).fetchone()[0],
+        "storage_bytes": conn.execute("SELECT COALESCE(SUM(raw_bytes),0) FROM sessions").fetchone()[0],
+        "storage_growth_bytes": conn.execute(
+            "SELECT COALESCE(SUM(raw_bytes),0) FROM sessions WHERE created_ts>=?", (since,)).fetchone()[0],
+    }
+    failures = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE status='error' AND created_ts>=?", (now - 86400,)).fetchone()[0]
+    oldest = conn.execute(
+        "SELECT MIN(created_ts) FROM sessions WHERE status IN ('queued','parsing')").fetchone()[0]
+    audit = audit_log(limit=5, offset=0, admin=admin)["entries"]
+    feedback_open = conn.execute("SELECT COUNT(*) FROM feedback WHERE status='open'").fetchone()[0]
+    # The full review gather scans aggregate combat evidence and belongs to the
+    # workbench. Doing it for a dashboard badge added ~5 seconds to every admin
+    # landing. This is the cheap actionable floor: tracked catalog candidates
+    # with no human ruling. The workbench supplies the exact confidence-aware
+    # total once somebody chooses that job.
+    abilities_open = conn.execute(
+        "SELECT COUNT(*) FROM ability_catalog ac LEFT JOIN ability_rulings ar "
+        "ON ar.ability_name=ac.ability_name WHERE ar.ability_name IS NULL "
+        "AND (ac.pet_seen>0 OR ac.proc_candidate>0)").fetchone()[0]
+    reference = conn.execute("SELECT MAX(fetched_ts) FROM wiki_abilities").fetchone()[0]
+    census = conn.execute("SELECT MAX(fetched_ts) FROM census_spells").fetchone()[0]
+    return {
+        "status": {"ingest": {"state": "active" if conn.execute(
+            "SELECT 1 FROM sessions WHERE status='receiving' LIMIT 1").fetchone() else "quiet"},
+            "parsing": {"state": "degraded" if failures else "healthy", "failures_24h": failures,
+                        "oldest_job_age_s": max(0, now - oldest) if oldest else None},
+            "storage": {"state": "healthy", "used_bytes": usage["storage_bytes"]},
+            "reference": {"state": "healthy" if reference or census else "quiet",
+                          "wiki_refreshed_ts": reference, "census_refreshed_ts": census}},
+        "actions": {"incidents": _incident_rows(conn)[:5], "feedback_open": feedback_open,
+                    "abilities_open": abilities_open},
+        "usage": usage, "recent_changes": audit,
+    }
 
 
 @router.get("/admin/groups")
@@ -389,7 +605,10 @@ def _shape(d: dict) -> dict:
 
 
 @router.get("/admin/abilities")
-def list_abilities(q: str = "", scope: str = "open", admin=Depends(require_curator)):
+def list_abilities(q: str = "", scope: str = "open", status: str = "",
+                   suggestion: str = "", confidence: str = "", class_name: str = "",
+                   evidence: str = "", sort: str = "damage",
+                   admin=Depends(require_curator)):
     """`scope=open` is the work queue — everything under full confidence and
     not yet ruled on. `scope=all` (or any `q`) reaches every ability ever
     tracked, which is how a wrong answer gets fixed later.
@@ -411,23 +630,65 @@ def list_abilities(q: str = "", scope: str = "open", admin=Depends(require_curat
     else:
         picked = [d for d in rows.values()
                   if not d["ruling"] and d["confidence"] in OPEN_CONFIDENCE]
+    if status:
+        if status == "unreviewed": picked = [d for d in picked if not d["ruling"]]
+        elif status == "ruled": picked = [d for d in picked if d["ruling"]]
+        elif status == "curated": picked = [d for d in picked if d["confidence"] == "curated"]
+        elif status != "all": raise HTTPException(422, "unknown ability status")
+    if suggestion:
+        picked = [d for d in picked if d["suggest"] == suggestion]
+    if confidence:
+        picked = [d for d in picked if d["confidence"] == confidence]
+    if class_name:
+        picked = [d for d in picked if class_name in d["classes"] or
+                  (class_name == "unclassed" and not d["classes"])]
+    if evidence:
+        tests = {
+            "conflicting": lambda d: d["pet_definite"] and d["player_casts"],
+            "prepare": lambda d: d["prepare_lines"],
+            "no_reference": lambda d: not d["scribed_by"] and not d["wiki_kind"],
+        }
+        if evidence not in tests: raise HTTPException(422, "unknown evidence filter")
+        picked = [d for d in picked if tests[evidence](d)]
+    sorters = {
+        "damage": lambda d: (-d["total_damage"], d["ability"]),
+        "alphabetical": lambda d: (d["ability"].lower(),),
+        "most_evidence": lambda d: (-(d["pet_definite"] + d["player_casts"] + d["logger_hits"]), d["ability"]),
+        "least_evidence": lambda d: ((d["pet_definite"] + d["player_casts"] + d["logger_hits"]), d["ability"]),
+    }
+    if sort not in sorters: raise HTTPException(422, "unknown sort")
+    picked.sort(key=sorters[sort])
+
+    conn = get_db()
+    actors = {r["ability_name"]: r["username"] for r in conn.execute(
+        "SELECT ar.ability_name,u.username FROM ability_rulings ar "
+        "LEFT JOIN users u ON u.id=ar.decided_by")}
 
     by_class: dict[str, list] = {}
     unclassed = []
-    for d in sorted(picked, key=lambda x: (-x["total_damage"], x["ability"])):
+    flat = []
+    for d in picked:
         shaped = _shape(d)
+        if shaped["ruling"]:
+            shaped["ruling"]["decided_by"] = actors.get(d["ability"])
+        flat.append(shaped)
         if not d["classes"]:
             unclassed.append(shaped)
         for cls in d["classes"]:
             by_class.setdefault(cls, []).append(shaped)
     return {
         "scope": scope, "q": q,
+        "items": flat,
         "classes": [{"class": c, "abilities": by_class[c]} for c in sorted(by_class)],
         "unclassed": unclassed,
         "total": len(picked),
         "open_count": sum(1 for d in rows.values()
                           if not d["ruling"] and d["confidence"] in OPEN_CONFIDENCE),
         "tracked": len(rows),
+        "reviewed_today": conn.execute(
+            "SELECT COUNT(*) FROM ability_rulings WHERE decided_ts>=?", (int(time.time()) - 86400,)).fetchone()[0],
+        "confidence_counts": {c: sum(1 for d in rows.values() if d["confidence"] == c)
+                              for c in ("ruled", "curated", "high", "medium", "low")},
         "grant_kinds": list(GRANT_KINDS),
         # who a grant can be recorded against, widest tier first, each saying
         # who it covers — "is this a Predator AA or a Ranger one" is the
@@ -502,3 +763,186 @@ def unrule_ability(ability_name: str, admin=Depends(require_curator)):
         if cur.rowcount:
             g.audit(conn, admin["id"], "unrule_ability", f"ability:{ability_name}")
     return {"ability": ability_name, "ruled": False}
+
+
+# ---------- AoE timers: pooled game evidence and reversible curator rulings --
+
+@router.get("/admin/timer-mechanics")
+def timer_mechanics(admin=Depends(require_curator)):
+    from pipeline import aoes
+    conn = get_db()
+    curated = {(r["kind"], r["name"]): dict(r) for r in conn.execute(
+        "SELECT tm.*,u.username decided_by_name FROM timer_mechanics tm "
+        "LEFT JOIN users u ON u.id=tm.decided_by")}
+    rows = []
+    for kind, source in (("reuse_debuff", aoes.reuse_debuffs()),
+                         ("reflect_window", aoes.reflect_windows())):
+        for name, config in source.items():
+            ruling = curated.get((kind, name))
+            rows.append({"kind": kind, "name": name, "config": config,
+                         "curated": bool(ruling), "note": ruling["note"] if ruling else None,
+                         "decided_by": ruling["decided_by_name"] if ruling else None})
+    return {"items": sorted(rows, key=lambda r: (r["kind"], r["name"]))}
+
+
+@router.put("/admin/timer-mechanics/{kind}/{name}")
+def set_timer_mechanic(kind: str, name: str, payload: dict = Body(...),
+                       admin=Depends(require_curator)):
+    if kind not in ("reuse_debuff", "reflect_window"):
+        raise HTTPException(422, "kind is reuse_debuff or reflect_window")
+    note = str(payload.get("note") or "").strip()
+    config = payload.get("config")
+    if not note or not isinstance(config, dict):
+        raise HTTPException(422, "config object and note are required")
+    if any(not isinstance(v, (str, int, float, bool, list, dict, type(None))) for v in config.values()):
+        raise HTTPException(422, "config contains an unsupported value")
+    required = ("duration_s", "recast_s") if kind == "reuse_debuff" else ("window_s",)
+    for field in required:
+        try: value = float(config.get(field))
+        except (TypeError, ValueError): raise HTTPException(422, f"{field} must be a number")
+        if value <= 0 or value > 3600: raise HTTPException(422, f"{field} is out of range")
+    conn = get_db(); now = int(time.time())
+    with conn:
+        conn.execute("INSERT INTO timer_mechanics(kind,name,config_json,note,decided_by,decided_ts) "
+                     "VALUES(?,?,?,?,?,?) ON CONFLICT(kind,name) DO UPDATE SET "
+                     "config_json=excluded.config_json,note=excluded.note,"
+                     "decided_by=excluded.decided_by,decided_ts=excluded.decided_ts",
+                     (kind, name, json.dumps(config, separators=(",", ":")), note, admin["id"], now))
+        g.audit(conn, admin["id"], "rule_timer_mechanic", f"{kind}:{name}", note)
+    from pipeline import aoes
+    aoes.reuse_debuffs.cache_clear(); aoes.reflect_windows.cache_clear()
+    return {"kind": kind, "name": name, "ruled": True}
+
+
+@router.delete("/admin/timer-mechanics/{kind}/{name}")
+def clear_timer_mechanic(kind: str, name: str, admin=Depends(require_curator)):
+    conn = get_db()
+    with conn:
+        changed = conn.execute("DELETE FROM timer_mechanics WHERE kind=? AND name=?",
+                               (kind, name)).rowcount
+        if changed: g.audit(conn, admin["id"], "clear_timer_mechanic", f"{kind}:{name}")
+    from pipeline import aoes
+    aoes.reuse_debuffs.cache_clear(); aoes.reflect_windows.cache_clear()
+    return {"kind": kind, "name": name, "ruled": False}
+
+def _timer_rows(conn):
+    from pipeline import aoelearn, aoes
+    learned = aoelearn.learn(conn)
+    reported = aoes.reported_timers()
+    rows = []
+    for (mob, ability), row in learned.items():
+        rep = (reported.get(ability) or {}).get("timer_s")
+        ruling = row.get("ruling")
+        effective, source = aoelearn.timer_for(learned, mob, ability, rep)
+        if ruling and ruling["excluded"]:
+            state = "excluded"
+        elif ruling and ruling["override_s"] is not None:
+            state = "overridden"
+        elif row["several_bodies"]:
+            state = "learning_blocked"
+        elif row["clean_s"] and rep and abs(row["clean_s"] - rep) >= max(5, rep * .15):
+            state = "disagreement"
+        elif row["base_s"]:
+            state = "healthy"
+        else:
+            state = "learning"
+        last = conn.execute(
+            "SELECT MAX(cast_ts) FROM aoe_cycles WHERE source_name=? AND ability=?",
+            (mob, ability)).fetchone()[0]
+        rows.append({**row, "mob": mob, "reported_s": rep, "effective_s": effective,
+                     "effective_source": source, "state": state, "last_observation_ts": last,
+                     "ruling": dict(ruling) if ruling else None})
+    return rows
+
+
+@router.get("/admin/timers")
+def list_timers(q: str = "", state: str = "needs_review", limit: int = 100,
+                offset: int = 0, admin=Depends(require_curator)):
+    rows = _timer_rows(get_db())
+    needle = q.strip().lower()
+    if needle:
+        rows = [r for r in rows if needle in r["mob"].lower() or needle in r["ability"].lower()]
+    if state == "needs_review":
+        rows = [r for r in rows if r["state"] in
+                ("disagreement", "learning_blocked", "learning")]
+    elif state != "all":
+        rows = [r for r in rows if r["state"] == state]
+    rows.sort(key=lambda r: ({"disagreement": 0, "learning_blocked": 1,
+                              "learning": 2}.get(r["state"], 9), r["mob"], r["ability"]))
+    total = len(rows); limit = max(1, min(limit, 500)); offset = max(0, offset)
+    return {"items": rows[offset:offset + limit], "total": total, "limit": limit,
+            "offset": offset}
+
+
+@router.get("/admin/timers/{mob}/{ability}")
+def timer_detail(mob: str, ability: str, admin=Depends(require_curator)):
+    conn = get_db()
+    row = next((r for r in _timer_rows(conn)
+                if r["mob"] == mob and r["ability"] == ability), None)
+    if row is None:
+        raise HTTPException(404, "no such timer evidence")
+    cycles = rows_to_dicts(conn.execute(
+        "SELECT gap_s, swiped FROM aoe_cycles WHERE source_name=? AND ability=? "
+        "ORDER BY gap_s", (mob, ability)))
+    row["clean_intervals"] = [r["gap_s"] for r in cycles if not r["swiped"]]
+    row["swiped_intervals"] = [r["gap_s"] for r in cycles if r["swiped"]]
+    row["thresholds"] = {"minimum_agreeing": __import__("pipeline.aoelearn", fromlist=[""]).MIN_AGREE,
+                         "minimum_pulls": __import__("pipeline.aoelearn", fromlist=[""]).MIN_FIGHTS}
+    row["reason"] = ("Excluded by curator." if row["state"] == "excluded" else
+                     "A curator override is authoritative." if row["state"] == "overridden" else
+                     f"Multiple bodies block adoption ({row['several_bodies']})." if row["several_bodies"] else
+                     "Measured evidence is still below the adoption threshold." if not row["base_s"] else
+                     "Clean intervals across distinct pulls meet the adoption threshold.")
+    return row
+
+
+@router.put("/admin/timers/{mob}/{ability}")
+def rule_timer(mob: str, ability: str, payload: dict = Body(...),
+               admin=Depends(require_curator)):
+    conn = get_db()
+    evidence = next((r for r in _timer_rows(conn)
+                     if r["mob"] == mob and r["ability"] == ability), None)
+    if evidence is None:
+        raise HTTPException(404, "no such timer evidence")
+    note = str(payload.get("note") or "").strip()
+    if not note:
+        raise HTTPException(422, "a curator note is required")
+    accept = bool(payload.get("accept_measured"))
+    override = payload.get("override_s")
+    if accept:
+        override = evidence["clean_s"]
+        if override is None:
+            raise HTTPException(409, "there is no measured timer to accept")
+    if override not in (None, ""):
+        override = float(override)
+        if override <= 0 or override > 3600:
+            raise HTTPException(422, "override_s must be between 0 and 3600")
+    else:
+        override = None
+    excluded = int(bool(payload.get("excluded")))
+    split = payload.get("split_mob")
+    split = None if split is None else int(bool(split))
+    now = int(time.time())
+    with conn:
+        conn.execute(
+            "INSERT INTO timer_rulings(source_name,ability,override_s,accepted_measured,"
+            "excluded,split_mob,note,decided_by,decided_ts) VALUES(?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(source_name,ability) DO UPDATE SET override_s=excluded.override_s,"
+            "accepted_measured=excluded.accepted_measured,excluded=excluded.excluded,"
+            "split_mob=excluded.split_mob,note=excluded.note,decided_by=excluded.decided_by,"
+            "decided_ts=excluded.decided_ts",
+            (mob, ability, override, int(accept), excluded, split, note, admin["id"], now))
+        g.audit(conn, admin["id"], "rule_timer", f"timer:{mob}|{ability}",
+                f"{override if override is not None else '-'}s; {note}")
+    return {"mob": mob, "ability": ability, "ruled": True}
+
+
+@router.delete("/admin/timers/{mob}/{ability}")
+def clear_timer_ruling(mob: str, ability: str, admin=Depends(require_curator)):
+    conn = get_db()
+    with conn:
+        changed = conn.execute(
+            "DELETE FROM timer_rulings WHERE source_name=? AND ability=?", (mob, ability)).rowcount
+        if changed:
+            g.audit(conn, admin["id"], "clear_timer_ruling", f"timer:{mob}|{ability}")
+    return {"mob": mob, "ability": ability, "ruled": False}

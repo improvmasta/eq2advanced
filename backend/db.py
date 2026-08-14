@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -290,6 +290,29 @@ CREATE TABLE IF NOT EXISTS ability_rulings (
   note TEXT,
   decided_by INTEGER,
   decided_ts INTEGER NOT NULL
+);
+-- Human authority over learned enemy timers. Observations stay in aoe_cycles;
+-- this table only records reversible decisions and their provenance.
+CREATE TABLE IF NOT EXISTS timer_rulings (
+  source_name TEXT NOT NULL,
+  ability TEXT NOT NULL,
+  override_s REAL,
+  accepted_measured INTEGER NOT NULL DEFAULT 0,
+  excluded INTEGER NOT NULL DEFAULT 0,
+  split_mob INTEGER,
+  note TEXT NOT NULL,
+  decided_by INTEGER,
+  decided_ts INTEGER NOT NULL,
+  PRIMARY KEY (source_name, ability)
+);
+CREATE TABLE IF NOT EXISTS timer_mechanics (
+  kind TEXT NOT NULL,                       -- reuse_debuff|reflect_window
+  name TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  note TEXT NOT NULL,
+  decided_by INTEGER,
+  decided_ts INTEGER NOT NULL,
+  PRIMARY KEY (kind, name)
 );
 -- Which sessions saw a pet-KIND entity cast an ability. Evidence for the pet
 -- review, keyed by session so a reparse re-states it rather than inflating it.
@@ -622,6 +645,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
   detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
+CREATE TABLE IF NOT EXISTS incident_acknowledgements (
+  session_id INTEGER PRIMARY KEY REFERENCES sessions(id),
+  note TEXT NOT NULL,
+  actor_user_id INTEGER,
+  acknowledged_ts INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -629,6 +658,8 @@ CREATE TABLE IF NOT EXISTS feedback (
   body TEXT NOT NULL,
   page TEXT,                              -- SPA path it was filed from
   status TEXT NOT NULL DEFAULT 'open',    -- open|planned|closed
+  assignee_user_id INTEGER REFERENCES users(id),
+  admin_note TEXT,
   created_ts INTEGER NOT NULL,
   updated_ts INTEGER                      -- last status change
 );
@@ -1349,6 +1380,14 @@ def init_db() -> None:
         # nothing before the upgrade can be recovered: no log of who asked for a
         # page has ever been kept here, which is the same reason the chat
         # archive could not be backfilled. The count starts at the upgrade.
+        # v38: operational admin state and curator timer rulings. The new
+        # tables come from SCHEMA; feedback's optional workflow fields need a
+        # shape migration for existing databases.
+        fb_cols = {r[1] for r in conn.execute("PRAGMA table_info(feedback)")}
+        if "assignee_user_id" not in fb_cols:
+            conn.execute("ALTER TABLE feedback ADD COLUMN assignee_user_id INTEGER")
+        if "admin_note" not in fb_cols:
+            conn.execute("ALTER TABLE feedback ADD COLUMN admin_note TEXT")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

@@ -202,6 +202,7 @@ function Ruler({ a, targets, onSave, onClear, busy }) {
                onChange={(e) => setNote(e.target.value)} />
       </div>
       <div className="rulerow acts">
+        <p className="decisionpreview">Save: <b>{a.ability}</b> belongs to <b>{unit}</b>, <b>{fires === 'proc' ? 'fires on its own' : 'is pressed'}</b>{kind !== 'unknown' ? `, and is granted by ${kind}${name ? ` ${name}` : ''}` : ', with an unknown grant'}.</p>
         <button className="btn solid" disabled={busy}
                 onClick={() => onSave({ unit, fires, grant_kind: kind, grant_name: name, grant_class: cls, note })}>
           {r ? 'Update' : 'Save'}
@@ -239,131 +240,104 @@ function AbilityRow({ a, targets, open, onToggle, onSave, onClear, busy }) {
 }
 
 export default function AdminAbilities({ user }) {
-  const [data, setData] = useState(null)
-  /* `?q=` is the address, so a lookup button on a raid page can land straight
-     on one ability — and so a search you want to come back to is a link. */
   const [params, setParams] = useSearchParams()
-  const urlQ = params.get('q') ?? ''
-  const [q, setQ] = useState(urlQ)
-  const [term, setTerm] = useState(urlQ)
-  const [pick, setPick] = useState(null)      // class name, '' = unclassed, null = first
-  const [open, setOpen] = useState(null)
+  const [data, setData] = useState(null)
+  const [q, setQ] = useState(params.get('q') ?? '')
+  const status = params.get('status') || 'unreviewed'
+  const suggestion = params.get('suggestion') || ''
+  const confidence = params.get('confidence') || ''
+  const className = params.get('class') || ''
+  const evidence = params.get('evidence') || ''
+  const sort = params.get('sort') || 'most_evidence'
+  const [selected, setSelected] = useState(null)
   const [error, setError] = useState(null)
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [undo, setUndo] = useState(null)
 
   const refresh = useCallback(() => {
-    api.adminAbilities({ q: term, scope: term ? 'all' : 'open' })
-      .then(setData).catch((e) => setError(e.message))
-  }, [term])
+    api.adminAbilities({ q, scope: 'all', status, suggestion, confidence, className, evidence, sort })
+      .then((d) => { setData(d); setSelected((s) => d.items.find((a) => a.ability === s?.ability) || d.items[0] || null) })
+      .catch((e) => setError(e.message))
+  }, [q, status, suggestion, confidence, className, evidence, sort])
   useEffect(() => { refresh() }, [refresh])
 
-  // the search box shouldn't fire a request per keystroke against 1500 rows
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const v = q.trim()
-      setTerm(v)
-      // replace, not push: typing a query should not fill the back button
-      setParams(v ? { q: v } : {}, { replace: true })
-    }, 250)
-    return () => clearTimeout(t)
-  }, [q])
-
-  // arriving from a lookup button while already on the page
-  useEffect(() => { if (urlQ !== q.trim()) setQ(urlQ) }, [urlQ])
-
-  const groups = useMemo(() => {
-    if (!data) return []
-    const out = data.classes.map((c) => ({ key: c.class, label: c.class, rows: c.abilities }))
-    if (data.unclassed.length) {
-      out.push({ key: '', label: 'Unclassed', rows: data.unclassed })
-    }
-    return out
-  }, [data])
-
-  const current = groups.find((g) => g.key === pick) ?? groups[0] ?? null
+  const setFilter = (key, value) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value); else next.delete(key)
+    setParams(next, { replace: true })
+  }
+  useEffect(() => { const t = setTimeout(() => setFilter('q', q.trim()), 250); return () => clearTimeout(t) }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(name, body) {
     setBusy(true); setError(null); setMsg(null)
     try {
+      const before = selected?.ruling
       await api.adminRuleAbility(name, body)
-      setMsg(`${name} — saved`)
-      setOpen(null)
-      refresh()
+      setMsg(`${name} — saved`); setUndo({ name, before })
+      const i = data.items.findIndex((a) => a.ability === name)
+      setSelected(data.items[i + 1] || data.items[i - 1] || null)
+      await refresh()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
-  async function clear(name) {
+  async function clear(name, quiet = false) {
     setBusy(true); setError(null); setMsg(null)
     try {
       await api.adminUnruleAbility(name)
-      setMsg(`${name} — ruling cleared`)
-      refresh()
+      if (!quiet) setMsg(`${name} — ruling cleared`)
+      await refresh()
     } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
+  async function undoLast() {
+    if (!undo) return
+    if (undo.before) await api.adminRuleAbility(undo.name, undo.before)
+    else await api.adminUnruleAbility(undo.name)
+    setMsg(`${undo.name} — change undone`); setUndo(null); refresh()
   }
 
   return (
     <div className="manage abilities">
       <div className="pagehead">
-        <h1>Abilities</h1>
-        <span className="sub">
-          What is a pet&apos;s, what fires on its own, and what grants it.
-          {data && <> <b>{data.open_count}</b> still to decide of <b>{data.tracked}</b> tracked.</>}
-        </span>
-        {/* a curator has no /admin to go back to */}
-        {user?.role === 'admin' && <Link className="btnlink" to="/admin">← Admin</Link>}
+        <div><h1>Abilities</h1><p className="muted">Review consecutive game-knowledge decisions without losing your queue.</p></div>
+        <div className="actions">{user?.role === 'admin' && <Link to="/admin">Admin dashboard</Link>}<Link to="/admin/timers">AoE timers</Link></div>
       </div>
 
       {error && <p className="error">{error}</p>}
-      {msg && <p className="ok">{msg}</p>}
+      {msg && <p className="ok">{msg} {undo && <button className="chip" onClick={undoLast}>Undo</button>}</p>}
 
-      <div className="card">
-        <input
-          className="absearch"
-          value={q}
-          onChange={(e) => { setQ(e.target.value); setPick(null); setOpen(null) }}
-          placeholder="Search every ability we've ever tracked — including settled ones"
-          aria-label="Search abilities"
-        />
-        <p className="note">
-          {term
-            ? `Searching all ${data?.tracked ?? ''} tracked abilities. This is how you reopen one that was decided wrong.`
-            : 'Showing only what is still undecided. Search to reach anything else.'}
-        </p>
+      <div className="abilitysummary">
+        <div><b>{data?.open_count ?? '—'}</b><span>remaining</span></div>
+        <div><b>{data?.reviewed_today ?? '—'}</b><span>reviewed today</span></div>
+        <div><b>{data?.confidence_counts?.medium ?? '—'}</b><span>medium confidence</span></div>
+        <div><b>{data?.confidence_counts?.low ?? '—'}</b><span>low confidence</span></div>
       </div>
 
-      {!data ? <p className="note">Loading…</p> : !groups.length ? (
-        <p className="note">{term ? 'No ability matches that.' : 'Nothing left to decide.'}</p>
-      ) : (
-        <div className="abgrid">
-          <nav className="abrail" aria-label="Classes">
-            {groups.map((g) => (
-              <button
-                key={g.key || '_none'}
-                className={`railrow ${current && g.key === current.key ? 'on' : ''}`}
-                onClick={() => { setPick(g.key); setOpen(null) }}
-              >
-                <span>{g.label}</span>
-                <span className="count">{g.rows.length}</span>
-              </button>
-            ))}
-          </nav>
-          <div className="ablist">
-            {current?.rows.map((a) => (
-              <AbilityRow
-                key={a.ability}
-                a={a}
-                targets={data.grant_targets ?? []}
-                open={open === a.ability}
-                onToggle={() => setOpen(open === a.ability ? null : a.ability)}
-                onSave={(body) => save(a.ability, body)}
-                onClear={() => clear(a.ability)}
-                busy={busy}
-              />
-            ))}
-          </div>
+      <div className="workbenchfilters abilityfilters">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search all tracked abilities…" />
+        <select value={status} onChange={(e) => setFilter('status', e.target.value)}><option value="unreviewed">Unreviewed</option><option value="ruled">Ruled</option><option value="curated">Curated seed</option><option value="all">All</option></select>
+        <select value={suggestion} onChange={(e) => setFilter('suggestion', e.target.value)}><option value="">Any suggestion</option><option value="pet">Pet</option><option value="player">Player</option><option value="proc">Proc</option><option value="unclear">Unclear</option></select>
+        <select value={confidence} onChange={(e) => setFilter('confidence', e.target.value)}><option value="">Any confidence</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+        <input value={className} onChange={(e) => setFilter('class', e.target.value)} placeholder="Class or unclassed" />
+        <select value={evidence} onChange={(e) => setFilter('evidence', e.target.value)}><option value="">Any evidence</option><option value="conflicting">Conflicting</option><option value="prepare">Has prepare lines</option><option value="no_reference">No Census/wiki match</option></select>
+        <select value={sort} onChange={(e) => setFilter('sort', e.target.value)}><option value="most_evidence">Most evidence</option><option value="least_evidence">Least evidence</option><option value="damage">Highest damage</option><option value="alphabetical">Alphabetical</option></select>
+      </div>
+
+      {!data ? <p className="note">Loading…</p> : <div className="masterdetail abilityworkbench">
+        <div className="masterlist">{data.items.map((a) => <button key={a.ability} className={selected?.ability === a.ability ? 'on' : ''} onClick={() => setSelected(a)}>
+          <span><b>{a.ability}</b><small>{a.classes.join(', ') || 'Unclassed'}</small></span><span><span className={`badge sug-${a.suggest}`}>{a.suggest}</span><small>{a.confidence}</small></span>
+        </button>)}</div>
+        <div className="abilitydetail">{selected ? <div key={selected.ability}>
+          <h2>{selected.ability}</h2>
+          <p className="note">{selected.why}</p>
+          {selected.ruling && <p className="muted small">Current ruling by {selected.ruling.decided_by || 'unknown'} on {fmt.date(selected.ruling.decided_ts)}.</p>}
+          <Evidence a={selected} />
+          <p className="decisionpreview">This ability belongs to <b>{selected.ruling?.unit || selected.suggest}</b> and <b>{selected.ruling?.fires || (selected.suggest === 'proc' ? 'fires on its own' : 'is cast')}</b>.</p>
+          <Ruler a={selected} targets={data.grant_targets ?? []} onSave={(body) => save(selected.ability, body)} onClear={() => clear(selected.ability)} busy={busy} />
+        </div> : <p className="muted">Nothing matches this queue.</p>}</div>
         </div>
-      )}
+      }
     </div>
   )
 }

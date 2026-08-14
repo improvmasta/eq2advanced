@@ -126,9 +126,17 @@ def reuse_debuffs() -> dict[str, dict]:
     """Player abilities that slow an enemy's recast, keyed by ability name."""
     try:
         with open(_DEBUFFS_PATH, encoding="utf-8") as fh:
-            return json.load(fh).get("debuffs", {}) or {}
+            shipped = json.load(fh).get("debuffs", {}) or {}
     except (OSError, ValueError):
-        return {}
+        shipped = {}
+    try:
+        from db import get_db
+        for row in get_db().execute(
+                "SELECT name,config_json FROM timer_mechanics WHERE kind='reuse_debuff'"):
+            shipped[row["name"]] = json.loads(row["config_json"])
+    except Exception:  # database may not be initialized during tooling imports
+        pass
+    return shipped
 
 
 def reuse_debuff_names() -> frozenset[str]:
@@ -165,9 +173,17 @@ def reflect_windows() -> dict[str, dict]:
     no row rather than a guessed one."""
     try:
         with open(_REFLECT_PATH, encoding="utf-8") as fh:
-            return json.load(fh).get("mobs", {}) or {}
+            shipped = json.load(fh).get("mobs", {}) or {}
     except (OSError, ValueError):
-        return {}
+        shipped = {}
+    try:
+        from db import get_db
+        for row in get_db().execute(
+                "SELECT name,config_json FROM timer_mechanics WHERE kind='reflect_window'"):
+            shipped[row["name"]] = json.loads(row["config_json"])
+    except Exception:
+        pass
+    return shipped
 
 
 # MEMBERSHIP GETS A SECOND OR TWO THAT THE COUNTDOWN DOES NOT.

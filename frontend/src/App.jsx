@@ -19,6 +19,7 @@ import Account from './pages/Account.jsx'
 import Groups from './pages/Groups.jsx'
 import Admin from './pages/Admin.jsx'
 import AdminAbilities from './pages/AdminAbilities.jsx'
+import AdminTimers from './pages/AdminTimers.jsx'
 import JoinGroup from './pages/JoinGroup.jsx'
 import Login from './pages/Login.jsx'
 import { api } from './lib/api.js'
@@ -396,7 +397,7 @@ export default function App() {
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />
             <Route path="/characters/:id" element={<NeedsAccount user={user}><Character /></NeedsAccount>} />
             <Route path="/groups" element={<NeedsAccount user={user}><Groups /></NeedsAccount>} />
-            <Route path="/admin" element={
+            <Route path="/admin/*" element={
               <NeedsAccount user={user}>
                 {user?.role === 'admin' ? <Admin user={user} /> : <Navigate to="/" replace />}
               </NeedsAccount>} />
@@ -404,6 +405,11 @@ export default function App() {
               <NeedsAccount user={user}>
                 {['admin', 'curator'].includes(user?.role)
                   ? <AdminAbilities user={user} /> : <Navigate to="/" replace />}
+              </NeedsAccount>} />
+            <Route path="/admin/timers" element={
+              <NeedsAccount user={user}>
+                {['admin', 'curator'].includes(user?.role)
+                  ? <AdminTimers user={user} /> : <Navigate to="/" replace />}
               </NeedsAccount>} />
             <Route path="/account" element={
               <NeedsAccount user={user}>

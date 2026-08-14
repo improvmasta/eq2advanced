@@ -279,6 +279,14 @@ export const api = {
 
   // admin console — metadata only, by design (backend/routers/admin_api.py)
   adminOverview: () => req('/api/admin/overview'),
+  adminDashboard: () => req('/api/admin/dashboard'),
+  adminIncidents: ({ state = 'open', type = '', severity = '', age = 0 } = {}) => req(
+    `/api/admin/incidents?state=${state}&type=${type}&severity=${severity}&age=${age}`),
+  adminIncident: (id) => req(`/api/admin/incidents/${id}`),
+  adminRetryIncident: (id) => mutate(req(
+    `/api/admin/incidents/${id}/retry`, { method: 'POST' })),
+  adminAcknowledgeIncident: (id, note) => mutate(req(
+    `/api/admin/incidents/${id}/acknowledge`, { ...json({ note }), method: 'POST' })),
   // searched, sorted and paged on the server — the accounts table has to hold
   // up with more accounts than fit on a screen
   adminUsers: ({ q = '', sort = 'stored_bytes', dir = 'desc', limit = 50, offset = 0 } = {}) =>
@@ -294,15 +302,19 @@ export const api = {
   // user | curator | admin — curator opens the Abilities console and nothing else
   adminSetRole: (id, role) => req(`/api/admin/users/${id}/role`, json({ role })),
   adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
-  adminAudit: ({ limit = 200, offset = 0 } = {}) =>
-    req(`/api/admin/audit?limit=${limit}&offset=${offset}`),
+  adminAudit: ({ limit = 200, offset = 0, q = '', actor = '', family = '' } = {}) =>
+    req(`/api/admin/audit?limit=${limit}&offset=${offset}&q=${encodeURIComponent(q)}`
+      + `&actor=${encodeURIComponent(actor)}&family=${encodeURIComponent(family)}`),
   /* How many people came, by day. A count of visits, never a list of them —
      the table behind this cannot name anybody (`backend/visitors.py`). */
   adminVisitors: (days = 30) => req(`/api/admin/visitors?days=${days}`),
   adminPublicRuns: () => req('/api/admin/public-runs'),
   // bug reports and suggestions: anyone signed in files them, an admin triages
-  adminFeedback: ({ status = '', kind = '', limit = 100, offset = 0 } = {}) =>
-    req(`/api/admin/feedback?status=${status}&kind=${kind}&limit=${limit}&offset=${offset}`),
+  adminFeedback: ({ status = '', kind = '', q = '', assignee = '', limit = 100, offset = 0 } = {}) =>
+    req(`/api/admin/feedback?status=${status}&kind=${kind}&q=${encodeURIComponent(q)}`
+      + `&assignee=${encodeURIComponent(assignee)}&limit=${limit}&offset=${offset}`),
+  adminUpdateFeedback: (id, body) => req(
+    `/api/admin/feedback/${id}`, { ...json(body), method: 'PATCH' }),
   adminSetFeedbackStatus: (id, status) => req(
     `/api/admin/feedback/${id}`, { ...json({ status }), method: 'PATCH' }),
   adminDeleteFeedback: (id) => req(`/api/admin/feedback/${id}`, { method: 'DELETE' }),
@@ -311,12 +323,31 @@ export const api = {
      confidence and unruled); any `q` searches every ability ever tracked, so
      a settled answer can be reopened. Still no player names in the payload —
      evidence is site-wide sums and class names. */
-  adminAbilities: ({ q = '', scope = 'open' } = {}) => req(
-    `/api/admin/abilities?scope=${scope}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+  adminAbilities: ({ q = '', scope = 'open', status = '', suggestion = '', confidence = '',
+    className = '', evidence = '', sort = 'damage' } = {}) => req(
+    `/api/admin/abilities?scope=${scope}&q=${encodeURIComponent(q)}&status=${status}`
+      + `&suggestion=${suggestion}&confidence=${confidence}&class_name=${className}`
+      + `&evidence=${evidence}&sort=${sort}`),
   adminRuleAbility: (name, body) => req(
     `/api/admin/abilities/${encodeURIComponent(name)}`, { ...json(body), method: 'PUT' }),
   adminUnruleAbility: (name) => req(
     `/api/admin/abilities/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  adminTimers: ({ q = '', state = 'needs_review', limit = 100, offset = 0 } = {}) => req(
+    `/api/admin/timers?q=${encodeURIComponent(q)}&state=${state}&limit=${limit}&offset=${offset}`),
+  adminTimer: (mob, ability) => req(
+    `/api/admin/timers/${encodeURIComponent(mob)}/${encodeURIComponent(ability)}`),
+  adminRuleTimer: (mob, ability, body) => req(
+    `/api/admin/timers/${encodeURIComponent(mob)}/${encodeURIComponent(ability)}`,
+    { ...json(body), method: 'PUT' }),
+  adminClearTimer: (mob, ability) => req(
+    `/api/admin/timers/${encodeURIComponent(mob)}/${encodeURIComponent(ability)}`,
+    { method: 'DELETE' }),
+  adminTimerMechanics: () => req('/api/admin/timer-mechanics'),
+  adminRuleTimerMechanic: (kind, name, body) => req(
+    `/api/admin/timer-mechanics/${kind}/${encodeURIComponent(name)}`,
+    { ...json(body), method: 'PUT' }),
+  adminClearTimerMechanic: (kind, name) => req(
+    `/api/admin/timer-mechanics/${kind}/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 }
 
 export const fmt = {
