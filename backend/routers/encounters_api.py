@@ -887,6 +887,9 @@ def encounters_loot(ids: str = Query(...), user=Depends(optional_user)):
     for r in rows:
         card = cards.get(r["item_id"]) or {}
         out.append({
+            # The item as any page draws it (items.display), then what only a
+            # LOOT row knows on top of it.
+            **items.display(card),
             "id": r["id"],
             "ts": r["ts"],
             "encounter_id": r["encounter_id"],
@@ -909,18 +912,6 @@ def encounters_loot(ids: str = Query(...), user=Depends(optional_user)):
             # Who else wanted it: the lotto's NEED/GREED block, or the /random
             # dice when the raid used those. Already in resolution order.
             "rolls": json.loads(r["rolls_json"]) if r["rolls_json"] else None,
-            "icon": card.get("icon"),
-            "wiki": card.get("wiki"),
-            "type": card.get("type"),
-            "slot": card.get("slot"),
-            "level": card.get("level"),
-            "tier": items.tier_of(card.get("level")),
-            # The examine window, prebuilt at resolve time — the hover card is
-            # a read of this, never a request (backend/items.py: stat_block).
-            "stats": card.get("stats"),
-            # The item's own proc — name, tier and its indented description.
-            # From the WIKI: Census has no field for it.
-            "effects": card.get("effects"),
         })
     return {
         "loot": out,
@@ -931,6 +922,29 @@ def encounters_loot(ids: str = Query(...), user=Depends(optional_user)):
 
 
 IMAGE_CACHE = {"Cache-Control": "public, max-age=604800, immutable"}
+
+
+@router.get("/items/{item_id}/card")
+def item_card(item_id: int):
+    """One item's examine card, for a link that did not arrive with a parse.
+
+    The Loot tab never calls this — it is handed every card it needs with its
+    rows, which is right when the whole table is known at once. A CHAT line is
+    not: an item can be linked in Auction at any moment, and the message
+    carrying it may arrive over the stream long after the page loaded. So the
+    link asks for its own card the first time somebody hovers it, and the
+    browser keeps the answer.
+
+    It is a READ. Resolution is `chatbus`'s worker (and the parse sweep), never
+    a request handler — `items.ensure` is network-bound and would hang the page
+    on an item Census is slow about. An unresolved id answers `null`, and the
+    link stays a link with no card, which is what it looked like a moment ago
+    anyway.
+
+    Public, like the icons: what an item IS is a fact about the game, with no
+    account, session or raid behind it."""
+    card = items.cards(get_db(), [item_id]).get(item_id)
+    return {"card": items.display(card) if card else None}
 
 
 @router.get("/items/icon/{iconid}.png")

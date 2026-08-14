@@ -11,13 +11,15 @@ import { api, fmt } from '../lib/api.js'
    (`security.py` keeps the admin role out of every visibility decision), not
    just left out of this UI.
 
-   Tabs rather than one scroll: these are five unrelated jobs — is the site
-   healthy, who has an account, what is published, what did somebody report,
-   what did an admin do — and only one of them is ever the reason you opened
-   the page. Each tab fetches its own data, so opening Admin is one request. */
+   Tabs rather than one scroll: these are six unrelated jobs — is the site
+   healthy, who came to look, who has an account, what is published, what did
+   somebody report, what did an admin do — and only one of them is ever the
+   reason you opened the page. Each tab fetches its own data, so opening Admin
+   is one request. */
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'visitors', label: 'Visitors' },
   { key: 'accounts', label: 'Accounts' },
   { key: 'content', label: 'Content' },
   { key: 'feedback', label: 'Feedback' },
@@ -73,6 +75,7 @@ export default function Admin({ user: me }) {
             onChange={(k) => setTabQ(k === 'overview' ? null : k)} />
 
       {tab === 'overview' && <OverviewTab />}
+      {tab === 'visitors' && <VisitorsTab />}
       {tab === 'accounts' && <AccountsTab me={me} />}
       {tab === 'content' && <ContentTab />}
       {tab === 'feedback' && <FeedbackTab />}
@@ -631,6 +634,95 @@ function FeedbackTab() {
 /* ---------- Audit: every admin action ---------- */
 
 const AUDIT_PAGE = 100
+
+/* Who came to look.
+
+   A TIMELINE OF DAYS, WRITTEN OUT (the request: no chart). One row per day,
+   newest first, and the columns are the whole question: how many distinct
+   people, how many of them had no account, how many opened /chat, and how many
+   page loads it all came to.
+
+   THE ONE FIGURE THAT IS NOT HERE is "unique visitors this month". It cannot be
+   computed and must not be faked: a visitor id belongs to ONE day by design
+   (`backend/visitors.py` — the salt behind it is deleted two days later), so
+   the same person on Tuesday and Friday is two rows with nothing in common.
+   Summing the column gives visitor-DAYS, which is what the footer calls it. */
+const SPANS = [7, 30, 90]
+
+function VisitorsTab() {
+  const [span, setSpan] = useState(30)
+  const [d, setD] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setD(null)
+    setError(null)
+    api.adminVisitors(span).then(setD).catch((e) => setError(e.message))
+  }, [span])
+
+  const rows = d?.days ?? []
+
+  return (
+    <div className="card">
+      <div className="filterbar">
+        <div className="spanpick">
+          {SPANS.map((n) => (
+            <button key={n} type="button"
+                    className={`chip${span === n ? ' on' : ''}`}
+                    onClick={() => setSpan(n)}>{n} days</button>
+          ))}
+        </div>
+        {d && <span className="muted">since {d.since}</span>}
+      </div>
+
+      {error && <p className="err">{error}</p>}
+      {d === null && !error && <p className="muted">Loading…</p>}
+      {d && rows.length === 0 && (
+        <p className="muted">
+          Nobody counted yet. Counting starts when the site is next restarted on
+          this build — nothing before it was ever written down.
+        </p>
+      )}
+      {rows.length > 0 && (
+        <>
+          <table className="data mid">
+            <thead>
+              <tr>
+                <th className="l">Day</th>
+                <th>Visitors</th>
+                <th>Signed out</th>
+                <th>Opened /chat</th>
+                <th>Page loads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.day}>
+                  <td className="l">{r.day}</td>
+                  <td>{fmt.num(r.visitors)}</td>
+                  <td>{fmt.num(r.anon)}</td>
+                  <td>{fmt.num(r.chat)}</td>
+                  <td className="muted">{fmt.num(r.hits)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted small">
+            {fmt.num(d.totals.visitor_days)} visitor-days over{' '}
+            {fmt.num(d.totals.days_counted)} days ·{' '}
+            {fmt.num(d.totals.anon_days)} signed out ·{' '}
+            {fmt.num(d.totals.chat_days)} opened /chat ·{' '}
+            {fmt.num(d.totals.hits)} page loads. Visitor-days, not people: a
+            visitor id is scoped to its day on purpose, so the same person on two
+            days counts twice and cannot be matched up. Bots are filtered by
+            user-agent, and a page load is somebody arriving — moving between
+            tabs inside the app never touches the server.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
 
 function AuditTab() {
   const [shown, setShown] = useState(AUDIT_PAGE)

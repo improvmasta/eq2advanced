@@ -214,6 +214,32 @@ export const api = {
   // the ACT plugin build this server is serving (size/date for the Import page)
   plugin: () => req('/api/plugin'),
 
+  /* The public chat box. Read once for the newest of the archive, then followed
+     on `/api/chat/stream?since=<seq>` — never cached, because the answer is
+     different every second and the whole point is that it is live.
+
+     `chatHistory` is the date filter, and its window is built in the BROWSER
+     from local midnight to local midnight: the server keeps unix seconds and
+     has no idea which day the reader means. */
+  chatRecent: () => req('/api/chat/recent'),
+  /* Just the light: how many people are relaying chat this minute. The header
+     carries it on every page, so it must not cost three channels of messages
+     to ask. */
+  chatStatus: () => req('/api/chat/status'),
+  chatRecruiting: () => req('/api/chat/recruiting'),
+  chatHistory: (ch, start, end) => req(
+    `/api/chat/history?ch=${ch}&start=${start}&end=${end}`),
+  /* The Stats panel, over whatever window the box is showing. No window is a
+     real argument and means ALL TIME — the box's live state is a few hundred
+     lines of tail, and counting those would answer a question nobody asked. */
+  chatStats: (ch, start, end) => req(
+    start == null ? `/api/chat/stats?ch=${ch}`
+      : `/api/chat/stats?ch=${ch}&start=${start}&end=${end}`),
+  /* One item's examine card, for a link that did not arrive with a parse — the
+     Loot tab is handed its cards with its rows and never calls this. A pure
+     read: an id nobody has resolved answers `{card: null}`. */
+  itemCard: (id) => req(`/api/items/${id}/card`),
+
   // groups + sharing
   groups: () => req('/api/groups'),
   group: (id) => req(`/api/groups/${id}`),
@@ -270,6 +296,9 @@ export const api = {
   adminSettings: (body) => req('/api/admin/settings', { ...json(body), method: 'PUT' }),
   adminAudit: ({ limit = 200, offset = 0 } = {}) =>
     req(`/api/admin/audit?limit=${limit}&offset=${offset}`),
+  /* How many people came, by day. A count of visits, never a list of them —
+     the table behind this cannot name anybody (`backend/visitors.py`). */
+  adminVisitors: (days = 30) => req(`/api/admin/visitors?days=${days}`),
   adminPublicRuns: () => req('/api/admin/public-runs'),
   // bug reports and suggestions: anyone signed in files them, an admin triages
   adminFeedback: ({ status = '', kind = '', limit = 100, offset = 0 } = {}) =>

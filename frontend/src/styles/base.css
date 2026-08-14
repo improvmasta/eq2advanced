@@ -2265,6 +2265,14 @@ p.fineprint { padding-left: 0; margin-top: 8px; }
 }
 .filterbar input[type="text"] { width: 150px; margin-right: 0; }
 .filterbar .spacer { margin-left: auto; }
+/* How far back the visitor timeline reaches. A span is not a filter over what
+   is already loaded — each one is its own request — so they are buttons rather
+   than a text box, and the chosen one wears the same "on" as every other
+   toggle on the site. */
+.filterbar .spanpick { display: flex; align-items: center; gap: 5px; }
+.filterbar .spanpick .chip { cursor: pointer; }
+/* the footnote under a table: what the numbers above do NOT mean */
+p.muted.small { margin-top: 10px; font-size: 0.78rem; line-height: 1.55; max-width: 78ch; }
 /* Tanks / Healers / DPS / Utility are one control. They break as a group and
    never among themselves — "Utility" dropped alone onto a second line read as
    a stray button rather than the fourth role. */
@@ -4917,4 +4925,537 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 @media (max-width: 860px) {
   .sitefoot .muted { margin-left: 0; }
+}
+
+/* --- /chat: EQ2's chat window ---------------------------------------------
+
+   A replica, not a themed panel: the frame, the tab, the interior and the blue
+   text are the game's, so they are LITERAL colours scoped to `.eq2win` rather
+   than site tokens. It is still a replica in light mode — the window KEEPS its
+   shape, its tan frame and its blue channel text, and only the ink and the
+   paper swap (the light block at the end of this section). A black slab on a
+   parchment page was the one thing that read as broken rather than as EQ2.
+
+   The examine card is the exception and stays black in both themes: that is a
+   quotation of EQ2i's item box, and EQ2i has no light one.
+
+   All three channels share `--eq2-chat` deliberately (General, LFG and Auction
+   are one colour here, by request). Retune the box's text in that one place —
+   twice now, once per theme. */
+/* `align-items: start` because the columns are no longer just the windows: a
+   channel with its Stats panel open is taller than one without, and stretching
+   the short ones to match would hang their panels off the bottom of nothing. */
+.chatpage .chatlayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  align-items: start;
+  gap: 14px;
+}
+
+.chatpage .eq2grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+/* A directory made from General, not a fourth EQ2 channel. It therefore wears
+   the site's paper and type, like Stats, and sits beside the three replicas. */
+.recruitrail {
+  position: sticky;
+  top: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+.recruithead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.recruithead h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.recruithead span { color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; }
+.recruitrail > .muted { margin: 12px 0 4px; font-size: 0.82rem; }
+.recruitcard { padding: 11px 0; border-bottom: 1px solid var(--border); }
+.recruittitle { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.recruittitle a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gold);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.recruittitle a:hover, .recruittitle a:focus-visible { text-decoration: underline; }
+.recruittitle time { flex: none; color: var(--text-muted); font-size: 0.68rem; }
+.recruitcopy { margin-top: 6px; font-size: 0.78rem; line-height: 1.42; color: var(--text); }
+.recruitcopy p { margin: 0 0 5px; }
+.recruitcopy p:last-child { margin-bottom: 0; }
+.recruitcopy a { color: var(--gold); }
+.recruitmore {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.recruitmore:hover, .recruitmore:focus-visible { text-decoration: underline; }
+.recruitby { margin-top: 7px; color: var(--text-muted); font-size: 0.7rem; }
+.recruitby a { color: inherit; text-decoration: none; }
+.recruitby a:hover, .recruitby a:focus-visible { color: var(--gold); text-decoration: underline; }
+.recruitnote { margin: 10px 0 0; color: var(--text-muted); font-size: 0.68rem; line-height: 1.45; }
+
+.eq2win {
+  --eq2-chat: #9dc0f0;         /* the channel text — all three blocks */
+  --eq2-dim: #6f8cbb;          /* timestamps: the same hue, stepped back */
+  --eq2-item: #f0c674;         /* an item link, the way the game colours one */
+  --eq2-frame: #b3a179;        /* the window's tan border */
+  --eq2-ink: #05070e;          /* the interior */
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: min(66vh, 620px);
+  border: 2px solid var(--eq2-frame);
+  border-radius: 7px;
+  background: linear-gradient(180deg, #0b1020 0%, var(--eq2-ink) 55%, #04060c 100%);
+  box-shadow: 0 0 0 1px #000, inset 0 0 22px rgba(0, 0, 0, 0.85);
+  overflow: hidden;
+}
+
+/* The tab strip. One tab, because the tabs became the three blocks — it stays
+   because it is what makes the frame read as EQ2 rather than as a card. */
+.eq2win .eq2tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;      /* the day and the filter drop under the tab in one column */
+  gap: 6px;
+  padding: 4px 6px;
+  background: linear-gradient(180deg, #2b3350 0%, #161c30 100%);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgba(179, 161, 121, 0.35);
+}
+.eq2win .eq2tab {
+  padding: 2px 12px;
+  border: 1px solid #000;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #55607f 0%, #333c58 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  font-family: var(--font-data);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f2f4ff;
+  text-shadow: 0 1px 1px #000;
+}
+
+/* The two controls sit where EQ2 keeps the window buttons: the day first,
+   because it decides WHICH chat is in the box, then the filter, which narrows
+   whatever the day put there. */
+.eq2win .eq2day {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.eq2win .eq2day input {
+  /* the picker widget itself is the browser's; this is what stops it opening
+     as a white sheet in front of a black window */
+  color-scheme: dark;
+  padding: 1px 4px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #0a0f1c;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  color: var(--eq2-dim);
+}
+.eq2win .eq2day input:focus { outline: none; border-color: var(--eq2-frame); }
+.eq2win.past .eq2day input { color: var(--eq2-item); border-color: var(--eq2-frame); }
+.eq2win .eq2day input::-webkit-calendar-picker-indicator {
+  filter: invert(0.72) sepia(0.3) saturate(3) hue-rotate(185deg);
+  cursor: pointer;
+}
+/* Only there while a day is pinned — it is the way back to live, and a button
+   offering to do what the box is already doing would just be furniture. */
+.eq2win .eq2now {
+  padding: 1px 7px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #55607f 0%, #333c58 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: #f2f4ff;
+  cursor: pointer;
+}
+.eq2win .eq2now:hover { background: linear-gradient(180deg, #66739a 0%, #3d4869 100%); }
+
+.eq2win .eq2find {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.eq2win .eq2find input {
+  flex: 1 1 5rem;
+  width: 8.5rem;
+  min-width: 0;
+  max-width: 40vw;
+  padding: 2px 6px;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: #0a0f1c;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+  font-family: var(--font-data);
+  font-size: 0.74rem;
+  color: var(--eq2-chat);
+}
+.eq2win .eq2find input::placeholder { color: #55658a; }
+.eq2win .eq2find input:focus {
+  outline: none;
+  border-color: var(--eq2-frame);
+}
+.eq2win .eq2find .hits {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--eq2-dim);
+  min-width: 1.5em;
+}
+
+.eq2win .eq2body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 9px 8px;
+  font-family: var(--font-data);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--eq2-chat);
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: #4a5578 #0a0f1c;
+}
+.eq2win .eq2body::-webkit-scrollbar { width: 11px; }
+.eq2win .eq2body::-webkit-scrollbar-track {
+  background: #0a0f1c; border-left: 1px solid #000;
+}
+.eq2win .eq2body::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #58637f 0%, #39425f 100%);
+  border: 1px solid #000; border-radius: 3px;
+}
+
+.eq2win .eq2line { padding: 1px 0; }
+.eq2win .eq2line .ts { color: var(--eq2-dim); }
+.eq2win .eq2line .who { color: var(--eq2-chat); font-weight: 600; }
+/* Both link kinds wear the game's link colour, because in EQ2 they are the
+   same thing: a bit of text you can act on. The underline is the web's part —
+   an item card opens on hover, a URL leaves the site, and those are not the
+   same promise, so only the one that navigates is drawn as a link. */
+.eq2win .eq2line .lnk { color: var(--eq2-item); }
+.eq2win .eq2line a { color: var(--eq2-item); text-decoration: none; }
+.eq2win .eq2line a.who { color: var(--eq2-chat); }
+.eq2win .eq2line a.who:hover,
+.eq2win .eq2line a.who:focus-visible { text-decoration: underline; }
+.eq2win .eq2line a:hover .lnk,
+.eq2win .eq2line a:focus-visible .lnk { text-decoration: underline; }
+.eq2win .eq2line a.url {
+  color: var(--eq2-item);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.eq2win .eq2line .item { cursor: help; }
+/* The card before its answer arrives. Same window, one line of text, so the
+   hover does not jump size when it fills in. */
+.examineloading {
+  /* The black interior is the card, not decoration — without it this line was
+     light grey on the frame's own light grey. */
+  background: #000;
+  border: 4px solid #000;
+  padding: 8px 10px;
+  font-family: Times, 'Times New Roman', serif;
+  font-size: 0.82rem;
+  color: #c9c9c9;
+}
+
+.eq2win .eq2off {
+  padding: 10px 2px;
+  color: #63709a;
+  font-family: var(--font-data);
+  font-size: 0.78rem;
+}
+
+
+/* The line that says nothing is arriving. It sits where the next message would
+   have been, in the box's dim ink rather than in an alarm colour — at 4am this
+   is the normal state of a channel nobody is relaying, and the archive above it
+   is still perfectly good reading. */
+.eq2win .eq2gone {
+  padding: 4px 0 2px;
+  color: #7a6a52;
+  font-family: var(--font-data);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+/* --- the same window, on paper --------------------------------------------
+
+   Light mode is not "the dark box with a filter on it": every literal colour
+   above has a partner here, in the same order, and nothing else about the
+   window changes. The blue is the game's blue darkened until it holds up on
+   parchment, the item gold is the same hue taken down to a brown, and the tan
+   frame stays tan — which is what keeps this a picture of EQ2 rather than a
+   panel that happens to have a border.
+
+   The message text is 0.78rem and the timestamps smaller again, so these are
+   pitched WELL past 4.5:1 on the interior. Small type needs more contrast, not
+   the same contrast smaller.
+
+   `color-scheme: light` on the two inputs is the counterpart of the dark one
+   above: it is what stops the date picker opening as a black sheet in front of
+   a white window. */
+:root[data-theme="light"] .eq2win {
+  --eq2-chat: #23406e;         /* the game's channel blue, taken down to paper */
+  --eq2-dim: #4f6488;          /* timestamps: the same hue, stepped back */
+  /* The item gold as a brown — the hue is the game's, the depth is the paper's.
+     Kept dark (7.5:1, not the 5:1 a straight tint-down gave) because a link is
+     the smallest thing in the box and the one people are reading FOR. */
+  --eq2-item: #6d4208;
+  --eq2-frame: #9c8757;        /* the window's tan border, darkened to hold an edge */
+  --eq2-ink: #f6f1e4;          /* the interior — parchment, not white */
+
+  background: linear-gradient(180deg, #fffdf5 0%, var(--eq2-ink) 55%, #ece4d1 100%);
+  box-shadow: 0 0 0 1px #d8cfb8, inset 0 0 22px rgba(120, 100, 60, 0.10);
+}
+:root[data-theme="light"] .eq2win .eq2tabs {
+  background: linear-gradient(180deg, #d9dfec 0%, #bcc5da 100%);
+  border-bottom: 1px solid #8a93ab;
+  box-shadow: inset 0 -1px 0 rgba(156, 135, 87, 0.45);
+}
+:root[data-theme="light"] .eq2win .eq2tab,
+:root[data-theme="light"] .eq2win .eq2now {
+  border-color: #7e8aa8;
+  background: linear-gradient(180deg, #f2f5fc 0%, #ccd4e6 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  color: #1b2540;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+:root[data-theme="light"] .eq2win .eq2now:hover {
+  background: linear-gradient(180deg, #e5eaf6 0%, #bcc6dd 100%);
+}
+:root[data-theme="light"] .eq2win .eq2day input,
+:root[data-theme="light"] .eq2win .eq2find input {
+  color-scheme: light;
+  border-color: #a99c7d;
+  background: #fffdf6;
+  box-shadow: inset 0 1px 2px rgba(90, 75, 45, 0.18);
+}
+:root[data-theme="light"] .eq2win .eq2find input::placeholder { color: #8a8570; }
+:root[data-theme="light"] .eq2win .eq2day input::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+:root[data-theme="light"] .eq2win .eq2body { scrollbar-color: #a89c78 #ece5d4; }
+:root[data-theme="light"] .eq2win .eq2body::-webkit-scrollbar-track {
+  background: #ece5d4; border-left: 1px solid #cfc4a8;
+}
+:root[data-theme="light"] .eq2win .eq2body::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #c2b795 0%, #a89c78 100%);
+  border-color: #8f815d;
+}
+:root[data-theme="light"] .eq2win .eq2off { color: #78715e; }
+:root[data-theme="light"] .eq2win .eq2gone { color: #86704a; }
+
+
+/* --- the Stats panel, UNDER the window ------------------------------------
+
+   Outside the frame is outside the replica: this panel wears the SITE's tokens,
+   because the box is a picture of EQ2 and the panel is this site talking about
+   what is in it. Dressing it in the game's palette would claim EQ2 drew it, and
+   EQ2 has no such window.
+
+   NO CHARTS ANYWHERE IN HERE (the request) — every figure is a number in a
+   list, and the one thing that is drawn rather than written is the word cloud,
+   where size IS the count. */
+.chatpage .eq2col { display: flex; flex-direction: column; min-width: 0; }
+
+.chatpage .statsbtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: var(--font-heading);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chatpage .statsbtn:hover { color: var(--text); border-color: var(--gold-dim); }
+.chatpage .statsbtn[aria-expanded='true'] { color: var(--text); }
+.chatpage .statsbtn .of {
+  margin-left: auto;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.chatpage .statsbtn .caret {
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+.chatpage .statsbtn .caret.up { transform: rotate(180deg); }
+
+.chatstats {
+  margin-top: 6px;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.chatstats .sec { margin-bottom: 13px; }
+.chatstats .sec:last-of-type { margin-bottom: 2px; }
+.chatstats .sec h3 {
+  margin: 0 0 5px;
+  font-family: var(--font-heading);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+}
+.chatstats .sec h3 .sub {
+  font-family: var(--font-body);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+/* Rank, name, figure. The rank column is fixed and the figure is tabular, so
+   the numbers line up down both edges and the eye can run either one. */
+.chatstats .board { list-style: none; margin: 0; padding: 0; }
+.chatstats .board li {
+  display: grid;
+  grid-template-columns: 1.2em 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+.chatstats .board li:last-child { border-bottom: 0; }
+/* The summary wears the leaderboard, minus the rank column: a figure keyed to a
+   label is not a placing, and an empty rank gutter down the left would say it
+   was one. Everything else — the rules, the tabular figures, the right edge the
+   eye can run — is shared with the boards below it on purpose. */
+.chatstats .board.facts li { grid-template-columns: 1fr auto; }
+
+.chatstats .board .rk {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.chatstats .board .nm {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chatstats .board a.nm { color: inherit; text-decoration: none; }
+.chatstats .board a.nm:hover,
+.chatstats .board a.nm:focus-visible { color: var(--gold); text-decoration: underline; }
+.chatstats .board .v {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.chatstats .fact { margin: 0; line-height: 1.55; color: var(--text-muted); }
+.chatstats .fact b { color: var(--text); font-weight: 700; }
+.chatstats .note { margin: 5px 0 0; font-size: 0.74rem; color: var(--text-muted); }
+
+/* Size is the encoding and the only one — a cloud that is also a colour ramp
+   says the same thing twice. Words wrap as a paragraph does rather than being
+   packed into a shape: a spiral spends legibility on decoration, and this
+   column is narrow already. */
+/* All the heading the cloud gets. It is the only block in the panel that is not
+   a list, so a rule is enough to say a different kind of thing starts here. */
+.chatstats .sep {
+  height: 0;
+  margin: 11px 0 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chatstats .cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  line-height: 1.4;
+  color: var(--gold);
+}
+.chatstats .cloud span { cursor: help; }
+
+.chatstats .caveat {
+  margin: 12px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* --- the chat light -------------------------------------------------------
+
+   Green is arriving, red is not, on the header plaque and on the page's own
+   title. Never colour ALONE: both carry the state in a `title`, and on the page
+   the boxes say "disconnected" in words at the same time. */
+.chatdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 4px rgba(var(--danger-rgb), 0.55);
+}
+.chatdot.on {
+  background: var(--success);
+  box-shadow: 0 0 4px rgba(var(--success-rgb), 0.55);
+}
+.sitebtn .chatdot { flex: none; }
+.chatpage .chattitle { display: flex; align-items: center; gap: 9px; }
+.chatpage .chattitle .chatdot { width: 9px; height: 9px; }
+
+@media (max-width: 1500px) {
+  .chatpage .chatlayout { grid-template-columns: 1fr; }
+  .recruitrail { position: static; }
+}
+
+@media (max-width: 1100px) {
+  .chatpage .eq2grid { grid-template-columns: 1fr; }
+  .eq2win { height: min(48vh, 420px); }
 }

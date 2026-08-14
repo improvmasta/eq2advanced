@@ -53,8 +53,8 @@ mutation writes `audit_log`. Support is "ask them to share the raid".
 (`docs/census-abilities.md`) and nothing else; none of the three reaches anybody's
 parse.
 
-**The admin console** is five tabs (`?tab=`): Overview, Accounts, Content,
-Feedback, Audit. Two rules. *An alert is something broken* — `receiving` is a
+**The admin console** is six tabs (`?tab=`): Overview, Visitors, Accounts,
+Content, Feedback, Audit. Two rules. *An alert is something broken* — `receiving` is a
 plugin streaming right now, the healthiest state a session has, so Overview lists
 only errored sessions and parses stuck past `STUCK_PARSE_S`, and counts the live
 ones separately. *The accounts table is searched, sorted and paged on the SERVER*
@@ -319,6 +319,287 @@ per file, safe to re-run).
 It does not claim the operator cannot read the database, because that would be
 false. What limits the operator is how little is kept, which is the whole reason
 the filtering is at import rather than at display.
+
+## Counting readers (`visitors.py`, `visit_days` v37)
+
+The /chat link was publicized, and the question that followed is the only one
+this answers: how many people came, and were they strangers or accounts. The
+Visitors tab is a **timeline of days written out** — one row per day, newest
+first — because a chart was not what was asked for.
+
+**A visitor is a DAY, not a person.** The stored id is `sha256(that day's salt +
+address + user agent)`; the salt is minted once per day and deleted after
+`SALT_KEEP_DAYS` (2). While the day is live the hash collapses somebody's page
+loads into one row. Once the salt is gone the hash anchors to nothing: it cannot
+be turned back into an address, and it cannot be lined up against another day's
+hash for the same person.
+
+That ceiling is deliberate and load-bearing. This site already refuses to show
+who is logged in on /chat, and a visitor table that followed people across days
+would be a stronger claim on a reader than the one it declined to make about a
+player. The consequence is that **"unique visitors this month" cannot be
+computed and must never be faked** — summing the column gives visitor-DAYS, and
+the footer says so.
+
+**A visit is somebody arriving.** It is counted in `spa.py`, at the one moment
+index.html goes out: an API call never reaches that route, a static file returns
+above it, and a raider clicking between tabs inside the SPA never comes back to
+the server at all. Bots are filtered on user-agent — bluntly, because the
+alternative is a graph made mostly of Googlebot, and a false positive costs one
+uncounted visit and nothing else. The **token URLs are not readers** either
+(`/overlay/*`, `/ingame/*`): those are capabilities pointed at a meter, and OBS
+reloads its browser source on every scene change, so counting them would file a
+stream's restarts as visitors. `siteconfig.client_ip` supplies the address,
+never `request.client.host`, or the tally would be the reverse proxy's own IP
+once a day forever.
+
+**Counting never breaks a page.** `visitors.note` swallows everything and so
+does its caller: a visit that cannot be recorded is a visit that did not happen.
+`signed_in` and `chat` are flags on the DAY that only ever go up, so somebody who
+reads /chat and then signs in is one visitor who did both.
+
+## The public chat box (`/chat`, `pipeline/chatbus.py`)
+
+General (2), LFG (3) and Auction (10) in three scrolling blocks built to look
+like EQ2's own chat window, live at the bottom and **kept** behind a date filter
+on each block, with a Stats panel under each.
+
+**It has a door now, and the door is a PLAQUE.** *In-game chat*, between wikQ2
+and eq2lexicon in the header, carrying the chat light. It is still not a nav
+TAB, and the reason is the same one that kept it out of the nav entirely: the
+tabs are the things you do with a log, and this is a window onto the game — the
+same errand as the wiki and the lexicon, which is the row it now sits in. It is
+the one plaque that points at this site, so it gets no frame and no away-arrow.
+
+The subtitle names the server (**Wuoshi**): the channels look identical on every
+server in the game, so a reader who does not already know has no way to tell
+from a page of chat.
+
+**No account needed to read it.** It used to require one, and that was the wrong
+shape for what this is: the record has no user in it, every line was broadcast to
+a whole server by the game, and none of the three routes reaches a parse, a
+session or an account. What an account decides is who FILLS it — which is
+unchanged, and is the plugin, not a form. There is no POST.
+
+**It was a relay and is now a RECORD (v36).** Until v36 a message sat in a
+bounded per-channel deque for a few hours and a restart emptied it. That made
+the page a window onto this minute, and the page exists to be a window into the
+game — so the three channels are written to `chat_messages` and kept for as long
+as there is disk. The box opens on the archive, each block has a date filter, and
+anybody signed in sees the whole record. The deque survives as the live TAIL,
+which is all the SSE stream reads.
+
+**This still did not widen redaction, and the distinction is what to keep hold
+of.** `redact.py` is untouched: those three channels are still dropped before any
+byte of *an uploaded log* is written, and `test_chatbus.py`
+`::test_keeping_chat_did_not_widen_redaction` pins that by asserting `keep_line`
+still refuses every line the box shows. What changed is that the site now keeps
+its own record of the three PUBLIC channels — read out of a live batch on its way
+through memory (`live.process_batch`, beside the `stored` filter) and written
+inside that batch's transaction. `chat_messages` has no `user_id`, no
+`character_id` and no `session_id`, on purpose: a public line belongs to the
+server, not to whoever's plugin happened to relay it, and **the uploader is not
+recorded**. The privacy argument is unchanged in substance — the game itself
+broadcasts these three to everyone in the zone — but it is now "what everyone
+already saw" rather than "we keep nothing".
+
+The obvious "fix" here is to make redaction agree with the box. **Don't** — the
+inconsistency is the design. Tells, guild chat, officer chat and /say still reach
+neither, and group/raid chat goes the other way round (kept from a log, never
+shown here).
+
+**Storing it makes the channel test load-bearing, not less so.** It is now the
+only thing between a private line and a permanent row, so the default-deny below
+is the rule to be most careful with in this file.
+
+**The channel test is default-deny twice over.** A line has to match the exact
+`tells <Name> (<n>),` shape AND have both its name and its number in
+`CHANNELS`. A private tell has no `(n)`, so no player name can impersonate a
+channel; Crafting (6), an unknown number on a known name, and a channel EQ2 adds
+next patch all relay nothing until somebody adds them here.
+
+**Live only, which now also means "filed under the right night".** Backfill
+batches are ignored and so is anything whose log clock is more than `MAX_LAG_S`
+from the wall clock, for the same reason `live._publish_snapshot` gates:
+importing March's log must not scroll March's General chat past as if it were
+happening now — and must not date it tonight either. **The archive therefore
+starts at the first line relayed after v36 and cannot be backfilled from
+anything on this server**: uploads and raw chunks are both redacted before they
+are written, so the chat that would fill it in does not exist here. The only
+source is a player's own untouched `eq2log_<Character>.txt`, and reading one is
+a separate decision that has not been made.
+
+**One line, several uploaders, one message — and their clocks do not agree.**
+The `(1786724295)` a log line opens with is written by each player's own EQ2
+client off their own machine clock, so the same sentence arrives stamped
+12:18:15 from one uploader and 12:18:16 from the next. **An exact key does not
+collapse that**, which is why the dedupe is a WINDOW: same channel, speaker and
+text within `DEDUPE_WINDOW_S` (20s) is one message, with
+`UNIQUE(ts, ch, who, text)` left as the exact-match backstop. The hole was in
+the original relay too and only became visible once the box stopped forgetting.
+
+20s is a compromise with two failure modes and no value that avoids both: wider
+eats a genuine repeat (an auction spammer reposting the same WTS is real chat),
+narrower double-posts on skew. Skew past the window still double-posts, and
+`MAX_LAG_S` bounds that at 120s — a machine minutes out of true is left alone
+rather than paid for with a per-uploader clock model.
+
+**A light, never a roster.** `connected` is the count of characters whose plugin
+has sent inside `CONTRIB_TTL_S` (90s, recomputed on every read because nothing
+publishes "they stopped"). It reaches the reader as ONE BIT and never as a list:
+naming who is logged in would put a live roster of players on a page about what
+the server said, which is the thing being avoided; a dot saying whether chat is
+arriving is not that.
+
+That bit is drawn twice. The header plaque carries it on every page from `GET
+/api/chat/status` — one number, polled every 60s, signed out too, and a failed
+poll leaves the light where it was rather than reporting red for a hiccup. The
+page itself carries it on the `Chat` title and takes it from the stream instead:
+green needs the SSE link up AND `connected > 0`, because to a reader "the server
+stopped talking to this tab" and "nobody in the game is relaying" are the same
+fact — nothing is arriving. Neither dot is colour alone (both carry the state in
+a `title`).
+
+**"Disconnected" is a LINE, not an empty state.** It renders where the next
+message would have been, in the live view only, under everything already said. A
+pinned day is not a feed and cannot disconnect from anything. The distinction
+matters because red here is the normal state of a channel at 4am rather than a
+fault, and the archive above it is still perfectly good reading — which is the
+whole reason the old blank-page "disconnected" was removed.
+
+The reads are `GET /api/chat/recent` (the newest of the archive, the stream
+cursor and the span the date pickers may reach over), `GET
+/api/chat/history?ch&start&end` (one channel, one window, capped at 31 days),
+`GET /api/chat/status` (the light) and `GET /api/chat/stream?since=<seq>` with
+the same doorbell shape as `livebus`.
+
+### Recruiting rail
+
+The right rail collects the newest current General-chat pitch from each guild
+over the last 3 days. It is a directory made from chat, not a fourth EQ2
+channel, so it sits outside the replica and wears the site's tokens. Repeated
+copies of one guild's macro collapse to its newest copy; lines from the same
+speaker stamped in the same second stay together, because EQ2 gives a pasted
+multi-line advert one timestamp.
+
+Guild recognition is deliberately conservative and pinned to the forms seen in
+the archive: decorated leading names (`<Super Best Friends>`, `(Ctrl Alt
+Defeat)`, `[ Malazan ]`) plus recruiting/joining/invite language, or a bare name
+before sentence grammar such as `Revelation Is Looking ... Raid Force` and
+`Court of Thorns is a guild ... join`. The `is/are` boundary is case-insensitive:
+enthusiastic capitalization does not turn "Is Looking" into part of a guild
+name. An uncertain line stays ordinary text. A pitch is folded after 320 visible
+characters (about five rail lines) with an explicit `… more` / `less` control;
+opening it restores every line and link. Recognized names become
+`k='guild'` parts and link to eq2lexicon's `/guild/<name>` profile; the endpoint
+is `GET /api/chat/recruiting` and remains public like the messages it groups.
+
+## The Stats panel (`GET /api/chat/stats`, `chatbus.stats`)
+
+Under each box — **outside** the frame, because the window is a replica of EQ2
+and the panel is this site talking about what is in it. Outside the replica it
+wears the site's own tokens; dressing it in the game's palette would claim EQ2
+drew a window it has never had.
+
+**There are no charts in it.** No bars, no columns, no sparkline: leaderboards
+are numbered lists and the clock profile is the top three two-hour windows
+written out as text. The one thing drawn rather than written is the word cloud,
+where size is the count and the only encoding — a cloud that is also a colour
+ramp says the same thing twice.
+
+**The summary at the top is a list, not a sentence.** It reads as the first of
+the boards rather than as prose above them — the same rules, labels left,
+figures right, only without the rank column, because a figure keyed to a label
+is not a placing. All-time it is chat lines today, chat lines a day on average
+(over every day in the span, silent ones included — dividing by the days that
+HAVE chat reports the busy-night rate as the ordinary one), the busiest day and
+the one-time chatters. A box pinned to a day cannot answer "today" or "average"
+and does not pretend to: it says lines, voices and one-time chatters instead.
+
+What it counts, all of it arithmetic over the four columns the table has: the
+summary above; most talkative; biggest **spammers**, ranked on REPEATS (messages minus distinct
+texts, ≥ `SPAM_MIN`) rather than on a ratio, so the account reposting the same
+WTS all night outranks somebody who said "wb" twice; **fame**, being named by
+somebody else, counted once per message and never for naming yourself; the peak
+two-hour windows; and the word cloud, which carries no heading at all — the
+words say what they are, and a rule is all the separation it wants from the
+lists above it.
+
+Three things the counting deliberately does NOT do. A **link label is not a
+word** — the cloud is built from plain runs only (`_plain`), or an Auction cloud
+would be one long shout of whatever was linked most, which nobody said. A
+**speaker name is not a word** either; a person is the fame board. And the
+stopword list drops function words ONLY — `wts`, `lfg` and `pst` are what these
+channels are for and are the most interesting thing a cloud can report.
+
+**The panel follows the box's window.** A pinned day counts that day; a live box
+counts all time, because the live state is a few hundred lines of tail and "who
+talked most in the last 400 messages" is not a question anybody has. `hours`
+comes back as `[unix hour, count]` pairs and the SERVER bins nothing — folding
+those into a time of day or a day is a question about where the reader is
+sitting, so `Chat.jsx` does it, which is also the only way the two days a year
+that are not 24 hours long come out right.
+
+Nothing redraws on a new message: the panel is a reading of a window, taken when
+you opened it, and a leaderboard that reshuffles while you read it is worse than
+one a minute old. Server-side the answer is cached against the newest row id —
+while that has not moved, no line has landed in any channel and every window's
+answer is still exactly right.
+
+**A leaderboard implies completeness this archive does not have**, so the panel
+prints the caveat under the numbers: it counts relayed logs, and a quiet stretch
+can mean nobody was uploading rather than nobody talking.
+
+**A line is split on the server, drawn on the client.** `_parts` turns the
+stored text into text runs, `url` parts and link labels, so the page never
+parses a chat line — it only decides how each piece looks. Two of those pieces
+are new:
+
+- **An item link keeps its id.** The markup comes off (nobody reads
+  `\aITEM 212446172 …`) but the FIRST number is the Census item id written
+  signed, exactly as `pipeline/loot.py` reads it off a chest line — so an item
+  somebody links in Auction opens **the same examine card a chest drop does**.
+  One card component (`components/ItemCard.jsx`, shared with `LootPanel`) and
+  one server-side definition of a card's fields (`items.display`); a second
+  examine window drawn slightly differently would be worse than no second one.
+  The loot row's `mob` line is absent on a chat card, because nobody dropped it.
+- **A typed address becomes a link.** EQ2 leaves URLs as plain text, so this is
+  the page doing what the game does not. Trailing sentence punctuation is handed
+  back to the text (`see eq2advanced.com.` ends in a full stop that is not part
+  of the address), the address is shown AS TYPED — nothing shortens or
+  prettifies it, because the one thing a reader needs from a link in a public
+  channel is to see where it goes — and it carries
+  `noopener noreferrer nofollow`.
+
+**Resolving a linked item is the WORKER's job, and asking for its card is a
+READ.** `items.ensure` is network-bound, so the ingest thread hands the ids to a
+daemon worker with its own connection (`chatbus._items_loop`, the same shape and
+reasoning as `live._roster_worker`) and returns; failing costs a chat line its
+hover card and nothing else. `GET /api/items/{id}/card` never resolves — an
+unlooked-up id answers `null` and the link stays a link. The Loot tab does not
+call it at all: it knows its whole table at once and is handed every card with
+its rows, whereas a chat line can arrive over the stream long after the page
+loaded, so the link fetches its own card on first hover and the browser keeps it.
+Items are reference data about the GAME, so an id looked up because somebody
+linked it in Auction is looked up for good, and the raid that later drops it asks
+nothing.
+
+**The window a date means is the BROWSER's.** The server keeps unix seconds and
+has no business guessing which midnight a reader meant, so `Chat.jsx` builds
+local-midnight-to-local-midnight bounds (`dayWindow`, via `new Date(y, m, d+1)`
+so the two odd days a year still work) and sends them as numbers. The date and
+the per-box filter are both per BLOCK, not per page: three boxes are three
+different questions. Picking a day pins that block to the record; clearing it
+drops back onto the live tail, which kept arriving underneath.
+
+The window is a REPLICA — literal colours scoped to `.eq2win` in `base.css`
+rather than site tokens, one `--eq2-chat` shared by all three blocks. It has a
+SECOND set of them for light mode (`:root[data-theme="light"] .eq2win`, at the
+end of that section): same window, same tan frame, same blue channel text taken
+down onto parchment. Only the ink and the paper swap; a black slab on a light
+page read as broken rather than as EQ2. Retune a colour in BOTH places. The
+examine card is the exception and stays black in either theme — that is EQ2i's
+item box, and EQ2i has no light one.
 
 ## The Sharing page
 

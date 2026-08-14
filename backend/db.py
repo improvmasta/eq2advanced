@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 37
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -779,6 +779,73 @@ CREATE TABLE IF NOT EXISTS user_marks (
   updated_ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, kind, ability)
 );
+-- v36: the public chat box became a RECORD (`pipeline/chatbus.py`). It used to
+-- be a relay with a few hours of memory that a restart emptied; it is now the
+-- site's archive of the three PUBLIC channels, kept for as long as there is
+-- disk, because a window into the server's chat is only worth having if you can
+-- look at last Tuesday through it.
+--
+-- WHAT DID NOT CHANGE: which lines get here. `redact.py` is still untouched and
+-- `chatbus`'s channel test is still default-deny twice over — General (2), LFG
+-- (3) and Auction (10) and nothing else. A tell, guild chat, officer chat and
+-- /say have no route to this table any more than they had to the deque.
+--
+-- Nothing here JOINS. There is no user_id, no character_id, no session: a chat
+-- line belongs to the server, not to whoever's plugin happened to relay it, and
+-- the uploader is deliberately not recorded. `who` is the SPEAKER as the game
+-- printed the name, which is a fact about the game world.
+--
+-- `text` is the message with EQ2's link markup INTACT — the markup is stripped
+-- on the way out (`_parts`) rather than on the way in, so a later reader can
+-- draw an item link the way the game draws it. UNIQUE is the dedupe: every
+-- raider in the zone logs the same General line, and now the collapse survives
+-- a restart instead of living in a bounded set in memory.
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY,                 -- also the stream cursor (`since`)
+  ts INTEGER NOT NULL,                    -- the LOG clock, unix
+  ch TEXT NOT NULL,                       -- general|lfg|auction
+  who TEXT NOT NULL,
+  text TEXT NOT NULL,
+  UNIQUE(ts, ch, who, text)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_ch_ts ON chat_messages(ch, ts);
+
+-- v37: how many people came to look (`visitors.py`). This exists for ONE
+-- question — the /chat link was publicized, so how many strangers did it bring
+-- — and the shape is cut down to answering exactly that.
+--
+-- A VISITOR IS A DAY, NOT A PERSON. The row's key is (day, visitor), where
+-- `visitor` is sha256 over a salt that belongs to that day alone. The salt is
+-- thrown away two days later (`visitors.sweep`), and after that the hash is
+-- attached to nothing: it cannot be turned back into an address, and it cannot
+-- be matched against another day's hash for the same person either. So this
+-- table answers "how many distinct people that day" and CANNOT answer "did
+-- this one come back on Thursday". That is the intended ceiling, not a gap to
+-- close later — it is what makes counting readers compatible with a site that
+-- refuses to keep a roster of them (`docs/sharing.md`).
+--
+-- NOTHING HERE JOINS, same as `chat_messages`. `signed_in` is a flag on the
+-- day, never a user_id: the point of the count is the SIGNED-OUT stranger, and
+-- an admin page that could turn a visit into an account would be building the
+-- thing this design refuses to build.
+CREATE TABLE IF NOT EXISTS visit_days (
+  day TEXT NOT NULL,                    -- YYYY-MM-DD, the SERVER's day
+  visitor TEXT NOT NULL,                -- sha256(day salt + address + agent)
+  signed_in INTEGER NOT NULL DEFAULT 0, -- had a live session at some point today
+  chat INTEGER NOT NULL DEFAULT 0,      -- landed on /chat at some point today
+  hits INTEGER NOT NULL DEFAULT 0,      -- page loads, not requests
+  first_ts INTEGER NOT NULL,
+  last_ts INTEGER NOT NULL,
+  PRIMARY KEY (day, visitor)
+);
+
+-- One row per day and deleted as soon as it is old. Keeping this table small
+-- is the whole privacy property: the salt is the only thing that could link a
+-- stored hash back to somebody, so it is not kept.
+CREATE TABLE IF NOT EXISTS visit_salts (
+  day TEXT PRIMARY KEY,
+  salt TEXT NOT NULL
+);
 """
 
 
@@ -1273,6 +1340,15 @@ def init_db() -> None:
         # localStorage is only reachable from that browser — so the SPA adopts
         # what it finds there on the first signed-in read (`lib/marks.js:
         # syncMarks`), which is the only place those answers exist.
+        # v36: `chat_messages` — /chat stopped being a relay with a few hours of
+        # memory and became the record. New table, so an old database gets it
+        # empty and the page simply starts its archive from the first line
+        # relayed after the upgrade; there is nothing to backfill, because the
+        # thing this replaces was never written down.
+        # v37: `visit_days` + `visit_salts` — counting readers. New tables, and
+        # nothing before the upgrade can be recovered: no log of who asked for a
+        # page has ever been kept here, which is the same reason the chat
+        # archive could not be backfilled. The count starts at the upgrade.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

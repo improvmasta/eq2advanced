@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v35**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v36**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -80,6 +80,62 @@ with a rule or working near one.
 - **Private chat is stripped at INGEST, never at display** (`pipeline/redact.py`);
   the classifier is an ALLOWLIST that fails closed and imports its patterns from
   `classify`; the content address stays the sha256 of the ORIGINAL bytes.
+- **`/chat` KEEPS the three public channels** (`chat_messages` v36,
+  `pipeline/chatbus.py`) — the site's own record, no user/character/session in
+  the table and the uploader deliberately not recorded. Redaction of an uploaded
+  LOG is UNCHANGED and the inconsistency is the design: do not "fix"
+  `redact.py` to agree with it.
+- **The chat channel test is default-deny twice** — the exact
+  `tells <Name> (<n>),` shape AND both the name and the number in `CHANNELS`;
+  live batches only. Storing the box made this test the only thing between a
+  private line and a permanent row.
+- **Chat dedupe is a WINDOW, not a key** (`DEDUPE_WINDOW_S`, 20s) — every
+  player's client stamps the line off its OWN clock, so the same sentence
+  arrives a second apart from two uploaders. `UNIQUE(ts, ch, who, text)` is only
+  the exact-match backstop.
+- **The chat archive cannot be backfilled from this server** — uploads and raw
+  chunks are redacted before they are written, so it starts at the first line
+  relayed after v36. Only a player's own untouched log could seed it.
+- **A chat date is the BROWSER's day** — `Chat.jsx` sends local-midnight bounds
+  as unix seconds; the server never guesses a reader's midnight. Still no
+  uploader LIST: naming who is logged in is the line, and a light is not.
+- **The chat light is one bit in two places** — a dot on the header plaque
+  (`/api/chat/status`, polled 60s, signed out too) and one on the page's `Chat`
+  title, green only when the SSE link is up AND `connected > 0`. Red is a normal
+  4am state, not a fault: the boxes keep their archive under it and say
+  `disconnected` as the last LINE, never as an empty state.
+- **The Stats panel has NO charts** (the request) — leaderboards are numbered
+  lists and the word cloud's only encoding is size. It sits UNDER the window,
+  outside the replica, so it wears the SITE's tokens; anything inside `.eq2win`
+  wears EQ2's.
+- **Stats follow the box's window** — a pinned day counts that day, a live box
+  counts ALL TIME (`/api/chat/stats`, no window means all time). `hours` comes
+  back as `[unix hour, count]` and the BROWSER bins it into two-hour blocks and
+  local days, for the same reason the date filter is the browser's.
+- **A chat stat is a sample and the panel says so** — the archive is what
+  somebody's plugin relayed, so a quiet stretch cannot be told from nobody
+  uploading. Keep the caveat under the numbers.
+- **A VISITOR IS A DAY, NOT A PERSON** (`visitors.py`, `visit_days` v37) — the id
+  is `sha256(that day's salt + address + agent)` and the salt is DELETED after
+  `SALT_KEEP_DAYS`. So the table can count people and can never follow one
+  across days; "unique visitors this month" is uncomputable and must not be
+  faked (the totals say **visitor-days**). No address, no user_id, no list.
+- **A visit is counted where index.html goes out** (`spa.py`), so it is somebody
+  ARRIVING — never an API call, an asset, or a tab change inside the SPA. Bots
+  are dropped on user-agent, and counting NEVER raises: a page is worth more
+  than its tally mark.
+- **`/chat` needs NO account to read** — nothing there reaches a parse, a
+  session or an account. An account is what lets you FILL it (the plugin).
+- **A chat line is split on the SERVER** (`_parts`: text, `url`, item labels)
+  **and drawn on the client.** An item link keeps its Census id, so it opens the
+  SAME examine card a chest drop does — one `components/ItemCard.jsx`, one
+  `items.display`. A typed URL is shown as typed, `noopener noreferrer nofollow`.
+- **A recruiting guild name is recognized, never guessed** — decorated names
+  still need recruiting language; bare names stop at case-insensitive `is/are`.
+  The rail keeps one current pitch per guild and same-second companion lines.
+- **Resolving a linked item is the worker's job; the card endpoint is a READ** —
+  `GET /api/items/{id}/card` answers `null` for an unresolved id and never calls
+  `items.ensure` (network-bound, never in a request handler).
 
 **Ability knowledge, Census and the wiki** (`docs/census-abilities.md`)
 
@@ -283,12 +339,19 @@ Details per area live in the `docs/` file named beside it.
 - **The sibling TLE sites** (`docs/zoneruns.md`) — the top bar carries plaques out
   to wikQ2 and eq2lexicon. wikQ2 opens as a tab inside the shell (`/wiki`, an iframe
   kept mounted); eq2lexicon opens in a new tab because it refuses to be framed.
+- **The chat box** `/chat` (`docs/sharing.md`) — General/LFG/Auction in three
+  EQ2-styled scrolling blocks with a per-box filter, a per-box date and a Stats
+  panel under each, relayed live from everyone uploading and KEPT as the site's
+  record. Reached by the **In-game chat** plaque between wikQ2 and eq2lexicon
+  (with the chat light on it), never as a nav tab — the tabs are the things you
+  do with a log.
 - **Accounts and sharing** (`docs/sharing.md`) — username + password, no email;
   security-question recovery. Groups via invite/join code/link; auto-share by
   character or by Census guild tag.
-- **The admin console** (`docs/sharing.md`) — five tabs; an alert is something
+- **The admin console** (`docs/sharing.md`) — six tabs; an alert is something
   BROKEN (`receiving` is healthy); the accounts table is searched/sorted/paged on
-  the SERVER. Feedback is triaged open → planned → closed.
+  the SERVER. Feedback is triaged open → planned → closed. **Visitors** is the
+  day-by-day count of who came to look (`visitors.py`), written out as rows.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
   `coach_api` and the hidden Insights tab.
 
@@ -325,6 +388,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-14 (codex): Add public in-game chat archive and visitor insights
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
 - 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
 - 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)

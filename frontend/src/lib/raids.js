@@ -39,6 +39,14 @@ export const runLabel = (r, fallback = 'Unknown zone') => {
    origin (see App.jsx), so every one of these opens in a new tab. */
 export const LEXICON = 'https://wuoshi.eq2lexicon.com'
 
+export const lexiconCharacter = (name) => name
+  ? `${LEXICON}/character/${encodeURIComponent(name)}`
+  : null
+
+export const lexiconGuild = (name) => name
+  ? `${LEXICON}/guild/${encodeURIComponent(name)}`
+  : null
+
 export const lexiconRaid = (zone, mob) => {
   if (!zone) return null
   const path = [zone, mob].filter(Boolean).map(encodeURIComponent).join('/')

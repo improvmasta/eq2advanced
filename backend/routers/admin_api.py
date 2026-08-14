@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 import auth
 import classtree
 import groups as g
+import visitors
 from db import UPLOADS_DIR, get_db, get_int_setting, rows_to_dicts, set_setting
 from security import require_admin, require_curator
 
@@ -85,6 +86,16 @@ def overview(admin=Depends(require_admin)):
                      for k in SETTINGS_KEYS},
         "memo": __import__("memo").stats(),
     }
+
+
+@router.get("/admin/visitors")
+def visitor_timeline(days: int = 30, admin=Depends(require_admin)):
+    """How many people came, by day (`visitors.py`).
+
+    Still a COUNT and nothing else, which is what keeps it inside this file's
+    rule: there is no route here that turns a visit into a person, because the
+    table it reads threw that away the day after it was written."""
+    return visitors.timeline(get_db(), days)
 
 
 SORT_COLS = {"username": "u.username", "created_ts": "u.created_ts",

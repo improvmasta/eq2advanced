@@ -27,7 +27,7 @@ from parser import parse_lines, petnames
 from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
-from pipeline import aoelearn, livebus, livemeter
+from pipeline import aoelearn, chatbus, livebus, livemeter
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.redact import keep_line
 from pipeline.refine import roster_prescan
@@ -523,6 +523,14 @@ def process_batch(token_row, char, batch_id: str, mode: str, lines: list[str]) -
             # the personhood evidence in this batch, kept for the rest of the
             # night (see LiveState.known_players)
             state.known_players |= roster_prescan(accepted, logger)
+
+        # The public channels, read off the batch on its way past: pushed to
+        # whoever has /chat open and filed in `chat_messages`. This does NOT
+        # change what is stored FROM THE LOG — the bytes written above are still
+        # `stored`, the redacted set — it stores the three public channels as
+        # the site's own record, which is a different question and is argued in
+        # pipeline/chatbus.py. Inside this transaction on purpose.
+        chatbus.absorb(conn, accepted, logger, mode, now)
 
         if _flush(conn, state):
             from pipeline.zoneruns import rebuild_zone_runs

@@ -8,6 +8,7 @@ import ZoneRun from './pages/ZoneRun.jsx'
 import Compare from './pages/Compare.jsx'
 import Features from './pages/Features.jsx'
 import Live from './pages/Live.jsx'
+import Chat from './pages/Chat.jsx'
 import Overlay from './pages/Overlay.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
@@ -34,21 +35,30 @@ function NeedsAccount({ user, children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
-/* The sibling TLE sites, in the gap the nav leaves. The point is one door: a
-   raider lands here and reaches the rest without hunting bookmarks.
+/* The plaques, in the gap the nav leaves. The point is one door: a raider lands
+   here and reaches the rest without hunting bookmarks.
 
-   The two are NOT the same kind of link, and the bar has to say so. wikQ2 is
+   They are NOT all the same kind of link, and the bar has to say so. wikQ2 is
    ours and permits framing, so it opens as a tab inside this shell — the header
    stays put and the frame is never unmounted, so coming back lands you exactly
    where you left. eq2lexicon answers every request with `X-Frame-Options: DENY`,
    which the BROWSER enforces against every origin; no markup here can change
    that, so it opens away and wears the arrow that admits it. If they ever add
    `frame-ancestors https://eq2advanced.com`, deleting `away: true` is the whole
-   change. */
+   change.
+
+   IN-GAME CHAT SITS BETWEEN THEM AND IS OURS. It is a page of this site, not a
+   sibling, so it needs no frame and no arrow — it wears a plaque because of
+   what it IS rather than where it lives: a window onto the game's own channels,
+   which is the same errand as the wiki and the lexicon and is not a view of
+   your parses. That is also why it is still not a nav TAB; the tabs are the
+   things you do with a log. */
 const SITES = [
   { key: 'wiki', label: 'wikQ2', to: '/wiki',
     src: 'https://wikq2.jupiterns.org/', origin: 'https://wikq2.jupiterns.org',
     title: 'wikQ2 — EQ2 quest waypoints (opens here)' },
+  { key: 'chat', label: 'In-game chat', to: '/chat',
+    title: 'General, LFG and Auction, relayed live and kept' },
   { key: 'lexicon', label: 'EQ2 Lexicon', away: true,
     href: `${LEXICON}/`,
     title: 'EQ2 Lexicon — opens in a new tab' },
@@ -165,6 +175,26 @@ export default function App() {
     return () => { dead = true; clearInterval(t) }
   }, [user, live])
 
+  /* The chat light, on every page. Green means somebody is relaying General/
+     LFG/Auction this minute; red means nobody is, which is the honest state for
+     a box that is fed entirely by other people's plugins — the archive is still
+     there to read, and the plaque still goes there.
+
+     Slower than the plugin poll and never faster: this is a light on a door,
+     not a meter. It runs signed out too, because the chat needs no account. */
+  const [chatOn, setChatOn] = useState(null)   // null until the first answer
+  useEffect(() => {
+    let dead = false
+    const check = () => api.chatStatus()
+      .then((d) => { if (!dead) setChatOn(d.connected > 0) })
+      // a failed poll is not "nobody is chatting" — it is not knowing, and the
+      // light stays where it was rather than going red on a hiccup
+      .catch(() => {})
+    check()
+    const t = setInterval(check, 60_000)
+    return () => { dead = true; clearInterval(t) }
+  }, [])
+
   /* The token-authorized screens render BEFORE the shell, not inside it.
      Everything the shell provides — nav, theme toggle, account icon, the
      container's own background — is furniture on somebody's stream or in the
@@ -241,8 +271,20 @@ export default function App() {
                 {s.label}<IconExternal />
               </a>
             ) : (
-              <NavLink key={s.key} className="sitebtn" to={s.to} title={s.title}>
+              /* The chat plaque carries a light and the others do not, because
+                 chat is the only one of the three that can be EMPTY right now:
+                 the wiki is always there, and whether anybody is relaying
+                 General this minute is a fact about the door. The state rides
+                 in the link's own title so it is not colour alone. */
+              <NavLink key={s.key} className="sitebtn" to={s.to}
+                       title={s.key === 'chat' && chatOn !== null
+                         ? `${s.title} — ${chatOn ? 'somebody is relaying now'
+                           : 'nobody is relaying right now'}`
+                         : s.title}>
                 {s.label}
+                {s.key === 'chat' && chatOn !== null && (
+                  <i aria-hidden="true" className={`chatdot${chatOn ? ' on' : ''}`} />
+                )}
               </NavLink>
             )))}
           </div>
@@ -343,6 +385,12 @@ export default function App() {
             {/* the import hub absorbed the old uploads page */}
             <Route path="/uploads" element={<Navigate to="/import" replace />} />
             <Route path="/live" element={<NeedsAccount user={user}><Live /></NeedsAccount>} />
+            {/* Deliberately NOT in the nav — reachable by typing /chat, until
+                there is a decision about giving it a door. NO account needed:
+                the record has no user in it and every line was broadcast to a
+                whole server by the game, so there is nothing here to gate.
+                An account is what lets you FILL it, not what lets you read it. */}
+            <Route path="/chat" element={<Chat />} />
             <Route path="/sessions/:id" element={<NeedsAccount user={user}><Workspace /></NeedsAccount>} />
             <Route path="/calibration" element={<NeedsAccount user={user}><Calibration /></NeedsAccount>} />
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />

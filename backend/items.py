@@ -95,6 +95,36 @@ def cards(conn: sqlite3.Connection, item_ids) -> dict[int, dict]:
     return out
 
 
+def display(card: dict) -> dict:
+    """One `cards()` record as the fields a page draws an examine window from.
+
+    ONE definition, because there are now two ways to meet an item — off a chest
+    (`encounters_api.run_loot`) and off a link somebody posted in chat — and the
+    card has to be the same card. The two names that look alike are the trap:
+    Census's `tier` is the RARITY WORD and the page's `tier` is the EQUIPMENT
+    tier (`tier_of`), so a caller assembling this by hand gets "Fabled" where
+    the level line belongs. Callers with a better answer for a field (the loot
+    row keeps the log's name and rarity as the fallback Census cannot be) layer
+    it on top."""
+    return {
+        "item_id": card.get("item_id"),
+        "name": card.get("name"),
+        "rarity": (card.get("tier") or "").title() or None,
+        "icon": card.get("icon"),
+        "wiki": card.get("wiki"),
+        "type": card.get("type"),
+        "slot": card.get("slot"),
+        "level": card.get("level"),
+        "tier": tier_of(card.get("level")),
+        # Prebuilt at resolve time — a hover card is a READ of this, never a
+        # request (see stat_block).
+        "stats": card.get("stats"),
+        # The item's own proc — name, tier and its indented description. From
+        # the WIKI: Census has no field for it.
+        "effects": card.get("effects"),
+    }
+
+
 def unresolved(conn: sqlite3.Connection, item_ids) -> list[int]:
     """Ids with no row yet, plus rows Census answered but the wiki never was
     asked about — the two sources are fetched independently and either can have

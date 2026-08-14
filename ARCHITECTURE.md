@@ -12,7 +12,7 @@ the matching file rather than here.
 | File | Covers |
 | --- | --- |
 | `docs/runtime.md` | Runtime topology, the two-proxy problem (`siteconfig.py`), stack, backend layout, hardening, verification |
-| `docs/sharing.md` | Identity, accounts, groups, the one visibility predicate (`groups.py`) and its four traps, hiding vs sharing vs dismissal, the admin console, chat redaction (`pipeline/redact.py`), log retention |
+| `docs/sharing.md` | Identity, accounts, groups, the one visibility predicate (`groups.py`) and its four traps, hiding vs sharing vs dismissal, the admin console, chat redaction (`pipeline/redact.py`), the public chat box (`pipeline/chatbus.py`), log retention |
 | `docs/live.md` | The frozen ACT-DLL ingest contract, the raid dashboard (`/live`), the live meter, AoE detection and the learned timer table, the mini parse, notes, the OBS and in-game overlays, replay |
 | `docs/parser.md` | The subject model, encounter segmentation, engage rules, class inference (`classguess.py`), ACT parity and the corpse tail, rezzes/intercepts/adjusted delay, attribution and the stats engine |
 | `docs/zoneruns.md` | Zone runs (the navigation model), the raid page and its tabs, the raid list, raidmatch, the encounter APIs, the Class tab, the Loot tab and items as reference data, curated buffs, frontend conventions, the sibling-site links |
