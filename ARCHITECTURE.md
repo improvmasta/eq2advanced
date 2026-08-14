@@ -19,7 +19,7 @@ the matching file rather than here.
 | `docs/compare-import.md` | The Compare page (`?c=` grammar, Picker, band search) and screenshot import (`pipeline/actshot.py`) |
 | `docs/census-abilities.md` | Census sync, guild vote, proc exposure, pet/proc rulings and the Abilities console, provenance, the class tree, the wiki as reference data, why gear procs are wontfix |
 | `docs/coach.md` | Coach engine (descriptive, fit, replay, calibration), the five correctness rules, ability catalog, raid report |
-| `docs/admin-redesign.md` | Product plan for rebuilding Admin around an operational dashboard, actionable incidents, support workflows, and game-data workbenches |
+| `docs/admin-redesign.md` | Implemented Admin operations workspace: dashboard, incidents, support workflows, ability review, and database-backed AoE timer curation |
 
 `docs/skillissue-proposal.md` is an outbound proposal to another project, not
 reference material.

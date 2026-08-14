@@ -388,6 +388,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-14 (codex): Mark admin redesign documentation implemented
 - 2026-08-14 (codex): Implement complete admin operations redesign
 - 2026-08-14 (codex): Add public in-game chat archive and visitor insights
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
@@ -407,4 +408,3 @@ builds here with `bash build.sh`.
 - 2026-08-04 (claude): Serve the ACT plugin from the site: download + install steps + auto-sharing on Import, header pill
 - 2026-08-04 (claude): Revert phase 17: sharing belongs on the site, the ACT plugin only sends logs (schema v12 drops session_shares + can_share)
 - 2026-08-03 (claude): Phase 9+10: editable raid list, import hub, fight rail rebuild, engagement v3, read caches
-- 2026-08-03 (claude): Zone runs phase 6: encounter deep-links resolve to runs (via dup_of)

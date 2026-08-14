@@ -1,8 +1,24 @@
 # Admin redesign
 
-Status: product and implementation plan. This document describes the intended
-replacement for the current admin experience; it does not claim that the UI or
-APIs below exist yet.
+Status: implemented on 2026-08-14 in commit `131ae8e`. This document is the
+product and implementation reference for the current admin experience.
+
+The shipped implementation includes:
+
+- the route-based admin workspace and operational dashboard;
+- actionable parse incidents with retry, restart, acknowledgement and support
+  bundles;
+- account, deleted-group, feedback and structured activity workspaces;
+- the master-detail ability review queue with provenance, advancement and undo;
+- the AoE timer evidence workbench, ACT export and live preview;
+- database-backed timer overrides, exclusions, split-mob decisions, reuse
+  debuffs and reflect windows, all validated, audited and reversible;
+- schema v38 and focused API tests covering incident concurrency, feedback
+  workflow and the timer authority ladder.
+
+The acceptance criteria and delivery phases below are retained as the design
+rationale and regression contract. They describe shipped behavior rather than
+future work.
 
 ## The outcome
 
@@ -449,4 +465,3 @@ The redesign is successful when:
 - Editing arbitrary reference files from the browser.
 - Turning every statistic into a chart.
 - Building a notification system before the on-page action queue is useful.
-
