@@ -604,5 +604,32 @@ def test_an_item_with_nothing_to_show_has_no_card():
     assert items.stat_block({"id": 1, "displayname": "Rampage II (Master)"}) is None
 
 
+def test_a_turquoise_adornment_keeps_its_slot_predicate_and_set_bonus():
+    s = items.stat_block({
+        "typeinfo": {"name": "adornment", "color": "turquoise",
+                     "slot_list": [{"displayname": "Ear"}]},
+        "flags": {"novalue": {"value": 1}},
+        "setbonus_list": [{"requireditems": 2,
+                           "effect": "Applies Abomination Anihiliation.",
+                           "descriptiontag_1": "On any combat or spell hit...",
+                           "descriptiontag_2": "Inflicts 2,861 divine damage."}],
+    })
+    assert s["flags"] == ["No-Value"]
+    assert s["adornment"] == {
+        "color": "turquoise", "slots": ["Ear"], "requires_equip": True,
+        "predicate": "In Rise of Kunark or previous expansion zones",
+        "set_bonuses": [{"required": 2,
+                         "effect": "Applies Abomination Anihiliation.",
+                         "descriptions": ["On any combat or spell hit...",
+                                          "Inflicts 2,861 divine damage."]}],
+    }
+
+
+def test_an_adornment_page_supplies_its_set_name():
+    fx = items.item_effects("{{AdornInformation2|\n set = Arcanist Abomination Anihiliation|\n}}")
+    assert fx == {"names": [], "desc": [],
+                  "set": "Arcanist Abomination Anihiliation"}
+
+
 def test_the_adorn_gem_route_refuses_a_colour_the_game_has_no_slot_for(client):
     assert client.get("/api/items/adorn/mauve.png").status_code == 404

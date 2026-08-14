@@ -677,7 +677,15 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .ew-facts td { padding: 0 6px 0 0; vertical-align: top; }
 .ew-low { color: #bbbbbb; width: 34%; }
 .ew-high { font-weight: bold; color: #ffffff; }
+.ew-high.ew-adorn-turquoise { color: #43f2ee; }
 .ew-facts sup { font-size: 78%; }
+.ew-set { margin-top: 10px; color: #fff; }
+.ew-set-name { color: #ffff00; font-weight: bold; margin-bottom: 8px; }
+.ew-set-bonus > div:first-child { color: #ffff00; font-weight: bold; }
+.ew-set-bonus ul { margin: 2px 0 0 18px; padding: 0; }
+.ew-set-bonus li { padding-left: 2px; }
+.ew-included { margin-top: 12px; padding-top: 8px; border-top: 1px solid #666; }
+.ew-included-label { color: #bbbbbb; font-weight: bold; margin-bottom: 3px; }
 /* The proc: a yellow header and the wiki's indented description under it. */
 .ew-effects { color: #ffff00; font-weight: bold; margin-top: 10px; }
 .ew-effectdesc { color: #ffffff; }
@@ -1197,6 +1205,10 @@ table.data th.sortable:hover { color: var(--text); }
 .panelname {
   font-size: 1.3rem; text-transform: none; letter-spacing: 0.03em;
   color: var(--gold-bright); font-weight: 700; line-height: 1.2;
+}
+.panelname a { color: inherit; text-decoration: none; }
+.panelname a:hover, .panelname a:focus-visible {
+  text-decoration: underline; text-underline-offset: 3px;
 }
 /* The headline is a PERSON, so who they are travels with the name: the class
    the parse settled on, and the level and guild Census had cached anyway. They
@@ -5072,6 +5084,23 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   gap: 14px;
   margin-top: 12px;
 }
+.chatheading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.chatspam {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chatspam input { margin: 0; }
 
 /* A directory made from General, not a fourth EQ2 channel. It therefore wears
    the site's paper and type, like Stats, and sits beside the three replicas. */
@@ -5136,7 +5165,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .recruitnote { margin: 10px 0 0; color: var(--text-muted); font-size: 0.68rem; line-height: 1.45; }
 
 .eq2win {
-  --eq2-chat: #9dc0f0;         /* the channel text — all three blocks */
+  --eq2-chat: #9dc0f0;         /* player names and window controls */
+  --eq2-speech: #c7ddff;       /* what players actually said */
   --eq2-dim: #6f8cbb;          /* timestamps: the same hue, stepped back */
   --eq2-item: #f0c674;         /* an item link, the way the game colours one */
   --eq2-frame: #b3a179;        /* the window's tan border */
@@ -5156,9 +5186,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* The tab strip. One tab, because the tabs became the three blocks — it stays
    because it is what makes the frame read as EQ2 rather than as a card. */
 .eq2win .eq2tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(60px, 1fr) auto;
   align-items: center;
-  flex-wrap: wrap;      /* the day and the filter drop under the tab in one column */
   gap: 6px;
   padding: 4px 6px;
   background: linear-gradient(180deg, #2b3350 0%, #161c30 100%);
@@ -5177,12 +5207,36 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: #f2f4ff;
   text-shadow: 0 1px 1px #000;
 }
+.eq2win .eq2collapse {
+  grid-column: 4;
+  grid-row: 1;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #000;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #55607f 0%, #333c58 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  color: #f2f4ff;
+  font: 700 0.9rem/20px var(--font-data);
+  cursor: pointer;
+}
+.eq2win .eq2collapse:hover, .eq2win .eq2collapse:focus-visible {
+  background: linear-gradient(180deg, #66739a 0%, #3d4869 100%);
+}
+.eq2win.collapsed { height: 36px; }
+.eq2win.collapsed .eq2tabs {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 4px;
+}
+.eq2win.collapsed .eq2collapse { grid-column: 2; }
+.eq2win.collapsed .eq2tab { min-width: 0; padding: 2px 6px; overflow: hidden; }
 
 /* The two controls sit where EQ2 keeps the window buttons: the day first,
    because it decides WHICH chat is in the box, then the filter, which narrows
    whatever the day put there. */
 .eq2win .eq2day {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -5225,12 +5279,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
 }
 .eq2win .eq2find input {
-  flex: 1 1 5rem;
-  width: 8.5rem;
+  width: 100%;
   min-width: 0;
-  max-width: 40vw;
+  max-width: none;
   padding: 2px 6px;
   border: 1px solid #000;
   border-radius: 3px;
@@ -5278,6 +5332,11 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .eq2win .eq2line { padding: 1px 0; }
 .eq2win .eq2line .ts { color: var(--eq2-dim); }
 .eq2win .eq2line .who { color: var(--eq2-chat); font-weight: 600; }
+.eq2win .eq2line .punct { color: var(--eq2-chat); }
+.eq2win .eq2line .speech { color: var(--eq2-speech); }
+.eq2win .tradeword { font-weight: 800; }
+.eq2win .tradeword.wts { color: #ff8f96; }
+.eq2win .tradeword.wtb { color: #93e6bd; }
 /* Both link kinds wear the game's link colour, because in EQ2 they are the
    same thing: a bit of text you can act on. The underline is the web's part —
    an item card opens on hover, a URL leaves the site, and those are not the
@@ -5345,7 +5404,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    above: it is what stops the date picker opening as a black sheet in front of
    a white window. */
 :root[data-theme="light"] .eq2win {
-  --eq2-chat: #23406e;         /* the game's channel blue, taken down to paper */
+  --eq2-chat: #23406e;         /* player names and window controls on paper */
+  --eq2-speech: #102f62;       /* brighter means stronger contrast on paper */
   --eq2-dim: #4f6488;          /* timestamps: the same hue, stepped back */
   /* The item gold as a brown — the hue is the game's, the depth is the paper's.
      Kept dark (7.5:1, not the 5:1 a straight tint-down gave) because a link is
@@ -5569,6 +5629,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 
 @media (max-width: 1100px) {
-  .chatpage .eq2grid { grid-template-columns: 1fr; }
+  .chatpage .eq2grid { grid-template-columns: 1fr !important; }
   .eq2win { height: min(48vh, 420px); }
 }

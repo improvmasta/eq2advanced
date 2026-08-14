@@ -9,10 +9,9 @@
    which is also why nothing on the page counts who is uploading — the box is
    worth reading whether or not anybody is playing.
 
-   The wording of a line is the GAME's — `Doyouevenrift tells General (2),
-   "…"` — kept even though each block is already one channel. Dropping the
-   channel clause would tidy it and it would stop looking like EQ2, which is
-   the entire brief.
+   Each block already names its channel, so a line keeps only the useful
+   identity: `[time] Player: "message"`. Repeating `tells General (2)` on every
+   row spent the narrow window on information its title had already supplied.
 
    All three blocks are the same blue on purpose (the request), so the colour
    is one variable in base.css (`--eq2-chat`) and not three. */
@@ -23,14 +22,16 @@ import { lexiconCharacter, lexiconGuild } from '../lib/raids.js'
 import { Examine, Hover } from '../components/ItemCard.jsx'
 
 const CHANNELS = [
-  { key: 'general', label: 'General', num: 2 },
-  { key: 'lfg', label: 'LFG', num: 3 },
-  { key: 'auction', label: 'Auction', num: 10 },
+  { key: 'general', label: 'General' },
+  { key: 'lfg', label: 'LFG' },
+  { key: 'auction', label: 'Auction' },
 ]
 
 const EMPTY = { general: [], lfg: [], auction: [] }
 const CAP = 400   // the live tail the page holds; the archive is behind the date
 const RECRUIT_MAX_CHARS = 320 // about five lines in the narrow rail
+const COLLAPSED_KEY = 'eq2advanced.chat.collapsed'
+const SPAM_KEY = 'eq2advanced.chat.hide-powerleveling'
 
 function clock(ts) {
   const d = new Date(ts * 1000)
@@ -108,8 +109,12 @@ function ItemLink({ part }) {
    tab, carries `noopener noreferrer nofollow`, and shows the address AS TYPED.
    Nothing shortens or prettifies it, because the one thing a reader needs from
    a link in a public channel is to see where it actually goes. */
-function Piece({ p }) {
-  if (p.k === 't') return <span>{p.s}</span>
+function Piece({ p, trade }) {
+  if (p.k === 't') {
+    const hit = trade && p.s.match(/^(\s*)(WTS|WTB)\b/i)
+    if (hit) return <span>{hit[1]}<b className={`tradeword ${trade}`}>{hit[2]}</b>{p.s.slice(hit[0].length)}</span>
+    return <span>{p.s}</span>
+  }
   if (p.k === 'guild') {
     return (
       <a className="lnk guild" href={lexiconGuild(p.s)} target="_blank"
@@ -137,17 +142,39 @@ function PlayerLink({ name, className }) {
   )
 }
 
+function tradeKind(m) {
+  const text = m.parts.map((p) => p.s).join('').trim()
+  return /^WTS\b/i.test(text) ? 'wts' : /^WTB\b/i.test(text) ? 'wtb' : ''
+}
+
 function Line({ m, channel }) {
+  const trade = channel.key === 'auction' ? tradeKind(m) : ''
+  const firstText = m.parts.findIndex((p) => p.k === 't')
   return (
     <div className="eq2line">
       <span className="ts">[{clock(m.ts)}]</span>{' '}
-      <PlayerLink className="who" name={m.who} /> tells {channel.label} ({channel.num}), &quot;
-      {m.parts.map((p, i) => <Piece key={i} p={p} />)}&quot;
+      <PlayerLink className="who" name={m.who} /><span className="punct">:</span>{' '}
+      <span className="speech">&quot;{m.parts.map((p, i) => (
+        <Piece key={i} p={p} trade={i === firstText ? trade : ''} />
+      ))}&quot;</span>
     </div>
   )
 }
 
 const said = (m) => `${m.who} ${m.parts.map((p) => p.s).join('')}`.toLowerCase()
+
+/* Powerlevel ads have several stable spellings in the live archive: the full
+   word, `1-70 PL` (with or without spaces), and "power 1-70 lvl exp". Keep the
+   narrow shapes here rather than filtering every mention of "level" or "exp",
+   which are ordinary LFG conversation. A player asking for a PL group is the
+   same traffic this switch is meant to remove. */
+function isPowerlevelSpam(m) {
+  const text = m.parts.map((p) => p.s).join('').toLowerCase()
+  return /\bpower\s*-?\s*levels?|\bpowerlevel/.test(text)
+    || /\b\d{1,3}\s*[-–]\s*\d{1,3}\s*pl\b/.test(text)
+    || /\bpower\s+\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:lvl|level)\s+exp\b/.test(text)
+    || /\bpl\s+groups?\b/.test(text)
+}
 
 /* ---- Stats ---------------------------------------------------------------
 
@@ -404,7 +431,9 @@ function StatsPanel({ channel, start, end, when }) {
    A date pins the box to that day out of the record; clearing it drops back
    onto the live tail, which kept arriving underneath the whole time. The filter
    narrows whichever of the two is showing. */
-function Block({ channel, messages, bounds, day, setDay, dark }) {
+function Block({
+  channel, messages, bounds, day, setDay, dark, collapsed, onCollapse, hideSpam,
+}) {
   const body = useRef(null)
   const stick = useRef(true)
   const [q, setQ] = useState('')
@@ -424,7 +453,8 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
   }, [day, channel.key])
 
   const live = !day
-  const source = live ? messages : (past ?? [])
+  const source = (live ? messages : (past ?? []))
+    .filter((m) => !hideSpam || !isPowerlevelSpam(m))
   const needle = q.trim().toLowerCase()
   const shown = needle ? source.filter((m) => said(m).includes(needle)) : source
 
@@ -445,10 +475,16 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
         : live ? 'nothing here yet' : 'nothing said on this day'
 
   return (
-    <section className={`eq2win ${live ? '' : 'past'}`}>
+    <section className={`eq2win ${live ? '' : 'past'}${collapsed ? ' collapsed' : ''}`}>
       <div className="eq2tabs">
         <span className="eq2tab active">{channel.label}</span>
-        <label className="eq2day">
+        <button type="button" className="eq2collapse" onClick={onCollapse}
+                aria-expanded={!collapsed}
+                aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${channel.label} chat`}
+                title={`${collapsed ? 'Expand' : 'Collapse'} ${channel.label}`}>
+          {collapsed ? '+' : '−'}
+        </button>
+        {!collapsed && <label className="eq2day">
           <input
             type="date"
             value={day}
@@ -461,8 +497,8 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
             <button type="button" className="eq2now" onClick={() => setDay('')}
                     title="Back to live">live</button>
           )}
-        </label>
-        <label className="eq2find">
+        </label>}
+        {!collapsed && <label className="eq2find">
           <input
             type="search"
             value={q}
@@ -476,9 +512,9 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
             }}
           />
           {needle && <span className="hits">{shown.length}</span>}
-        </label>
+        </label>}
       </div>
-      <div className="eq2body" ref={body} onScroll={onScroll}>
+      {!collapsed && <div className="eq2body" ref={body} onScroll={onScroll}>
         {shown.length === 0
           ? <div className="eq2off">{empty}</div>
           : shown.map((m) => <Line key={m.id} m={m} channel={channel} />)}
@@ -487,7 +523,7 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
             empty state and never replaces what was already said. A pinned day
             is not a feed and cannot disconnect from anything. */}
         {live && dark && <div className="eq2gone">disconnected</div>}
-      </div>
+      </div>}
     </section>
   )
 }
@@ -502,22 +538,25 @@ function Block({ channel, messages, bounds, day, setDay, dark }) {
 
    The panel is mounted only while it is open, so a channel nobody expands never
    asks the server to count anything. */
-function Channel({ channel, messages, bounds, dark }) {
+function Channel({
+  channel, messages, bounds, dark, collapsed, onCollapse, hideSpam,
+}) {
   const [day, setDay] = useState('')
   const [open, setOpen] = useState(false)
   const live = !day
 
   return (
-    <div className="eq2col">
+    <div className={`eq2col${collapsed ? ' collapsed' : ''}`}>
       <Block channel={channel} messages={messages} bounds={bounds}
-             day={day} setDay={setDay} dark={dark} />
-      <button type="button" className="statsbtn" aria-expanded={open}
+             day={day} setDay={setDay} dark={dark}
+             collapsed={collapsed} onCollapse={onCollapse} hideSpam={hideSpam} />
+      {!collapsed && <button type="button" className="statsbtn" aria-expanded={open}
               onClick={() => setOpen((s) => !s)}>
         <i className={`caret${open ? ' up' : ''}`} />
         Stats
         <span className="of">{channel.label}</span>
-      </button>
-      {open && (
+      </button>}
+      {!collapsed && open && (
         <StatsPanel channel={channel} when={day ? `on ${day}` : 'all time'}
                     start={live ? null : dayWindow(day)[0]}
                     end={live ? null : dayWindow(day)[1]} />
@@ -623,6 +662,27 @@ export default function Chat() {
   const [link, setLink] = useState(null)
   const [feeders, setFeeders] = useState(0)
   const flowing = link === null ? null : link && feeders > 0
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')
+        .filter((k) => CHANNELS.some((c) => c.key === k)))
+    } catch { return new Set() }
+  })
+  const [hideSpam, setHideSpam] = useState(
+    () => localStorage.getItem(SPAM_KEY) === '1')
+
+  useEffect(() => {
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])) } catch { /* private mode */ }
+  }, [collapsed])
+  useEffect(() => {
+    try { localStorage.setItem(SPAM_KEY, hideSpam ? '1' : '0') } catch { /* private mode */ }
+  }, [hideSpam])
+
+  const toggleCollapsed = (key) => setCollapsed((before) => {
+    const next = new Set(before)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   useEffect(() => {
     let dead = false
@@ -694,14 +754,21 @@ export default function Chat() {
               one feed on this page and "Chat" is its name. Green is arriving,
               red is not — and red is a normal state at 4am, not a fault, which
               is why the boxes keep their archive under it. */}
-          <h1 className="chattitle">
-            Chat
-            {flowing !== null && (
-              <i className={`chatdot${flowing ? ' on' : ''}`}
-                 title={flowing ? 'Chat is arriving now'
-                   : 'Nothing is arriving — nobody is relaying, or this page lost the server'} />
-            )}
-          </h1>
+          <div className="chatheading">
+            <h1 className="chattitle">
+              Chat
+              {flowing !== null && (
+                <i className={`chatdot${flowing ? ' on' : ''}`}
+                   title={flowing ? 'Chat is arriving now'
+                     : 'Nothing is arriving — nobody is relaying, or this page lost the server'} />
+              )}
+            </h1>
+            <label className="chatspam">
+              <input type="checkbox" checked={hideSpam}
+                     onChange={(e) => setHideSpam(e.target.checked)} />
+              Spam filter
+            </label>
+          </div>
           {/* Which server, said plainly. Every line here was broadcast on
               Wuoshi, and a reader who does not already know that has no way to
               tell from a page of chat — the channels look the same on every
@@ -714,10 +781,15 @@ export default function Chat() {
       </div>
 
       <div className="chatlayout">
-        <div className="eq2grid">
+        <div className="eq2grid" style={{
+          gridTemplateColumns: CHANNELS.map((c) => collapsed.has(c.key)
+            ? '104px' : 'minmax(0, 1fr)').join(' '),
+        }}>
           {CHANNELS.map((c) => (
             <Channel key={c.key} channel={c} messages={rooms[c.key] ?? []}
-                     bounds={bounds} dark={flowing === false} />
+                     bounds={bounds} dark={flowing === false}
+                     collapsed={collapsed.has(c.key)}
+                     onCollapse={() => toggleCollapsed(c.key)} hideSpam={hideSpam} />
           ))}
         </div>
         <Recruiting guilds={recruiting} />

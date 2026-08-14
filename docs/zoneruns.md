@@ -669,6 +669,12 @@ beats screenshotting (crisp at any zoom, selectable, one cached row) and embeddi
 - The adornment-slot gems are cached like the icons — a fixed set from
   `/api/items/adorn/<colour>.png`, format decided by MAGIC NUMBER because some are `.png` and some
   `.jpg`.
+- Adornment items use their own examine shape: Census supplies colour, legal equipment slots and
+  complete set bonuses; the wiki supplies the set name. Turquoise prints the RoK-or-earlier
+  predicate that belongs to that slot colour even though Census leaves `placementflag_list` empty.
+- Legacy set armour with a turquoise slot resolves its same-slot `<set>: <slot>` companion from
+  Census at refresh time and stores that adornment inside the armour's card. The popup remains
+  self-contained: ordinary armour stats first, then the included adornment and all of its bonuses.
 - One line is ours and not EQ2i's: **Dropped by**, the mob whose chest it was.
 - Built at RESOLVE time and stored, so the card is a read. Widening it means
   `backfill_loot.py --refresh-census` (and `--refresh-wiki` for the proc).

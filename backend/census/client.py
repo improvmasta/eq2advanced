@@ -110,7 +110,7 @@ class CensusClient:
     # carries a class list Census will not let `c:show` narrow into, which is
     # why the batch is 100 and not 1000.
     CARD_SHOW = ("id,displayname,iconid,tier,type,itemlevel,slot_list,"
-                 "modifiers,flags,adornmentslot_list,typeinfo")
+                 "modifiers,flags,adornmentslot_list,typeinfo,setbonus_list")
 
     def item_cards(self, ids: list[int]) -> list[dict]:
         out = []
@@ -120,6 +120,14 @@ class CensusClient:
                 f"item/?id={','.join(map(str, chunk))}"
                 f"&c:limit={len(chunk)}&c:show={self.CARD_SHOW}", "item_list")
         return out
+
+    def item_card_by_name(self, name: str) -> dict | None:
+        """Exact display-name lookup for the adornment bundled with legacy set gear."""
+        from urllib.parse import quote
+        rows = self._get(
+            f"item/?displayname={quote(name)}&c:limit=2&c:show={self.CARD_SHOW}",
+            "item_list")
+        return next((r for r in rows if r.get("displayname") == name), None)
 
 
 _shared: CensusClient | None = None

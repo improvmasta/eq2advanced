@@ -209,6 +209,7 @@ FLAG_LABEL = {
     "nobroker": "No-Broker", "nozone": "No-Zone", "prestige": "Prestige",
     "relic": "Relic", "indestructible": "Indestructible",
     "appearance-only": "Appearance Only", "nomail": "No-Mail",
+    "novalue": "No-Value",
 }
 ADORN_COLORS = ("white", "orange", "turquoise", "red", "blue", "yellow",
                 "green", "purple", "cyan", "grey")
@@ -294,10 +295,43 @@ def stat_block(row: dict) -> dict | None:
     adorn = [a.get("color") for a in (row.get("adornmentslot_list") or [])
              if a.get("color") in ADORN_COLORS]
     weapon = _weapon(row.get("typeinfo") or {})
-    if not stats and not effects and not flags and not adorn and not weapon:
+    adornment = _adornment(row.get("typeinfo") or {}, row.get("setbonus_list") or [])
+    if not stats and not effects and not flags and not adorn and not weapon and not adornment:
         return None
     return {"stats": stats, "effects": effects, "weapon": weapon,
-            "flags": sorted(flags), "adornments": adorn}
+            "flags": sorted(flags), "adornments": adorn, "adornment": adornment}
+
+
+def _adornment(info: dict, bonuses: list[dict]) -> dict | None:
+    """The facts that make an adornment an item rather than an empty gear card.
+
+    Census carries the colour, legal equipment slots and the complete set-bonus
+    text. Turquoise is the RoK-and-earlier expansion slot; that predicate is a
+    rule of the slot colour itself (and is printed by the game even though the
+    current Census record leaves placementflag_list empty).
+    """
+    if info.get("name") != "adornment":
+        return None
+    color = info.get("color")
+    slots = [s.get("displayname") for s in (info.get("slot_list") or [])
+             if s.get("displayname")]
+    set_bonuses = []
+    for bonus in bonuses:
+        descriptions = [bonus.get(f"descriptiontag_{i}") for i in range(1, 10)
+                        if bonus.get(f"descriptiontag_{i}")]
+        set_bonuses.append({
+            "required": bonus.get("requireditems"),
+            "effect": bonus.get("effect"),
+            "descriptions": descriptions,
+        })
+    return {
+        "color": color,
+        "slots": slots,
+        "requires_equip": True,
+        "predicate": ("In Rise of Kunark or previous expansion zones"
+                      if color == "turquoise" else None),
+        "set_bonuses": set_bonuses,
+    }
 
 
 def _weapon(info: dict) -> dict | None:
@@ -375,6 +409,7 @@ _EFFECT = re.compile(r"\{\{\s*EquipmentEffect\s*\|([^|}]+)(?:\|([^|}]*))?", re.I
 _EFFECTDESC = re.compile(
     r"^\s*\|?\s*effectdesc\s*=\s*(.*?)(?=^\s*\|?\s*\w+\s*=|^\s*\|?\}\}|\Z)",
     re.I | re.M | re.S)
+_ADORN_SET = re.compile(r"^\s*\|?\s*set\s*=\s*([^|}\n]+)", re.I | re.M)
 
 
 def item_effects(wikitext: str) -> dict | None:
@@ -405,9 +440,11 @@ def item_effects(wikitext: str) -> dict | None:
             if text:
                 desc.append({"depth": len(line) - len(line.lstrip("*")),
                              "text": text})
-    if not names and not desc:
+    adorn_set = _ADORN_SET.search(wikitext or "")
+    if not names and not desc and not adorn_set:
         return None
-    return {"names": names, "desc": desc}
+    return {"names": names, "desc": desc,
+            "set": adorn_set.group(1).strip() if adorn_set else None}
 
 
 def _resolve_titles(names: list[str]) -> dict[str, tuple]:
@@ -600,13 +637,41 @@ def fetch_wiki(conn: sqlite3.Connection, ids: list[int]) -> int:
     if not ids or not network_allowed():
         return 0
     rows = conn.execute(
-        "SELECT item_id, name, iconid FROM items "
+        "SELECT item_id, name, iconid, slot, stats_json FROM items "
         f"WHERE item_id IN ({','.join('?' * len(ids))})", ids).fetchall()
     if not rows:
         return 0
 
     fetch_adorn_gems()
     titles = _resolve_titles(sorted({r["name"] for r in rows if r["name"]}))
+
+    # Old set armour now drops with a same-slot turquoise adornment. The wiki
+    # supplies the set name and Census supplies the exact companion item under
+    # `<set>: <slot>`, so fold that item's complete bonus block into the gear
+    # card. It remains one popup; the reader never has to know or chase a
+    # second item link.
+    client = None
+    included = {}
+    for r in rows:
+        _, effects = titles.get(r["name"], (None, None))
+        stats = json.loads(r["stats_json"]) if r["stats_json"] else None
+        if not effects or not effects.get("set") or not stats \
+                or "turquoise" not in stats.get("adornments", []) or not r["slot"]:
+            continue
+        if client is None:
+            from census.client import shared_client
+            client = shared_client()
+        companion_slot = r["slot"].split(",")[0].strip().title()
+        companion_name = f'{effects["set"]}: {companion_slot}'
+        companion = client.item_card_by_name(companion_name)
+        companion_stats = stat_block(companion or {})
+        if companion_stats and companion_stats.get("adornment"):
+            included[r["item_id"]] = {
+                "name": companion_name,
+                "level": companion.get("itemlevel"),
+                "flags": companion_stats.get("flags", []),
+                **companion_stats["adornment"],
+            }
 
     # Only icons we have not already got a file for; one picture serves many
     # items and every raid after tonight's.
@@ -622,10 +687,14 @@ def fetch_wiki(conn: sqlite3.Connection, ids: list[int]) -> int:
             ok = bool(r["iconid"]) and (
                 r["iconid"] in have or icon_path(r["iconid"]).exists())
             title, effects = titles.get(r["name"], (None, None))
+            stats = json.loads(r["stats_json"]) if r["stats_json"] else None
+            if r["item_id"] in included:
+                stats["included_adornment"] = included[r["item_id"]]
             conn.execute(
-                "UPDATE items SET wiki_title=?, icon_ok=?, effects_json=?, "
+                "UPDATE items SET wiki_title=?, icon_ok=?, effects_json=?, stats_json=?, "
                 "wiki_ts=? WHERE item_id=?",
                 (title, int(ok), json.dumps(effects) if effects else None,
+                 json.dumps(stats) if stats else None,
                  now, r["item_id"]))
             done += 1
     return done

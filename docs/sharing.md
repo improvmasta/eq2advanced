@@ -360,7 +360,7 @@ reads /chat and then signs in is one visitor who did both.
 
 ## The public chat box (`/chat`, `pipeline/chatbus.py`)
 
-General (2), LFG (3) and Auction (10) in three scrolling blocks built to look
+General, LFG and Auction in three scrolling blocks built to look
 like EQ2's own chat window, live at the bottom and **kept** behind a date filter
 on each block, with a Stats panel under each.
 
@@ -591,6 +591,29 @@ so the two odd days a year still work) and sends them as numbers. The date and
 the per-box filter are both per BLOCK, not per page: three boxes are three
 different questions. Picking a day pins that block to the record; clearing it
 drops back onto the live tail, which kept arriving underneath.
+
+Each block can be collapsed independently from its EQ2-style title strip. On
+wide screens a collapsed block becomes a narrow fixed column and the open
+blocks divide the reclaimed width; on narrow screens it becomes a short row.
+The collapsed channel keys are browser-local preferences, so no account or
+server state is involved and the layout survives a refresh.
+
+Auction lines whose message text begins with `WTS` or `WTB` keep those words
+and colour only that leading token red/sell or green/buy. General and LFG
+are never trade-coloured. The classifier only uses the beginning of the
+message, so ordinary Auction conversation mentioning those initialisms is not
+recoloured, and the meaning never depends on colour alone.
+
+The block title already says which channel a line came from, so rows render as
+`[time] Player: "message"` rather than repeating `tells Channel (number)`.
+Only the quoted speech uses the brighter `--eq2-speech`; timestamps, player
+names and window controls retain their quieter blues.
+
+The page-level `Spam filter` preference filters powerleveling ads from live tails and
+per-channel archived days in the browser. Its deliberately narrow patterns
+cover the observed `powerlevel`, `1-70 PL`, `power 1-70 lvl exp`, and `PL group`
+forms without treating ordinary mentions of levels or experience as spam. The
+choice is browser-local and persists across refreshes.
 
 The window is a REPLICA — literal colours scoped to `.eq2win` in `base.css`
 rather than site tokens, one `--eq2-chat` shared by all three blocks. It has a

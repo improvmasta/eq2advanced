@@ -239,6 +239,8 @@ function Examine({ row }) {
   const w = s?.weapon
   const fx = row.effects
   const quality = (row.rarity || '').toLowerCase()
+  const adorn = s?.adornment
+  const included = s?.included_adornment
   return (
     <div className="examinewindow">
       <div className="ew-top">
@@ -256,7 +258,7 @@ function Examine({ row }) {
         )}
       </div>
 
-      {!!s?.flags.length && <div className="ew-flags">{s.flags.join(',  ')}</div>}
+      {!!s?.flags.length && !adorn && <div className="ew-flags">{s.flags.join(',  ')}</div>}
       {!!s?.adornments.length && (
         <div className="ew-adorn">
           {s.adornments.map((c, i) => (
@@ -302,17 +304,29 @@ function Examine({ row }) {
               </td>
             </tr>
           )}
-          {row.slot && (
+          {adorn && (
+            <tr><td className="ew-low">Item Type</td><td className="ew-high">{adorn.slots.join(', ') || 'Adornment'}</td></tr>
+          )}
+          {adorn?.color && (
+            <tr>
+              <td className="ew-low">Slot Type</td>
+              <td className={`ew-high ew-adorn-${adorn.color}`}>{adorn.color[0].toUpperCase() + adorn.color.slice(1)} Adornment Slot</td>
+            </tr>
+          )}
+          {adorn?.predicate && (
+            <tr><td className="ew-low">Predicates</td><td className="ew-high">{adorn.predicate}</td></tr>
+          )}
+          {row.slot && !adorn && (
             <tr><td className="ew-low">Slot</td><td className="ew-high">{row.slot}</td></tr>
           )}
-          {row.type && !w && (
+          {row.type && !w && !adorn && (
             <tr><td className="ew-low">Type</td><td className="ew-high">{row.type}</td></tr>
           )}
           {!!row.level && (
             <tr>
               <td className="ew-low">Level</td>
               <td className="ew-high">
-                {row.level}{row.tier ? <sup> (Tier {row.tier})</sup> : null}
+                {row.level}{row.tier && !adorn ? <sup> (Tier {row.tier})</sup> : null}
               </td>
             </tr>
           )}
@@ -328,6 +342,45 @@ function Examine({ row }) {
           )}
         </tbody>
       </table>
+
+      {!!adorn?.set_bonuses.length && (
+        <div className="ew-set">
+          <div className="ew-set-name">
+            {fx?.set || row.name.replace(/:\s*[^:]+$/, '')}
+            {adorn.set_bonuses[0].required != null && <> &nbsp;({adorn.set_bonuses[0].required}-piece bonus)</>}
+          </div>
+          {adorn.set_bonuses.map((bonus, i) => (
+            <div className="ew-set-bonus" key={i}>
+              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
+              <ul>{bonus.descriptions.map((d, j) => <li key={j}>{d}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {included && (
+        <div className="ew-included">
+          <div className="ew-included-label">Included adornment</div>
+          <div className="ew-set-name">{included.name}</div>
+          <table className="ew-facts"><tbody>
+            <tr><td className="ew-low">Slot Type</td><td className={`ew-high ew-adorn-${included.color}`}>{included.color[0].toUpperCase() + included.color.slice(1)} Adornment Slot</td></tr>
+            {included.predicate && <tr><td className="ew-low">Predicates</td><td className="ew-high">{included.predicate}</td></tr>}
+          </tbody></table>
+          {included.set_bonuses.map((bonus, i) => (
+            <div className="ew-set-bonus" key={i}>
+              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
+              <ul>{bonus.descriptions.map((d, j) => <li key={j}>{d}</li>)}</ul>
+            </div>
+          ))}
+          {(!!included.flags.length || included.requires_equip) && <div className="ew-flags">{[...included.flags, ...(included.requires_equip ? ['Requires-Equip'] : [])].join(',  ')}</div>}
+        </div>
+      )}
+
+      {adorn && (!!s?.flags.length || adorn.requires_equip) && (
+        <div className="ew-flags">
+          {[...(s?.flags || []), ...(adorn.requires_equip ? ['Requires-Equip'] : [])].join(',  ')}
+        </div>
+      )}
 
       {!!fx?.desc.length && (
         <>
