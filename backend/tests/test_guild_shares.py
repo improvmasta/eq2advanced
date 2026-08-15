@@ -67,7 +67,7 @@ MATE_NIGHT = (
 )
 # A second night, uploaded later, to prove the rule keeps firing after a `hide`.
 SECOND_NIGHT = (
-    "(1722729600)[Sun Aug  3 21:00:00 2026] You have entered Vaults of El'Arad.\r\n"
+    "(1722729600)[Sun Aug  3 21:00:00 2026] You have entered The Laboratory of Lord Vyemm.\r\n"
     "(1722729601)[Sun Aug  3 21:00:01 2026] YOU hit a vault guardian for 100 crushing damage.\r\n"
     "(1722729602)[Sun Aug  3 21:00:02 2026] Alpha hits a vault guardian for 110 crushing damage.\r\n"
     "(1722729603)[Sun Aug  3 21:00:03 2026] Bravo hits a vault guardian for 120 crushing damage.\r\n"
@@ -308,13 +308,13 @@ def test_untick_hides_one_night_and_the_rule_survives(client, world, conn):
     sign_in(client, "gsowner")
     upload(client, "Guildy", SECOND_NIGHT)
     sign_in(client, "gsmate")
-    assert list(theirs(client)) == ["Vaults of El'Arad"]
+    assert list(theirs(client)) == ["The Laboratory of Lord Vyemm"]
 
     sign_in(client, "gsowner")
     client.put(f"/api/zone-runs/{raid}/shares",
                json={"group_ids": [world["group"]["id"]]})
     sign_in(client, "gsmate")
-    assert sorted(theirs(client)) == ["The Emerald Halls", "Vaults of El'Arad"]
+    assert sorted(theirs(client)) == ["The Emerald Halls", "The Laboratory of Lord Vyemm"]
 
 
 def test_unrelated_save_does_not_hide_a_guild_shared_run(client, world, conn):

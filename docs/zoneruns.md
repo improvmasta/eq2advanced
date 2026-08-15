@@ -69,6 +69,40 @@ session-scoped):
 passing group does hit the mobs you are hitting. Don't rebuild it without a log where
 presence demonstrably fails.
 
+**Attendance is not content identity (schema v41).** `zone_runs.is_raid` is derived from
+the committed zone reference: a raid instance is raid content; a mixed public/contested
+zone is raid content only when its explicit raid target appears. Thus Castle Mistmoore's
+heroic names and ordinary Loping Plains combat stay Solo/Group even when two nearby groups
+push the roster over seven; Mayong Mistmoore and the Pumpkin Headed Horseman promote their
+own runs. The roster threshold is only the migration fallback while a startup relink fills
+the new field.
+
+An uncatalogued target can be promoted conservatively when **three** signals agree: named,
+at least seven contributors, and observed target HP of at least **10x the median successful
+named heroic in its expansion**. The baseline is learned from Group, Solo-Group, Heroic and
+Public parses; known raid zones and explicit mixed-zone raid targets stay out. At least 20
+heroic observations are required, so a sparse era makes no claim. Median is intentional:
+heroics are plentiful, and a few malformed raid-zone lines cannot move it like a maximum or
+mean. In the current EoF corpus the median is about 330K and the largest observed heroic is
+about 2.5M, putting the dynamic raid threshold near 3.3M without encoding today's level cap.
+
+If the logged zone has no usable expansion (the malformed Trial of Leadership parse claimed
+Qeynos), at least two named mobs previously seen in one expansion can supply the content era
+for the HP comparison. The stored zone remains untouched. The HP disparity corroborates a
+raid; neither a crowd nor one large heroic can claim it alone.
+
+**A public zone can contain consecutive guilds' pulls without a zone line between them.**
+For explicit contested raid targets, `_segment` starts a new run when consecutive pulls
+share under half the smaller contributing roster. Trash between pulls does not hide the
+boundary. This is why each Avatar pull can carry the guild that actually fought it and the
+observer fact for the logger who only watched it.
+
+**A missing zone line is recoverable, but only from consensus.** A raw Unknown-zone visit
+whose named mobs have already appeared in correctly zoned logs adopts the one canonical zone
+when at least two distinct names agree and no candidate ties. That recovers a Freethinker
+Hideout attach/error from Zylphax + Othysis (and the rest), while one ambiguous named remains
+Unknown.
+
 ## The fight rail (`components/EncounterTree.jsx`)
 
 **The rail's head is the raid page's title block, and the only one.** A separate
@@ -299,9 +333,10 @@ anyone to read it, and the answer is the same for every viewer. Three consequenc
   count and `hidden_count` carries the rest; `named_count`, `success_count`, `combat_s`, the
   roster, the guild tag and the run's WINDOW are all taken over the shown fights. **The
   exception is a run with nothing shown at all**, which keeps the whole night's window and
-  roster (`described = counted or members`): `raider_count` partitions Raids from Solo/Group
-  in the list, so blanking it moved a hidden raid across a filter that is on by default — the
-  raid vanished off its OWNER's list and the switch that un-hides it became unreachable.
+  roster (`described = counted or members`): the fallback classifier needs `raider_count`
+  until a startup relink fills `is_raid`, so blanking it could move a hidden raid across the
+  default filter during an upgrade — the raid vanished off its OWNER's list and the switch
+  that un-hides it became unreachable.
   **Hiding a raid must never make it hard to un-hide.**
 - **It is a visibility rule beside the sharing one, never folded in.**
   `groups.VISIBLE_UNHIDDEN_RUN_IDS` wraps `VISIBLE_RUN_IDS`, which is what leaves that

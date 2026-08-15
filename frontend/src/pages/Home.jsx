@@ -8,7 +8,7 @@ import SortableTable from '../components/SortableTable.jsx'
 import SourceFilter from '../components/SourceFilter.jsx'
 import Sparkline from '../components/Sparkline.jsx'
 import { api, fmt } from '../lib/api.js'
-import { RAID_MIN_RAIDERS, isRaid, runLabel } from '../lib/raids.js'
+import { isRaid, runLabel, zoneName } from '../lib/raids.js'
 
 /* Landing page: every zone run as a row in one sortable table. Files are an
    ingest detail — the raid nights themselves are the navigation, and they read
@@ -38,7 +38,7 @@ const byCoverage = (a, b) => (b.encounter_count || 0) - (a.encounter_count || 0)
 const SIZES = {
   /* `label` is the toggle (a plural, because it filters a list), `title` is the
      page heading over what the toggle left. */
-  raid: { label: 'Raids', title: 'Raid', of: isRaid, hint: `${RAID_MIN_RAIDERS}+ raiders` },
+  raid: { label: 'Raids', title: 'Raid', of: isRaid, hint: 'Raid zones and raid targets' },
   group: {
     /* "Group" alone read as a SHARING group (the pills one control over); this
        button is about the size of the night, and a solo zone is on this side
@@ -46,7 +46,7 @@ const SIZES = {
     label: 'Solo/Group',
     title: 'Solo/Group',
     of: (r) => !isRaid(r),
-    hint: `Fewer than ${RAID_MIN_RAIDERS} raiders — group and solo runs`,
+    hint: 'Solo, heroic and ordinary open-world content',
   },
 }
 
@@ -464,7 +464,7 @@ export default function Home({ user }) {
           {runBadges(r)}
         </span>
       ),
-      sortValue: (r) => r.zone || '',
+      sortValue: (r) => zoneName(r, ''),
     },
     {
       /* When it ran. Centred — a time range is text, not a figure, so a
@@ -910,10 +910,10 @@ export default function Home({ user }) {
               },
               {
                 key: 'zone',
-                of: (r) => r.zone || 'Unknown zone',
+                of: (r) => zoneName(r),
                 label: (r) => {
-                  const zone = r.zone || 'Unknown zone'
-                  const runs_ = listRows.filter((x) => (x.zone || 'Unknown zone') === zone)
+                  const zone = zoneName(r)
+                  const runs_ = listRows.filter((x) => zoneName(x) === zone)
                   const fights = runs_.reduce((s, x) => s + x.encounter_count, 0)
                   const best = Math.max(...runs_.map((x) => x.raid_dps || 0))
                   return (

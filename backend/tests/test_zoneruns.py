@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db import SCHEMA
 from pipeline.zoneruns import ZONE_RUN_GAP_S, encounter_fp, rebuild_zone_runs
+from routers.zoneruns_api import _observed_runs
 
 T0 = 1_754_000_000
 
@@ -84,6 +85,23 @@ def test_null_zone_forms_own_run(conn):
     rs = runs(conn)
     assert len(rs) == 2
     assert rs[0]["zone"] is None and rs[1]["zone"] == "Zone A"
+
+
+def test_named_mob_consensus_recovers_a_missing_zone_line(conn):
+    add_session(conn, 1, T0, T0 + 20_000)
+    add_enc(conn, 1, "Freethinker Hideout", "Zylphax the Shredder",
+            T0, T0 + 100, is_named=1)
+    add_enc(conn, 1, "Freethinker Hideout", "Othysis Muravian",
+            T0 + 200, T0 + 300, is_named=1)
+    later = T0 + ZONE_RUN_GAP_S + 1_000
+    add_enc(conn, 1, None, "Zylphax the Shredder",
+            later, later + 100, is_named=1)
+    add_enc(conn, 1, None, "Othysis Muravian",
+            later + 200, later + 300, is_named=1)
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert [r["zone"] for r in rs] == ["Freethinker Hideout", "Freethinker Hideout"]
+    assert [r["is_raid"] for r in rs] == [1, 1]
 
 
 def test_subset_file_dup_marked(conn):
@@ -208,6 +226,18 @@ def add_actor(conn, enc_id, entity_id, damage=1000, taken=0):
         "damage_taken) VALUES (?,?,?,?)", (enc_id, entity_id, damage, taken))
 
 
+def add_heroic_hp_samples(conn, sid, zone, hp, count=20,
+                          start=T0, entity_start=1000):
+    """Seed enough successful named heroics to make an era median trustworthy."""
+    for i in range(count):
+        name = f"Heroic sample {i}"
+        eid = entity_start + i
+        fight = add_enc(conn, sid, zone, name, start + i * 100,
+                        start + i * 100 + 50, is_named=1, success=1)
+        add_entity(conn, eid, name, kind="mob", sid=sid)
+        add_actor(conn, fight, eid, damage=0, taken=hp)
+
+
 def test_roster_counts_players_who_did_something(conn):
     add_session(conn, 1, T0, T0 + 5000)
     e1 = add_enc(conn, 1, "Zone A", "Boss", T0, T0 + 100)
@@ -285,6 +315,122 @@ def test_roster_counts_people_not_entity_rows(conn):
     rebuild_zone_runs(conn, 1)
     rs = runs(conn)
     assert len(rs) == 1 and rs[0]["raider_count"] == 1
+
+
+def test_a_new_guilds_contested_pull_starts_a_new_run(conn):
+    """Two guilds can pull an Avatar seconds apart without zoning. Their
+    guild vote and observer tag belong to each pull, not to the hour."""
+    add_session(conn, 1, T0, T0 + 5000)
+    first = add_enc(conn, 1, "Rivervale", "Avatar of Mischief",
+                    T0, T0 + 100, is_named=1, success=0)
+    second = add_enc(conn, 1, "Rivervale", "Avatar of Mischief",
+                     T0 + 150, T0 + 250, is_named=1, success=0)
+    third = add_enc(conn, 1, "Rivervale", "Avatar of Mischief",
+                    T0 + 300, T0 + 400, is_named=1, success=1)
+
+    now = T0
+    names = []
+    for i in range(1, 18):
+        names.append((i, f"Dread{i}", "Dread Army"))
+    names.append((18, "Bobby", "Dread Army"))
+    for i in range(19, 37):
+        names.append((i, f"Doa{i}", "Dead on Arrival"))
+    for i in range(37, 41):
+        names.append((i, f"Guest{i}", None))
+    for eid, name, guild in names:
+        add_entity(conn, eid, name)
+        conn.execute(
+            "INSERT INTO roster_classes (name_lower, world_id, name, class, found, "
+            "checked_ts, guild_name, guild_checked) VALUES (lower(?),618,?,'mystic',1,?,?,1)",
+            (name, name, now, guild))
+    for eid in range(1, 19):
+        add_actor(conn, first, eid)
+    for eid in range(37, 41):
+        add_actor(conn, first, eid)
+    for enc_id in (second, third):
+        for eid in range(19, 41):
+            add_actor(conn, enc_id, eid)
+
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert [r["encounter_count"] for r in rs] == [1, 2]
+    assert [r["guild"] for r in rs] == ["Dread Army", "Dead on Arrival"]
+    assert [r["is_raid"] for r in rs] == [1, 1]
+    assert _observed_runs(conn, [rs[0]["id"], rs[1]["id"]]) == {rs[1]["id"]}
+
+
+def test_a_huge_public_zone_hp_outlier_corroborates_raid_content(conn):
+    """An uncatalogued target can still be recognized when it is both
+    raid-attended and orders of magnitude tougher than the era's heroics."""
+    add_session(conn, 1, T0, T0 + 20_000)
+    add_heroic_hp_samples(conn, 1, "The Estate of Unrest", 100_000)
+    later = T0 + ZONE_RUN_GAP_S + 1_000
+    giant = add_enc(conn, 1, "Loping Plains", "An Uncatalogued Avatar",
+                    later, later + 600, is_named=1, success=1)
+    add_entity(conn, 2, "An Uncatalogued Avatar", kind="mob")
+    # Deliberately below the old fixed 10M floor: the corpus-relative ratio is
+    # the evidence now, not one hard-coded level-cap number.
+    add_actor(conn, giant, 2, damage=0, taken=4_000_000)
+    for eid in range(3, 10):
+        add_entity(conn, eid, f"Raider{eid}")
+        add_actor(conn, giant, eid)
+    rebuild_zone_runs(conn, 1)
+    rs = runs(conn)
+    assert rs[0]["is_raid"] == 0
+    assert rs[1]["is_raid"] == 1
+
+
+def test_even_the_largest_eof_heroic_stays_below_ten_times_the_median(conn):
+    add_session(conn, 1, T0, T0 + 20_000)
+    add_heroic_hp_samples(conn, 1, "The Estate of Unrest", 330_000)
+    later = T0 + ZONE_RUN_GAP_S + 1_000
+    heroic = add_enc(conn, 1, "Castle Mistmoore", "A Very Large Heroic",
+                     later, later + 300, is_named=1, success=1)
+    add_entity(conn, 2, "A Very Large Heroic", kind="mob")
+    add_actor(conn, heroic, 2, damage=0, taken=2_500_000)
+    for eid in range(3, 10):
+        add_entity(conn, eid, f"Raider{eid}")
+        add_actor(conn, heroic, eid)
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[-1]["is_raid"] == 0
+
+
+def test_misleading_zone_uses_named_consensus_to_choose_the_hp_era(conn):
+    """The real log called Trial of Leadership `Qeynos Capitol District`.
+    Its repeated named identify KoS, whose heroic median makes the disparity
+    visible without a fixed HP threshold or a hard-coded boss name."""
+    add_session(conn, 1, T0, T0 + 40_000)
+    add_heroic_hp_samples(conn, 1, "The Halls of Fate", 300_000)
+
+    reference_start = T0 + ZONE_RUN_GAP_S + 1_000
+    for i, (name, hp) in enumerate((
+            ("Keeper of the Gate", 3_700_000),
+            ("The Guardian of Leadership", 8_600_000))):
+        fight = add_enc(conn, 1, "Trials of the Awakened", name,
+                        reference_start + i * 200,
+                        reference_start + i * 200 + 100,
+                        is_named=1, success=1)
+        add_entity(conn, 1100 + i, name, kind="mob")
+        add_actor(conn, fight, 1100 + i, damage=0, taken=hp)
+
+    wrong_start = reference_start + ZONE_RUN_GAP_S + 1_000
+    wrong = []
+    for i, (name, hp) in enumerate((
+            ("Keeper of the Gate", 3_700_000),
+            ("The Guardian of Leadership", 8_600_000))):
+        fight = add_enc(conn, 1, "Qeynos Capitol District", name,
+                        wrong_start + i * 200, wrong_start + i * 200 + 100,
+                        is_named=1, success=1)
+        wrong.append(fight)
+        add_actor(conn, fight, 1100 + i, damage=0, taken=hp)
+    for eid in range(3, 10):
+        add_entity(conn, eid, f"Raider{eid}")
+        for fight in wrong:
+            add_actor(conn, fight, eid)
+
+    rebuild_zone_runs(conn, 1)
+    assert runs(conn)[-1]["zone"] == "Qeynos Capitol District"
+    assert runs(conn)[-1]["is_raid"] == 1
 
 
 # ---------- hand edits (delete / merge / unmerge) ----------

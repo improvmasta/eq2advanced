@@ -28,7 +28,7 @@ which is why there is no staleness column.
 import json
 
 from census.roster import DEFAULT_WORLD, resolve
-from groups import RAID_MIN_RAIDERS  # one definition of "what is a raid"
+from groups import RAID_RUN
 
 GUILD_BACKFILL_BUDGET = 120     # per hourly tick; drains ~1100 rows in a day
 GUILD_BACKFILL_PACE_S = 0.75    # be a polite neighbour to a free public API
@@ -73,11 +73,11 @@ def retag_runs(conn, character_id: int | None = None) -> int:
     """Recompute `zone_runs.guild` from the cached roster answers. -> rows
     changed. Optionally scoped to one character's runs (the parse path).
 
-    Runs below the raid threshold are forced NULL: a guild pill on a two-person
-    quest group says something about the pair, not about a raid night. Caller
+    Non-raid content is forced NULL: a guild pill on Castle Mistmoore's heroic
+    crowd says something about people nearby, not about a raid night. Caller
     owns the transaction."""
-    where = "z.roster_json IS NOT NULL AND COALESCE(z.raider_count, 0) >= ?"
-    params: list = [RAID_MIN_RAIDERS]
+    where = f"z.roster_json IS NOT NULL AND {RAID_RUN('z')}"
+    params: list = []
     if character_id is not None:
         where += " AND z.character_id = ?"
         params.append(character_id)
@@ -101,10 +101,10 @@ def retag_runs(conn, character_id: int | None = None) -> int:
         if tag != r["guild"]:
             changed.append((tag, r["id"]))
 
-    # below the threshold the answer is always NULL, and a run can fall under it
-    # (a split, a delete) after it was tagged
-    small = "COALESCE(raider_count, 0) < ? OR roster_json IS NULL"
-    small_params: list = [RAID_MIN_RAIDERS]
+    # non-raid content always answers NULL, and a relink can reclassify a run
+    # after it was tagged
+    small = f"NOT {RAID_RUN('zone_runs')} OR roster_json IS NULL"
+    small_params: list = []
     if character_id is not None:
         small = f"({small}) AND character_id = ?"
         small_params.append(character_id)

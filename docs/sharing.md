@@ -185,11 +185,12 @@ is one tick, noticing you have been leaking is luck. New shares are written with
 because a migration must never revoke access somebody already has.
 
 The read-time rule is one definition, `groups.AUTO_SHARE_REACHES` (since_ts
-window AND size AND no `hide`), interpolated into all four query sites. The trap
+window AND raid-content identity AND no `hide`), interpolated into all four query sites. The trap
 is `set_run_shares`'s `auto` set: a share that does NOT reach a run must be
 unticked with a plain delete and never a `hide`, or the row lingers and blocks a
-later opt-in. `RAID_MIN_RAIDERS = 7` lives in `groups.py` — the same line the raid
-list draws in the UI.
+later opt-in. `zone_runs.is_raid` is the same content answer the raid list draws;
+the old `RAID_MIN_RAIDERS = 7` rule survives only as the short migration fallback
+while the startup relink fills existing rows.
 
 `PUT /characters/{id}/shares` takes `group_content` in its `shares` form; the bare
 `group_ids` form keeps its pre-v16 meaning and stays a legacy shim.

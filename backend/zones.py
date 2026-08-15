@@ -1,5 +1,5 @@
-"""What a zone NAME means: which expansion it arrived with, and whether it is a
-raid zone.
+"""What a zone NAME means: which expansion it arrived with, and what kind of
+content happened there.
 
 A log line gives one thing about the place a fight happened — its name, and a
 repeat visit gets a number stuck on the end ("Castle Mistmoore 2"). Everything
@@ -12,9 +12,10 @@ read once at import — nothing here touches the network, so the wiki being down
 is not this app being down, and a zone that has no entry simply has no era
 rather than a guessed one.
 
-Its one caller today is the raid notes outline (`routers/notes_api.py`), which
-groups the pile by expansion because that is the order a TLE server unlocks
-content in — the shape a raider already has in their head.
+The zone box alone is not enough to classify a parse. Public and contested
+places can contain one raid target beside hours of ordinary content, while a
+raid instance is raid content throughout. The small mixed-zone target table
+below is the explicit bridge between those two facts.
 """
 
 import json
@@ -108,6 +109,22 @@ def _load() -> dict[str, dict]:
 
 _BY_NAME = _load()
 
+# Public/contested zones whose ordinary content is not a raid. Only these
+# encounters promote a run there to raid content. Keep names exactly as the
+# combat log prints them; aliases cover the two Mayong labels seen in EoF data.
+#
+# This deliberately is not "any public-zone run with seven people nearby".
+# Castle Mistmoore and Loping Plains are busy places, and overhearing two groups
+# must not turn their heroic/solo content into a raid. The target is the fact.
+_MIXED_RAID_MOBS = {
+    "Castle Mistmoore": frozenset({
+        "Mayong Mistmoore",
+        "Vampire Lord Mayong Mistmoore",
+    }),
+    "Loping Plains": frozenset({"Pumpkin Headed Horseman"}),
+    "Rivervale": frozenset({"Avatar of Mischief"}),
+}
+
 
 def base_name(zone: str | None) -> str:
     """"Castle Mistmoore 2" -> "Castle Mistmoore".
@@ -126,6 +143,20 @@ def info(zone: str | None) -> dict | None:
     if not name:
         return None
     return _BY_NAME.get(name) or _BY_NAME.get(base_name(name))
+
+
+def display_name(zone: str | None) -> str | None:
+    """The place name a person should read, without an instance counter.
+
+    The reference row supplies the canonical spelling, so a genuine zone whose
+    own name ends in a number remains intact while ``Castle Mistmoore 2`` reads
+    as ``Castle Mistmoore``. Unknown names fall back to the conservative base
+    rule used by notes."""
+    name = (zone or "").strip()
+    if not name:
+        return None
+    row = info(name)
+    return row["zone"] if row else base_name(name)
 
 
 def era_of(zone: str | None) -> str | None:
@@ -160,3 +191,19 @@ def is_public(zone: str | None) -> bool:
     entry answers False to both — unknown is not a claim."""
     row = info(zone)
     return bool(row and row.get("instance") == "Public")
+
+
+def is_raid_encounter(zone: str | None, name: str | None) -> bool:
+    """Whether one encounter is raid CONTENT, independent of attendance.
+
+    A raid instance answers from its zone. A mixed public/contested zone only
+    answers yes for its explicit raid target. Unknown content makes no claim."""
+    if is_raid(zone):
+        return True
+    place = display_name(zone)
+    return bool(place and name and name in _MIXED_RAID_MOBS.get(place, ()))
+
+
+def is_raid_run(zone: str | None, names) -> bool:
+    """Whether any counted encounter makes this run raid content."""
+    return is_raid(zone) or any(is_raid_encounter(zone, name) for name in names)

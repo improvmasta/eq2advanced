@@ -63,10 +63,15 @@ import time
 # — a run you own or share with a group does not stop being yours just because
 # it is also published. Parameterised by :uid, used as a subquery so it composes
 # with whatever else a caller is filtering on.
-# A group is six, so seven raiders is a raid. Auto-share carries raids and
-# leaves group content alone unless the share says otherwise — the same line
-# the raid list draws (frontend SIZES), which is why it lives in one place.
+# Legacy fallback while an existing database's startup relink is still filling
+# `zone_runs.is_raid`. Once classified, raid CONTENT comes from the zone or its
+# explicit contested target; attendance alone cannot promote a public zone.
 RAID_MIN_RAIDERS = 7
+
+
+def RAID_RUN(alias: str = "z") -> str:
+    return (f"COALESCE({alias}.is_raid, "
+            f"COALESCE({alias}.raider_count, 0) >= {RAID_MIN_RAIDERS}) = 1")
 
 # A group that has been deleted is still all there — that is what makes an
 # admin restore possible — so "does this group exist" is a condition, not the
@@ -85,7 +90,7 @@ def _SHARE_REACHES(alias: str) -> str:
     return f"""
     {LIVE_GROUP(f'{alias}.group_id')}
     AND ({alias}.since_ts IS NULL OR z.started_ts >= {alias}.since_ts)
-    AND ({alias}.raids_only = 0 OR COALESCE(z.raider_count, 0) >= {RAID_MIN_RAIDERS})
+    AND ({alias}.raids_only = 0 OR {RAID_RUN('z')})
     AND NOT EXISTS (SELECT 1 FROM run_shares h WHERE h.zone_run_id = z.id
                       AND h.group_id = {alias}.group_id AND h.mode = 'hide')
 """

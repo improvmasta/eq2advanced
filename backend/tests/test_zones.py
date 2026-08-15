@@ -29,6 +29,7 @@ def test_the_instance_number_is_about_the_night_not_the_place():
 def test_a_numbered_visit_resolves_to_the_same_zone():
     assert zones.era_of("Castle Mistmoore 2") == zones.era_of("Castle Mistmoore")
     assert zones.info("The Emerald Halls 3")["zone"] == "The Emerald Halls"
+    assert zones.display_name("Castle Mistmoore 2") == "Castle Mistmoore"
 
 
 @pytest.mark.parametrize("zone,era,raid", [
@@ -51,6 +52,14 @@ def test_a_zone_nobody_has_heard_of_has_no_era_rather_than_a_guessed_one():
     assert zones.info("A Zone Nobody Has Heard Of") is None
     assert zones.era_of("A Zone Nobody Has Heard Of") is None
     assert zones.era_label(None) == "Other"
+
+
+def test_mixed_zones_only_promote_their_actual_raid_target():
+    assert not zones.is_raid_run("Castle Mistmoore 2", ["The Cloaked Dhampyre"])
+    assert zones.is_raid_run("Castle Mistmoore", ["Mayong Mistmoore"])
+    assert not zones.is_raid_run("Loping Plains", ["a Mistmoore watcher"])
+    assert zones.is_raid_run("Loping Plains", ["Pumpkin Headed Horseman"])
+    assert zones.is_raid_run("Rivervale", ["Avatar of Mischief"])
 
 
 def test_eras_sort_in_unlock_order_and_the_unknown_one_sorts_last():

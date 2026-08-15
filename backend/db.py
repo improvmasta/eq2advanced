@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -187,6 +187,8 @@ CREATE TABLE IF NOT EXISTS zone_runs (
   combat_s INTEGER NOT NULL DEFAULT 0,
   raider_count INTEGER,                   -- the roster's size (pipeline/zoneruns)
   roster_json TEXT,                       -- the roster itself, sorted names
+  is_raid INTEGER,                        -- raid CONTENT, from zone/target reference;
+                                          -- NULL only until the startup relink
   guild TEXT,                             -- majority guild of the roster, or NULL
                                           -- when no majority holds (census/guilds.py)
   updated_ts INTEGER NOT NULL
@@ -1312,6 +1314,10 @@ def init_db() -> None:
         if "hidden_count" not in run_cols:
             conn.execute("ALTER TABLE zone_runs ADD COLUMN "
                          "hidden_count INTEGER NOT NULL DEFAULT 0")
+        if "is_raid" not in run_cols:
+            # NULL preserves the old roster-size answer until the startup
+            # relink has classified every existing run from zone/target facts.
+            conn.execute("ALTER TABLE zone_runs ADD COLUMN is_raid INTEGER")
         # v27 shipped `imported_parses` before it kept the picture; the columns
         # are added by shape so a database created in between gets them too.
         # NULL means "no image", which is what those rows honestly are.
@@ -1580,6 +1586,9 @@ def init_db() -> None:
         # that COULD be: the rows come from a wiki crawl, not from anybody's
         # log, so `tools/sync_planner.py` fills them and an empty catalog is
         # simply a Planner with no era synced yet.
+        # v41: `zone_runs.is_raid` separates raid CONTENT from attendance.
+        # Shape-guarded above; NULL falls back to the former seven-raider rule
+        # only until the ordinary startup relink writes the reference answer.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

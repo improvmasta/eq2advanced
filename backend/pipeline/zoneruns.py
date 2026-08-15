@@ -47,10 +47,12 @@ they count the visible fights and `hidden_count` carries the rest.
 
 import math
 import sqlite3
+import statistics
 import time
 
 import groups
 import memo
+import zones
 from db import json_dumps
 
 # Split a same-zone encounter stream when combat pauses this long. Observed
@@ -130,22 +132,203 @@ def load_edits(conn: sqlite3.Connection, character_id: int) -> dict[str, set[str
     return out
 
 
+CONTESTED_ROSTER_AGREEMENT = 0.50
+MIN_ZONE_EVIDENCE = 2
+MIN_HEROIC_HP_SAMPLES = 20
+RAID_HP_MEDIAN_MULTIPLIER = 10
+HEROIC_INSTANCES = frozenset({
+    "Group", "Solo-Group", "Heroic", "Event Heroic", "Public",
+})
+
+
 def _segment(canonical: list[sqlite3.Row],
-             edits: dict[str, set[str]] | None = None) -> list[list[sqlite3.Row]]:
+             edits: dict[str, set[str]] | None = None,
+             zone_of: dict[int, str | None] | None = None,
+             encounter_rosters: dict[int, set[str]] | None = None,
+             ) -> list[list[sqlite3.Row]]:
+    """Cut the encounter stream into visits.
+
+    Public raid targets add one boundary the log cannot state: a new guild can
+    pull the same contested mob seconds after the last guild. When consecutive
+    raid pulls share under half the smaller contributing roster they are two
+    runs, even though the logger never left the zone. That is what lets each
+    pull carry its own guild and observer facts."""
     breaks = (edits or {}).get("break", set())
     joins = (edits or {}).get("join", set())
+    zone_of = zone_of or {}
+    encounter_rosters = encounter_rosters or {}
     runs: list[list[sqlite3.Row]] = []
     for e in canonical:
         prev = runs[-1][-1] if runs else None
         fp = encounter_fp(e)
-        natural = (prev is None or e["zone"] != prev["zone"]
+        zone = zone_of.get(e["id"], e["zone"])
+        prev_zone = zone_of.get(prev["id"], prev["zone"]) if prev is not None else None
+        natural = (prev is None or zone != prev_zone
                    or e["started_ts"] - prev["ended_ts"] > ZONE_RUN_GAP_S)
+
+        contested = False
+        if (not natural and zones.is_public(zone)
+                and zones.is_raid_encounter(zone, e["name"])):
+            # Trash between pulls stays with the pull before it; compare the
+            # new raid encounter with the most recent raid encounter in this
+            # run, not merely with the immediately preceding row.
+            prior = next((p for p in reversed(runs[-1])
+                          if zones.is_raid_encounter(
+                              zone_of.get(p["id"], p["zone"]), p["name"])), None)
+            if prior is not None:
+                old = encounter_rosters.get(prior["id"])
+                new = encounter_rosters.get(e["id"])
+                if old and new:
+                    shared = len(old & new)
+                    contested = shared / min(len(old), len(new)) < CONTESTED_ROSTER_AGREEMENT
         # a join can never promote the very first fight into a previous run
-        if fp in breaks or (natural and not (fp in joins and prev is not None)):
+        cut = natural or contested
+        if fp in breaks or (cut and not (fp in joins and prev is not None)):
             runs.append([e])
         else:
             runs[-1].append(e)
     return runs
+
+
+def _infer_unknown_zone(conn: sqlite3.Connection,
+                        members: list[sqlite3.Row]) -> str | None:
+    """Recover a missing zone from repeated, unambiguous named-mob evidence.
+
+    A live client attached after zoning can deliver a whole raid without the
+    ``You have entered`` line. Named mobs already seen in correctly zoned logs
+    are durable game knowledge: two distinct names agreeing on one canonical
+    zone is enough; one name or a tied vote remains Unknown."""
+    names = sorted({e["name"] for e in members if e["is_named"] and e["name"]})
+    if len(names) < MIN_ZONE_EVIDENCE:
+        return None
+    ph = ",".join("?" * len(names))
+    votes: dict[str, set[str]] = {}
+    for row in conn.execute(
+            f"SELECT DISTINCT zone, name FROM encounters "
+            f"WHERE zone IS NOT NULL AND is_named=1 AND name IN ({ph})", names):
+        place = zones.display_name(row["zone"])
+        if place:
+            votes.setdefault(place, set()).add(row["name"])
+    ranked = sorted(votes.items(), key=lambda x: (-len(x[1]), x[0]))
+    if not ranked or len(ranked[0][1]) < MIN_ZONE_EVIDENCE:
+        return None
+    if len(ranked) > 1 and len(ranked[0][1]) == len(ranked[1][1]):
+        return None
+    return ranked[0][0]
+
+
+def _encounter_rosters(conn: sqlite3.Connection,
+                       enc_ids: list[int]) -> dict[int, set[str]]:
+    """Contributors per encounter for contested-pull boundaries."""
+    out: dict[int, set[str]] = {}
+    for start in range(0, len(enc_ids), 500):
+        chunk = enc_ids[start:start + 500]
+        ph = ",".join("?" * len(chunk))
+        for row in conn.execute(
+                f"SELECT eas.encounter_id, en.name FROM encounter_actor_stats eas "
+                f"JOIN entities en ON en.id=eas.entity_id "
+                f"WHERE eas.encounter_id IN ({ph}) AND en.kind='player' "
+                f"AND en.name <> ? AND ({_CONTRIBUTED})",
+                (*chunk, POOLED_UNKNOWN)):
+            out.setdefault(row["encounter_id"], set()).add(row["name"])
+    return out
+
+
+def _heroic_hp_medians(conn: sqlite3.Connection) -> dict[str, float]:
+    """Expansion -> median observed HP of successful named heroic content.
+
+    The median is learned from the parse corpus rather than encoded as a
+    level-cap number. Heroics are numerous, so a few mis-zoned raid targets
+    cannot drag it upward the way a maximum or mean would. Known raid zones and
+    explicit mixed-zone raid targets never enter the sample. Sparse eras make
+    no claim until enough observations exist."""
+    samples: dict[str, list[int]] = {}
+    for row in conn.execute(
+            "SELECT e.zone, e.name, "
+            "MAX(CASE WHEN en.kind='mob' AND en.name=e.name "
+            "THEN a.damage_taken END) AS hp "
+            "FROM encounters e "
+            "JOIN encounter_actor_stats a ON a.encounter_id=e.id "
+            "JOIN entities en ON en.id=a.entity_id "
+            "WHERE e.zone IS NOT NULL AND e.is_named=1 AND e.success=1 "
+            "AND e.dup_of IS NULL AND e.deleted_ts IS NULL AND e.hidden_ts IS NULL "
+            "GROUP BY e.id"):
+        info = zones.info(row["zone"])
+        era = zones.era_of(row["zone"])
+        if (not info or info.get("instance") not in HEROIC_INSTANCES
+                or era not in zones.ERA_ORDER or not row["hp"]
+                or zones.is_raid_encounter(row["zone"], row["name"])):
+            continue
+        samples.setdefault(era, []).append(row["hp"])
+    return {era: statistics.median(values)
+            for era, values in samples.items()
+            if len(values) >= MIN_HEROIC_HP_SAMPLES}
+
+
+def _content_era(conn: sqlite3.Connection, zone: str | None,
+                 names: list[str]) -> str | None:
+    """Resolve the expansion whose heroic median should judge this content.
+
+    Usually the zone is enough. A malformed zone line can instead say a city
+    or another non-expansion label; two named mobs previously seen in one real
+    expansion recover the content era without pretending one shared name is
+    proof. This handles the Trial of Leadership log that claimed Qeynos."""
+    era = zones.era_of(zone)
+    if era in zones.ERA_ORDER:
+        return era
+    if len(names) < MIN_ZONE_EVIDENCE:
+        return None
+    ph = ",".join("?" * len(names))
+    support: dict[str, set[str]] = {}
+    hits: dict[str, int] = {}
+    for row in conn.execute(
+            f"SELECT zone, name, COUNT(*) AS hits FROM encounters "
+            f"WHERE zone IS NOT NULL AND is_named=1 AND name IN ({ph}) "
+            f"GROUP BY zone, name", names):
+        candidate = zones.era_of(row["zone"])
+        if candidate not in zones.ERA_ORDER:
+            continue
+        support.setdefault(candidate, set()).add(row["name"])
+        hits[candidate] = hits.get(candidate, 0) + row["hits"]
+    ranked = sorted(support, key=lambda candidate: (
+        -len(support[candidate]), -hits[candidate], zones.era_rank(candidate)))
+    if not ranked or len(support[ranked[0]]) < MIN_ZONE_EVIDENCE:
+        return None
+    if (len(ranked) > 1
+            and len(support[ranked[0]]) == len(support[ranked[1]])
+            and hits[ranked[0]] == hits[ranked[1]]):
+        return None
+    return ranked[0]
+
+
+def _raid_hp_outlier(conn: sqlite3.Connection, zone: str | None,
+                     members: list[sqlite3.Row], roster_size: int,
+                     heroic_medians: dict[str, float]) -> bool:
+    """Corroborate uncatalogued raid content from its era's heroic corpus.
+
+    Require a named target, more than a group's contributing roster, a stable
+    heroic sample, and observed target HP at least ten times that era's median.
+    The EoF corpus median is about 330K while its largest observed heroic is
+    about 2.5M, so the ratio admits the lowest raid targets without turning a
+    crowded Castle Mistmoore heroic into a raid."""
+    if roster_size < groups.RAID_MIN_RAIDERS:
+        return False
+    named = sorted({e["name"] for e in members if e["is_named"] and e["name"]})
+    if not named:
+        return False
+    era = _content_era(conn, zone, named)
+    baseline = heroic_medians.get(era) if era else None
+    if not baseline:
+        return False
+    enc_ids = [e["id"] for e in members if e["name"] in named]
+    enc_ph = ",".join("?" * len(enc_ids))
+    observed = conn.execute(
+        f"SELECT COALESCE(MAX(a.damage_taken), 0) FROM encounters e "
+        f"JOIN encounter_actor_stats a ON a.encounter_id=e.id "
+        f"JOIN entities en ON en.id=a.entity_id "
+        f"WHERE e.id IN ({enc_ph}) AND en.kind='mob' AND en.name=e.name",
+        enc_ids).fetchone()[0]
+    return observed >= baseline * RAID_HP_MEDIAN_MULTIPLIER
 
 
 # The roster: who was in this raid, judged over the whole run instead of the
@@ -203,9 +386,13 @@ def _roster(conn: sqlite3.Connection, enc_ids: list[int]) -> list[str] | None:
     return sorted(r["name"] for r in rows if r["fights"] >= need)
 
 
-def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
+def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int,
+                      heroic_medians: dict[str, float] | None = None) -> None:
     """Recompute dedupe marks, run segmentation, and run rollups for one
     character. Caller owns the transaction."""
+    if heroic_medians is None:
+        heroic_medians = _heroic_hp_medians(conn)
+
     all_encs = conn.execute(
         "SELECT e.id, e.session_id, e.zone, e.name, e.is_named, e.started_ts, "
         "e.ended_ts, e.duration_s, e.success, e.zone_run_id, e.dup_of, e.deleted_ts, "
@@ -229,7 +416,24 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
     hidden_fps = edits["hide"]
 
     canonical, dup_of = _dedupe(encs)
-    runs = _segment(canonical, edits)
+
+    # First find each raw visit, then give a zone-less visit one conservative
+    # chance to recover its place from named mobs seen in correctly zoned logs.
+    # The second pass uses that answer for real segmentation, so an inferred
+    # visit behaves exactly like one whose zone line survived.
+    effective_zone: dict[int, str | None] = {}
+    for members in _segment(canonical, edits):
+        place = members[0]["zone"]
+        if place is None:
+            place = _infer_unknown_zone(conn, members)
+        for e in members:
+            effective_zone[e["id"]] = place
+    contested_ids = [e["id"] for e in canonical
+                     if zones.is_public(effective_zone.get(e["id"], e["zone"]))
+                     and zones.is_raid_encounter(
+                         effective_zone.get(e["id"], e["zone"]), e["name"])]
+    runs = _segment(canonical, edits, effective_zone,
+                    _encounter_rosters(conn, contested_ids))
 
     existing = conn.execute(
         "SELECT id, zone, started_ts, ended_ts FROM zone_runs "
@@ -238,7 +442,7 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
     consumed: set[int] = set()
     run_id_of_enc: dict[int, int] = {}
     for members in runs:
-        zone = members[0]["zone"]
+        zone = effective_zone.get(members[0]["id"], members[0]["zone"])
         # Every rollup below describes the fights a READER gets, so it is taken
         # over the shown ones — a night with its last two pulls hidden must not
         # still claim to have run until midnight.
@@ -261,6 +465,10 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
              and start <= ex["ended_ts"] and end >= ex["started_ts"]), None)
         enc_ids = [e["id"] for e in members]
         roster = _roster(conn, [e["id"] for e in described])
+        is_raid = int(
+            zones.is_raid_run(zone, (e["name"] for e in described))
+            or _raid_hp_outlier(
+                conn, zone, described, len(roster or []), heroic_medians))
         fields = (
             zone, start, end, len(counted), len(members) - len(counted),
             sum(1 for e in counted if e["is_named"]),
@@ -271,20 +479,22 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
             sum(1 for e in counted if e["is_named"] and e["success"] == 1),
             sum(e["duration_s"] for e in counted),
             len(roster) if roster is not None else None,
-            json_dumps(roster) if roster is not None else None, now)
+            json_dumps(roster) if roster is not None else None, is_raid, now)
         if match is not None:
             consumed.add(match["id"])
             run_id = match["id"]
             conn.execute(
                 "UPDATE zone_runs SET zone=?, started_ts=?, ended_ts=?, "
                 "encounter_count=?, hidden_count=?, named_count=?, success_count=?, "
-                "combat_s=?, raider_count=?, roster_json=?, updated_ts=? WHERE id=?",
+                "combat_s=?, raider_count=?, roster_json=?, is_raid=?, updated_ts=? "
+                "WHERE id=?",
                 fields + (run_id,))
         else:
             run_id = conn.execute(
                 "INSERT INTO zone_runs (character_id, zone, started_ts, ended_ts, "
                 "encounter_count, hidden_count, named_count, success_count, combat_s, "
-                "raider_count, roster_json, updated_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "raider_count, roster_json, is_raid, updated_ts) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (character_id,) + fields).lastrowid
         for eid in enc_ids:
             run_id_of_enc[eid] = run_id
@@ -332,10 +542,11 @@ def rebuild_zone_runs(conn: sqlite3.Connection, character_id: int) -> None:
 
 def relink_all(conn: sqlite3.Connection) -> int:
     """Rebuild runs for every character that has encounters. -> characters seen."""
+    heroic_medians = _heroic_hp_medians(conn)
     chars = [r["character_id"] for r in conn.execute(
         "SELECT DISTINCT s.character_id AS character_id FROM sessions s "
         "JOIN encounters e ON e.session_id = s.id")]
     for cid in chars:
         with conn:
-            rebuild_zone_runs(conn, cid)
+            rebuild_zone_runs(conn, cid, heroic_medians)
     return len(chars)

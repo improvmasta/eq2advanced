@@ -271,6 +271,7 @@ def list_zone_runs(scope: str = "all", roster: int = 0, dismissed: int = 0,
     observed = _observed_runs(conn, run_ids)
     headline = _headline_named(conn, runs)
     for r in runs:
+        r["display_zone"] = zones.display_name(r.get("zone"))
         r["live"] = r["id"] in live
         r["observed"] = r["id"] in observed
         r["headline_named"] = headline.get(r["id"])
@@ -363,6 +364,7 @@ def zone_run_detail(run_id: int, user=Depends(optional_user)):
         groupsmod.shares_for_runs(conn, [run_id]).get(run_id, []) if mine else [])
     payload["live"] = run_id in _live_runs(conn, [run_id])
     payload["observed"] = run_id in _observed_runs(conn, [run_id])
+    payload["display_zone"] = zones.display_name(payload.get("zone"))
     payload["headline_named"] = _headline_named(conn, [payload]).get(run_id)
     payload.pop("roster_json", None)
     # Somebody else parsed the same night: the page says so and offers the

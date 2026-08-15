@@ -1,17 +1,16 @@
-/* A group is six, so seven raiders means the night was a raid, and two to six
-   is group content — a different kind of evening, not a worse one.
-   `raider_count` is the run's ROSTER, not everyone the log overheard: the
-   backend (`pipeline/zoneruns.py`) drops mobs, bystanders who only ever got
-   hit, and the group that fought past you, all of which used to push a six-man
-   run over this line.
-
-   The same line the backend draws (`groups.RAID_MIN_RAIDERS`), and the reason
-   it lives in one module here: the raid list partitions on it, a standing share
-   defaults to the raids side of it, and Compare's picker offers that side
-   first. Three readings of one number is three chances to disagree. */
+/* Raid is a fact about the CONTENT, not the crowd standing nearby. The backend
+   classifies a raid instance outright and promotes a mixed public zone only
+   for its explicit raid target. The roster threshold remains a brief fallback
+   while an upgraded database's startup relink fills the new field. */
 export const RAID_MIN_RAIDERS = 7
 
-export const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
+export const isRaid = (r) => r?.is_raid == null
+  ? (r?.raider_count || 0) >= RAID_MIN_RAIDERS
+  : !!r.is_raid
+
+export const zoneName = (r, fallback = 'Unknown zone') => (
+  r?.display_zone || r?.zone || fallback
+)
 
 /* What a run is CALLED. Usually its zone, because in an instance the zone is
    the event — "The Emerald Halls" books a night, names it and is what anybody
@@ -25,7 +24,7 @@ export const isRaid = (r) => (r.raider_count || 0) >= RAID_MIN_RAIDERS
    reference data, and exactly one distinct named) — this only formats it, so
    that the list, the raid page and anything later all say it the same way. */
 export const runLabel = (r, fallback = 'Unknown zone') => {
-  const zone = r?.zone || fallback
+  const zone = zoneName(r, fallback)
   return r?.headline_named ? `${zone} - ${r.headline_named}` : zone
 }
 

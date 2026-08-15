@@ -5,7 +5,7 @@ import {
   MIN_PEERS, autoPct, critPct, damageDerived, procPct, rankColor, rankScale, rankTitle,
 } from '../lib/stats.js'
 import { ROLE_LABEL, classColor, classLabel, roleOf } from '../lib/classes.js'
-import { RAID_MIN_RAIDERS, isRaid } from '../lib/raids.js'
+import { isRaid, zoneName } from '../lib/raids.js'
 import BreakdownTable, {
   CompositionStrip, KIND_FILTERS, ParseStrip, actorRowsOf, availKinds, breakdownRows,
 } from '../components/BreakdownTable.jsx'
@@ -500,7 +500,7 @@ function ColBody({ col, view, onView, combinePets, onCombinePets, patch, remove 
       <div className="pchead">
         <div className="pctitle">
           <h3 className="panelname">
-            {raid ? (zr?.zone || `Run #${col.runId}`) : col.subject}
+            {raid ? zoneName(zr, `Run #${col.runId}`) : col.subject}
           </h3>
           {!raid && col.actor && <ClassChip actor={col.actor} />}
           <CloseCol i={col.i} remove={remove} />
@@ -898,7 +898,7 @@ function AddBar({ onAdd, anchor }) {
     // this one isn't a facet — a dropdown must not offer a solo night the list
     // will then refuse to show
     if (!groupRuns && !isRaid(r)) return false
-    if (skip !== 'zone' && zone && (r.zone || '') !== zone) return false
+    if (skip !== 'zone' && zone && zoneName(r, '') !== zone) return false
     if (skip !== 'mob' && mob && !(r.named || []).some((n) => n.name === mob)) return false
     if (skip !== 'date' && date && dayKey(r.started_ts) !== date) return false
     if (skip !== 'guild' && guild && (r.guild || '') !== guild) return false
@@ -907,7 +907,7 @@ function AddBar({ onAdd, anchor }) {
     if (skip !== 'q' && ql) {
       // zones, guilds and mob names get typed from the middle ("freeth",
       // "unrest", "vyk"); a person's name gets typed from the front
-      const text = `${r.zone || ''} ${r.guild || ''} `
+      const text = `${zoneName(r, '')} ${r.guild || ''} `
         + (r.named || []).map((n) => n.name).join(' ')
       if (!text.toLowerCase().includes(ql)
           && !(r.roster || []).some((n) => n.toLowerCase().startsWith(ql))) return false
@@ -921,7 +921,7 @@ function AddBar({ onAdd, anchor }) {
 
   const optionsFor = (facet) => (list || []).filter((r) => passes(r, facet))
   const zones = useMemo(() => [...new Set(
-    optionsFor('zone').map((r) => r.zone || ''))].filter(Boolean).sort(),
+    optionsFor('zone').map((r) => zoneName(r, '')))].filter(Boolean).sort(),
   [list, ql, mob, date, guild, player, groupRuns])
   const mobs = useMemo(() => [...new Set(
     optionsFor('mob').flatMap((r) => (r.named || []).map((n) => n.name)))].sort(),
@@ -1096,7 +1096,7 @@ function AddBar({ onAdd, anchor }) {
             onChange={setPlayer}
           />
           <label className={`chip toggle ${groupRuns ? 'on' : ''}`}
-                 title={`Off, only raids (${RAID_MIN_RAIDERS}+ raiders) are offered`}>
+                 title="Off, only raid zones and raid targets are offered">
             <input type="checkbox" checked={groupRuns}
                    onChange={(ev) => setGroupRuns(ev.target.checked)} /> Solo/Group runs
           </label>
@@ -1113,7 +1113,7 @@ function AddBar({ onAdd, anchor }) {
                 <div key={r.id} className="pickrow">
                   <button className="pickmain" onClick={() => addFrom(r)}>
                     <span>{fmt.date(r.started_ts)}</span>
-                    <span className="z">{r.zone || 'Unknown zone'}</span>
+                    <span className="z">{zoneName(r)}</span>
                     {r.guild && <span className="badge guild">{r.guild}</span>}
                     <span className="muted">
                       {r.encounter_count} fights · {r.character_name}'s parse
