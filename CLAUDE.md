@@ -388,6 +388,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-15 (codex): Polish chat trade labels and window chrome
 - 2026-08-14 (codex): Overhaul admin workspace around accounts and site health
 - 2026-08-14 (codex): Improve item cards and public chat controls
 - 2026-08-14 (codex): Mark admin redesign documentation implemented
@@ -407,4 +408,3 @@ builds here with `bash build.sh`.
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches)
 - 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page
 - 2026-08-04 (claude): Import page rebuild: account-scoped pairing (schema v13), drag-drop uploader, no character prompt
-- 2026-08-04 (claude): Serve the ACT plugin from the site: download + install steps + auto-sharing on Import, header pill

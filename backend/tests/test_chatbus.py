@@ -211,6 +211,19 @@ def test_a_signed_item_id_is_the_census_id(conn):
     assert part == {"k": "item", "s": "Hoop of War", "item": 2481544834}
 
 
+def test_trade_word_can_touch_an_item_link(conn):
+    """The client treats the split itself as the boundary after WTS/WTB."""
+    now = int(time.time())
+    chatbus.absorb(conn, [line(
+        '\\aPC -1 Evoxx:Evoxx\\/a tells Auction (10), '
+        '"WTS\\aITEM 1390406218 8681493 0 0 0:Cloak of the Di\'Zok\\/a"')],
+        "Bobby", "live", now)
+    assert chatbus.snapshot()["channels"]["auction"][0]["parts"] == [
+        {"k": "t", "s": "WTS"},
+        {"k": "item", "s": "Cloak of the Di'Zok", "item": 1390406218},
+    ]
+
+
 def test_typed_addresses_become_url_parts(conn):
     """EQ2 leaves a typed address as text; the page makes it a link, so the
     split has to happen where every reader of the message agrees on it."""

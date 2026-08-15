@@ -5398,47 +5398,61 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   overflow: hidden;
 }
 
-/* The tab strip. One tab, because the tabs became the three blocks — it stays
-   because it is what makes the frame read as EQ2 rather than as a card. */
+/* The window contents quote EQ2; the header belongs to this site. Gold, Cinzel
+   and the quiet outline control tie three game windows into the page around
+   them without recolouring what players actually said. */
 .eq2win .eq2tabs {
   display: grid;
   grid-template-columns: auto auto minmax(60px, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  background: linear-gradient(180deg, #2b3350 0%, #161c30 100%);
-  border-bottom: 1px solid #000;
-  box-shadow: inset 0 -1px 0 rgba(179, 161, 121, 0.35);
+  gap: 8px;
+  padding: 5px 7px 5px 9px;
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+  border-bottom: 1px solid var(--gold-dim);
+  box-shadow: inset 0 -1px 0 rgba(var(--gold-rgb), 0.12);
 }
 .eq2win .eq2tab {
-  padding: 2px 12px;
-  border: 1px solid #000;
-  border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, #55607f 0%, #333c58 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  font-family: var(--font-data);
-  font-size: 0.78rem;
+  margin: 0;
+  padding: 0 3px 0 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-heading);
+  font-size: 0.74rem;
   font-weight: 700;
-  color: #f2f4ff;
-  text-shadow: 0 1px 1px #000;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  text-shadow: none;
 }
 .eq2win .eq2collapse {
   grid-column: 4;
   grid-row: 1;
-  flex: none;
-  width: 22px;
-  height: 22px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid #000;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #55607f 0%, #333c58 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  color: #f2f4ff;
-  font: 700 0.9rem/20px var(--font-data);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm);
+  background: rgba(var(--gold-rgb), 0.08);
+  color: var(--gold);
   cursor: pointer;
 }
 .eq2win .eq2collapse:hover, .eq2win .eq2collapse:focus-visible {
-  background: linear-gradient(180deg, #66739a 0%, #3d4869 100%);
+  border-color: var(--gold);
+  background: rgba(var(--gold-rgb), 0.18);
+  color: var(--gold-bright);
+}
+.eq2win .eq2collapse svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease;
 }
 .eq2win.collapsed { height: 36px; }
 .eq2win.collapsed .eq2tabs {
@@ -5446,6 +5460,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   padding: 4px;
 }
 .eq2win.collapsed .eq2collapse { grid-column: 2; }
+.eq2win.collapsed .eq2collapse svg { transform: rotate(180deg); }
 .eq2win.collapsed .eq2tab { min-width: 0; padding: 2px 6px; overflow: hidden; }
 
 /* The two controls sit where EQ2 keeps the window buttons: the day first,
@@ -5544,8 +5559,25 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border: 1px solid #000; border-radius: 3px;
 }
 
-.eq2win .eq2line { padding: 1px 0; }
-.eq2win .eq2line .ts { color: var(--eq2-dim); }
+.eq2win .eq2line {
+  padding: 1px 0;
+}
+.eq2win .eq2line .ts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-right: 6px;
+  color: var(--eq2-dim);
+  font-size: 0.69rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+.eq2win .eq2line .ts small {
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
 .eq2win .eq2line .who { color: var(--eq2-chat); font-weight: 600; }
 .eq2win .eq2line .punct { color: var(--eq2-chat); }
 .eq2win .eq2line .speech { color: var(--eq2-speech); }
@@ -5632,12 +5664,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   background: linear-gradient(180deg, #fffdf5 0%, var(--eq2-ink) 55%, #ece4d1 100%);
   box-shadow: 0 0 0 1px #d8cfb8, inset 0 0 22px rgba(120, 100, 60, 0.10);
 }
-:root[data-theme="light"] .eq2win .eq2tabs {
-  background: linear-gradient(180deg, #d9dfec 0%, #bcc5da 100%);
-  border-bottom: 1px solid #8a93ab;
-  box-shadow: inset 0 -1px 0 rgba(156, 135, 87, 0.45);
-}
-:root[data-theme="light"] .eq2win .eq2tab,
 :root[data-theme="light"] .eq2win .eq2now {
   border-color: #7e8aa8;
   background: linear-gradient(180deg, #f2f5fc 0%, #ccd4e6 100%);

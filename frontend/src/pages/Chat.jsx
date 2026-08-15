@@ -34,9 +34,13 @@ const COLLAPSED_KEY = 'eq2advanced.chat.collapsed'
 const SPAM_KEY = 'eq2advanced.chat.hide-powerleveling'
 
 function clock(ts) {
+  return clockParts(ts).join(' ')
+}
+
+function clockParts(ts) {
   const d = new Date(ts * 1000)
   const h = d.getHours()
-  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+  return [`${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}`, h < 12 ? 'AM' : 'PM']
 }
 
 /* `<input type="date">` speaks YYYY-MM-DD in LOCAL time, and so does the day a
@@ -143,20 +147,31 @@ function PlayerLink({ name, className }) {
 }
 
 function tradeKind(m) {
-  const text = m.parts.map((p) => p.s).join('').trim()
+  /* An EQ2 link is its own part. With no typed space, joining labels turns
+     `WTS` + `Cloak…` into `WTSCloak…` and loses the token boundary even though
+     the rendered item starts with `[`. Classify the leading text run itself so
+     a link boundary counts, while ordinary words such as `WTSomething` do not. */
+  const first = m.parts.find((p) => p.s.trim())
+  if (first?.k !== 't') return ''
+  const text = first.s.trimStart()
   return /^WTS\b/i.test(text) ? 'wts' : /^WTB\b/i.test(text) ? 'wtb' : ''
 }
 
 function Line({ m, channel }) {
   const trade = channel.key === 'auction' ? tradeKind(m) : ''
   const firstText = m.parts.findIndex((p) => p.k === 't')
+  const [at, period] = clockParts(m.ts)
   return (
     <div className="eq2line">
-      <span className="ts">[{clock(m.ts)}]</span>{' '}
-      <PlayerLink className="who" name={m.who} /><span className="punct">:</span>{' '}
-      <span className="speech">&quot;{m.parts.map((p, i) => (
-        <Piece key={i} p={p} trade={i === firstText ? trade : ''} />
-      ))}&quot;</span>
+      <time className="ts" dateTime={new Date(m.ts * 1000).toISOString()}>
+        <span>{at}</span><small>{period}</small>
+      </time>
+      <span className="chatcopy">
+        <PlayerLink className="who" name={m.who} /><span className="punct">:</span>{' '}
+        <span className="speech">&quot;{m.parts.map((p, i) => (
+          <Piece key={i} p={p} trade={i === firstText ? trade : ''} />
+        ))}&quot;</span>
+      </span>
     </div>
   )
 }
@@ -477,12 +492,14 @@ function Block({
   return (
     <section className={`eq2win ${live ? '' : 'past'}${collapsed ? ' collapsed' : ''}`}>
       <div className="eq2tabs">
-        <span className="eq2tab active">{channel.label}</span>
+        <h2 className="eq2tab">{channel.label}</h2>
         <button type="button" className="eq2collapse" onClick={onCollapse}
                 aria-expanded={!collapsed}
                 aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${channel.label} chat`}
                 title={`${collapsed ? 'Expand' : 'Collapse'} ${channel.label}`}>
-          {collapsed ? '+' : '−'}
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m3 10 5-5 5 5" />
+          </svg>
         </button>
         {!collapsed && <label className="eq2day">
           <input

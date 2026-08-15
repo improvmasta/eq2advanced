@@ -592,11 +592,13 @@ the per-box filter are both per BLOCK, not per page: three boxes are three
 different questions. Picking a day pins that block to the record; clearing it
 drops back onto the live tail, which kept arriving underneath.
 
-Each block can be collapsed independently from its EQ2-style title strip. On
-wide screens a collapsed block becomes a narrow fixed column and the open
-blocks divide the reclaimed width; on narrow screens it becomes a short row.
-The collapsed channel keys are browser-local preferences, so no account or
-server state is involved and the layout survives a refresh.
+Each block can be collapsed independently from its site-themed title strip.
+The gold Cinzel channel name and chevron are deliberately the site's chrome;
+the framed message area below is the EQ2 quotation. On wide screens a collapsed
+block becomes a narrow fixed column and the open blocks divide the reclaimed
+width; on narrow screens it becomes a short row. The collapsed channel keys are
+browser-local preferences, so no account or server state is involved and the
+layout survives a refresh.
 
 Auction lines whose message text begins with `WTS` or `WTB` keep those words
 and colour only that leading token red/sell or green/buy. General and LFG
@@ -605,9 +607,11 @@ message, so ordinary Auction conversation mentioning those initialisms is not
 recoloured, and the meaning never depends on colour alone.
 
 The block title already says which channel a line came from, so rows render as
-`[time] Player: "message"` rather than repeating `tells Channel (number)`.
-Only the quoted speech uses the brighter `--eq2-speech`; timestamps, player
-names and window controls retain their quieter blues.
+a compact inline `time` followed by `Player: "message"` rather than repeating
+`tells Channel (number)`. The time uses tabular figures, a smaller meridiem and
+no log-file brackets, but reserves no gutter in the narrow channel. Only the
+quoted speech uses the brighter `--eq2-speech`; timestamps and player names
+retain their quieter blues.
 
 The page-level `Spam filter` preference filters powerleveling ads from live tails and
 per-channel archived days in the browser. Its deliberately narrow patterns
@@ -615,14 +619,15 @@ cover the observed `powerlevel`, `1-70 PL`, `power 1-70 lvl exp`, and `PL group`
 forms without treating ordinary mentions of levels or experience as spam. The
 choice is browser-local and persists across refreshes.
 
-The window is a REPLICA — literal colours scoped to `.eq2win` in `base.css`
-rather than site tokens, one `--eq2-chat` shared by all three blocks. It has a
-SECOND set of them for light mode (`:root[data-theme="light"] .eq2win`, at the
-end of that section): same window, same tan frame, same blue channel text taken
-down onto parchment. Only the ink and the paper swap; a black slab on a light
-page read as broken rather than as EQ2. Retune a colour in BOTH places. The
-examine card is the exception and stays black in either theme — that is EQ2i's
-item box, and EQ2i has no light one.
+The message area is a REPLICA — literal colours scoped to `.eq2win` in
+`base.css`, one `--eq2-chat` shared by all three blocks. Its title strip is the
+intentional exception and uses site tokens so channel navigation reads as part
+of EQ2Advanced. The replica has a SECOND set of colours for light mode
+(`:root[data-theme="light"] .eq2win`, at the end of that section): same tan
+frame, same blue channel text taken down onto parchment. Only the ink and the
+paper swap; a black slab on a light page read as broken rather than as EQ2.
+Retune a replica colour in BOTH places. The examine card is the exception and
+stays black in either theme — that is EQ2i's item box, and EQ2i has no light one.
 
 ## The Sharing page
 
