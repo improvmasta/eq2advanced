@@ -22,9 +22,12 @@ if [ "${SHIP_SKIP_CHECKS:-0}" != "1" ]; then
   if [ -f package.json ]; then
     npm run --if-present typecheck </dev/null
   fi
-  if [ -d tests ]; then
-    if [ -x .venv/bin/python ]; then .venv/bin/python -m pytest -q
-    elif command -v pytest >/dev/null 2>&1; then python -m pytest -q; fi
+  TEST_DIR=""
+  if [ -d tests ]; then TEST_DIR="tests"
+  elif [ -d backend/tests ]; then TEST_DIR="backend/tests"; fi
+  if [ -n "$TEST_DIR" ]; then
+    if [ -x .venv/bin/python ]; then .venv/bin/python -m pytest "$TEST_DIR" -q
+    elif command -v pytest >/dev/null 2>&1; then python -m pytest "$TEST_DIR" -q; fi
   fi
 fi
 

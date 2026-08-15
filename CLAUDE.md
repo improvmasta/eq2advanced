@@ -28,7 +28,7 @@
 
 ```bash
 bash restart.sh
-.venv/bin/python -m pytest backend/tests/ -q   # golden fixture = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q   # full suite; long phases print a heartbeat
 npm --prefix frontend run build                # SPA → frontend/dist
 SHIP_TOOL=claude bash ship.sh "message"        # Ship log + commit; pushes on main
 ```
@@ -475,6 +475,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
 - 2026-08-15 (codex): Replace parchment light mode with neutral application palette
 - 2026-08-15 (codex): Add private Discord chat alerts and EQ2A branding
 - 2026-08-15 (codex): Polish chat trade labels and window chrome
@@ -494,4 +495,3 @@ builds here with `bash build.sh`.
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
 - 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
-- 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches)

@@ -19,6 +19,10 @@ from fastapi.testclient import TestClient
 import db as dbmod
 
 GOLDEN = Path("/home/lindsay/bobby.txt")
+# The reference night spans about two hours. Ten-minute windows still exercise
+# twelve independent live batches and cross-batch encounter finalization without
+# paying for 48 extra request/transaction boundaries in this already-large test.
+GOLDEN_BATCH_WINDOW_S = 600
 
 
 @pytest.fixture(scope="module")
@@ -383,11 +387,11 @@ def test_golden_equivalence(client):
     else:
         raise AssertionError("upload parse never finished")
 
-    # same file streamed as live batches, cut on 120s log-time windows
+    # same file streamed as live batches, cut on ten-minute log-time windows
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
     from simulate_live import batches
     live_sid = None
-    for batch in batches(str(GOLDEN), 120):
+    for batch in batches(str(GOLDEN), GOLDEN_BATCH_WINDOW_S):
         d = send_batch(client, token, batch, gz=True).json()
         assert d["duplicates"] == 0
         live_sid = d["session_id"]
@@ -425,7 +429,7 @@ def test_golden_equivalence(client):
     assert len(upload_encs) - len(live_encs) <= 1
 
     # replaying a batch with a fresh batch_id -> pure line-level duplicates
-    replayed = next(batches(str(GOLDEN), 120))
+    replayed = next(batches(str(GOLDEN), GOLDEN_BATCH_WINDOW_S))
     d = send_batch(client, token, replayed, gz=True).json()
     assert d["accepted"] == 0 and d["duplicates"] == len(replayed)
     assert d["session_id"] == live_sid

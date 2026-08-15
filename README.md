@@ -17,7 +17,7 @@ See `ARCHITECTURE.md` for the design reference.
 
 ```bash
 bash restart.sh                            # http://localhost:8450
-.venv/bin/python -m pytest backend/tests/ -q
+.venv/bin/python -m pytest backend/tests/ -q  # long phases print a 15s heartbeat
 npm --prefix frontend run build            # SPA → frontend/dist
 ```
 

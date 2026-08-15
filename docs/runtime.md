@@ -131,7 +131,12 @@ the `/chat` panel reports that Discord is not configured.
 ## Verification
 
 ```bash
-.venv/bin/python -m pytest backend/tests/ -q     # golden fixture = /home/lindsay/bobby.txt
+.venv/bin/python -m pytest backend/tests/ -q     # long phases print a 15s heartbeat
 bash restart.sh && curl -s localhost:8450/api/sessions
 curl -F "file=@/home/lindsay/bobby.txt" -F "character_name=Bobby" localhost:8450/api/uploads
 ```
+
+The full suite keeps `/home/lindsay/bobby.txt` as its 275,822-line upload/live
+equivalence fixture and performs real OCR against three screenshots. Those checks
+are intentionally slow; the test hooks report collection or an individual test
+every 15 seconds so a healthy run cannot be mistaken for a deadlock.
