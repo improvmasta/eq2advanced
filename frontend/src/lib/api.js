@@ -254,6 +254,16 @@ export const api = {
      read: an id nobody has resolved answers `{card: null}`. */
   itemCard: (id) => req(`/api/items/${id}/card`),
 
+  /* The Planner (`/plan`). Reference data about the game, per expansion —
+     signed out too, like /chat, because nothing here reaches a parse or an
+     account. Cached like the aggregates are: the answers cannot change while
+     somebody sits on the page (the catalog is filled by a hand-run sync), and
+     pressing back to a filter you already had should repaint rather than
+     flash "Loading…". */
+  planMeta: (qs) => cachedGet(`/api/plan/meta?${qs}`),
+  planItems: (qs) => cachedGet(`/api/plan/items?${qs}`),
+  planSets: (qs) => cachedGet(`/api/plan/sets?${qs}`),
+
   // groups + sharing
   groups: () => req('/api/groups'),
   group: (id) => req(`/api/groups/${id}`),

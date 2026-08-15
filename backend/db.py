@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -946,6 +946,101 @@ CREATE TABLE IF NOT EXISTS visit_salts (
   day TEXT PRIMARY KEY,
   salt TEXT NOT NULL
 );
+
+-- v40: the Planner's catalog (`backend/planner/`, docs/planner.md). Reference
+-- data about the GAME, per expansion — no account, no parse, no session and no
+-- visibility predicate reaches any of it, exactly as `items` puts it: one row
+-- serves every reader forever.
+--
+-- THE ERA IS A COLUMN, NOT A BUILD-TIME CONSTANT. The page lets a reader pick
+-- which expansions count — EoF, RoK, or both — so era is stored per row and
+-- filtered at read time. Adding a third expansion is a re-sync, not a
+-- migration.
+--
+-- Filled ONLY by `tools/sync_planner.py`, run by hand and never on a schedule
+-- — the same rule the wiki ability ingest keeps, for the same reason: a crawl
+-- that runs itself is a crawl nobody is watching.
+
+-- The keys are the WIKI PAGE, not the Census id. Every row has a page (it is
+-- where the row came from); `census_id` is absent on the handful of pages whose
+-- `itemlink` is missing, and two versions of one item — `(Level 78)` and
+-- `(Level 80)` — are two rows that a name alone could not tell apart.
+CREATE TABLE IF NOT EXISTS plan_items (
+  page_title TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  census_id INTEGER,                      -- the log's item id, unsigned; joins `items`
+  era TEXT NOT NULL,                      -- rok|eof, taken from the SOURCE's `patch`
+  slot TEXT,
+  slot2 TEXT,                             -- a second slot the item also fills
+  level INTEGER,
+  tier TEXT,                              -- icat: FABLED|LEGENDARY|TREASURED|…
+  dtype TEXT,                             -- armour type (Chain Armor, Cloth Armor)
+  wtype TEXT,                             -- weapon type, when it is one
+  classes TEXT,                           -- comma list of SUBCLASSES, era-filtered
+  flags TEXT,                             -- lore, no-trade, heirloom…
+  adorns_json TEXT,                       -- {"turquoise":1,"white":1} — capacity to HOST
+  set_name TEXT,                          -- the adornment set its turquoise belongs to
+  stats_json TEXT NOT NULL,               -- {stat key: value}, era-hidden stats dropped
+  effects TEXT,                           -- the proc's NAME (layer 2 — nothing rules on it)
+  effect_desc TEXT,
+  icon INTEGER,
+  fetched_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plan_items_era ON plan_items(era, slot, level);
+CREATE INDEX IF NOT EXISTS idx_plan_items_set ON plan_items(set_name);
+
+-- Source attribution is built by INVERTING mob and quest pages, because the
+-- item's own `obtain` field is blank more often than not. `kind` is the
+-- raid/group/solo split, which comes free from the monster's `diff` — and it
+-- is the filter that separates a raider's question from a soloer's.
+-- One item may have several sources; the pair is the key.
+--
+-- THE SOURCE CARRIES THE ERA, and the era filter reads it here rather than on
+-- the item. An item introduced in EoF that also drops off a RoK named is RoK
+-- content for somebody planning RoK, and filing it by where it FIRST appeared
+-- would hide it from the only reader asking. `plan_items.era` stays as the
+-- expansion it was introduced in, which is a different fact and is displayed
+-- rather than filtered on.
+CREATE TABLE IF NOT EXISTS plan_sources (
+  page_title TEXT NOT NULL REFERENCES plan_items(page_title) ON DELETE CASCADE,
+  source_page TEXT NOT NULL,              -- the mob or quest page it came from
+  source TEXT NOT NULL,                   -- what to call it
+  kind TEXT NOT NULL,                     -- raid|group|solo|quest|unknown
+  era TEXT NOT NULL,                      -- rok|eof — the SOURCE's expansion
+  zone TEXT,
+  level INTEGER,
+  detail TEXT,                            -- the wiki's own `diff` wording
+  PRIMARY KEY (page_title, source_page)
+);
+CREATE INDEX IF NOT EXISTS idx_plan_sources_era ON plan_sources(era, kind);
+CREATE INDEX IF NOT EXISTS idx_plan_sources_page ON plan_sources(page_title);
+
+-- THE ITEM IS NOT THE UNIT OF VALUE. In EoF and RoK the set bonus is not on
+-- the armour: it is on a turquoise adornment that ships inside the item and
+-- can be pulled out and moved into anything of the same level or higher. So a
+-- set is its own row and is shortlisted on its own terms — "this Fabled has
+-- mediocre stats but carries the 6-piece turquoise" is a real answer, and for
+-- somebody deciding what to bid on it is a different answer from "upgrade".
+CREATE TABLE IF NOT EXISTS plan_sets (
+  name TEXT PRIMARY KEY,
+  page_title TEXT NOT NULL,
+  era TEXT NOT NULL,
+  level INTEGER,
+  pieces_json TEXT NOT NULL,              -- ["Focused Mind Set: Chest", …]
+  bonuses_json TEXT NOT NULL,             -- [{"pieces":3,"text":"Applies …"}]
+  fetched_ts INTEGER NOT NULL
+);
+
+-- What the last crawl covered, per era, so the page can say how old its
+-- catalog is and the ingest can report rather than guess. One row per era.
+CREATE TABLE IF NOT EXISTS plan_syncs (
+  era TEXT PRIMARY KEY,
+  items INTEGER NOT NULL DEFAULT 0,
+  sources INTEGER NOT NULL DEFAULT 0,
+  sets INTEGER NOT NULL DEFAULT 0,
+  pages INTEGER NOT NULL DEFAULT 0,       -- wiki pages fetched
+  synced_ts INTEGER NOT NULL
+);
 """
 
 
@@ -1117,6 +1212,22 @@ def _rebuild_characters(conn) -> None:
                      if owner else ()))
 
 
+def _rebuild_planner(conn) -> None:
+    """v40: the Planner's tables are a CACHE of a wiki crawl — no account, no
+    parse, nothing anybody typed — so a table of the wrong shape is DROPPED and
+    refilled by re-running `tools/sync_planner.py`, rather than migrated. That
+    is only ever reachable on a box where the dev reloader created the table
+    mid-edit; a shipped database has never had these tables at all.
+
+    Runs BEFORE `executescript(SCHEMA)`, because the failure it repairs is the
+    CREATE INDEX in that script naming a column the stale table lacks."""
+    for table, needed in (("plan_items", "era"), ("plan_sources", "era"),
+                          ("plan_sets", "era"), ("plan_syncs", "pages")):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if cols and needed not in cols:
+            conn.execute(f"DROP TABLE {table}")
+
+
 def _rebuild_sessions(conn) -> None:
     """v9: `upload_sha256 TEXT UNIQUE` was global, so the second person to upload
     a raid log hit a constraint on someone else's row. Uniqueness moves to
@@ -1151,6 +1262,7 @@ def init_db() -> None:
     _rebuild_users(conn)
     _rebuild_characters(conn)
     _rebuild_sessions(conn)
+    _rebuild_planner(conn)
     with conn:
         conn.executescript(SCHEMA)
         # v2: checked unconditionally, not version-gated — the dev reloader can
@@ -1461,6 +1573,13 @@ def init_db() -> None:
         # tables. An old database receives them empty from SCHEMA, which means
         # exactly what it did before: no account is linked and no message can
         # match a rule. Nothing can or should be backfilled from chat history.
+        # v40: the Planner's catalog — `plan_items`, `plan_sources`,
+        # `plan_sets`, `plan_syncs`. Four new tables and no column anywhere
+        # else, so an old database gets them empty and every existing page
+        # behaves exactly as it did. There is nothing to backfill and nothing
+        # that COULD be: the rows come from a wiki crawl, not from anybody's
+        # log, so `tools/sync_planner.py` fills them and an empty catalog is
+        # simply a Planner with no era synced yet.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

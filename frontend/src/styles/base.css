@@ -6020,3 +6020,185 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .chatpage .eq2grid { grid-template-columns: 1fr !important; }
   .eq2win { height: min(48vh, 420px); }
 }
+
+/* ---------- the Planner (/plan) ---------- */
+
+/* Rail plus main, which is `ZoneRun`'s geometry — this page reuses
+   `.workspace` unchanged and only adds what is its own. */
+.planner .plannerrail { max-height: calc(100vh - 24px); overflow-y: auto; }
+.planner .railhead h1 { margin: 0; font-size: var(--fs-h2); }
+.planner .railhead .sub { color: var(--text-muted); font-size: var(--fs-label); }
+
+/* THE EXPANSION CHOICE IS THE FIRST CONTROL ON THE PAGE, so it is a row of
+   real toggles rather than a facet buried with the filters: everything else —
+   which items exist, what a score is measured against, which sets are on offer
+   — follows from it. The count rides on the chip because "RoK 2881" answers
+   "is this synced?" without a second line to read. */
+.erachips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.erachips .chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 2px 8px; cursor: pointer;
+}
+.erachips .chip em {
+  font-style: normal; font-size: var(--fs-label); opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.erachips .chip.on {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.12);
+}
+
+.planner .shortlist { gap: 5px; }
+.shortkind {
+  color: var(--text-muted); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.09em; margin-top: 5px;
+}
+.shortrow {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 6px;
+  align-items: baseline; font-size: var(--fs-data);
+}
+.shortrow em { font-style: normal; color: var(--text-muted); font-size: var(--fs-label); }
+.shortrow .iconbtn { padding: 0 4px; line-height: 1; }
+
+/* The strip over the table: what you are pushing, in the order you push it.
+   No numbers, ever — a weight is not something this page shows. */
+.planbar { padding: 9px 11px; }
+.priostrip { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.prioorder {
+  font-family: var(--font-data); font-size: var(--fs-data); color: var(--text);
+}
+.prioorder .sep { color: var(--text-muted); font-style: normal; margin: 0 5px; }
+/* the one mark a required stat gets in the strip — it is a filter now, not a rank */
+.prioorder b { color: var(--gold-bright); }
+.planmodes { margin-left: auto; display: flex; gap: 6px; }
+.planmodes .chip, .priostrip > .chip { cursor: pointer; padding: 2px 9px; }
+.planfilters { margin-top: 9px; }
+.planfilters .chip { cursor: pointer; padding: 2px 9px; }
+
+/* Two badges, one job each: "this row's value is not in its stat columns."
+   Distinct GLYPHS as well as colours — the set diamond and the proc star are
+   told apart at a glance and are still told apart with no colour at all. */
+.planbadge { font-size: 12px; line-height: 1; }
+.planbadge.set { color: var(--rarity-treasured); }
+.planbadge.proc { color: var(--gold); }
+
+.plansource { display: inline-flex; align-items: baseline; gap: 6px; }
+.skind {
+  font-style: normal; font-size: var(--fs-label); text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+/* Raid is the only source kind that gets a colour. The rest are a word: four
+   tinted labels in one column would be a legend nobody asked for, and the
+   distinction a reader is actually scanning for is "do I need 24 people". */
+.skind.raid { color: var(--gold-bright); }
+
+/* ---- the set-adornment view ----
+   THE ITEM IS NOT THE UNIT OF VALUE. In EoF and RoK the set bonus rides on a
+   turquoise adornment that ships inside the armour and can be pulled out and
+   moved, so a set is its own card with its own checkbox — and ticking it
+   shortlists the ADORNMENT, never the armour it came in. */
+.setlist { display: grid; gap: 10px; margin-top: 10px; }
+.setcard { padding: 11px 13px; }
+.sethead {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.setpick { display: inline-flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.setpick input { accent-color: var(--gold); cursor: pointer; }
+.setbonuses {
+  margin: 7px 0 0; padding-left: 18px; font-size: var(--fs-data);
+  display: grid; gap: 3px;
+}
+.setbonuses b { color: var(--gold-bright); }
+.setcarriers {
+  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--row-line);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 12px;
+}
+.setcarriers .seclabel { flex-basis: 100%; }
+.setpiece { display: inline-flex; align-items: baseline; gap: 5px; font-size: var(--fs-data); }
+.setpiece em {
+  font-style: normal; color: var(--text-muted); font-size: var(--fs-label);
+}
+
+/* ---- the priority editor ----
+   Rendered into `document.body`: every card here carries `backdrop-filter`,
+   which makes the card a containing block for `position: fixed`, so a panel
+   written inside one is sealed into it whatever its z-index. */
+.prioback {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(var(--bg-rgb), 0.55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 8vh 16px 16px; overflow-y: auto;
+}
+.priopanel { width: min(560px, 100%); padding: 14px 16px 16px; }
+.priohead { display: flex; align-items: baseline; justify-content: space-between; }
+.priohead h3 { margin: 0; }
+.priohead .chip { cursor: pointer; padding: 2px 10px; }
+.priopanel > .muted { margin: 6px 0 10px; font-size: var(--fs-label); }
+.priohint { margin: 0 0 10px; }
+.priolist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.priolist li {
+  display: grid; grid-template-columns: auto 1fr auto auto auto;
+  align-items: center; gap: 8px;
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface-raised); cursor: grab;
+}
+/* The dragged row and the row it would land on. A held row fades rather than
+   lifts, and the target takes an edge — no motion, because reduced motion is
+   assumed on and a list that jumps under the pointer is unreadable either way. */
+.priolist li.dragging { opacity: 0.45; }
+.priolist li.over { border-color: var(--gold-dim); box-shadow: inset 3px 0 0 var(--gold); }
+.priohandle { color: var(--text-muted); cursor: grab; }
+.prioname { font-family: var(--font-data); font-size: var(--fs-data); }
+.priomove { display: inline-flex; gap: 2px; }
+.priomove .iconbtn { padding: 0 5px; line-height: 1.2; }
+.priomove .iconbtn:disabled { opacity: 0.3; cursor: default; }
+/* Required is a FILTER, not a rank, so it does not look like the handle it
+   sits beside — filled gold when it is on, the app's "this changes what you
+   can see" colour. */
+.priolist .chip.req { cursor: pointer; padding: 1px 8px; }
+.priolist .chip.req.on {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.14);
+}
+.prioadd { margin-top: 12px; border-top: 1px solid var(--row-line); padding-top: 10px; }
+.priogroup { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.priogroup .chip { cursor: pointer; padding: 2px 8px; }
+.prioadd summary { cursor: pointer; font-size: var(--fs-label); margin-top: 9px; }
+
+@media (max-width: 900px) {
+  /* The rail collapses above the main area at the width the top nav wraps.
+     The table keeps scrolling sideways inside its own wrapper rather than
+     making the page scroll. */
+  .planner { grid-template-columns: minmax(0, 1fr); }
+  .planner .plannerrail { position: static; max-height: none; }
+}
+
+/* Why potency and crit are not on the list. Said once, where the question is
+   asked, rather than in a tooltip nobody opens. */
+.priowhy { margin: -4px 0 10px; font-size: var(--fs-label); }
+/* The offer list, in the clusters a raider already thinks in: abilities first
+   (every class casts), then melee, then tanking. */
+.priocluster { margin-top: 10px; }
+.priocluster:first-child { margin-top: 0; }
+
+/* THE PLANNER'S HEADERS CARRY MORE CONTRAST THAN A PARSE TABLE'S. This table
+   is denser than any parse — a dozen columns of small figures whose headings
+   are the only thing saying which stat is which — and muted small caps at
+   `--fs-label` were not readable against them. Same rule the compact parse
+   rules already keep: smaller type needs MORE contrast, not the same contrast
+   smaller. Scoped to `.plantable` rather than changed in `table.data`, because
+   every parse view on the site draws through that one. */
+.plantable th {
+  color: var(--text); letter-spacing: 0.04em; font-size: var(--fs-sm);
+  padding-bottom: 5px;
+}
+.plantable th.sortable:hover { color: var(--gold-bright); }
+/* The stat columns are the reason the header matters — keep their figures on
+   the same tabular grid the heading sits over. */
+.plantable td { font-variant-numeric: tabular-nums; }
+
+/* "2 of 3" — how many of your priorities a row has to carry. It qualifies the
+   ORDER, so it sits with the order rather than among the slot/tier facets. */
+.matchpick { display: inline-flex; align-items: center; }
+.matchpick .pickerbtn { font-size: var(--fs-label); }

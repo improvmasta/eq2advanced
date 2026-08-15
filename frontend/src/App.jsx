@@ -9,6 +9,7 @@ import Compare from './pages/Compare.jsx'
 import Features from './pages/Features.jsx'
 import Live from './pages/Live.jsx'
 import Chat from './pages/Chat.jsx'
+import Planner from './pages/Planner.jsx'
 import Overlay from './pages/Overlay.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
@@ -81,6 +82,7 @@ function pageTitle(pathname) {
   if (pathname === '/import' || pathname === '/uploads') return 'Import'
   if (pathname === '/live') return 'Live Parser'
   if (pathname === '/chat') return 'Chat'
+  if (pathname === '/plan') return 'Planner'
   if (pathname.startsWith('/sessions/')) return 'Session'
   if (pathname === '/calibration') return 'Calibration'
   if (pathname === '/characters') return 'Characters'
@@ -428,6 +430,13 @@ export default function App() {
                 An account is what lets you FILL it and own private Discord
                 alert rules, not what lets you read it. */}
             <Route path="/chat" element={<Chat user={user} />} />
+            {/* Deliberately NOT in the nav (docs/planner.md), like
+                /characters. NO account needed, for the same reason /chat needs
+                none: every row is reference data about the GAME — what drops
+                where in an expansion — and nothing here reaches a parse, a
+                session or an account. Adding the tab is the whole publish
+                step. */}
+            <Route path="/plan" element={<Planner />} />
             <Route path="/sessions/:id" element={<NeedsAccount user={user}><Workspace /></NeedsAccount>} />
             <Route path="/calibration" element={<NeedsAccount user={user}><Calibration /></NeedsAccount>} />
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />

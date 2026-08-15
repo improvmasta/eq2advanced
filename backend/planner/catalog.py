@@ -1,0 +1,424 @@
+"""The read side: an era-filtered catalog, ranked against a declared ORDER.
+
+Everything here is a read of rows a hand-run crawl already wrote. No network,
+no Census call, no `items.ensure` — a request handler must never do any of
+those (`docs/sharing.md`), and the catalog is a few thousand rows, so the whole
+page is served out of SQLite and a dict.
+
+**WHICH EXPANSIONS COUNT IS THE READER'S CHOICE.** EoF and RoK, either or both.
+The filter reads `plan_sources.era`, not `plan_items.era`: an item introduced in
+EoF that also drops off a RoK named IS RoK content for somebody planning RoK,
+and filing it by where it first appeared would hide it from the only reader
+asking about it.
+
+**The priority list is an ORDER, not a set of numbers, and no weight is ever
+surfaced.** You say "ability mod, then reuse, then casting speed"; the ranks
+map to a decaying weight in here and that number does not leave this module.
+There is deliberately no cap math, no diminishing-returns curve and no set
+optimizer: this tool presents ranked options and the reader chooses, and
+inventing precision the model does not have would be worse than not having it
+(docs/planner.md). A set optimizer is also wrong on its own terms, because the
+most valuable part of a piece of armour — the turquoise — detaches and moves.
+"""
+
+import json
+
+from planner import wiki
+
+# Rank -> weight. Geometric, so first place is worth about three times third
+# and the tail never quite reaches zero: a stat you listed fifth still breaks a
+# tie between two items that agree on the first four. The exact base is not
+# meaningful and is never shown — what a reader stated is an ORDER, and this is
+# only the arithmetic that turns an order into a sort.
+DECAY = 0.6
+
+
+def weights(order: list[str]) -> dict[str, float]:
+    """Only `wiki.PRIORITY_STATS` rank, whatever a hand-built URL asks for.
+
+    Potency and Crit Chance are on 80% and 72% of the catalog, so ordering by
+    them orders by nothing — and a query string must not be a way around a rule
+    that exists because the answer would be meaningless, not because the page
+    is being tidy. They are still on the card and still available as columns."""
+    return {stat: DECAY ** i for i, stat in enumerate(order)
+            if stat in wiki.PRIORITY_STATS}
+
+
+def _era_clause(eras: list[str]) -> tuple[str, list]:
+    keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
+    ph = ",".join("?" * len(keys))
+    return (f"EXISTS (SELECT 1 FROM plan_sources s WHERE s.page_title = "
+            f"i.page_title AND s.era IN ({ph}))", keys)
+
+
+def _rows(conn, eras: list[str]) -> list[dict]:
+    where, params = _era_clause(eras)
+    out = []
+    for r in conn.execute(f"SELECT * FROM plan_items i WHERE {where}", params):
+        row = dict(r)
+        row["stats"] = json.loads(row.pop("stats_json") or "{}")
+        row["adorns"] = json.loads(row.pop("adorns_json") or "{}")
+        row["classes"] = [c for c in (row["classes"] or "").split(",") if c]
+        # Lifted out of `dtype` rather than stored beside it — one string op
+        # per row, and no migration or re-crawl to start filtering on it.
+        row["armor"] = wiki.armor_of(row["dtype"])
+        row["two_handed"] = wiki.is_two_handed(row["dtype"])
+        # The naming decision lives here rather than in the table, so anything
+        # else that shows a slot says the same thing about a two-hander.
+        row["slot_label"] = wiki.slot_label(row["slot"], row["dtype"])
+        out.append(row)
+    return out
+
+
+def _sources(conn, pages: list[str]) -> dict[str, list[dict]]:
+    if not pages:
+        return {}
+    out: dict[str, list[dict]] = {}
+    for i in range(0, len(pages), 500):
+        chunk = pages[i:i + 500]
+        for r in conn.execute(
+                "SELECT page_title, source, source_page, kind, era, zone, level, "
+                f"detail FROM plan_sources WHERE page_title IN ({','.join('?' * len(chunk))})",
+                chunk):
+            out.setdefault(r["page_title"], []).append(dict(r))
+    # A raid drop and a solo quest reward are both true; the raid one is listed
+    # first because it is the harder claim and the one a reader is deciding on.
+    order = {"raid": 0, "group": 1, "quest": 2, "solo": 3, "unknown": 4}
+    for rows in out.values():
+        rows.sort(key=lambda s: (order.get(s["kind"], 9), s["source"]))
+    return out
+
+
+def scales(rows: list[dict]) -> dict[str, float]:
+    """The largest value each stat reaches in the selected eras.
+
+    Computed over the whole era catalog and NOT over the filtered view, so
+    narrowing to one slot does not silently rescore every row. A score is only
+    useful if it means the same thing after you press a filter."""
+    out: dict[str, float] = {}
+    for row in rows:
+        for stat, value in row["stats"].items():
+            if value > out.get(stat, 0):
+                out[stat] = value
+    return out
+
+
+def score(stats: dict[str, float], w: dict[str, float],
+          scale: dict[str, float]) -> float:
+    """0–100 against the reader's order. Absence is zero, not a penalty.
+
+    Each stat is divided by the biggest that stat gets in this era before it is
+    weighted, because 3.7 Potency and 98 Ability Mod are both "a lot" and a raw
+    weighted sum would rank on nothing but which stat happens to use bigger
+    numbers."""
+    if not w:
+        return 0.0
+    total = sum(w.values())
+    got = sum(weight * min(stats.get(stat, 0) / scale[stat], 1.0)
+              for stat, weight in w.items() if scale.get(stat))
+    return round(100 * got / total, 1)
+
+
+# HOW MANY OF YOUR PRIORITIES AN ITEM HAS TO ACTUALLY CARRY.
+#
+# EoF/RoK gear is four-stat: potency and crit, which everything has, plus two
+# more. So an item can carry at most about two of whatever you listed, and a
+# reader who names three stats is not asking to see everything with one of
+# them — measured on the built catalog, 45% of items carry NO more than one
+# priority stat, and those are the rows that were burying the list.
+#
+# Two is therefore the floor and also the ceiling worth asking for: naming a
+# fourth and fifth stat cannot make an item carry four. Below two the reader
+# named one stat and means it.
+FOUR_STAT_FLOOR = 2
+
+
+def default_match_min(order: list[str]) -> int:
+    n = len(weights(order or []))
+    return min(FOUR_STAT_FLOOR, n)
+
+
+def search(conn, *, eras: list[str], order: list[str] | None = None,
+           required: list[str] | None = None, classes: list[str] | None = None,
+           slots: list[str] | None = None, tiers: list[str] | None = None,
+           kinds: list[str] | None = None, armor: list[str] | None = None,
+           level_min: int | None = None, level_max: int | None = None,
+           q: str | None = None, carries_set: bool = False,
+           hosts_turquoise: bool = False, has_proc: bool = False,
+           match_min: int | None = None, limit: int = 400) -> dict:
+    """The item table. Filters are HARD and ranking is separate from them.
+
+    `required` is the one control that crosses the line on purpose: a stat can
+    be marked required, which moves it from ranking to filtering. That covers
+    "I will not look at anything without ability mod" without pretending a
+    weight can express a hard requirement.
+
+    `match_min` is the other, and it is a filter about the ORDER as a whole
+    rather than about one stat: how many of your priorities a row has to carry
+    before it is worth looking at (`FOUR_STAT_FLOOR`). It is answered back so
+    the page can say "2 of 3" rather than silently dropping rows."""
+    rows = _rows(conn, eras)
+    scale = scales(rows)
+    w = weights(order or [])
+    floor = default_match_min(order or []) if match_min is None else match_min
+    floor = max(0, min(floor, len(w)))
+
+    want_classes = {c for c in (classes or []) if c}
+    want_armor = {a.title() for a in (armor or []) if a}
+    want_slots = {s.lower() for s in (slots or []) if s}
+    want_tiers = {t.upper() for t in (tiers or []) if t}
+    want_kinds = {k for k in (kinds or []) if k}
+    need = [s for s in (required or []) if s in wiki.STAT_LABEL]
+    needle = (q or "").strip().lower()
+
+    sources = _sources(conn, [r["page_title"] for r in rows])
+    kept = []
+    for row in rows:
+        if want_classes and not want_classes & set(row["classes"]):
+            continue
+        if want_slots and not ({(row["slot"] or "").lower(),
+                                (row["slot2"] or "").lower()} & want_slots):
+            continue
+        if want_tiers and (row["tier"] or "") not in want_tiers:
+            continue
+        if want_armor and row["armor"] not in want_armor:
+            continue
+        if level_min is not None and (row["level"] or 0) < level_min:
+            continue
+        if level_max is not None and (row["level"] or 0) > level_max:
+            continue
+        if needle and needle not in row["name"].lower():
+            continue
+        if carries_set and not row["set_name"]:
+            continue
+        if hosts_turquoise and not row["adorns"].get("turquoise"):
+            continue
+        if has_proc and not row["effects"]:
+            continue
+        if any(not row["stats"].get(s) for s in need):
+            continue
+        # The four-stat floor. Counted over the stats that actually RANK, so a
+        # hand-built order carrying potency does not let a row in on it.
+        if floor and sum(1 for s in w if row["stats"].get(s)) < floor:
+            continue
+        row["sources"] = sources.get(row["page_title"], [])
+        if want_kinds and not want_kinds & {s["kind"] for s in row["sources"]}:
+            continue
+        row["score"] = score(row["stats"], w, scale)
+        kept.append(row)
+
+    kept.sort(key=lambda r: (-r["score"], -(r["level"] or 0), r["name"]))
+    return {
+        "total": len(kept),
+        "items": [_item_out(r) for r in kept[:limit]],
+        "scored": bool(w),
+        # Answered back rather than assumed: the page shows "2 of 3" beside the
+        # table, because a filter that quietly removes half the catalog has to
+        # say so.
+        "match_min": floor,
+        "ranked": list(w),
+    }
+
+
+# The examine window's two blocks, in the order the game draws them. The blue
+# block is the throughput stats a raider sorts on; the white block above it is
+# attributes, resistances and the defensive numbers. Same split `items.py`
+# makes from Census's `type` field — made here from the field name instead,
+# because the wiki has no type on a field and the answer is fixed anyway.
+_BLUE = ("potency", "crit", "abmod", "multi", "dps", "aspeed", "acspeed",
+         "arspeed", "flurry", "aeauto", "dblcast", "strike", "bchance",
+         "maxhealth", "mitinc", "accuracy")
+
+
+def card(row: dict) -> dict:
+    """A catalog row in `items.display`'s shape, so the EXISTING examine card
+    draws it unchanged (`components/ItemCard.jsx`).
+
+    There are now three ways to meet an item — a chest drop, a link somebody
+    posted in Auction, and a row on this page — and all three have to produce
+    the SAME window. `items.py` owns that shape for the two that come from
+    Census; this is the third source speaking the same contract rather than a
+    fourth card drawn slightly differently.
+
+    The picture is `items.icon_path`'s, cached by the ingest, and is offered
+    only when the file is actually on disk: a card with a broken image in it is
+    worse than a card with no image."""
+    from items import icon_path
+    stats, effects = [], []
+    for key, value in row["stats"].items():
+        line = {"name": wiki.STAT_LABEL.get(key, key), "value": value,
+                "pct": key in wiki.STAT_PCT}
+        (effects if key in _BLUE else stats).append(line)
+    effects.sort(key=lambda r: _BLUE.index(_key_of(r["name"])))
+    stats.sort(key=lambda r: (-float(r["value"]), r["name"]))
+    icon = row["icon"] if row["icon"] and icon_path(row["icon"]).exists() else None
+    names = [n.strip() for n in (row["effects"] or "").split(",") if n.strip()]
+    return {
+        "name": row["name"],
+        "rarity": (row["tier"] or "").title() or None,
+        "icon": icon,
+        "wiki": f"https://eq2.fandom.com/wiki/{row['page_title'].replace(' ', '_')}",
+        "stats": {
+            "stats": stats, "effects": effects,
+            "flags": [f.strip().title() for f in (row["flags"] or "").split()
+                      if f.strip()],
+            "adornments": [c for c in wiki.ADORN_COLORS
+                           for _ in range(row["adorns"].get(c) or 0)],
+        },
+        "effects": {"names": names,
+                    "desc": [{"depth": 1, "text": t} for t in
+                             (row["effect_desc"] or "").splitlines() if t.strip()],
+                    "set": row["set_name"]},
+    }
+
+
+_LABEL_KEY = {label: key for key, label in wiki.STAT_LABEL.items()}
+
+
+def _key_of(label: str) -> str:
+    return _LABEL_KEY.get(label, label)
+
+
+def _item_out(row: dict) -> dict:
+    return {
+        "card": card(row),
+        "page_title": row["page_title"], "name": row["name"],
+        "census_id": row["census_id"], "era": row["era"],
+        "slot": row["slot"], "slot2": row["slot2"], "level": row["level"],
+        "slot_label": row["slot_label"], "two_handed": row["two_handed"],
+        "tier": row["tier"], "dtype": row["dtype"], "wtype": row["wtype"],
+        "classes": row["classes"], "flags": row["flags"],
+        "armor": row["armor"],
+        "adorns": row["adorns"], "set_name": row["set_name"],
+        "stats": row["stats"], "effects": row["effects"],
+        "effect_desc": row["effect_desc"], "icon": row["icon"],
+        "score": row.get("score", 0.0), "sources": row.get("sources", []),
+    }
+
+
+def sets(conn, *, eras: list[str], order: list[str] | None = None,
+         classes: list[str] | None = None) -> dict:
+    """The set-adornment view: rank the SET BONUSES, not the armour.
+
+    A set row answers three things that are different questions:
+
+    - what the bonus IS at each tier, which is prose off the wiki and is shown
+      as written — nothing here scores a sentence;
+    - which items CARRY a piece (the armour that ships the turquoise), which is
+      where you actually get it;
+    - which items can HOST one (`turquoiseslot ≥ 1`, `level ≥ the set's`),
+      because the turquoise detaches and the host does not have to be the armour
+      it came in.
+
+    Shortlisting from this view adds the ADORNMENT, never the armour it came
+    in. That distinction is the whole reason this view exists.
+    """
+    rows = _rows(conn, eras)
+    scale = scales(rows)
+    w = weights(order or [])
+    want_classes = {c for c in (classes or []) if c}
+
+    carriers: dict[str, list[dict]] = {}
+    hosts: list[dict] = []
+    for row in rows:
+        if want_classes and not want_classes & set(row["classes"]):
+            continue
+        row["score"] = score(row["stats"], w, scale)
+        if row["set_name"]:
+            carriers.setdefault(row["set_name"], []).append(row)
+        if row["adorns"].get("turquoise"):
+            hosts.append(row)
+
+    keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
+    out = []
+    for r in conn.execute(
+            "SELECT * FROM plan_sets WHERE era IN "
+            f"({','.join('?' * len(keys))}) ORDER BY name", keys):
+        mine = sorted(carriers.get(r["name"], []),
+                      key=lambda x: (-x["score"], x["name"]))
+        if want_classes and not mine:
+            continue
+        level = r["level"] or 0
+        can_host = sorted(
+            (h for h in hosts if (h["level"] or 0) >= level),
+            key=lambda x: (-x["score"], x["name"]))
+        out.append({
+            "name": r["name"], "page_title": r["page_title"], "era": r["era"],
+            "level": r["level"],
+            "pieces": json.loads(r["pieces_json"] or "[]"),
+            "bonuses": json.loads(r["bonuses_json"] or "[]"),
+            "carriers": [_piece_out(x) for x in mine],
+            "hosts": [_piece_out(x) for x in can_host[:12]],
+            "host_count": len(can_host),
+            # The best score among the armour that carries a piece. A real
+            # number about real items — the BONUS itself is prose and is not
+            # scored, because ranking a sentence against a stat order would be
+            # inventing an answer.
+            "best_carrier": mine[0]["score"] if mine else 0.0,
+        })
+    out.sort(key=lambda s: (-s["best_carrier"], -(s["level"] or 0), s["name"]))
+    return {"sets": out, "scored": bool(w)}
+
+
+def _piece_out(row: dict) -> dict:
+    return {
+        "page_title": row["page_title"], "name": row["name"],
+        "census_id": row["census_id"], "slot": row["slot_label"],
+        "level": row["level"], "tier": row["tier"], "score": row["score"],
+        "classes": row["classes"],
+    }
+
+
+def meta(conn, eras: list[str] | None = None) -> dict:
+    """What the page needs to draw its controls: the expansions on offer, and
+    the facets that actually occur in the ones selected.
+
+    An era with nothing synced still appears, with `items: 0` — the page has to
+    be able to say "RoK is not synced yet" rather than quietly showing an empty
+    table, and only this can tell it that."""
+    selected = [e for e in (eras or []) if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
+    synced = {r["era"]: dict(r) for r in conn.execute("SELECT * FROM plan_syncs")}
+    counts = {r["era"]: r["n"] for r in conn.execute(
+        "SELECT era, COUNT(DISTINCT page_title) n FROM plan_sources GROUP BY era")}
+    rows = _rows(conn, selected)
+    slots, tiers, kinds, armor = {}, {}, {}, {}
+    for row in rows:
+        for slot in (row["slot"], row["slot2"]):
+            if slot:
+                slots[slot] = slots.get(slot, 0) + 1
+        if row["tier"]:
+            tiers[row["tier"]] = tiers.get(row["tier"], 0) + 1
+        if row["armor"]:
+            armor[row["armor"]] = armor.get(row["armor"], 0) + 1
+    for r in conn.execute(
+            "SELECT kind, COUNT(DISTINCT page_title) n FROM plan_sources "
+            f"WHERE era IN ({','.join('?' * len(selected))}) GROUP BY kind", selected):
+        kinds[r["kind"]] = r["n"]
+    return {
+        "eras": [{
+            "key": key, "name": name, "label": wiki.ERA_LABEL[key],
+            "items": counts.get(key, 0),
+            "synced_ts": (synced.get(key) or {}).get("synced_ts"),
+        } for key, name in wiki.ERAS.items()],
+        "selected": selected,
+        # Every stat, so a column and a card can be labelled — and separately
+        # the GROUPS, which are the only things the priority editor offers.
+        # The two lists are different on purpose: what an item carries and what
+        # is worth ranking by are not the same question.
+        "stats": [{"key": key, "label": label, "pct": key in wiki.STAT_PCT}
+                  for key, label in wiki.STAT_LABEL.items()],
+        "groups": [{"label": name,
+                    "stats": [{"key": k, "label": wiki.STAT_LABEL[k],
+                               "pct": k in wiki.STAT_PCT} for k in keys]}
+                   for name, keys in wiki.STAT_GROUPS],
+        "opening_order": list(wiki.OPENING_ORDER),
+        "classes": list(wiki.SUBCLASSES),
+        "slots": sorted(slots, key=lambda s: (-slots[s], s)),
+        # In armour WEIGHT order, light to heavy — not by how many items there
+        # are. It is a fixed four-item scale a player already has in their
+        # head, and sorting it by frequency would shuffle it every re-sync.
+        "armor": [a for a in wiki.ARMOR_TYPES if a in armor],
+        "tiers": sorted(tiers, key=lambda t: -tiers[t]),
+        "kinds": sorted(kinds, key=lambda k: -kinds[k]),
+        "total": len(rows),
+    }

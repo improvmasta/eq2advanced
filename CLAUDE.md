@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v39**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v40**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -274,6 +274,63 @@ segmentation)
   NOTHING. It also feeds that account's overlay (`replaybus.py`); the `replay` block
   never crosses.
 
+**The Planner** (`docs/planner.md` — Phase 1 only; phases 2-4 are still design)
+
+- **WHICH EXPANSIONS COUNT IS THE READER'S** — EoF and/or RoK, chosen on the
+  page. Era is a COLUMN (`plan_items.era`, `plan_sources.era`), never a
+  build-time constant; a third expansion is a re-sync, not a migration.
+- **The era filter reads the SOURCE, not the item.** An EoF item that also
+  drops off a RoK named is RoK content. `plan_items.era` is where it was
+  INTRODUCED — displayed, never filtered on.
+- **The catalog is built by INVERTING mobs and quests** (`planner/ingest.py`),
+  because an item page has no era and its `obtain` field is usually blank. The
+  monster carries `patch`, `zone` and the raid/group/solo split.
+- **An ITEM above the era's level cap is DROPPED** (`wiki.ERA_CAP`, EoF 70 /
+  RoK 80) — one live-revamp reward at 3,632 Ability Mod becomes the top of the
+  scoring scale and every real drop scores 2/100. **Not the same rule as a
+  QUEST level above the cap**, which is normal and is a tag.
+- **The priority list is an ORDER, not numbers, and no weight is ever shown.**
+  No sliders, no cap math, no set optimizer — the tool ranks options and the
+  reader chooses. A stat marked REQUIRED moves from ranking to filtering.
+- **POTENCY AND CRIT ARE NOT PRIORITY OPTIONS** — they are on 80% and 72% of
+  the catalog, so ordering by them orders by nothing. `catalog.weights` honours
+  only `wiki.PRIORITY_STATS` whatever the URL says. They stay on the card and
+  as columns. **Crit Bonus is a different case again: TLE does not have it**
+  (`ERA_HIDDEN_FIELDS`), so it never reaches a card at all.
+- **The thirteen that can be ranked, in `wiki.STAT_GROUPS` order** (game
+  knowledge, from Lindsay): Abilities — abmod, casting speed, reuse speed;
+  Melee — haste, dps, multi attack, flurry, AE autoattack; Tanking — block,
+  hate gain, mitigation, strikethrough; then max health alone. The page opens
+  on the first group, the one that applies whatever you play.
+- **EQ2 GEAR IS FOUR-STAT (pot/crit + 2), so ranking N stats shows items with
+  min(2, N) of them** (`FOUR_STAT_FLOOR`) — 45% of the catalog carries no more
+  than one priority stat and those rows buried the table. Counted over the
+  stats that RANK, and answered back in the response so the page says "2 of 3".
+  **Not the same control as `required`**, which is per-stat and absolute; both
+  apply.
+- **Armour weight is derived from `dtype`, never stored twice**
+  (`wiki.armor_of`) — the wiki keeps Cloth/Leather/Chain/Plate in the same
+  field as "Tower Shield". Offered in weight order, not by frequency.
+- **A two-hander's slot reads `Primary/2H`** (`wiki.slot_label`, off `dtype`) —
+  the wiki gives a greatsword and a dagger the same `slot = Primary`. They
+  still show under a Primary filter. "Main Hand" vs "One-Handed" is a real
+  further distinction and is deliberately NOT claimed yet.
+- **`.plantable` headers carry more contrast than `table.data`'s** — a dozen
+  columns of figures need readable headings, and the parse views were not
+  changed underneath them.
+- **Scores normalise against the whole selected-era catalog, not the filtered
+  view** — pressing a filter must not rescore every row.
+- **THE ITEM IS NOT THE UNIT OF VALUE**: in EoF/RoK the set bonus is on a
+  turquoise that detaches and moves, so a set is its own row and shortlisting
+  from the set view adds the ADORNMENT, never the armour it came in.
+- **`catalog.card` builds `items.display`'s shape** so `ItemCard.jsx` is reused
+  unchanged — three ways to meet an item, one examine window.
+- **`tools/sync_planner.py` is HAND-RUN and reconciles per era**; it must NOT
+  set `CENSUS_AUTO_REFRESH=0` (that switch also gates the icon downloads).
+  Nothing on a page load fetches anything.
+- **`/plan` is off the nav and needs no account** — it reaches no parse,
+  session or account, and has no POST.
+
 **Display and import** (`docs/zoneruns.md`, `docs/compare-import.md`)
 
 - **A mob earns a Damage-tab row on what it TOOK, not what it dealt.** Raiders keep
@@ -356,6 +413,13 @@ Details per area live in the `docs/` file named beside it.
   BROKEN (`receiving` is healthy); the accounts table is searched/sorted/paged on
   the SERVER. Feedback is triaged open → planned → closed. **Visitors** is the
   day-by-day count of who came to look (`visitors.py`), written out as rows.
+- **The Planner** `/plan` (`docs/planner.md`) — what to chase in an expansion.
+  Pick the expansions considered (EoF, RoK or both), declare the stats you are
+  pushing as an ORDER, and read a ranked, era-filtered catalog of every drop and
+  quest reward with where it comes from — plus the set adornments on their own
+  axis, since the turquoise detaches. Off the nav and signed-out; filled by
+  `tools/sync_planner.py` crawling the wiki by hand. **Phase 1 only**: no
+  leveling outline yet.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
   `coach_api` and the hidden Insights tab.
 
