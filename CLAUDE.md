@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v36**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v39**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -126,6 +126,10 @@ with a rule or working near one.
   than its tally mark.
 - **`/chat` needs NO account to read** — nothing there reaches a parse, a
   session or an account. An account is what lets you FILL it (the plugin).
+- **Discord chat alerts are USER-INSTALLED private DMs** (`discord_alerts.py`,
+  v39) — EQ2Advanced login + one-time `/link` code, never Discord login, a guild
+  install or an OAuth token. Matching is a transactional outbox beside the
+  public chat insert; no credential means the worker stays off.
 - **A chat line is split on the SERVER** (`_parts`: text, `url`, item labels)
   **and drawn on the client.** An item link keeps its Census id, so it opens the
   SAME examine card a chest drop does — one `components/ItemCard.jsx`, one
@@ -388,6 +392,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-15 (codex): Add private Discord chat alerts and EQ2A branding
 - 2026-08-15 (codex): Polish chat trade labels and window chrome
 - 2026-08-14 (codex): Overhaul admin workspace around accounts and site health
 - 2026-08-14 (codex): Improve item cards and public chat controls
@@ -407,4 +412,3 @@ builds here with `bash build.sh`.
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches)
 - 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page
-- 2026-08-04 (claude): Import page rebuild: account-scoped pairing (schema v13), drag-drop uploader, no character prompt

@@ -9,5 +9,9 @@ services:
       DATA_DIR: /data
       PORT: "8450"
       HOST: 0.0.0.0
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY:-}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_INSTALL_URL: ${DISCORD_INSTALL_URL:-}
     volumes:
       - ${APPDATA_PATH}/eq2advanced/data:/data

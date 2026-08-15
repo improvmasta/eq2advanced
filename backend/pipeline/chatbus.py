@@ -354,6 +354,13 @@ def absorb(conn, lines, character: str, mode: str, now: int) -> int:
             added.append(wire)
         _want_items(p["item"] for m in added for p in m["parts"] if "item" in p)
     if added:
+        # Match inside the SAME transaction as the chat rows. The Discord
+        # worker sees only the outbox after commit, and a later ingest failure
+        # cannot send a DM for a line the archive rolled back. Import locally
+        # so the optional delivery module can render stored rows through this
+        # module without creating an import cycle at startup.
+        from discord_alerts import enqueue_matches
+        enqueue_matches(conn, added, now)
         _ring()
     return len(added)
 

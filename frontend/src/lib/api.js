@@ -235,6 +235,20 @@ export const api = {
   chatStats: (ch, start, end) => req(
     start == null ? `/api/chat/stats?ch=${ch}`
       : `/api/chat/stats?ch=${ch}&start=${start}&end=${end}`),
+  /* Private Discord DMs. Discord is a delivery address, never a login: the
+     account mints a short code and the user types it into the user-installed
+     app's BOT_DM. Rules stay here, where the public chat they describe lives. */
+  chatAlerts: () => req('/api/chat/alerts'),
+  createChatAlertPair: () => req('/api/chat/alerts/pairing-code', { method: 'POST' }),
+  setChatAlertPaused: (paused) => req(
+    '/api/chat/alerts/discord', { ...json({ paused }), method: 'PATCH' }),
+  disconnectChatDiscord: () => req('/api/chat/alerts/discord', { method: 'DELETE' }),
+  testChatDiscord: () => req('/api/chat/alerts/discord/test', { method: 'POST' }),
+  createChatAlertRule: (body) => req('/api/chat/alerts/rules', json(body)),
+  updateChatAlertRule: (id, body) => req(
+    `/api/chat/alerts/rules/${id}`, { ...json(body), method: 'PATCH' }),
+  deleteChatAlertRule: (id) => req(
+    `/api/chat/alerts/rules/${id}`, { method: 'DELETE' }),
   /* One item's examine card, for a link that did not arrive with a parse — the
      Loot tab is handed its cards with its rows and never calls this. A pure
      read: an id nobody has resolved answers `{card: null}`. */

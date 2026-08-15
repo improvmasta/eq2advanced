@@ -473,6 +473,49 @@ cursor and the span the date pickers may reach over), `GET
 `GET /api/chat/status` (the light) and `GET /api/chat/stream?since=<seq>` with
 the same doorbell shape as `livebus`.
 
+### Private Discord chat alerts (schema v39)
+
+Alerts are a private delivery rule attached to an **EQ2Advanced account**, not
+another way to read chat and not a Discord identity provider. `/chat` remains
+public and signed-out. A person signs in here normally, asks for an eight-digit
+single-use code, installs the Discord application to **their user account**
+(`USER_INSTALL`) and runs `/link code:<code>` in the application's own private
+DM (`BOT_DM`). They never add it to a guild, grant it server permissions or use
+Discord to log in to this site. The commands are registered with
+`integration_types=[1]`, `contexts=[1]` so the platform enforces that shape too.
+The pairing panel links directly to the bot profile and tells the user to choose
+**Message**, so finding that private DM is part of the flow rather than assumed.
+
+`discord_links` keeps only the Discord user id, the BOT_DM channel id where the
+signed interaction arrived, a display label and delivery state. There is no
+OAuth access token and no guild/channel roster to reach. The site owns rule
+editing; Discord is deliberately a very small control surface: `/link`,
+`/status`, `/pause`, `/resume`, `/unlink`. Both sides can disconnect.
+
+The interaction callback (`POST /api/discord/interactions`) is public because
+Discord calls it, but an Ed25519 signature over timestamp + exact request body
+is its authorization, and timestamps older than five minutes are refused. A
+pair code is stored only as a digest, expires after ten minutes, is single-use,
+and failed guesses are rate-limited per signed Discord user id. Pairing refreshes
+the DM channel and clears a delivery failure; the same Discord user cannot link
+two EQ2Advanced accounts.
+
+One alert rule is one case-insensitive phrase over the text the page actually
+draws — linked item and guild labels count, EQ2 markup does not. It can narrow
+to one public channel, an exact speaker, an exclusion phrase and a cooldown.
+Rules never see anything outside General/LFG/Auction because no other kind of
+message reaches `chat_messages` in the first place.
+
+Delivery is a **transactional outbox**. `chatbus.absorb` writes a
+`chat_alert_deliveries` row inside the same ingest transaction as the new
+`chat_messages` row, so rollback takes both and Discord never delays ACT ingest.
+One user/message row bundles overlapping rules into one DM. The worker rechecks
+enabled rules and cooldowns at send time, disables Discord mentions in every
+payload, retries transient/429 failures with backoff, pauses a dead or blocked
+DM, and caps each account at 100 delivered alerts in a rolling day. Pausing or
+disconnecting suppresses already-pending rows rather than surprising the user
+with old chat when they return.
+
 ### Recruiting rail
 
 The right rail collects the newest current General-chat pitch from each guild

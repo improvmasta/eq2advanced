@@ -57,6 +57,41 @@ place that corrects for it. **Never read `request.client.host` or
   `uploads/` (gzipped raw logs by sha256), `raw/` (live-ingest chunks),
   `parseshots/`, `noteshots/`, `icons/`.
 
+### Discord chat-alert application
+
+The Discord integration is a user-installed application that sends private
+DMs; it is not installed to a server. Create the application in Discord's
+Developer Portal, enable **User Install**, and set its Interactions Endpoint URL
+to:
+
+```
+https://eq2advanced.com/api/discord/interactions
+```
+
+Set these only in the runtime environment (`.env` locally; the container's
+secret environment when deployed), never in the repository:
+
+```bash
+DISCORD_APPLICATION_ID=...
+DISCORD_PUBLIC_KEY=...
+DISCORD_BOT_TOKEN=...
+# Optional: paste Discord's provided user-install link instead of deriving it
+DISCORD_INSTALL_URL=...
+```
+
+After the credentials are present, register the five user-install/BOT_DM
+commands explicitly and restart the app:
+
+```bash
+.venv/bin/python backend/tools/register_discord_commands.py
+bash restart.sh
+```
+
+Startup never registers commands or mutates the Discord application. The bot
+token sends messages through Discord's HTTP API; no Gateway connection or
+privileged intent is used. With any credential absent the worker stays off and
+the `/chat` panel reports that Discord is not configured.
+
 ## Backend layout
 
 - `parser/` — pure streaming parser, no DB. `prefix.py` (epoch prefix, CRLF,
@@ -73,6 +108,8 @@ place that corrects for it. **Never read `request.client.host` or
   per account; `refresh` revokes all live keys), `plugin_api` (the committed DLL
   as a zip, unauthenticated).
 - `auth.py`, `groups.py`, `security.py` — see `docs/sharing.md`.
+- `discord_alerts.py` + `routers/discord_api.py` — user-app pairing, alert rules,
+  signed Discord interactions and the durable DM outbox (`docs/sharing.md`).
 - `pipeline/live.py` + `routers/ingest_api.py` — `docs/live.md`.
 - `census/` + `routers/census_api.py` — `docs/census-abilities.md`.
 - `coach/` + `routers/coach_api.py` — `docs/coach.md`.

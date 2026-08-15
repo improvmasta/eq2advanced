@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 39
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -841,6 +841,75 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_ch_ts ON chat_messages(ch, ts);
 
+-- v39: private Discord DMs for account-owned chat alert rules. The Discord
+-- application is installed to a USER, never a guild; `dm_channel_id` is the
+-- BOT_DM where `/link` was invoked and is the only destination the worker can
+-- reach. A link carries no OAuth token and grants no access to a Discord
+-- server. Removing it takes every pending delivery with it at the API layer.
+CREATE TABLE IF NOT EXISTS discord_links (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  discord_user_id TEXT NOT NULL UNIQUE,
+  dm_channel_id TEXT NOT NULL,
+  display_name TEXT,
+  paused INTEGER NOT NULL DEFAULT 0,
+  linked_ts INTEGER NOT NULL,
+  last_error TEXT,
+  last_error_ts INTEGER
+);
+
+-- Short-lived, single-use codes bridge an authenticated EQ2Advanced browser
+-- to a signed Discord `/link` interaction. The raw code is returned once and
+-- only its digest is kept. One active code per account means pressing Pair
+-- twice invalidates the first rather than leaving several small credentials.
+CREATE TABLE IF NOT EXISTS discord_pair_codes (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  code_hash TEXT NOT NULL UNIQUE,
+  created_ts INTEGER NOT NULL,
+  expires_ts INTEGER NOT NULL
+);
+
+-- One rule is deliberately one phrase. Several alternatives are several rows,
+-- which makes pausing, naming and cooldowns independently understandable.
+-- Matching is case-insensitive over the rendered message text: linked item and
+-- guild labels count, EQ2's hidden markup does not.
+CREATE TABLE IF NOT EXISTS chat_alert_rules (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'any',    -- any|general|lfg|auction
+  query TEXT NOT NULL,
+  exclude_query TEXT,
+  speaker TEXT,
+  cooldown_s INTEGER NOT NULL DEFAULT 300,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_ts INTEGER NOT NULL,
+  updated_ts INTEGER NOT NULL,
+  last_sent_ts INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_chat_alert_rules_user
+  ON chat_alert_rules(user_id, enabled);
+
+-- The transactional outbox. A chat insert and its alert matches commit (or
+-- roll back) together, then a worker sends the DM. One row per user/message
+-- bundles overlapping rules into one notification; rule_ids_json records the
+-- candidates and they are checked again at send time so deleting or pausing a
+-- rule before delivery takes effect.
+CREATE TABLE IF NOT EXISTS chat_alert_deliveries (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id),
+  rule_ids_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending|sent|suppressed|failed
+  attempts INTEGER NOT NULL DEFAULT 0,
+  available_ts INTEGER NOT NULL,
+  created_ts INTEGER NOT NULL,
+  sent_ts INTEGER,
+  error TEXT,
+  UNIQUE(user_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_alert_delivery_queue
+  ON chat_alert_deliveries(status, available_ts, id);
+
 -- v37: how many people came to look (`visitors.py`). This exists for ONE
 -- question — the /chat link was publicized, so how many strangers did it bring
 -- — and the shape is cut down to answering exactly that.
@@ -1388,6 +1457,10 @@ def init_db() -> None:
             conn.execute("ALTER TABLE feedback ADD COLUMN assignee_user_id INTEGER")
         if "admin_note" not in fb_cols:
             conn.execute("ALTER TABLE feedback ADD COLUMN admin_note TEXT")
+        # v39: Discord links, alert rules and the delivery outbox are all new
+        # tables. An old database receives them empty from SCHEMA, which means
+        # exactly what it did before: no account is linked and no message can
+        # match a rule. Nothing can or should be backfilled from chat history.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

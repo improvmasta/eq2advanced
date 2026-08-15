@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { lexiconCharacter, lexiconGuild } from '../lib/raids.js'
+import ChatAlerts from '../components/ChatAlerts.jsx'
 import { Examine, Hover } from '../components/ItemCard.jsx'
 
 const CHANNELS = [
@@ -667,7 +668,7 @@ function Recruiting({ guilds }) {
   )
 }
 
-export default function Chat() {
+export default function Chat({ user }) {
   const [rooms, setRooms] = useState(EMPTY)
   const [recruiting, setRecruiting] = useState(null)
   // the span the record covers, so the date pickers cannot wander off it
@@ -687,6 +688,7 @@ export default function Chat() {
   })
   const [hideSpam, setHideSpam] = useState(
     () => localStorage.getItem(SPAM_KEY) === '1')
+  const [alertsOpen, setAlertsOpen] = useState(false)
 
   useEffect(() => {
     try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])) } catch { /* private mode */ }
@@ -785,6 +787,13 @@ export default function Chat() {
                      onChange={(e) => setHideSpam(e.target.checked)} />
               Spam filter
             </label>
+            <button className={`chatalertbtn${alertsOpen ? ' active' : ''}`}
+                    aria-expanded={alertsOpen} onClick={() => setAlertsOpen((v) => !v)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9.5 21h5" />
+              </svg>
+              Alerts
+            </button>
           </div>
           {/* Which server, said plainly. Every line here was broadcast on
               Wuoshi, and a reader who does not already know that has no way to
@@ -796,6 +805,8 @@ export default function Chat() {
           </div>
         </div>
       </div>
+
+      {alertsOpen && <ChatAlerts user={user} onClose={() => setAlertsOpen(false)} />}
 
       <div className="chatlayout">
         <div className="eq2grid" style={{

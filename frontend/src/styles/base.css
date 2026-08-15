@@ -5317,6 +5317,153 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .chatspam input { margin: 0; }
 
+/* Discord alerts belong to the SITE, never inside one of the replica EQ2
+   windows. The panel opens between the page head and all three channels so a
+   rule describes the whole feed rather than looking owned by General. */
+.chatalertbtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--text-muted); background: transparent; border-color: var(--border);
+}
+.chatalertbtn:hover, .chatalertbtn.active {
+  color: var(--gold-bright); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.1);
+}
+.chatalertbtn svg {
+  width: 13px; height: 13px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.chatalertpanel {
+  margin-top: 12px; border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm); background: var(--surface); overflow: hidden;
+}
+.chatalerthead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; border-bottom: 1px solid var(--border);
+  background: rgba(var(--gold-rgb), 0.045);
+}
+.chatalerthead .eyebrow {
+  display: block; margin-bottom: 2px; color: var(--text-muted);
+  font-family: var(--font-data); font-size: 0.62rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.chatalerthead h2 { margin: 0; font-size: 1rem; }
+.chatalerthead .close {
+  padding: 0; width: 27px; height: 27px; border: 0; background: transparent;
+  color: var(--text-muted); font-size: 1.25rem;
+}
+.chatalerthead .close:hover { color: var(--text); background: var(--row-hover); }
+.chatalertmsg { margin: 9px 13px 0; font-size: var(--fs-xs); }
+.chatalertempty { padding: 18px 14px; max-width: 720px; }
+.chatalertempty p { margin: 5px 0 12px; color: var(--text-muted); font-size: var(--fs-xs); }
+.chatalertpanel a.button {
+  display: inline-flex; align-items: center; color: var(--gold-bright);
+  background: rgba(var(--gold-rgb), 0.12); border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm); padding: 5px 12px;
+  font-family: var(--font-data); font-size: var(--fs-xs); text-decoration: none;
+}
+.chatalertpanel a.button:hover { background: rgba(var(--gold-rgb), 0.22); }
+.discordpair { padding: 4px 13px 11px; }
+.pairstep {
+  display: grid; grid-template-columns: 26px minmax(220px, 1fr) auto;
+  align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.pairstep > i {
+  display: grid; place-items: center; width: 22px; height: 22px;
+  border: 1px solid var(--gold-dim); border-radius: 50%; color: var(--gold-bright);
+  font-family: var(--font-data); font-size: 0.68rem; font-style: normal;
+}
+.pairstep > span { display: flex; flex-direction: column; min-width: 0; }
+.pairstep small, .pairnote { color: var(--text-muted); font-size: var(--fs-label); }
+.pairstep small strong { color: var(--text); }
+.pairfinish { border-bottom: 1px solid var(--border); }
+.pairfinish .pairstep { border-bottom: 0; }
+.paircode {
+  display: grid; grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: center; gap: 6px 12px;
+  margin: -2px 0 10px 36px; padding: 9px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised); color: var(--text-muted); font-size: var(--fs-xs);
+}
+.paircode code {
+  grid-row: span 2; padding: 8px 11px; border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--gold-bright); font-size: 0.9rem; letter-spacing: 0.08em; user-select: all;
+}
+.paircode b { color: var(--text); }
+.paircode small { color: var(--success); }
+.pairnote { margin: 9px 0 0 36px; }
+.discordlinked {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 13px; border-bottom: 1px solid var(--border);
+}
+.discordidentity { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.discordidentity > i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 4px rgba(var(--success-rgb), 0.5); flex: none;
+}
+.discordidentity > i.paused { background: var(--text-muted); box-shadow: none; }
+.discordidentity > span { display: flex; flex-direction: column; min-width: 0; }
+.discordidentity b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discordidentity small { color: var(--text-muted); font-size: var(--fs-label); }
+.discordactions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chatalertrules { padding: 12px 13px 13px; }
+.chatalertsectionhead {
+  display: flex; align-items: start; justify-content: space-between; gap: 12px;
+  margin-bottom: 10px;
+}
+.chatalertsectionhead h3 { margin: 0; font-size: 0.92rem; }
+.chatalertsectionhead p { margin: 2px 0 0; color: var(--text-muted); font-size: var(--fs-label); }
+.chatalertsectionhead > span { color: var(--text-muted); font-size: var(--fs-label); }
+.chatalertform {
+  display: grid; grid-template-columns: auto minmax(180px, 1.5fr) minmax(130px, 1fr)
+    minmax(150px, 1fr) auto auto; align-items: end; gap: 8px;
+  padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.chatalertform label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.chatalertform label > span {
+  color: var(--text-muted); font-family: var(--font-data); font-size: var(--fs-label);
+}
+.chatalertform label > span i { font-style: normal; opacity: 0.7; }
+.chatalertform input, .chatalertform select {
+  width: 100%; min-width: 0; height: 28px; margin: 0;
+}
+.chatalertform button { height: 28px; }
+.chatalertrulelist { margin-top: 8px; }
+.chatalertrulelist > .muted { margin: 10px 2px 2px; font-size: var(--fs-xs); }
+.chatalertrule {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 8px 3px;
+  border-bottom: 1px solid var(--border);
+}
+.chatalertrule:last-child { border-bottom: 0; }
+.chatalertrule.mutedrule .rulecopy { opacity: 0.52; }
+.chatalertrule .switch { flex: none; }
+.chatalertrule .rulecopy { display: flex; flex-direction: column; min-width: 0; }
+.chatalertrule .rulecopy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatalertrule .rulecopy small { color: var(--text-muted); font-size: var(--fs-label); }
+.chatalertrule .ruledelete {
+  padding: 0; width: 25px; height: 25px; border: 0; background: transparent;
+  color: var(--text-muted); font-size: 1.1rem;
+}
+.chatalertrule .ruledelete:hover { color: var(--danger); background: rgba(var(--danger-rgb), 0.08); }
+
+@media (max-width: 1150px) {
+  .chatalertform { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chatalertform .match { grid-column: span 2; }
+}
+@media (max-width: 680px) {
+  .discordlinked { align-items: flex-start; flex-direction: column; }
+  .discordactions { justify-content: flex-start; }
+  .pairstep { grid-template-columns: 26px minmax(0, 1fr); }
+  .pairstep > :last-child { grid-column: 2; justify-self: start; }
+  .paircode { grid-template-columns: 1fr; margin-left: 0; }
+  .paircode code { grid-row: auto; justify-self: start; }
+  .pairnote { margin-left: 0; }
+  .chatalertform { grid-template-columns: 1fr; }
+  .chatalertform .match { grid-column: auto; }
+}
+
 /* A directory made from General, not a fourth EQ2 channel. It therefore wears
    the site's paper and type, like Stats, and sits beside the three replicas. */
 .recruitrail {

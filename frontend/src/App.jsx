@@ -66,6 +66,35 @@ const SITES = [
 ]
 const WIKI = SITES.find((s) => s.key === 'wiki')
 
+/* Browser chrome should say where this tab is, especially when a raid night
+   leaves several EQ2A pages open. Keep route naming here beside the route map
+   rather than scattering document.title writes through every page. */
+function pageTitle(pathname) {
+  if (pathname === '/') return 'Raid Parses'
+  if (pathname === '/wiki') return 'wikQ2'
+  if (pathname.startsWith('/zones/')) return 'Raid'
+  if (pathname === '/compare') return 'Compare'
+  if (pathname === '/features') return 'What It Does'
+  if (pathname.startsWith('/encounters/')) return 'Encounter'
+  if (pathname.startsWith('/join/')) return 'Join Sharing Group'
+  if (pathname === '/login') return 'Sign In'
+  if (pathname === '/import' || pathname === '/uploads') return 'Import'
+  if (pathname === '/live') return 'Live Parser'
+  if (pathname === '/chat') return 'Chat'
+  if (pathname.startsWith('/sessions/')) return 'Session'
+  if (pathname === '/calibration') return 'Calibration'
+  if (pathname === '/characters') return 'Characters'
+  if (pathname.startsWith('/characters/')) return 'Character'
+  if (pathname === '/groups') return 'Sharing'
+  if (pathname === '/admin/abilities') return 'Abilities'
+  if (pathname === '/admin/timers') return 'Timers'
+  if (pathname.startsWith('/admin')) return 'Admin'
+  if (pathname === '/account') return 'Account'
+  if (pathname.startsWith('/overlay/')) return 'Overlay'
+  if (pathname.startsWith('/ingame/')) return 'In-Game Overlay'
+  return null
+}
+
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
@@ -82,6 +111,12 @@ export default function App() {
   const [pluginUpdate, setPluginUpdate] = useState(null)
   const location = useLocation()
   const header = useRef(null)
+
+  useEffect(() => {
+    const page = pageTitle(location.pathname)
+    document.title = page ? `EQ2Advanced - ${page}` : 'EQ2Advanced'
+  }, [location.pathname])
+
   /* Latched, never cleared: the wikQ2 frame is created the first time somebody
      opens that tab and then lives for the rest of the visit. Leaving the page
      HIDES it (`display:none` keeps the document alive) instead of unmounting
@@ -386,12 +421,13 @@ export default function App() {
             {/* the import hub absorbed the old uploads page */}
             <Route path="/uploads" element={<Navigate to="/import" replace />} />
             <Route path="/live" element={<NeedsAccount user={user}><Live /></NeedsAccount>} />
-            {/* Deliberately NOT in the nav — reachable by typing /chat, until
-                there is a decision about giving it a door. NO account needed:
+            {/* Deliberately NOT in the nav — its door is the In-game chat
+                plaque with the sibling sites. NO account needed:
                 the record has no user in it and every line was broadcast to a
                 whole server by the game, so there is nothing here to gate.
-                An account is what lets you FILL it, not what lets you read it. */}
-            <Route path="/chat" element={<Chat />} />
+                An account is what lets you FILL it and own private Discord
+                alert rules, not what lets you read it. */}
+            <Route path="/chat" element={<Chat user={user} />} />
             <Route path="/sessions/:id" element={<NeedsAccount user={user}><Workspace /></NeedsAccount>} />
             <Route path="/calibration" element={<NeedsAccount user={user}><Calibration /></NeedsAccount>} />
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />

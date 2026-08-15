@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">EQ2A</title>
+  <desc id="desc">EQ2A in antique gold on a dark oxblood fantasy plaque.</desc>
+  <defs>
+    <linearGradient id="brass" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#f0cf79"/>
+      <stop offset="0.22" stop-color="#a66f24"/>
+      <stop offset="0.52" stop-color="#e1b95e"/>
+      <stop offset="0.78" stop-color="#76501f"/>
+      <stop offset="1" stop-color="#c7953d"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#381412"/>
+      <stop offset="0.55" stop-color="#210d0d"/>
+      <stop offset="1" stop-color="#130a0a"/>
+    </linearGradient>
+    <linearGradient id="letters" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2d685"/>
+      <stop offset="0.48" stop-color="#c99335"/>
+      <stop offset="1" stop-color="#7d4e18"/>
+    </linearGradient>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#000" flood-opacity="0.75"/>
+    </filter>
+  </defs>
+
+  <rect x="7" y="7" width="498" height="498" rx="55" fill="#09090b"/>
+  <rect x="17" y="17" width="478" height="478" rx="46" fill="url(#brass)" stroke="#34200e" stroke-width="8"/>
+  <rect x="35" y="35" width="442" height="442" rx="34" fill="#0b0909" stroke="#f0cf79" stroke-opacity="0.45" stroke-width="3"/>
+  <rect x="48" y="48" width="416" height="416" rx="25" fill="url(#face)" stroke="#5c351b" stroke-width="5"/>
+
+  <g fill="#1a0d09" stroke="#d5a548" stroke-width="4">
+    <path d="M52 21 79 48 52 75 25 48Z"/>
+    <path d="m460 21 27 27-27 27-27-27Z"/>
+    <path d="m52 437 27 27-27 27-27-27Z"/>
+    <path d="m460 437 27 27-27 27-27-27Z"/>
+  </g>
+  <g fill="#c28d34">
+    <circle cx="52" cy="48" r="7"/><circle cx="460" cy="48" r="7"/>
+    <circle cx="52" cy="464" r="7"/><circle cx="460" cy="464" r="7"/>
+  </g>
+
+  <g filter="url(#lift)">
+    <text x="256" y="304" text-anchor="middle"
+      font-family="Cinzel, Georgia, 'DejaVu Serif', serif" font-size="130"
+      font-weight="900" letter-spacing="-8" fill="#090706" stroke="#090706"
+      stroke-width="22" stroke-linejoin="round">EQ2A</text>
+    <text x="256" y="304" text-anchor="middle"
+      font-family="Cinzel, Georgia, 'DejaVu Serif', serif" font-size="130"
+      font-weight="900" letter-spacing="-8" fill="url(#letters)" stroke="#5a2f13"
+      stroke-width="7" paint-order="stroke" stroke-linejoin="round">EQ2A</text>
+    <text x="256" y="302" text-anchor="middle"
+      font-family="Cinzel, Georgia, 'DejaVu Serif', serif" font-size="130"
+      font-weight="900" letter-spacing="-8" fill="none" stroke="#f7dfa1"
+      stroke-opacity="0.55" stroke-width="1.5">EQ2A</text>
+  </g>
+
+  <path d="M91 354h92l29-30 42 45 42-48 28 25h97" fill="none"
+    stroke="#2b0908" stroke-width="18" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M91 354h92l29-30 42 45 42-48 28 25h97" fill="none"
+    stroke="#a72b1f" stroke-width="9" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M91 351h92l29-30 42 45 42-48 28 25h97" fill="none"
+    stroke="#ee7a3f" stroke-opacity="0.7" stroke-width="2"/>
+</svg>

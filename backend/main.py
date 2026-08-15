@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from db import get_db, init_db
 from routers import (admin_api, auth_api, census_api, characters_api, chat_api,
-                     coach_api, encounters_api, feedback_api, groups_api,
+                     coach_api, discord_api, encounters_api, feedback_api, groups_api,
                      ingest_api, marks_api, notes_api, overlay_api,
                      parseshots_api, plugin_api, replay_api, sessions_api,
                      tokens_api, uploads_api, zoneruns_api)
@@ -17,6 +17,7 @@ from spa import mount_spa
 
 CENSUS_REFRESH_INTERVAL_S = 3600  # check hourly; each character syncs when >24h stale
 PRUNE_CHECK_INTERVAL_S = 6 * 3600  # PRUNE_DAYS env sets retention (0 disables)
+DISCORD_DELIVERY_INTERVAL_S = 2
 
 
 async def _census_refresh_loop():
@@ -78,6 +79,20 @@ async def _prune_loop(days: int):
             await asyncio.to_thread(lambda: prune_once(get_db(), days))
         except Exception:
             logging.getLogger("prune").exception("prune loop iteration failed")
+
+
+async def _discord_delivery_loop():
+    """Drain the durable chat-alert outbox. Matching happens at chat commit;
+    this loop is only transport, so a Discord outage never slows ACT ingest."""
+    import discord_alerts
+    while True:
+        try:
+            report = await asyncio.to_thread(discord_alerts.deliver_pending)
+            if report["sent"] or report["failed"]:
+                logging.getLogger("discord-alerts").info("delivery pass %s", report)
+        except Exception:
+            logging.getLogger("discord-alerts").exception("delivery loop iteration failed")
+        await asyncio.sleep(DISCORD_DELIVERY_INTERVAL_S)
 
 
 def _reparse_stale():
@@ -155,6 +170,9 @@ async def lifespan(app: FastAPI):
     import threading
     threading.Thread(target=_startup_worker, daemon=True).start()
     tasks = [asyncio.create_task(_live_reap_loop())]
+    import discord_alerts
+    if discord_alerts.configured():
+        tasks.append(asyncio.create_task(_discord_delivery_loop()))
     if os.environ.get("CENSUS_AUTO_REFRESH", "1") != "0":
         tasks.append(asyncio.create_task(_census_refresh_loop()))
     prune_days = int(os.environ.get("PRUNE_DAYS", "180"))
@@ -187,5 +205,6 @@ app.include_router(marks_api.router, prefix="/api")
 app.include_router(overlay_api.router, prefix="/api")
 app.include_router(replay_api.router, prefix="/api")
 app.include_router(chat_api.router, prefix="/api")
+app.include_router(discord_api.router, prefix="/api")
 
 mount_spa(app)

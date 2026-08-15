@@ -2,6 +2,9 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
 httpx>=0.27
+# Verify Discord interaction signatures (Ed25519). Discord sends pairing
+# commands to a public HTTP endpoint; no unsigned body may link an account.
+PyNaCl>=1.5
 # ACT screenshot import (pipeline/actshot.py). pytesseract is a wrapper — the
 # tesseract binary itself is an apt package, installed in the Dockerfile.
 Pillow>=10.0
