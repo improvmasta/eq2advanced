@@ -274,7 +274,7 @@ segmentation)
   NOTHING. It also feeds that account's overlay (`replaybus.py`); the `replay` block
   never crosses.
 
-**The Planner** (`docs/planner.md` — Phases 1-2 built; Phase 0 unrun, 3-4 design)
+**The Planner** (`docs/planner.md` — Phases 0-2 complete; 3-4 design)
 
 - **WHICH EXPANSIONS COUNT IS THE READER'S** — EoF and/or RoK, chosen on the
   page. Era is a COLUMN (`plan_items.era`, `plan_sources.era`), never a
@@ -344,6 +344,10 @@ segmentation)
   titles are counted and omitted, not invented as quests.
 - **`/plan` is off the nav and needs no account** — it reaches no parse,
   session or account, and has no POST.
+- **Phase 0 is measured, not guessed** — 899 RoK quests / 3,452 coordinates;
+  2,584 POI matches (74.86% overall, 83.46% of zone-labeled), with the main RoK
+  zones at 90.0-94.5% and median confidence 0.98. Phase 3 may use MATCHED rows;
+  the 356 unresolved cross-zone coordinates do not become spatial claims.
 
 **Display and import** (`docs/zoneruns.md`, `docs/compare-import.md`)
 
@@ -434,7 +438,7 @@ Details per area live in the `docs/` file named beside it.
   axis, since the turquoise detaches. The Outline tab puts a hand-kept prelude
   ahead of the prerequisite-ordered quests and targets that serve the browser's
   shortlist. Off the nav and signed-out; filled by `tools/sync_planner.py`
-  crawling the wiki by hand. Phases 1-2 are built; spatial tags are not.
+  crawling the wiki by hand. Phases 0-2 are complete; spatial tags are not.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
   `coach_api` and the hidden Insights tab.
 

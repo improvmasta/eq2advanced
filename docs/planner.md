@@ -150,13 +150,12 @@ Taken from `wikq2/lib/`:
 | `collectQuestSteps` | `eq2.ts` | Quest steps as structured rows |
 | `detectStepsAnyOrder` | `eq2.ts:1332` | **The "in any order" detector — layer 2, already built** |
 | `extractCoordinates` | `coords.ts` | Waypoints out of step prose |
-| `attachEq2MapMatches` | `eq2map.ts` | Wiki coordinate → client POI |
+| `attachEq2MapMatches` | `eq2map.ts` | Wiki coordinate → client POI; the production matcher used by Phase 0 |
 | `proximityDedup`, `dedupeIdenticalCoordinates` | `eq2.ts` | First cut at waypoint noise |
 | `collectLocationListRows` | `eq2.ts` | Location tables |
 | `findKnownAlias`, `pickDisambiguationEntry` | `eq2.ts` | Link resolution across pages |
 | `wikiFetch`, `cached` | `wiki-fetch.ts`, `cache.ts` | Polite fetching and on-disk cache |
 | `data/eq2map/*` | — | The 46k POI corpus, maps, map-links, travel graph |
-| `scripts/match-quest-waypoints-eq2map.js` | — | The matcher itself |
 
 **The extractors stay in TypeScript and run OFFLINE; eq2advanced ingests their
 JSON.** wikq2 is Next.js/TS and this app is FastAPI/Python, and neither porting
@@ -165,12 +164,15 @@ The boundary is a versioned JSON artifact produced by a hand-run script — whic
 is precisely the `zone_eras.json` pattern already in the repo, and it means the
 ingest inherits wikq2's fixes rather than forking them.
 
-**The waypoint matcher is proven on three quests and has never been run at
-scale.** `quest-waypoint-poi-matches.pending.json` is a proof of concept from
-2026-06-07. It works: *From Hands of Stone*, step 0 at `(-192, 33, 294)` in The
-Living Tombs matched client POI "Gargoyle" (`quest-start`) at **6.32m 2D,
-confidence 0.98**. Whether that holds across 500+ RoK quests is unknown and is
-**Phase 0** below.
+**The waypoint matcher has now been run across the whole RoK catalog.** The
+2026-08-15 Phase 0 artifact covers 899 quests and 3,452 extracted coordinates.
+After wikq2 v89 conservatively filled missing zones only when the structured
+Starting Zone and zone Timeline agreed, 3,096 coordinates carried a zone label
+and 2,584 matched: **74.86% of every extracted coordinate, 83.46% of zone-labeled
+coordinates**. The five main RoK zones each match 90.0–94.5%; median confidence
+is 0.98. The remaining 356 unzoned coordinates are predominantly cross-zone
+epic/city-task work and stay unclaimed rather than inheriting a plausible but
+wrong starting zone.
 
 ---
 
@@ -626,8 +628,8 @@ for the same reason.
 2. **Parse templates** into layer-1 fields. Batched at 50 titles per request;
    the whole equipment corpus is on the order of hundreds of requests.
 3. **Extract steps and coordinates** with the wikq2 TS extractors, emitting JSON.
-4. **Match waypoints to client POIs** (`match-quest-waypoints-eq2map.js`), keep
-   the confidence on every row.
+4. **Match waypoints to client POIs** with wikq2's production
+   `attachEq2MapMatches`, keep the confidence on every row.
 5. **Cluster** and score; write `plan_clusters`.
 6. **Nominate layer-2 claims** with their sentences into `plan_nominations`.
 7. **Curator confirms** in the admin console. Only confirmed claims reach the
@@ -642,12 +644,13 @@ Steps 1–6 are a script. Step 7 is a person, and that is the design.
 RoK is roughly four weeks out. Phase 1 is what has to exist on day one; 3 and 4
 are explicitly after launch.
 
-**Phase 0 — the decision gate.** Run the waypoint matcher across the RoK quest
-set and look at the match rate and confidence distribution. Everything spatial
-depends on this number and it is currently unknown. If it holds near the 0.98 of
-the three-quest sample, clusters are nearly free. If it does not, the outline
-falls back to zone-level grouping, which is still useful — but we should know
-before designing around it.
+**Phase 0 — the decision gate. COMPLETE (2026-08-15).** The whole 899-quest RoK
+catalog produced 3,452 coordinates; 2,584 matched a client POI. Coverage is
+74.86% overall / 83.46% of zone-labeled coordinates, the five main RoK zones
+are 90.0–94.5%, and median confidence is 0.98. Phase 3 may proceed
+conservatively over matched rows. No cluster is invented for the 356 remaining
+unzoned coordinates; improving those cross-zone pages is a wikq2 concern and
+still constrains Phase 4's epic group view.
 
 **Phase 1 — the catalog and the search.** `plan_items`, `plan_sources`, the
 priority editor, the item table, `ItemCard` reuse, the set-adornment view, the
@@ -665,10 +668,14 @@ no tags. Ordered, readable, and honest about what it does not know.
 
 ## Risks and open questions
 
-- **The waypoint match rate is unknown.** Phase 0. Everything spatial rests on
-  it, and the existing evidence is three quests.
-- **The `pending` map artifacts are from 2026-06-07** and predate whatever has
-  changed in wikq2 since. Regenerate before trusting them.
+- **The waypoint match rate is measured, not universal.** Phase 0 found 74.86%
+  overall / 83.46% of zone-labeled coordinates and 90.0–94.5% in the five main
+  RoK zones. Phase 3 uses matched rows only; the remaining gaps do not become
+  inferred spatial claims.
+- **The old three-quest `pending` artifact from 2026-06-07 is superseded.** The
+  reproducible hand-run audit is `backend/tools/planner_phase0.py`; its ignored
+  runtime artifact is `data/planner-waypoints-rok.json` and carries schema
+  version, source sync, every resolved quest, and the full distribution.
 - **Layer-2 volume.** If the prose pass nominates thousands of claims, curation
   becomes the bottleneck and the console needs to be good. Cap the first run to
   the RoK timelines and the 24 epic questlines and see what the rate looks like.
@@ -685,12 +692,13 @@ no tags. Ordered, readable, and honest about what it does not know.
 
 ---
 
-## State of play — 2026-08-15 (Phase 2 built)
+## State of play — 2026-08-15 (Phases 0–2 complete)
 
-**Phases 1 and 2 are BUILT and both expansions are synced.** The Gear tab builds
-the shortlist; the Outline tab consumes it as a hand-kept prelude followed by
-the prerequisite DAG. Phase 0 is still unrun, so Phases 3–4 — cluster tags and
-the multi-class epic view — remain planned.
+**Phases 1 and 2 are BUILT and both expansions are synced; Phase 0 is now
+MEASURED.** The Gear tab builds the shortlist; the Outline tab consumes it as a
+hand-kept prelude followed by the prerequisite DAG. Phase 3 cluster tags may
+now proceed over the matched coordinate corpus. Phase 4 remains planned and
+must not pretend the unresolved cross-zone epic coordinates are located.
 
 ### What exists
 
@@ -704,7 +712,8 @@ the multi-class epic view — remain planned.
 | `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
 | The page: Gear/Outline tabs, filters, item/set views, persistent three-kind shortlist, ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanOutline.jsx`, `components/PriorityEditor.jsx` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
-| 39 planner tests, including recorded wiki pages and isolated graph shapes; no network | `backend/tests/test_planner.py` |
+| The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |
+| 41 planner tests, including recorded wiki pages, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |
 
 ### What the latest full sync found (2026-08-15)
 
@@ -799,12 +808,28 @@ not changed underneath them without asking.
 
 ### Still not built
 
-- **Phase 0.** The waypoint matcher has not been run at scale, so no spatial
-  claim is made by the current outline.
 - **Layer 2 and `plan_nominations`.** `effectlist` is stored as written and
   shown as a badge; nothing classifies a proc and no curator console exists.
-- **Phases 3–4** — clusters, tags, multi-class — unchanged and still gated on
-  Phase 0.
+- **Phases 3–4** — clusters, tags, multi-class. Phase 3 is now unblocked for
+  matched coordinates. Phase 4 still needs better cross-zone epic coverage.
+
+### What Phase 0 measured (2026-08-15)
+
+| Measure | Result |
+| --- | ---: |
+| RoK quests resolved / errors | 899 / 0 |
+| Extracted coordinates | 3,452 |
+| Zone-labeled / still unzoned | 3,096 / 356 |
+| POI matched | 2,584 |
+| Match rate, all / zone-labeled | 74.86% / 83.46% |
+| Median confidence / median 2D distance | 0.98 / 2.56m |
+| Matches at confidence ≥ 0.95 | 2,213 |
+
+The initial run exposed 1,168 coordinates without a zone. The fix landed in
+wikq2 rather than here: parser v89 applies a page-wide zone only when the
+quest's structured Starting Zone agrees with its declared zone Timeline. That
+reduced the gap to 356 and raised matches from 1,874 to 2,584 without assigning
+an epic's later steps to the city where its first step happens to begin.
 
 ### Verified on 2026-08-15 (re-verify before asserting any of it as current)
 
@@ -823,7 +848,8 @@ not changed underneath them without asking.
   2026-06-07; regenerate before trusting.
 - `/home/lindsay/wikq2/lib/` — the extractor set in the table above, notably
   `detectStepsAnyOrder` (`eq2.ts:1332`).
-- `/home/lindsay/wikq2/scripts/match-quest-waypoints-eq2map.js` — the matcher.
+- `/home/lindsay/wikq2/lib/eq2map.ts` — the production matcher used by exact
+  quest lookup and the Phase 0 sweep.
 - `backend/items.py:648` — set-adornment resolution, already working, reused
   as-is.
 - `backend/refdata/zone_eras.json`, `ERA_HIDDEN` — era filtering, reused as-is.
@@ -840,11 +866,12 @@ still never been checked against a real examine window. Open half a dozen RoK
 drops in game and compare them to `/plan`. The level cap caught the gross
 drift; this is the check for the quiet kind.
 
-**Phase 0**, unchanged and still unrun. Run the waypoint matcher across the RoK
-quest set; report match rate and confidence distribution. The only evidence
-today is a three-quest proof from 2026-06-07 whose best sample matched at 6.32m
-2D / 0.98 confidence. Phases 3 and 4 are designed against a number nobody has
-measured. Nothing in Phase 1 or 2 depends on it.
+**Phase 3 ingest and cluster scoring.** Consume only the matched coordinates
+from `data/planner-waypoints-rok.json`, retain confidence on every waypoint,
+exclude prerequisite-related quest pairs, score clusters rather than pairs,
+and expose tags as a highlighting lens over the stable outline. The Phase 0
+gate now has a measured denominator; do not widen it by guessing locations for
+the 356 unresolved coordinates.
 
 ### Settled — do not relitigate
 
