@@ -26,6 +26,7 @@
   --gold-bright: #e8d5a3;
   --gold-dim: #a07840;
   --gold-rgb: 200, 169, 110;
+  --brand: #e8d5a3;
 
   --danger: #f87171;
   --success: #4ade80;
@@ -123,52 +124,42 @@
 
 /* ---- light theme ----
 
-   Not the dark theme with the lights turned up. Two things made the first
-   attempt look like mud, and both are about WARMTH:
+   Light mode is a neutral application surface, not parchment. Warm paper,
+   brown body ink and bronze controls made every large screen read sepia and
+   turned the brand accent into the page's atmosphere. Here the structural
+   palette is cool-neutral and interactive roles use one restrained steel-blue
+   ramp. Gold survives only as the wordmark's identity colour (`--brand`).
 
-   1. The page was a cool blue-grey (#eceef3) and every accent on it is a warm
-      gold. Warm ink on cool paper reads as dirt — the gold loses its identity
-      and lands somewhere around olive. So the paper is warm now: a low-chroma
-      parchment that gold sits on NATIVELY. It is barely tinted (a couple of
-      points of chroma), which is enough — the eye judges the gold relative to
-      the ground it is on, not in isolation.
-   2. Gold was darkened to make it legible, and a darkened yellow IS olive.
-      Dark mode uses gold as a LIGHT accent on near-black, which is where its
-      luxury comes from; you cannot get that by flipping the lightness. So the
-      roles split here instead: `--gold-bright` (the loudest thing on a page —
-      headings, zone names, figures) is a deep bronze that reads as rich warm
-      INK, `--gold` (links, labels, filled controls) keeps real chroma at AA
-      contrast, and `--gold-dim` (rules, sparklines, borders) is the only one
-      allowed to be an actual light amber, because nothing has to be read off
-      it. Same hue family throughout (~38°), three jobs, one ramp.
-
-   Contrast on the parchment: --gold 4.6:1, --gold-bright 8.1:1, --gold-dim
-   3.2:1 (graphics only). Check those before retuning any of the three. */
+   `--gold-*` retains its historical name because it is the app's established
+   interaction-token API, but in light mode its job is accent/strong-accent/
+   accent-border. Text contrast on white: accent 6.1:1, strong accent 10:1;
+   the dim step is for borders and graphics, never small text. */
 :root[data-theme="light"] {
-  --bg: #f2efe8;
-  --surface: #fffefbe8;
-  --surface-raised: #f8f5eef2;
-  --border: #ddd6c8;
-  --row-line: #ddd6c880;
-  --row-hover: #f1ece0;
-  --row-selected: #eae3d2;
-  --frozen-bg: #fdfcf9;
-  --frozen-head: #f8f5ef;
-  --bar-track: #e4ddce90;
+  --bg: #f4f6f9;
+  --surface: #fffffffa;
+  --surface-raised: #f8fafcfa;
+  --border: #d8dee8;
+  --row-line: #e7ebf0;
+  --row-hover: #f0f4f8;
+  --row-selected: #e5edf6;
+  --frozen-bg: #ffffff;
+  --frozen-head: #f7f9fc;
+  --bar-track: #e4e9f0;
   /* A parse is a page of small tabular numbers, so the secondary ink carries
      more of it than anywhere else in the app — every column label, every kind
      tag, every percentage beside a figure is --text-muted at 12.5px or under.
-     It sits at 7:1 rather than the 4.5 a muted grey usually gets away with;
+     It sits at 6.9:1 rather than the 4.5 a muted grey usually gets away with;
      below that the tables read washed out even though the figures themselves
      are near-black. It is still four steps lighter than --text, which is what
      keeps the hierarchy. */
-  --text: #1a1712;
-  --text-muted: #5f584a;
+  --text: #202731;
+  --text-muted: #4f5b6a;
 
-  --gold: #8a6524;
-  --gold-bright: #5a4318;
-  --gold-dim: #a97e37;
-  --gold-rgb: 138, 101, 36;
+  --gold: #37658f;
+  --gold-bright: #1f4568;
+  --gold-dim: #8da6bd;
+  --gold-rgb: 55, 101, 143;
+  --brand: #745520;
 
   /* rank coloring mixes these INTO --text (stats.js rankColor), so the top and
      bottom of a column are the lightest figures on the page — these are the
@@ -176,16 +167,16 @@
      light-theme red/green for exactly that reason: 5.2:1 and 5.5:1. */
   --danger: #b53434;
   --success: #1b6e3c;
-  --warning: #8a5d00;
+  --warning: #8a5a00;
   /* deeper than the dark theme's teal for the same reason the reds are: this
      is a figure somebody reads off a light surface, not decoration */
   --joust: #0f6f6a;
 
   /* the triplets, in step with the five above — see the dark theme's note */
-  --bg-rgb: 242, 239, 232;
+  --bg-rgb: 244, 246, 249;
   --danger-rgb: 181, 52, 52;
   --success-rgb: 27, 110, 60;
-  --warning-rgb: 138, 93, 0;
+  --warning-rgb: 138, 90, 0;
   --joust-rgb: 15, 111, 106;
 
   --rarity-common: #71716f;
@@ -202,13 +193,12 @@
   --fam-mage-rgb: 176, 42, 38;
   --fam-scout-rgb: 138, 106, 16;
 
-  /* the vignette is warm and much lighter than dark mode's. A grey one over
-     parchment is what made the edges of the page look dingy — the glow was
-     dimming the paper instead of lighting the middle of it. */
-  --glow: radial-gradient(125% 70% at 50% -10%, rgba(var(--gold-rgb), 0.10), transparent 55%),
-          radial-gradient(150% 120% at 50% 45%, transparent 62%, #cec3a72e);
-  --shadow-color: #4a3c1e2e;
-  --scrim: #fffefbf0;
-  --scrim-ink: #fffefb;
+  /* A barely-there cool lift at the top keeps the full-width canvas from
+     feeling dead without dirtying its edges with a vignette. */
+  --glow: radial-gradient(110% 55% at 50% -18%, rgba(var(--gold-rgb), 0.08), transparent 58%);
+  --shadow-color: #22334a1f;
+  --scrim: #fffffff2;
+  --scrim-ink: #ffffff;
+  --font-body: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color-scheme: light;
 }

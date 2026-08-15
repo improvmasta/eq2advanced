@@ -697,6 +697,11 @@ switch conftest turns off.
 
 ## Frontend conventions
 
+- **Light mode is a neutral application UI, not parchment** (`styles/tokens.css`). Its canvas and
+  structural surfaces stay white/cool-grey; interaction uses the steel-blue `--gold-*` ramp and
+  only the wordmark keeps literal gold through `--brand`. Light-mode body copy uses the system
+  sans face so dense lists read as software rather than a document. Dark mode keeps the original
+  gold/Cinzel/Spectral identity. The historical token names remain the stable component API.
 - `lib/classes.js` owns identity. **Color is assigned by EQ2 archetype
   (fighter/priest/mage/scout), not by class** — the palette validator says four hues separate
   cleanly and twenty-six cannot, so the family color carries identity in stripes and legends while

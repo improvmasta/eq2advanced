@@ -87,7 +87,7 @@ p + p { margin-top: 8px; }
    thing on screen at heading size, and at 1rem it read as one more tab. */
 .topnav .brand {
   font-family: var(--font-heading); font-size: 1.22rem; letter-spacing: 0.01em;
-  color: var(--gold-bright);
+  color: var(--brand);
 }
 
 /* The header links are the site's top-level switch and they now have to look
@@ -2900,7 +2900,7 @@ tr.recaprow:hover td { background: var(--row-hover); }
   --text-muted: #99a0bd;
   font-size: var(--fs-base);
 }
-:root[data-theme="light"] .manage { --text-muted: #4f4839; }
+:root[data-theme="light"] .manage { --text-muted: #4a5768; }
 .manage .note { max-width: 70ch; }
 
 /* One ladder for the whole page, loudest first: page title, card head, the
@@ -4880,7 +4880,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .overlaypage.theme-transparent .minirow .cls { color: #dfe3f4; font-weight: 600; }
 .overlaypage.mini .miniparse.stale { opacity: 0.72; }
 .overlaypage.theme-dark { background: var(--bg); }
-.overlaypage.theme-light { background: #fffefb; }
+.overlaypage.theme-light { background: #ffffff; }
 /* The headline chart is off on an overlay (no room, and it is the numbers
    people are watching), so the head does not need the space it reserved. */
 .overlaypage .liveheadline { padding-bottom: 8px; }
@@ -4923,7 +4923,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
 }
 :root[data-ingame][data-theme="light"],
-:root[data-ingame][data-theme="light"] body { background: #fffefb; }
+:root[data-ingame][data-theme="light"] body { background: #ffffff; }
 .overlaypage.ingame {
   padding: 0; gap: 0;
   /* No max-width games and no pinned width: the window sets both. */

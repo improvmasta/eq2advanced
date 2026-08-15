@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-15 (codex): Replace parchment light mode with neutral application palette
 - 2026-08-15 (codex): Add private Discord chat alerts and EQ2A branding
 - 2026-08-15 (codex): Polish chat trade labels and window chrome
 - 2026-08-14 (codex): Overhaul admin workspace around accounts and site health
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS
 - 2026-08-05 (claude): Pets and procs stop being inferred: ability_rulings + the Abilities console (curator role), EQ2 class tree, and the wiki as reference data (schema v23, PARSE_VERSION 20)
 - 2026-08-05 (claude): Sharing page rebuild (Groups + Automatic sharing side by side, guild-tag auto-share UI, settings-list switches)
-- 2026-08-04 (claude): Phase 24: one raid, several uploaders — raidmatch clustering (schema v18 roster_json), your parse first, a Parse switch on the list and the raid page
