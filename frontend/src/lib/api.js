@@ -263,6 +263,7 @@ export const api = {
   planMeta: (qs) => cachedGet(`/api/plan/meta?${qs}`),
   planItems: (qs) => cachedGet(`/api/plan/items?${qs}`),
   planSets: (qs) => cachedGet(`/api/plan/sets?${qs}`),
+  planOutline: (qs) => cachedGet(`/api/plan/outline?${qs}`),
 
   // groups + sharing
   groups: () => req('/api/groups'),

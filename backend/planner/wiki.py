@@ -413,9 +413,84 @@ def parse_named(page_title: str, wikitext: str) -> dict | None:
 
 _REWARDS = re.compile(r"^==+\s*Rewards?\s*==+(.*?)(?=^==[^=]|\Z)", re.M | re.S)
 
+# ---------- what comes before a quest, and what comes after ----------
+#
+# MEASURED ON 400 REAL RoK QUEST PAGES (2026-08-15), because the shape of these
+# fields is the whole outline: `prereq` is filled on 242 of them and `next` on
+# 223, and both are a SINGLE page title written as plain text — 98% of them
+# resolve to another page in the same category. `prelist` and `nextlist` are
+# the multi-valued forms (8 and 55 of the 400) and are written as wikilinks or
+# `{{Quest|…}}` templates.
+#
+# **A COMMA IN A PREREQ IS PART OF THE TITLE AND IS NEVER A SEPARATOR.**
+# `prereq = Warm Skins, Fat Bellies`, `prereq = One Fish, Two Fish` and
+# `next = Mischief, Mayhem, Clockwork` are ONE quest each. Splitting on the
+# comma would invent five quests that do not exist and lose the three that do
+# — which is why the plain fields are read whole and only the LIST fields are
+# split, and those are split on their links rather than on their punctuation.
+_QUEST_REF = re.compile(
+    r"\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]|"
+    r"\{\{\s*Quest\s*\|\s*([^|}\n]+)(?:\|[^}]*)?\}\}", re.I)
+# An empty field followed by template markup hands `_field` back `}}`, `| =`
+# or `| >` — measured on the same 400 pages. A page title contains none of
+# these characters, so anything carrying one is punctuation rather than a name.
+_NOT_A_TITLE = re.compile(r"[\[\]{}|=<>#]")
+# `{{Quest|A}} / {{Quest|B}}` and `[[A]] or [[B]]` are ALTERNATIVES; a line
+# break or a comma between links is a list of things you need all of.
+_ALTERNATIVE = re.compile(r"/|\bor\b", re.I)
+
+
+def _plain_ref(value: str) -> list[list[str]]:
+    """A single-valued `prereq`/`next` -> one OR-group, or nothing.
+
+    Read WHOLE. The value is a page title and titles contain commas."""
+    title = (value or "").strip().strip(".")
+    if not title or _NOT_A_TITLE.search(title) or len(title) > 120:
+        return []
+    return [[title]]
+
+
+def _list_refs(block: str) -> list[list[str]]:
+    """A `prelist`/`nextlist` block -> OR-groups of page titles.
+
+    Links only — a list field is written as links, and reading its prose would
+    turn "See Previous Quests Below" into a quest. Segments separated by a line
+    break or a comma are things you need ALL of; links separated by `/` or the
+    word "or" inside one segment are ALTERNATIVES and share a group.
+
+    **OR-groups exist from the start on purpose.** Kunark's prerequisites
+    really are disjunctive — the sokokar network wants adventure 65 *or*
+    tradeskill 65, two separate lines reaching one unlock — and retrofitting
+    them once every consumer assumes a flat prereq list touches everything
+    (docs/planner.md)."""
+    text = block or ""
+    matches = list(_QUEST_REF.finditer(text))
+    groups: list[list[str]] = []
+    previous = None
+    for match in matches:
+        title = (match.group(1) or match.group(2) or "").strip()
+        if not title or _NOT_A_TITLE.search(title):
+            previous = match
+            continue
+        # Read delimiters BETWEEN complete references. Splitting the raw block
+        # on commas would split `[[Warm Skins, Fat Bellies]]` in half — the
+        # exact title-corruption this parser exists to prevent.
+        between = text[previous.end():match.start()] if previous else ""
+        if groups and _ALTERNATIVE.search(between):
+            groups[-1].append(title)
+        else:
+            groups.append([title])
+        previous = match
+    return groups
+
+
+def _edges(text: str, one: str, many: str) -> list[list[str]]:
+    """The single field and the list field for one direction, together."""
+    return _plain_ref(_field(text, one)) + _list_refs(_block(text, many))
+
 
 def parse_quest(page_title: str, wikitext: str) -> dict | None:
-    """A `QuestInformation` page -> the quest, and the equipment it rewards.
+    """A `QuestInformation` page -> the quest, what it rewards, and its chain.
 
     A gear reward is written `{{Equip|Name}}` — the same template the adornment
     set pages use for their pieces — with `{{Item|…}}` reserved for things you
@@ -425,7 +500,13 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
     **A journal level above the era's cap is normal and is not read as drift.**
     A yellow or red quest usually pays better, which is exactly the kind of
     thing worth surfacing; comparing `level` to a cap here would flag the good
-    ones (docs/planner.md)."""
+    ones (docs/planner.md). It is also why `level` can be missing entirely —
+    `level = Scales` is a real value on three of every four hundred pages, and
+    a quest that scales has no number to sort on rather than a number of 0.
+
+    `kind` is the SOURCE kind for the catalog and is always `quest`; `diff_kind`
+    is the quest's own solo/group/raid difficulty, which is a different
+    question and the one the outline shows."""
     text = _clean(wikitext)
     if not re.search(r"\{\{\s*QuestInformation\b", text, re.I):
         return None
@@ -434,16 +515,25 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
     if m:
         rewards = [r.strip() for r in _EQUIP_TPL.findall(m.group(1))]
     diff = _field(text, "diff")
+    level_text = _field(text, "level")
     return {
         "page_title": page_title,
         "name": _field(text, "altname") or gamewiki.log_name(page_title),
         "era": _field(text, "patch") or None,
-        "level": _int(_field(text, "level")),
+        "level": _int(level_text),
+        "level_text": level_text or None,
         "zone": _field(text, "szone") or None,
         "timeline": _field(text, "timeline") or None,
         "jcat": _field(text, "jcat") or None,
         "diff": diff or None,
         "kind": "quest",
+        "diff_kind": source_kind(diff),
+        # What must be done first, and what this opens. Both directions are
+        # read because the wiki fills them independently: a chain is often
+        # written forward on one page and backward on the next, and the two
+        # together close gaps neither one has on its own.
+        "prereq": _edges(text, "prereq", "prelist"),
+        "next": _edges(text, "next", "nextlist"),
         "rewards": [r for r in rewards if r],
     }
 

@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v41**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v42**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -274,7 +274,7 @@ segmentation)
   NOTHING. It also feeds that account's overlay (`replaybus.py`); the `replay` block
   never crosses.
 
-**The Planner** (`docs/planner.md` — Phase 1 only; phases 2-4 are still design)
+**The Planner** (`docs/planner.md` — Phases 1-2 built; Phase 0 unrun, 3-4 design)
 
 - **WHICH EXPANSIONS COUNT IS THE READER'S** — EoF and/or RoK, chosen on the
   page. Era is a COLUMN (`plan_items.era`, `plan_sources.era`), never a
@@ -328,6 +328,20 @@ segmentation)
 - **`tools/sync_planner.py` is HAND-RUN and reconciles per era**; it must NOT
   set `CENSUS_AUTO_REFRESH=0` (that switch also gates the icon downloads).
   Nothing on a page load fetches anything.
+- **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
+  `refdata/planner_standard.json`, then prerequisite-before-level body from
+  `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
+  filter or reorder it.
+- **A comma in `prereq` or `next` is part of the quest title, never a
+  separator.** Only linked `prelist` / `nextlist` fields are multi-valued;
+  alternatives are stored as OR-groups. Outline shortlist values use repeated
+  `item=` / `set=` / `target=` parameters for the same reason.
+- **The shortlist is browser-local and has THREE kinds** — items, detachable
+  set adornments, and quest/mob targets. It is sent to the read-only Outline
+  endpoint and never written to an account.
+- **Multi-era sync resolves the graph again after all requested eras are
+  stored**, so a cross-era prerequisite survives either CLI order. Dangling
+  titles are counted and omitted, not invented as quests.
 - **`/plan` is off the nav and needs no account** — it reaches no parse,
   session or account, and has no POST.
 
@@ -417,9 +431,10 @@ Details per area live in the `docs/` file named beside it.
   Pick the expansions considered (EoF, RoK or both), declare the stats you are
   pushing as an ORDER, and read a ranked, era-filtered catalog of every drop and
   quest reward with where it comes from — plus the set adornments on their own
-  axis, since the turquoise detaches. Off the nav and signed-out; filled by
-  `tools/sync_planner.py` crawling the wiki by hand. **Phase 1 only**: no
-  leveling outline yet.
+  axis, since the turquoise detaches. The Outline tab puts a hand-kept prelude
+  ahead of the prerequisite-ordered quests and targets that serve the browser's
+  shortlist. Off the nav and signed-out; filled by `tools/sync_planner.py`
+  crawling the wiki by hand. Phases 1-2 are built; spatial tags are not.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
   `coach_api` and the hidden Insights tab.
 

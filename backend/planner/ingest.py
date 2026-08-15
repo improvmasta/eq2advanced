@@ -167,11 +167,40 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         "items": list(items.values()),
         "sources": sources,
         "sets": list(sets.values()),
+        # THE OUTLINE'S SPINE, off pages the crawl already had to read. Every
+        # quest is kept, not only the ones that reward gear: a quest with
+        # nothing on it is still the step that unlocks the one that has
+        # something. Both link directions come along, and which of them
+        # survives is decided in `store` — an edge is only real once both ends
+        # are quests this catalog knows.
+        "quests": quests,
+        "edges": _quest_edges(quests),
         "mobs": len(mobs),
-        "quests": len(quests),
+        "quest_count": len(quests),
         "pages": pages_read,
         "over_cap": over_cap,
     }
+
+
+def _quest_edges(quests: list[dict]) -> list[dict]:
+    """Every `prereq`/`next` claim on these pages as (from, to) pairs.
+
+    Both directions are read because the wiki fills them independently: a chain
+    is often written forward on one page and backward on the next, and the pair
+    that agrees simply lands on the same row twice. Nothing is resolved here —
+    a title that names no quest we know is dropped in `store`, where the whole
+    era is on hand to say so."""
+    out: list[dict] = []
+    for q in quests:
+        page = q["page_title"]
+        for group in q["prereq"]:
+            out.append({"to": page, "titles": group})
+        for group in q["next"]:
+            # A forward pointer names ONE quest; a group of alternatives here
+            # would mean "this opens either of two", which is not a thing the
+            # field says. Each becomes its own edge into that quest.
+            out += [{"to": title, "titles": [page]} for title in group]
+    return out
 
 
 ITEM_UPSERT = (
@@ -197,6 +226,22 @@ SOURCE_UPSERT = (
     "ON CONFLICT(page_title, source_page) DO UPDATE SET source=excluded.source, "
     "kind=excluded.kind, era=excluded.era, zone=excluded.zone, "
     "level=excluded.level, detail=excluded.detail")
+
+QUEST_UPSERT = (
+    "INSERT INTO plan_quests (page_title, name, era, level, level_text, zone, "
+    "timeline, jcat, diff, kind, fetched_ts) VALUES "
+    "(:page_title,:name,:era,:level,:level_text,:zone,:timeline,:jcat,:diff,"
+    ":kind,:fetched_ts) "
+    "ON CONFLICT(page_title) DO UPDATE SET name=excluded.name, era=excluded.era, "
+    "level=excluded.level, level_text=excluded.level_text, zone=excluded.zone, "
+    "timeline=excluded.timeline, jcat=excluded.jcat, diff=excluded.diff, "
+    "kind=excluded.kind, fetched_ts=excluded.fetched_ts")
+
+EDGE_UPSERT = (
+    "INSERT INTO plan_quest_edges (from_page, to_page, era, kind, or_group) "
+    "VALUES (:from_page,:to_page,:era,:kind,:or_group) "
+    "ON CONFLICT(from_page, to_page, kind) DO UPDATE SET era=excluded.era, "
+    "or_group=excluded.or_group")
 
 SET_UPSERT = (
     "INSERT INTO plan_sets (name, page_title, era, level, pieces_json, "
@@ -252,6 +297,12 @@ def store(conn, crawled: dict) -> dict:
         "bonuses_json": json.dumps(s["bonuses"], separators=(",", ":")),
         "fetched_ts": now,
     } for s in crawled["sets"]]
+    quests = [{
+        "page_title": q["page_title"], "name": q["name"], "era": era,
+        "level": q["level"], "level_text": q["level_text"], "zone": q["zone"],
+        "timeline": q["timeline"], "jcat": q["jcat"], "diff": q["diff"],
+        "kind": q["diff_kind"], "fetched_ts": now,
+    } for q in crawled["quests"]]
     seen = {(s["page_title"], s["source_page"]) for s in sources}
     with conn:
         conn.executemany(ITEM_UPSERT, items)
@@ -271,16 +322,99 @@ def store(conn, crawled: dict) -> dict:
                      (era,))
         if sets:
             conn.executemany(SET_UPSERT, sets)
+        conn.executemany(QUEST_UPSERT, quests)
+        crawled_quests = {q["page_title"] for q in quests}
+        conn.executemany(
+            "DELETE FROM plan_quests WHERE page_title=?",
+            [(r["page_title"],) for r in conn.execute(
+                "SELECT page_title FROM plan_quests WHERE era=?", (era,))
+             if r["page_title"] not in crawled_quests])
+        edge_report = _reconcile_edges(conn, era, crawled["edges"])
         conn.execute(
-            "INSERT INTO plan_syncs (era, items, sources, sets, pages, synced_ts) "
-            "VALUES (?,?,?,?,?,?) ON CONFLICT(era) DO UPDATE SET items=excluded.items, "
-            "sources=excluded.sources, sets=excluded.sets, pages=excluded.pages, "
+            "INSERT INTO plan_syncs (era, items, sources, sets, quests, edges, "
+            "pages, synced_ts) VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(era) DO UPDATE SET items=excluded.items, "
+            "sources=excluded.sources, sets=excluded.sets, "
+            "quests=excluded.quests, edges=excluded.edges, pages=excluded.pages, "
             "synced_ts=excluded.synced_ts",
-            (era, len(items), len(sources), len(sets), crawled["pages"], now))
+            (era, len(items), len(sources), len(sets), len(quests),
+             edge_report["edges"],
+             crawled["pages"], now))
     return {"era": era, "items": len(items), "sources": len(sources),
             "sets": len(sets), "pages": crawled["pages"],
-            "mobs": crawled["mobs"], "quests": crawled["quests"],
+            "mobs": crawled["mobs"], "quests": len(quests),
+            "edges": edge_report["edges"],
+            "dangling": edge_report["dangling"],
             "over_cap": crawled["over_cap"]}
+
+
+def _reconcile_edges(conn, era: str, claims: list[dict]) -> dict:
+    edges, dangling = _resolve_edges(conn, era, claims)
+    conn.executemany(EDGE_UPSERT, edges)
+    live = {(e["from_page"], e["to_page"]) for e in edges}
+    conn.executemany(
+        "DELETE FROM plan_quest_edges WHERE from_page=? AND to_page=?",
+        [(f, t) for f, t in conn.execute(
+            "SELECT from_page, to_page FROM plan_quest_edges WHERE era=?", (era,))
+         if (f, t) not in live])
+    return {"edges": len(edges), "dangling": dangling}
+
+
+def reconcile_edges(conn, era: str, claims: list[dict]) -> dict:
+    """Resolve one crawl's graph again after all requested eras are stored.
+
+    A RoK quest can name an EoF prerequisite. When both eras are synced in one
+    command, the dependent era may be stored first, while the older quest is
+    not in the database yet. The ordinary store still resolves what it can;
+    this second cheap pass runs after every crawl and closes those cross-era
+    edges without fetching a single page again.
+    """
+    with conn:
+        report = _reconcile_edges(conn, era, claims)
+        conn.execute("UPDATE plan_syncs SET edges=? WHERE era=?",
+                     (report["edges"], era))
+    return report
+
+
+def _resolve_edges(conn, era: str,
+                   claims: list[dict]) -> tuple[list[dict], int]:
+    """Link claims -> (edge rows, how many named a page we do not have).
+
+    Only edges whose BOTH ends are quests this catalog knows are kept.
+    Resolution happens here rather than in the crawl because only the database
+    has the whole picture: a RoK quest whose prerequisite is an EoF quest is a
+    real edge, and a crawl of RoK alone cannot tell that from a typo.
+
+    An OR-GROUP is a set of alternatives — any one of them satisfies the
+    requirement — and it is numbered per dependent quest so a reader of the
+    table can tell "either of these two" from "both of these"."""
+    known = {r["page_title"] for r in conn.execute(
+        "SELECT page_title FROM plan_quests")}
+    rows: dict[tuple[str, str], dict] = {}
+    counters: dict[str, int] = {}
+    dangling = 0
+    for claim in claims:
+        to = claim["to"]
+        titles = [t for t in claim["titles"] if t in known and t != to]
+        dangling += len(claim["titles"]) - len(titles)
+        if not titles or to not in known:
+            continue
+        group = 0
+        if len(titles) > 1:
+            counters[to] = counters.get(to, 0) + 1
+            group = counters[to]
+        for title in titles:
+            key = (title, to)
+            prev = rows.get(key)
+            # The same edge claimed twice — forward on one page, backward on
+            # the other — is one row. A claim that is part of an alternative
+            # group keeps that fact: an unconditional claim would otherwise
+            # erase the choice.
+            if prev and prev["or_group"]:
+                continue
+            rows[key] = {"from_page": title, "to_page": to, "era": era,
+                         "kind": "hard", "or_group": group}
+    return list(rows.values()), dangling
 
 
 def fetch_icons(conn, progress=None) -> int:

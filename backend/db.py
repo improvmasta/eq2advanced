@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -1040,9 +1040,59 @@ CREATE TABLE IF NOT EXISTS plan_syncs (
   items INTEGER NOT NULL DEFAULT 0,
   sources INTEGER NOT NULL DEFAULT 0,
   sets INTEGER NOT NULL DEFAULT 0,
+  quests INTEGER NOT NULL DEFAULT 0,
+  edges INTEGER NOT NULL DEFAULT 0,
   pages INTEGER NOT NULL DEFAULT 0,       -- wiki pages fetched
   synced_ts INTEGER NOT NULL
 );
+
+-- v42: the Planner's OUTLINE (Phase 2, docs/planner.md). The crawl already
+-- read every quest page in the era to find its rewards and threw the rest
+-- away; these two tables are what it keeps. Same category of row as the
+-- catalog above — reference data about the game, no account, no parse.
+--
+-- The quest is stored whether or not it rewards anything, because a quest with
+-- no gear on it is still the step that unlocks the one that does.
+CREATE TABLE IF NOT EXISTS plan_quests (
+  page_title TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  era TEXT NOT NULL,                      -- rok|eof, the category it came from
+  level INTEGER,                          -- NULL when the quest SCALES
+  level_text TEXT,                        -- the journal value as written
+  zone TEXT,                              -- szone: where you pick it up
+  timeline TEXT,                          -- the wiki's own grouping
+  jcat TEXT,                              -- the journal category
+  diff TEXT,                              -- the wiki's `diff` wording
+  kind TEXT NOT NULL,                     -- raid|group|solo|unknown
+  fetched_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plan_quests_era ON plan_quests(era, level);
+
+-- TWO QUESTS IN ONE CHAIN CANNOT BE WORKED AT THE SAME TIME, and this is the
+-- only record of that. Both directions of the wiki's own fields land here as
+-- one edge set: `prereq`/`prelist` on the later quest and `next`/`nextlist`
+-- on the earlier one describe the same edge, and the wiki fills them
+-- independently, so reading both closes gaps neither has alone.
+--
+-- `kind` is HARD or ENABLE and they are different claims: hard says you
+-- cannot, enable says it gets much cheaper (travel, a language, a key item).
+-- Only hard edges come off a template — an enablement edge is stated in prose
+-- and is layer 2, so nothing writes one yet.
+--
+-- `or_group` is non-zero when the edges sharing it are ALTERNATIVES: any one
+-- of them satisfies the requirement. Kunark's prerequisites really are
+-- disjunctive and retrofitting OR-nodes after every consumer assumes a flat
+-- list would touch everything.
+CREATE TABLE IF NOT EXISTS plan_quest_edges (
+  from_page TEXT NOT NULL,                -- what you do first
+  to_page TEXT NOT NULL,                  -- what it opens
+  era TEXT NOT NULL,                      -- the crawl that produced it
+  kind TEXT NOT NULL DEFAULT 'hard',      -- hard|enable
+  or_group INTEGER NOT NULL DEFAULT 0,    -- >0: alternatives for the same to_page
+  PRIMARY KEY (from_page, to_page, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_plan_quest_edges_to ON plan_quest_edges(to_page);
+CREATE INDEX IF NOT EXISTS idx_plan_quest_edges_era ON plan_quest_edges(era);
 """
 
 
@@ -1224,7 +1274,8 @@ def _rebuild_planner(conn) -> None:
     Runs BEFORE `executescript(SCHEMA)`, because the failure it repairs is the
     CREATE INDEX in that script naming a column the stale table lacks."""
     for table, needed in (("plan_items", "era"), ("plan_sources", "era"),
-                          ("plan_sets", "era"), ("plan_syncs", "pages")):
+                          ("plan_sets", "era"), ("plan_syncs", "pages"),
+                          ("plan_quests", "kind"), ("plan_quest_edges", "or_group")):
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if cols and needed not in cols:
             conn.execute(f"DROP TABLE {table}")
@@ -1589,6 +1640,19 @@ def init_db() -> None:
         # v41: `zone_runs.is_raid` separates raid CONTENT from attendance.
         # Shape-guarded above; NULL falls back to the former seven-raider rule
         # only until the ordinary startup relink writes the reference answer.
+        # v42: the Planner's outline — `plan_quests`, `plan_quest_edges`. Two
+        # new tables, empty until the next hand-run `tools/sync_planner.py`;
+        # until then the Outline tab shows the hand-curated prelude alone,
+        # which is correct and useful on its own. `plan_syncs` gains two
+        # counters, and that one is an ALTER rather than a rebuild: the row is
+        # the record of WHEN an era was crawled and there is no reason to lose
+        # it to a column that counts something new.
+        sync_cols = {r[1] for r in conn.execute("PRAGMA table_info(plan_syncs)")}
+        if sync_cols and "quests" not in sync_cols:
+            conn.execute("ALTER TABLE plan_syncs ADD COLUMN quests "
+                         "INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE plan_syncs ADD COLUMN edges "
+                         "INTEGER NOT NULL DEFAULT 0")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

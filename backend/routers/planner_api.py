@@ -3,6 +3,7 @@
   GET /api/plan/meta?eras=rok,eof   -> the expansions on offer + the facets in them
   GET /api/plan/items?…             -> the item table, ranked against an ORDER
   GET /api/plan/sets?…              -> the set-adornment view
+  GET /api/plan/outline?…           -> the prelude, then what to do about a shortlist
 
 **Open to anybody, signed in or not**, for the same reason `/chat` is: none of
 these routes reaches a parse, a session or an account. Every row is reference
@@ -21,7 +22,7 @@ reader pressing a filter must not start a crawl.
 from fastapi import APIRouter, Query
 
 from db import get_db
-from planner import catalog, wiki
+from planner import catalog, outline, wiki
 
 router = APIRouter(tags=["planner"])
 
@@ -81,3 +82,25 @@ def plan_sets(eras: str | None = Query(None), order: str | None = Query(None),
               classes: str | None = Query(None)):
     return catalog.sets(get_db(), eras=_eras(eras), order=_list(order),
                         classes=_list(classes))
+
+
+@router.get("/plan/outline")
+def plan_outline(
+    eras: str | None = Query(None),
+    # REPEATED PARAMETERS, NOT A COMMA LIST — every other list on this router
+    # is a comma list because a stat key cannot contain a comma, and a page
+    # title can: `One Fish, Two Fish` and `Mischief, Mayhem, Clockwork` are
+    # real quests, and `Warm Skins, Fat Bellies` is a real prerequisite. The
+    # separator that works on stat keys would invent five quests here and lose
+    # the three that exist.
+    item: list[str] | None = Query(None, description="shortlisted item pages"),
+    set_: list[str] | None = Query(None, alias="set",
+                                   description="shortlisted adornment sets"),
+    target: list[str] | None = Query(None,
+                                     description="quest or monster pages wanted for their own sake"),
+):
+    """The Outline. The shortlist lives in the reader's browser, so it arrives
+    with the request rather than being stored — nothing here is anybody's
+    account, and the page is still a GET that a link can carry."""
+    return outline.outline(get_db(), eras=_eras(eras), items=item or [],
+                           sets=set_ or [], targets=target or [])

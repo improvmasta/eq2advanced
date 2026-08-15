@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Picker from '../components/Picker.jsx'
+import PlanOutline from '../components/PlanOutline.jsx'
 import PriorityEditor from '../components/PriorityEditor.jsx'
 import SortableTable from '../components/SortableTable.jsx'
+import Tabs from '../components/Tabs.jsx'
 /* The examine card is SHARED with the Loot tab and /chat. There are now three
    ways to meet an item and all three must open the same window — the server
    hands this page its cards in `items.display`'s shape for exactly that
@@ -19,11 +21,8 @@ import { useQueryState } from '../lib/useQueryState.js'
 
    Two regions, permanently: a shortlist rail on the left and the main area on
    the right. That is `ZoneRun`'s geometry and it reuses its `.workspace` rules.
-   The rail is the bridge — you fill it here and (once the Outline exists) you
-   consume it there — so it is always visible rather than a thing you open.
-
-   This is PHASE 1: the catalog and the search. There is no Outline tab yet and
-   deliberately no empty one — a tab that opens on nothing reads as broken. */
+   The rail is the bridge — you fill it on Gear and consume it on Outline — so
+   it is always visible rather than a thing you open. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
 /* Where a raider starts: the group that applies whatever you play, because
@@ -43,8 +42,14 @@ const KIND_LABEL = {
 }
 
 function loadShortlist() {
-  try { return JSON.parse(localStorage.getItem(SHORTLIST_KEY)) || { items: [], sets: [] } }
-  catch { return { items: [], sets: [] } }
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHORTLIST_KEY)) || {}
+    return {
+      items: Array.isArray(saved.items) ? saved.items : [],
+      sets: Array.isArray(saved.sets) ? saved.sets : [],
+      targets: Array.isArray(saved.targets) ? saved.targets : [],
+    }
+  } catch { return { items: [], sets: [], targets: [] } }
 }
 
 const csv = (a) => (a && a.length ? a.join(',') : '')
@@ -55,6 +60,7 @@ export default function Planner() {
      class and the priority order are what make this page YOURS, so a link to
      it is the plan and not just the page. */
   const [erasParam, setEras] = useQueryState('eras', 'rok')
+  const [tabParam, setTab] = useQueryState('tab', 'gear')
   const [orderParam, setOrder] = useQueryState('order', OPENING_ORDER.join(','))
   const [reqParam, setReq] = useQueryState('req', '')
   const [cls, setCls] = useQueryState('class', '')
@@ -72,6 +78,7 @@ export default function Planner() {
   const [proc, setProc] = useQueryState('proc', '')
 
   const eras = useMemo(() => split(erasParam), [erasParam])
+  const tab = tabParam === 'outline' ? 'outline' : 'gear'
   const order = useMemo(() => split(orderParam), [orderParam])
   const required = useMemo(() => split(reqParam), [reqParam])
 
@@ -122,14 +129,38 @@ export default function Planner() {
   }, [erasParam, orderParam, reqParam, cls, slot, tier, kind, armor, match, q,
     carries, proc, mode])
 
+  /* Page titles can contain commas, so shortlist entries are repeated query
+     parameters. The shortlist itself stays in localStorage and never enters
+     the page URL; eras/class/priorities are the shareable plan, picks are this
+     browser's working set. */
+  const outlineQuery = useMemo(() => {
+    const p = new URLSearchParams({ eras: csv(eras) })
+    shortlist.items.forEach((i) => p.append('item', i.page_title))
+    shortlist.sets.forEach((s) => p.append('set', s.name))
+    shortlist.targets.forEach((t) => p.append('target', t.page_title))
+    return p.toString()
+  }, [erasParam, shortlist])
+
   useEffect(() => {
+    if (tab !== 'gear') return undefined
     setErr(null)
+    setData(null)
     const call = mode === 'sets' ? api.planSets : api.planItems
     let dead = false
     call(query).then((d) => { if (!dead) setData(d) })
       .catch((e) => { if (!dead) setErr(e.message) })
     return () => { dead = true }
-  }, [query, mode])
+  }, [tab, query, mode])
+
+  useEffect(() => {
+    if (tab !== 'outline') return undefined
+    setErr(null)
+    setData(null)
+    let dead = false
+    api.planOutline(outlineQuery).then((d) => { if (!dead) setData(d) })
+      .catch((e) => { if (!dead) setErr(e.message) })
+    return () => { dead = true }
+  }, [tab, outlineQuery])
 
   /* At least one expansion always stays on. "Nothing selected" is not a plan,
      it is an empty page with no way to say why it is empty — so the last one
@@ -143,6 +174,8 @@ export default function Planner() {
     () => new Set(shortlist.items.map((i) => i.page_title)), [shortlist])
   const setsInList = useMemo(
     () => new Set(shortlist.sets.map((s) => s.name)), [shortlist])
+  const targetsInList = useMemo(
+    () => new Set(shortlist.targets.map((t) => t.page_title)), [shortlist])
 
   const toggleItem = useCallback((row) => setShortlist((s) => (
     s.items.some((i) => i.page_title === row.page_title)
@@ -163,6 +196,19 @@ export default function Planner() {
     s.sets.some((x) => x.name === row.name)
       ? { ...s, sets: s.sets.filter((x) => x.name !== row.name) }
       : { ...s, sets: [...s.sets, { name: row.name, level: row.level }] })), [])
+
+  const toggleTarget = useCallback((row) => setShortlist((s) => {
+    const page = row.key || row.page_title
+    return s.targets.some((t) => t.page_title === page)
+      ? { ...s, targets: s.targets.filter((t) => t.page_title !== page) }
+      : {
+        ...s,
+        targets: [...s.targets, {
+          page_title: page, name: row.name, kind: row.kind,
+          level: row.level, zone: row.zone, difficulty: row.difficulty,
+        }],
+      }
+  }), [])
 
   const statLabel = useMemo(
     () => Object.fromEntries((meta?.stats || []).map((s) => [s.key, s.label])),
@@ -216,11 +262,15 @@ export default function Planner() {
                     }))]} />
         </div>
 
-        <Shortlist list={shortlist} onDropItem={toggleItem} onDropSet={toggleSet} />
+        <Shortlist list={shortlist} onDropItem={toggleItem} onDropSet={toggleSet}
+                   onDropTarget={toggleTarget} />
       </aside>
 
       <div className="wsmain">
-        <div className="card planbar">
+        <Tabs tabs={[{ key: 'gear', label: 'Gear' }, { key: 'outline', label: 'Outline' }]}
+              value={tab} onChange={(key) => setTab(key === 'gear' ? null : key)} />
+
+        {tab === 'gear' && <div className="card planbar">
           <div className="priostrip">
             <span className="seclabel">Priority</span>
             {order.length === 0
@@ -290,7 +340,7 @@ export default function Planner() {
               </button>
             </div>
           )}
-        </div>
+        </div>}
 
         {err && <p className="err">{err}</p>}
         {!!emptyEras?.length && (
@@ -302,11 +352,11 @@ export default function Planner() {
 
         {!data && !err && <p className="muted">Loading…</p>}
 
-        {data && mode === 'sets' && (
+        {data && tab === 'gear' && mode === 'sets' && (
           <SetList sets={data.sets} inList={setsInList} onToggle={toggleSet} />
         )}
 
-        {data && mode !== 'sets' && (
+        {data && tab === 'gear' && mode !== 'sets' && (
           <>
             {data.total === 0 ? (
               <p className="muted">
@@ -333,9 +383,14 @@ export default function Planner() {
             )}
           </>
         )}
+
+        {data && tab === 'outline' && (
+          <PlanOutline data={data} targetsInList={targetsInList}
+                       onToggleTarget={toggleTarget} />
+        )}
       </div>
 
-      {editing && (
+      {tab === 'gear' && editing && (
         <PriorityEditor
           groups={meta?.groups || []} order={order} required={required}
           onClose={() => setEditing(false)}
@@ -525,12 +580,11 @@ function SetList({ sets, inList, onToggle }) {
   )
 }
 
-/* The rail holds two KINDS of thing and lists them separately: items, and
-   adornments. They are separate because a turquoise is not its host item —
-   the whole reason the set view exists. Targets (a mob or a quest wanted for
-   its own sake) are the third kind and arrive with the Outline. */
-function Shortlist({ list, onDropItem, onDropSet }) {
-  const empty = !list.items.length && !list.sets.length
+/* The rail holds THREE KINDS of thing and lists them separately: items,
+   adornments, and targets. A turquoise is not its host item and a raid target
+   is not a slot, even when both happen to lead to the same source row. */
+function Shortlist({ list, onDropItem, onDropSet, onDropTarget }) {
+  const empty = !list.items.length && !list.sets.length && !list.targets.length
   return (
     <div className="railsec shortlist">
       <div className="seclabel">Shortlist</div>
@@ -561,6 +615,19 @@ function Shortlist({ list, onDropItem, onDropSet }) {
               <em>{s.level ? `L${s.level}` : ''}</em>
               <button className="iconbtn" aria-label={`Remove ${s.name}`}
                       onClick={() => onDropSet(s)}>✕</button>
+            </div>
+          ))}
+        </>
+      )}
+      {!!list.targets.length && (
+        <>
+          <div className="shortkind">Targets</div>
+          {list.targets.map((t) => (
+            <div className="shortrow" key={t.page_title}>
+              <span>{t.name}</span>
+              <em>{t.level ? `L${t.level}` : t.kind}</em>
+              <button className="iconbtn" aria-label={`Remove ${t.name}`}
+                      onClick={() => onDropTarget(t)}>✕</button>
             </div>
           ))}
         </>

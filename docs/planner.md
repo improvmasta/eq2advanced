@@ -75,7 +75,7 @@ with a reason on each line. Sokokar before anything else because every other
 line on the outline gets shorter. Languages, epics, the faction grinds that gate
 access. Roughly 15–25 entries for RoK.
 
-Layer 3 is `refdata/rok_standard.json`, synced by hand, sitting next to
+Layer 3 is `refdata/planner_standard.json`, keyed by era and edited by hand, sitting next to
 `zone_eras.json`, `reuse_debuffs.json` and `split_mobs.json`. Same category of
 thing, same rule already written down elsewhere in this repo: **game knowledge
 is reference data, never inferred.**
@@ -507,7 +507,7 @@ shortlist. Every row carries its *because* on the same line:
 
 **The body** — ordered by prerequisite, then level. Each row: what it is (quest
 or target), level, zone, difficulty, what it gets you from your shortlist, and
-its tag chips.
+in Phase 3, its tag chips.
 
 **The outline answers "what order"; the tags answer "what trip." They are
 different questions and they conflict.** Prerequisite order and travel
@@ -590,25 +590,26 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 
 ## Schema
 
-New tables, all reference data, none touching a parse, an account or a
-visibility predicate. Next migration after v39, guarded by table SHAPE like
-every other migration in `db.py`.
+All planner tables are reference data; none touches a parse, an account or a
+visibility predicate. Phase 2 is schema v42, guarded by table SHAPE like every
+other migration in `db.py`. Later-phase rows below remain design, not schema.
 
 | Table | Holds |
 | --- | --- |
 | `plan_items` | Catalog: census id, name, slot, level, tier, classes, armor type, stats, effect text, `set`, adornment slots, era |
-| `plan_effects` | Classified proc/effect rows keyed to `plan_items`, with the source sentence |
+| `plan_effects` *(planned)* | Classified proc/effect rows keyed to `plan_items`, with the source sentence |
 | `plan_sets` | Adornment sets, their tiers, their pieces |
 | `plan_sources` | item → source (mob / quest / merchant), with kind raid / group / solo / quest |
 | `plan_quests` | Quest, timeline, level, zone, difficulty, journal category, era |
 | `plan_quest_edges` | `prereq`/`next`, typed **hard** or **enable**, with OR-groups |
-| `plan_steps` | Steps per quest, with an `any_order` group id |
-| `plan_waypoints` | Step → coordinate → map/POI match, with match confidence |
-| `plan_clusters`, `plan_cluster_members` | Computed tags and membership |
-| `plan_nominations` | Layer-2 candidates awaiting a curator, with the quoted sentence |
+| `plan_steps` *(planned)* | Steps per quest, with an `any_order` group id |
+| `plan_waypoints` *(planned)* | Step → coordinate → map/POI match, with match confidence |
+| `plan_clusters`, `plan_cluster_members` *(planned)* | Computed tags and membership |
+| `plan_nominations` *(planned)* | Layer-2 candidates awaiting a curator, with the quoted sentence |
 
-`refdata/rok_standard.json` holds layer 3 and is **not** a table — it is edited
-by hand and read like `zone_eras.json`.
+`refdata/planner_standard.json` holds layer 3, keyed by era, and is **not** a
+table — it is edited by hand and read like `zone_eras.json`. Adding a third
+expansion is one more key, not another file.
 
 Everything above is per-era reference data about the game. **One row serves every
 account forever**, exactly as `items.py` puts it.
@@ -684,26 +685,28 @@ no tags. Ordered, readable, and honest about what it does not know.
 
 ---
 
-## State of play — 2026-08-15 (Phase 1 built)
+## State of play — 2026-08-15 (Phase 2 built)
 
-**Phase 1 is BUILT and the catalog is filled for both expansions.** Phases 2–4
-— the outline, the cluster tags, the multi-class epic view — are not, and
-Phase 0 is still unrun.
+**Phases 1 and 2 are BUILT and both expansions are synced.** The Gear tab builds
+the shortlist; the Outline tab consumes it as a hand-kept prelude followed by
+the prerequisite DAG. Phase 0 is still unrun, so Phases 3–4 — cluster tags and
+the multi-class epic view — remain planned.
 
 ### What exists
 
 | Piece | Where |
 | --- | --- |
-| Template parsing (`EquipInformation`, `NamedInformation`, `QuestInformation`, `AdornmentSet`), class-template expansion, era caps | `backend/planner/wiki.py` |
-| The crawl: invert mobs and quests, follow disambiguations, reconcile per era | `backend/planner/ingest.py` |
+| Template parsing (`EquipInformation`, `NamedInformation`, `QuestInformation`, `AdornmentSet`), prerequisite OR-groups, class-template expansion, era caps | `backend/planner/wiki.py` |
+| The crawl: invert mobs and quests, follow disambiguations, reconcile quests and edges per era | `backend/planner/ingest.py` |
 | The read side: era filter, priority scoring, the set view, the examine card adapter | `backend/planner/catalog.py` |
-| `GET /api/plan/meta` `/items` `/sets` — no account, no POST | `backend/routers/planner_api.py` |
-| `plan_items`, `plan_sources`, `plan_sets`, `plan_syncs` (schema v40) | `backend/db.py` |
-| The page: era chips, priority editor, item table, set view, shortlist rail | `frontend/src/pages/Planner.jsx`, `components/PriorityEditor.jsx` |
+| The outline read side: layer-3 prelude, prerequisite walk, stable topological order | `backend/planner/outline.py`, `backend/refdata/planner_standard.json` |
+| `GET /api/plan/meta` `/items` `/sets` `/outline` — no account, no POST | `backend/routers/planner_api.py` |
+| `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
+| The page: Gear/Outline tabs, filters, item/set views, persistent three-kind shortlist, ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanOutline.jsx`, `components/PriorityEditor.jsx` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
-| 22 tests off recorded pages, no network | `backend/tests/test_planner.py` |
+| 39 planner tests, including recorded wiki pages and isolated graph shapes; no network | `backend/tests/test_planner.py` |
 
-### What the first crawl found (2026-08-15)
+### What the latest full sync found (2026-08-15)
 
 | | RoK | EoF |
 | --- | --- | --- |
@@ -711,6 +714,8 @@ Phase 0 is still unrun.
 | Items | 2,881 | 2,487 |
 | raid / group / solo / quest sources | 647 / 391 / 422 / 1,548 | 516 / 783 / 94 / 1,044 |
 | Adornment sets | 20 | 49 |
+| Prerequisite edges | 594 | 314 |
+| Prerequisite links outside the catalog | 20 | 19 |
 | Dropped above the era's level cap | 49 | 8 |
 | Wiki pages read | 5,421 | 4,610 |
 
@@ -794,10 +799,8 @@ not changed underneath them without asking.
 
 ### Still not built
 
-- **The Outline (Phase 2).** There is no second tab and deliberately no empty
-  one. `plan_quests` and `plan_quest_edges` are not in the schema yet; the
-  crawl already parses quest level, zone, timeline, `prereq` and `next` and
-  throws all but the rewards away, so Phase 2 starts by keeping them.
+- **Phase 0.** The waypoint matcher has not been run at scale, so no spatial
+  claim is made by the current outline.
 - **Layer 2 and `plan_nominations`.** `effectlist` is stored as written and
   shown as a badge; nothing classifies a proc and no curator console exists.
 - **Phases 3–4** — clusters, tags, multi-class — unchanged and still gated on
@@ -856,7 +859,7 @@ in the sections above.
 - **The extractors stay in TypeScript and run offline.** The wiki parser is not
   ported to Python and Node does not run in the API process. (Phase 1 needed
   none of them — the catalog is templates, and templates parse in Python. The
-  boundary matters from Phase 2, where the STEP extraction lives.)
+  boundary matters from Phase 3, where the STEP extraction lives.)
 - **A quest level above the era cap is a tag, not a drift signal** — and an
   ITEM above it is dropped. Different facts, opposite handling.
 - **Which expansions count is the reader's**, EoF and/or RoK, and era is a

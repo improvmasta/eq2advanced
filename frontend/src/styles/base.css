@@ -6120,6 +6120,77 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-style: normal; color: var(--text-muted); font-size: var(--fs-label);
 }
 
+/* ---- the outline ----
+   One stable spine: hand-kept prelude first, prerequisite DAG second. Tags are
+   Phase 3 and will highlight this list rather than reorder it. */
+.planner .wsmain > .tabs { margin-top: 0; }
+.planoutline { display: grid; gap: 18px; }
+.outlineprelude {
+  padding: 13px 15px;
+  border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.055);
+}
+.outlinehead {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 12px; flex-wrap: wrap;
+}
+.outlinehead h2 { margin: 2px 0 0; font-size: var(--fs-h3); }
+.outlinehead > .muted { font-size: var(--fs-label); }
+.preludelist { margin-top: 8px; }
+.preluderow { padding: 9px 0; border-top: 1px solid var(--row-line); }
+.preludeline { font-size: var(--fs-data); line-height: 1.45; }
+.preludeline > a, .preludeline > strong { color: var(--gold-bright); font-weight: 650; }
+.preluderow p {
+  margin: 3px 0 0; color: var(--text-muted); font-size: var(--fs-label);
+  line-height: 1.45;
+}
+.outlinemeta {
+  display: inline-flex; align-items: baseline; flex-wrap: wrap;
+  color: var(--text-muted); font-size: var(--fs-label);
+}
+.outlinemeta > span + span::before { content: '·'; margin: 0 6px; }
+.preluderow > .outlinemeta { margin-top: 3px; }
+
+.outlinebody { min-width: 0; }
+.outlineempty { margin-top: 8px; padding: 13px 15px; }
+.outlineempty p { margin: 0 0 3px; }
+.outlinelist {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--surface);
+}
+.outlinerow {
+  display: grid; grid-template-columns: 30px 18px minmax(0, 1fr);
+  align-items: start; gap: 8px; padding: 9px 11px;
+  border-bottom: 1px solid var(--row-line);
+}
+.outlinerow:last-child { border-bottom: 0; }
+.outlinerow.target { background: rgba(var(--gold-rgb), 0.045); }
+.outlinenum {
+  color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-label); text-align: right; font-variant-numeric: tabular-nums;
+}
+.outlinerow > input { margin: 2px 0 0; accent-color: var(--gold); cursor: pointer; }
+.outlinecontent { min-width: 0; display: grid; gap: 4px; }
+.outlinetitle { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.outlinetitle > a { font-family: var(--font-data); font-size: var(--fs-data); }
+.outlinetitle > .skind { flex: 0 0 auto; }
+.outlinetitle > .outlinemeta { margin-left: auto; justify-content: flex-end; }
+.outlinegets, .outlineopens {
+  color: var(--text-muted); font-size: var(--fs-label); line-height: 1.4;
+}
+.outlinegets { color: var(--text); }
+.outlinegets::before { content: '↳'; color: var(--gold); margin-right: 6px; }
+.outlineunplaced { margin: 8px 0 0; font-size: var(--fs-label); }
+
+@media (max-width: 680px) {
+  .outlinerow { grid-template-columns: 24px 18px minmax(0, 1fr); padding: 9px 8px; }
+  .outlinetitle { flex-wrap: wrap; }
+  .outlinetitle > .outlinemeta {
+    flex-basis: 100%; margin-left: 0; justify-content: flex-start;
+  }
+}
+
 /* ---- the priority editor ----
    Rendered into `document.body`: every card here carries `backdrop-filter`,
    which makes the card a containing block for `position: fixed`, so a panel

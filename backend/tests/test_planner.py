@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
-from planner import catalog, ingest, wiki
+from planner import catalog, ingest, outline, wiki
 
 PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
@@ -127,6 +127,59 @@ def test_an_adornment_set_page_carries_its_tiers():
     assert "Focus: Magi's Shielding" in s["bonuses"][0]["text"]
 
 
+# ---------- Phase 2: quest chains ----------
+
+def quest_page(*, level="70", diff="Solo", prereq="", next_="",
+               prelist="", nextlist="", zone="Test Zone"):
+    """Small QuestInformation page for graph-shape tests.
+
+    The broad parser tests above stay on recorded pages. These cases isolate
+    punctuation and list syntax that need several otherwise-identical pages to
+    exercise reconciliation and ordering without touching the network.
+    """
+    return f"""{{{{QuestInformation|
+| timeline = Test Timeline
+| jcat = Test Journal
+| level = {level}
+| diff = {diff}
+| szone = {zone}
+| patch = Rise of Kunark
+| prereq = {prereq}
+| prelist = {prelist}
+| next = {next_}
+| nextlist = {nextlist}
+| altname =
+}}}}
+==Rewards==
+"""
+
+
+def test_a_comma_in_a_plain_quest_reference_is_part_of_the_title():
+    q = wiki.parse_quest("Current", quest_page(
+        prereq="Warm Skins, Fat Bellies", next_="One Fish, Two Fish"))
+    assert q["prereq"] == [["Warm Skins, Fat Bellies"]]
+    assert q["next"] == [["One Fish, Two Fish"]]
+
+
+def test_list_references_preserve_comma_titles_and_or_groups():
+    q = wiki.parse_quest("Current", quest_page(
+        prelist="[[Warm Skins, Fat Bellies]] / {{Quest|Either Way}}, "
+                "[[Both of These]]<br>[[And This]]"))
+    assert q["prereq"] == [
+        ["Warm Skins, Fat Bellies", "Either Way"],
+        ["Both of These"],
+        ["And This"],
+    ]
+
+
+def test_junk_references_are_rejected_and_scaling_level_is_kept_as_text():
+    q = wiki.parse_quest("Current", quest_page(
+        level="Scales", diff="Heroic", prereq="}}", next_="| >"))
+    assert q["prereq"] == [] and q["next"] == []
+    assert q["level"] is None and q["level_text"] == "Scales"
+    assert q["diff_kind"] == "group"
+
+
 # ---------- the crawl ----------
 
 def fake_wiki():
@@ -196,6 +249,95 @@ def test_a_resync_removes_what_the_wiki_no_longer_says(tmp_path):
     ingest.sync(conn, "rok", members=members,
                 fetch=lambda ts: {t: stripped[t] for t in ts if t in stripped})
     assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 0
+
+
+def quest_wiki(pages):
+    def members(cat):
+        return [] if cat.endswith("Named Monsters") else list(pages)
+
+    def fetch(titles):
+        return {t: pages[t] for t in titles if t in pages}
+    return fetch, members
+
+
+def test_quest_edges_drop_dangling_titles_and_reconcile_on_resync(tmp_path):
+    pages = {
+        "First": quest_page(prereq="Missing"),
+        "Second": quest_page(prereq="First"),
+    }
+    conn = fresh_db(tmp_path)
+    fetch, members = quest_wiki(pages)
+    report = ingest.sync(conn, "rok", fetch=fetch, members=members)
+    assert report["quests"] == 2
+    assert report["edges"] == 1 and report["dangling"] == 1
+    assert [tuple(r) for r in conn.execute(
+        "SELECT from_page, to_page FROM plan_quest_edges")] == [("First", "Second")]
+
+    # A crawl is a snapshot, not an append. Removing the dependant removes its
+    # quest row and the edge that the previous snapshot supplied.
+    pages.pop("Second")
+    report = ingest.sync(conn, "rok", fetch=fetch, members=members)
+    assert report["quests"] == 1 and report["edges"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM plan_quest_edges").fetchone()[0] == 0
+
+
+def test_an_edge_can_resolve_to_a_quest_from_another_era(tmp_path):
+    conn = fresh_db(tmp_path)
+    eof = {"An Older Quest": quest_page(level="65")}
+    fetch, members = quest_wiki(eof)
+    ingest.sync(conn, "eof", fetch=fetch, members=members)
+
+    rok = {"A Kunark Quest": quest_page(level="70", prereq="An Older Quest")}
+    fetch, members = quest_wiki(rok)
+    report = ingest.sync(conn, "rok", fetch=fetch, members=members)
+    assert report["edges"] == 1 and report["dangling"] == 0
+    edge = conn.execute(
+        "SELECT from_page, to_page, era FROM plan_quest_edges").fetchone()
+    assert tuple(edge) == ("An Older Quest", "A Kunark Quest", "rok")
+
+
+def test_a_second_edge_pass_closes_cross_era_links_stored_in_either_order(tmp_path):
+    conn = fresh_db(tmp_path)
+    rok = ingest.crawl("rok", *quest_wiki({
+        "A Kunark Quest": quest_page(level="70", prereq="An Older Quest"),
+    }))
+    eof = ingest.crawl("eof", *quest_wiki({
+        "An Older Quest": quest_page(level="65"),
+    }))
+    first = ingest.store(conn, rok)
+    assert first["edges"] == 0 and first["dangling"] == 1
+    ingest.store(conn, eof)
+
+    report = ingest.reconcile_edges(conn, "rok", rok["edges"])
+    assert report == {"edges": 1, "dangling": 0}
+    assert tuple(conn.execute(
+        "SELECT from_page, to_page FROM plan_quest_edges").fetchone()) == (
+            "An Older Quest", "A Kunark Quest")
+
+
+def test_prerequisites_beat_level_in_the_outline_order():
+    rows = [
+        {"key": "later", "name": "Later", "level": 70},
+        {"key": "first", "name": "First", "level": 80},
+        {"key": "free", "name": "Free", "level": 75},
+    ]
+    ordered = outline._order(rows, [("first", "later")])
+    keys = [r["key"] for r in ordered]
+    assert keys == ["free", "first", "later"]
+
+
+def test_a_named_target_survives_without_the_item_that_exposed_it(tmp_path):
+    out = outline.outline(
+        loaded(tmp_path), eras=["rok"], targets=["Adkar Vyx"])
+    assert [(r["key"], r["kind"], r["why"]) for r in out["rows"]] == [
+        ("Adkar Vyx", "target", "target")]
+
+
+def test_every_shortlist_kind_is_reported_when_it_cannot_be_placed(tmp_path):
+    out = outline.outline(
+        fresh_db(tmp_path), eras=["rok"], items=["Missing Item"],
+        sets=["Missing Set"], targets=["Missing Target"])
+    assert out["unplaced"] == ["Missing Item", "Missing Set", "Missing Target"]
 
 
 # ---------- the read side ----------

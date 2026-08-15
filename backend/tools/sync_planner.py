@@ -60,18 +60,41 @@ def main() -> int:
         print(f"\r  {ingest.fetch_icons(conn, progress)} icons cached")
         return 0
 
+    crawls = []
+    reports = []
     for era in eras:
         print(f"{era} ({wiki.ERAS[era]})")
-        report = ingest.sync(conn, era, progress=progress)
-        print(f"\r  {report['mobs']} named monsters, {report['quests']} quests "
+        crawled = ingest.crawl(era, progress=progress)
+        crawls.append(crawled)
+        reports.append(ingest.store(conn, crawled))
+
+    # Resolve graphs once more with every requested era now present. A RoK
+    # quest can depend on an EoF quest, and `--era rok --era eof` must not lose
+    # that edge merely because RoK was stored first.
+    if len(crawls) > 1:
+        for crawled, report in zip(crawls, reports):
+            report.update(ingest.reconcile_edges(
+                conn, crawled["era"], crawled["edges"]))
+
+    for report in reports:
+        print(f"\r{report['era']}  {report['mobs']} named monsters, "
+              f"{report['quests']} quests "
               f"-> {report['items']} items, {report['sources']} sources, "
               f"{report['sets']} adornment sets ({report['pages']} pages read)")
+        print(f"  {report['edges']} prerequisite edges between quests")
+        if report["dangling"]:
+            # A prerequisite naming a page this catalog does not have. A couple
+            # of percent is normal — they point at another expansion's quest or
+            # at a collection — and a number that starts climbing means the
+            # crawl is missing pages rather than the wiki being loose.
+            print(f"  {report['dangling']} prerequisite links point outside "
+                  f"the catalog")
         if report["over_cap"]:
             # Live-era drift, counted rather than silent: a wiki page rewritten
             # for a revamp hands back an item nobody on this server can equip,
             # and one of those would become the top of the scoring scale.
             print(f"  {report['over_cap']} items dropped above the era's "
-                  f"level cap ({wiki.ERA_CAP[era]})")
+                  f"level cap ({wiki.ERA_CAP[report['era']]})")
 
     got = ingest.fetch_icons(conn, progress)
     print(f"\r  {got} item icons cached                    ")

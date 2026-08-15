@@ -1,0 +1,122 @@
+{
+  "_comment": [
+    "LAYER 3 — the Planner's prelude. HAND-CURATED GAME KNOWLEDGE, edited by a",
+    "person and never inferred, exactly like `zone_eras.json`, `split_mobs.json`",
+    "and `reuse_debuffs.json` beside it. This is the 'everybody does this first'",
+    "list with a reason on each line, and it is what makes the Outline read as",
+    "though somebody who played the expansion wrote it: the wiki files",
+    "`Sokokar Timeline` as a peer of `Kylong Plains Timeline`, and nothing in",
+    "any field anywhere says to do it first.",
+    "",
+    "Every entry is a claim about the GAME, so the only rule is that a person",
+    "has to agree with it. `page` is checked against the crawled catalog and a",
+    "miss is REPORTED by tools/sync_planner.py rather than hidden — a prelude",
+    "line whose page went away is a line to fix, not a line to drop.",
+    "",
+    "Fields: title, why (the because, on the same line as the entry), detail",
+    "(the practical note under it), page (a wiki page to link), zone, level,",
+    "kind (travel|levelling|access|raid|epic|crafting). Order in the file is",
+    "the order on the page — this list NEVER reorders itself.",
+    "",
+    "Seeded 2026-08-15 from the wiki's own timeline pages. It is deliberately",
+    "short: the design calls for 15-25 RoK entries and the rest are Lindsay's",
+    "to add, because the ones worth having are the ones you only know from",
+    "playing the expansion."
+  ],
+
+  "rok": [
+    {
+      "title": "The sokokar post network",
+      "why": "Do this first — every other line on this list gets shorter.",
+      "detail": "Adventure 65 OR tradeskill 65, either one alone. Both versions start at Dreg's Landing in Kylong Plains: Borbin Happens for adventurers, Jones for crafters. You only ever need one of the two.",
+      "page": "Sokokar Timeline",
+      "zone": "Kylong Plains",
+      "level": 65,
+      "kind": "travel"
+    },
+    {
+      "title": "Kylong Plains, then Fens, then Kunzar, then Jarsath",
+      "why": "The expansion's spine — the zone timelines are the level path through Kunark, in that order.",
+      "detail": "Kylong Plains 68-73, Fens of Nathsar 70-75, Kunzar Jungle 74-78, Jarsath Wastes 75-80. Each one's own page names the next.",
+      "page": "Kylong Plains Timeline",
+      "zone": "Kylong Plains",
+      "level": 68,
+      "kind": "levelling"
+    },
+    {
+      "title": "Your class's epic weapon",
+      "why": "The level-80 signature line, and the biggest single upgrade most classes see in this expansion.",
+      "detail": "One timeline per class ('Paladin Epic Weapon', 'Warden Epic Weapon' and so on), all of them level 80. Its steps run through the raid zones, so it overlaps whatever else you are doing in them.",
+      "page": null,
+      "zone": null,
+      "level": 80,
+      "kind": "epic"
+    },
+    {
+      "title": "Raid flagging: the Rise of Kunark progression",
+      "why": "Only one quest in it is a real access quest — the rest is lore, and knowing which is which saves a night.",
+      "detail": "Starts with The Fate of Norrath in Kunzar Jungle at 80. Taking on Trakanon is the visible access quest for Veeshan's Peak; access to the other raid zones comes from the KILLS, not from the quests.",
+      "page": "Rise of Kunark Raid Flagging Timeline",
+      "zone": "Kunzar Jungle",
+      "level": 80,
+      "kind": "raid"
+    },
+    {
+      "title": "The tier-1 raid targets carry the keys",
+      "why": "Each of the three drops the item a later kill needs, so the tier-1 zones are not optional and are not just gear.",
+      "detail": "Imzok's Revenge (The Protector's Realm) gives The Greenmist Orb, which you need to kill The Leviathan. Tairiza the Widow Mistress (The Tomb of Thuuga) gives the Mistmyrian Soulcube for Venril Sathir. Pawbuster (The Execution Throne Room) gives Isydryl's Wand of Intervention for Overking Selrach Di'Zok.",
+      "page": "Rise of Kunark Raid Flagging Timeline",
+      "zone": null,
+      "level": 80,
+      "kind": "raid"
+    },
+    {
+      "title": "The artisan epic, if you craft",
+      "why": "Level 80 tradeskill line out of Bathezid's Watch — it is also the other way into the sokokar network.",
+      "detail": "Starts with New Lands, New Profits. Doing the crafting version of the sokokar line first is the usual advice when your adventure level is below the zone.",
+      "page": "Artisan Epic Timeline",
+      "zone": "Fens of Nathsar",
+      "level": 80,
+      "kind": "crafting"
+    }
+  ],
+
+  "eof": [
+    {
+      "title": "Greater Faydark, Butcherblock, Steamfont, Lesser Faydark, Loping Plains",
+      "why": "The Faydwer level path, in order — each timeline page names the next one.",
+      "detail": "Greater Faydark 1-20, Butcherblock 20-35, Steamfont 35-50, Lesser Faydark 50-60, Loping Plains 60-70. Crushbone Keep (20-30) and Kaladim (30-40) hang off Butcherblock as the heroic branches.",
+      "page": "Greater Faydark Timeline",
+      "zone": "Greater Faydark",
+      "level": 1,
+      "kind": "levelling"
+    },
+    {
+      "title": "The Cloak of Flames",
+      "why": "The expansion's famous cloak, and it is heroic rather than raid — most groups can finish it.",
+      "detail": "Juna Crankfizz in Butcherblock Mountains runs the whole line; it opens on a collection quest, so start the collection early. Levels 65-70.",
+      "page": "Cloak of Flames Timeline",
+      "zone": "Butcherblock Mountains",
+      "level": 65,
+      "kind": "levelling"
+    },
+    {
+      "title": "The League of Freethinkers, for the Relics of the Past",
+      "why": "The heroic line that ends in The Blackwater Mask — the reason to hold faction with the League.",
+      "detail": "The Hand of Glory (65) and Dom of the Elani (67) are heroic; The Blackwater Mask (70) is epic.",
+      "page": "The League Timeline",
+      "zone": null,
+      "level": 65,
+      "kind": "levelling"
+    },
+    {
+      "title": "Swords of Destiny",
+      "why": "The expansion's signature questline and the one everything in Mistmoore's story leads to.",
+      "detail": "Runs through Crushbone Keep and The Acadechism.",
+      "page": "Swords of Destiny Timeline",
+      "zone": null,
+      "level": 70,
+      "kind": "epic"
+    }
+  ]
+}
