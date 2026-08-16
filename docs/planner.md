@@ -1136,8 +1136,16 @@ thresholds. It remains useful with no outline and with no account.
   diamond, unreached ones dimmed. Every set uses the same fixed-height preview,
   so one long proc description cannot make its card taller than its neighbors;
   hovering or keyboard-focusing the card opens the complete uncropped ladder
-  in a popup. Their arithmetic contribution stays in
+  in a popup. A turquoise change marks every affected set as **planned** and
+  shows its signed piece-count difference (`+1`, `-1`, `+2`, and so on),
+  including a set removed all the way to zero. Their arithmetic contribution stays in
   `projection()`, because that is a stat like any other.
+- **A SAVED-SET TAB SELECTS AND LOADS; IT DOES NOT OPEN AN EDITOR.** The
+  selected set has an explicit Edit action, while a changed loadout offers
+  Save changes. Empty slots offer Save Set N (especially the initial Set 1)
+  rather than pretending there is something to load. Opening the contextual
+  Outline gives the character/set identity and the lookup/account controls
+  separate rows, so the five tabs never wrap into a back-and-forth block.
 - **Changing who you are planning for empties the window.** A planned choice
   only means anything against one character's current equipment — a ring worth
   +40 Ability Mod on the fury is a downgrade on the guardian — and leaving the

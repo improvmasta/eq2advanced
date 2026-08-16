@@ -331,8 +331,13 @@ segmentation)
 - **Worn set bonuses span beneath equipped gear AND stats** —
   counted off the WINDOW, from both a set the reader installed and a turquoise
   Census says is already worn. **Changing character empties the window** (the
-  shortlist survives). Four sets should use that full row rather than stack in
-  the gear column.
+  shortlist survives). Turquoise changes carry a `planned` tag and signed
+  piece delta, including a set reduced to zero. Four sets should use that full
+  row rather than stack in the gear column.
+- **SAVED SET TABS LOAD; THEY DO NOT EDIT.** An explicit Edit action opens the
+  name/save panel, a changed loadout offers Save changes, and an empty slot
+  offers Save Set N. With the Outline open, identity/set controls and account
+  actions reflow onto separate rows rather than wrapping the five tabs.
 - **PLANNED GEAR MUST NEVER GET TRAPPED** — the highlighted item icon gets one
   left-edge clicker when a slot has alternatives; never spend item-name width
   on `1/2` plus previous/next controls. Every non-equipped item has a direct
@@ -582,6 +587,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
 - 2026-08-16 (codex): Complete equipped item examine cards
@@ -601,4 +607,3 @@ builds here with `bash build.sh`.
 - 2026-08-14 (codex): Mark admin redesign documentation implemented
 - 2026-08-14 (codex): Implement complete admin operations redesign
 - 2026-08-14 (codex): Add public in-game chat archive and visitor insights
-- 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/

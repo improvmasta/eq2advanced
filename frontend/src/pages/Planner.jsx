@@ -186,6 +186,10 @@ export default function Planner({ user }) {
   const [savedSetSlot, setSavedSetSlot] = useState(1)
   const [savedSetBusy, setSavedSetBusy] = useState(false)
   const [savedSetStatus, setSavedSetStatus] = useState('')
+  const currentSetPayload = useMemo(() => equipmentSetPayload(shortlist), [shortlist])
+  const selectedSavedSet = savedSets.find((row) => row.slot === savedSetSlot)
+  const savedSetDirty = Boolean(selectedSavedSet?.payload)
+    && JSON.stringify(selectedSavedSet.payload) !== JSON.stringify(currentSetPayload)
   const planCount = shortlist.items.length + shortlist.sets.length
   const [outlineOpen, setOutlineOpen] = useState(planCount > 0)
   const previousPlanCount = useRef(planCount)
@@ -795,9 +799,9 @@ export default function Planner({ user }) {
             onReset={clearPlannedGear}
             savedSets={savedSets} savedSetSlot={savedSetSlot}
             savedSetBusy={savedSetBusy} savedSetStatus={savedSetStatus}
+            savedSetDirty={savedSetDirty}
             onSavedSetSlot={setSavedSetSlot}
             onSaveSet={(slotNumber, name) => persistSavedSet(slotNumber, true, name)}
-            onRenameSet={(slotNumber, name) => persistSavedSet(slotNumber, false, name)}
             onLoadSet={loadSavedSet}
             statLabel={statLabel} statPct={statPct} />
 

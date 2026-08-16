@@ -194,12 +194,21 @@ function wornSets(character, shortlist, active, catalog) {
   const twoHanded = shortlist.items.find(
     (i) => i.page_title === active.primary)?.two_handed
   const out = new Map()
+  const current = new Map()
   const add = (name, bonuses) => {
     const row = out.get(name) || { name, count: 0, bonuses: [] }
     row.count += 1
     if (!row.bonuses.length) row.bonuses = bonusLines(bonuses)
     out.set(name, row)
   }
+  ;(character?.gear || []).forEach((item) => (item.adornments || []).forEach((adorn) => {
+    if (adorn.color !== 'turquoise' || !adorn.name) return
+    const name = adorn.set_name || adorn.name
+    const row = current.get(name) || { name, count: 0, bonuses: [] }
+    row.count += 1
+    if (!row.bonuses.length) row.bonuses = bonusLines(adorn.stats?.adornment?.set_bonuses)
+    current.set(name, row)
+  }))
   PLAN_SLOTS.forEach((def) => {
     if (def.key === 'secondary' && twoHanded) return
     const item = equippedChoice(def.key, character, shortlist, active)
@@ -220,7 +229,16 @@ function wornSets(character, shortlist, active, catalog) {
       add(adorn.set_name || adorn.name, adorn.stats?.adornment?.set_bonuses)
     })
   })
-  return [...out.values()].sort((a, b) => b.count - a.count
+  return [...new Set([...out.keys(), ...current.keys()])].map((name) => {
+    const after = out.get(name)
+    const before = current.get(name)
+    const count = after?.count || 0
+    const currentCount = before?.count || 0
+    return {
+      name, count, currentCount, delta: count - currentCount,
+      bonuses: after?.bonuses?.length ? after.bonuses : before?.bonuses || [],
+    }
+  }).sort((a, b) => b.count - a.count || b.currentCount - a.currentCount
     || a.name.localeCompare(b.name))
 }
 
@@ -240,7 +258,15 @@ function WornSetCard({ set, full = false }) {
     <div className={`wornset${full ? ' full' : ' preview'}`} tabIndex={full ? undefined : 0}>
       <div className="wornsethead">
         <b>{set.name}</b>
-        <em>{set.count} piece{set.count === 1 ? '' : 's'}</em>
+        {!!set.delta && <i className="wornsetplanned">planned</i>}
+        <em>
+          {set.count} piece{set.count === 1 ? '' : 's'}
+          {!!set.delta && (
+            <strong className={set.delta > 0 ? 'upgrade' : 'downgrade'}>
+              {set.delta > 0 ? '+' : ''}{set.delta}
+            </strong>
+          )}
+        </em>
       </div>
       {!set.bonuses.length && (
         <p className="muted">No tier text recorded for this set.</p>
@@ -790,8 +816,9 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                                      onRemoveItem, signedIn,
                                      onLookup, lookupBusy, lookupErr,
                                      savedSets, savedSetSlot, savedSetBusy, savedSetStatus,
+                                     savedSetDirty,
                                      onSavedSetSlot, onSaveSet,
-                                     onRenameSet, onLoadSet,
+                                     onLoadSet,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
@@ -825,8 +852,9 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
               : 'Look one up, or plan against an empty window'}</span>
             <SavedSetControls sets={savedSets} slot={savedSetSlot}
               signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
+              dirty={savedSetDirty}
               onSlot={onSavedSetSlot} onSave={onSaveSet}
-              onRename={onRenameSet} onLoad={onLoadSet} />
+              onLoad={onLoadSet} />
           </div>
           {!signedIn && (
             <div className="guestcharacterlookup">
@@ -882,22 +910,28 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
   )
 }
 
-function SavedSetControls({ sets, slot, signedIn, busy, status, onSlot,
-                            onSave, onRename, onLoad }) {
+function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
+                            onSlot, onSave, onLoad }) {
   const selected = sets?.find((row) => row.slot === slot)
-  const [open, setOpen] = useState(null)
+  const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(selected?.name || '')
   useEffect(() => {
-    if (open === slot) setDraft(selected?.name || '')
-  }, [selected?.name, slot, open])
+    setDraft(selected?.name || '')
+    setEditing(false)
+  }, [selected?.name, slot])
   const choose = (row) => {
     onSlot(row.slot)
     setDraft(row.name)
-    setOpen(row.slot)
+    setEditing(false)
+    if (row.payload) onLoad(row.slot)
   }
   const leave = () => {
     setDraft(selected?.name || '')
-    setOpen(null)
+    setEditing(false)
+  }
+  const save = () => {
+    onSave(slot, draft)
+    setEditing(false)
   }
   return (
     <div className="plansavedsets">
@@ -905,21 +939,31 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, onSlot,
       <div className="plansavedtabs" aria-label="Saved equipment sets">
         {(sets || []).map((row) => (
           <button type="button" key={row.slot}
-                  className={row.slot === open ? 'on' : ''}
-                  title={`Open ${row.name}`} onClick={() => choose(row)}>{row.name}</button>
+                  className={row.slot === slot ? 'on' : ''}
+                  title={row.payload ? `Load ${row.name}` : `Select ${row.name}`}
+                  onClick={() => choose(row)}>{row.name}</button>
         ))}
       </div>
-      {open === slot && (
+      {!editing && selected && (
+        <div className="plansavedactions">
+          {dirty && (
+            <button type="button" className="chip on" disabled={busy}
+                    onClick={() => onSave(slot, selected.name)}>Save changes</button>
+          )}
+          <button type="button" className="btnlink" disabled={busy}
+                  onClick={() => setEditing(true)}>
+            {selected.payload ? 'Edit' : `Save ${selected.name}`}
+          </button>
+          {status && <span className="plansavedstatus">{status}</span>}
+        </div>
+      )}
+      {editing && (
         <div className="plansavedpanel">
           <input value={draft} maxLength={40} aria-label={`Name for gear set ${slot}`}
                  onChange={(event) => setDraft(event.target.value)} />
-          <button type="button" className="chip" disabled={!selected?.payload || busy}
-                  onClick={() => { onLoad(slot); setOpen(null) }}>Load</button>
           <button type="button" className="chip on" disabled={busy}
-                  onClick={() => onSave(slot, draft)}>Save current</button>
-          <button type="button" className="btnlink" disabled={busy || draft === selected?.name}
-                  onClick={() => onRename(slot, draft)}>Rename</button>
-          <button type="button" className="btnlink" onClick={leave}>Leave without saving</button>
+                  onClick={save}>Save set</button>
+          <button type="button" className="btnlink" onClick={leave}>Cancel</button>
           <span className="plansavedstatus">{status}</span>
           {!signedIn && (
             <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>

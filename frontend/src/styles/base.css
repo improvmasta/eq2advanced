@@ -6121,11 +6121,11 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    headline — that is the character's name in the `h2` beside them. */
 .loadoutactions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .plansavedsets {
-  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; gap: 4px 7px; padding-left: 12px;
   border-left: 1px solid var(--row-line);
 }
-.plansavedtabs { min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; }
+.plansavedtabs { min-width: 0; display: flex; flex-wrap: nowrap; gap: 3px; }
 .plansavedtabs button {
   min-width: 46px; max-width: 90px; height: 24px; padding: 0 7px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -6137,6 +6137,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-color: var(--gold); color: var(--gold-bright);
   background: rgba(var(--gold-rgb), 0.14);
 }
+.plansavedactions { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.plansavedactions .chip { min-height: 24px; padding: 2px 8px; font-size: var(--fs-label); }
+.plansavedactions .btnlink { font-size: var(--fs-label); }
 .plansavedpanel {
   grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap;
   gap: 5px; padding: 5px 6px; border: 1px solid var(--border);
@@ -6464,10 +6467,18 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: #44bfd0; font-size: var(--fs-data);
 }
+.wornsetplanned {
+  flex: none; color: var(--success); font-family: var(--font-data);
+  font-size: 8px; font-style: normal; text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 .wornsethead em {
   margin-left: auto; flex: none; color: var(--text-muted);
   font-size: var(--fs-label); font-style: normal;
 }
+.wornsethead em strong { margin-left: 5px; font-style: normal; }
+.wornsethead em strong.upgrade { color: var(--joust); }
+.wornsethead em strong.downgrade { color: var(--danger); }
 .wornsettier {
   margin-top: 4px; padding: 4px 6px;
   border-left: 2px solid var(--row-line);
@@ -6497,6 +6508,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .loadoutbody { grid-template-columns: minmax(0, 1fr); }
   .planitemcompare { flex-direction: column; }
 }
+
+/* Opening the outline narrows the equipment window without changing the
+   viewport media query. Give the identity and account actions their own rows
+   instead of squeezing five saved-set tabs between the character and lookup. */
+.plannerworkspace.outline-open .loadouthead {
+  align-items: stretch; flex-direction: column;
+}
+.plannerworkspace.outline-open .loadoutactions { justify-content: flex-end; }
 
 @media (max-width: 760px) {
   .loadouthead { align-items: flex-start; flex-direction: column; }
