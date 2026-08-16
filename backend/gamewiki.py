@@ -90,6 +90,12 @@ def category_members(cat: str, kind: str = "page") -> list[str]:
                   "cmtype": kind, "cmlimit": "500", **cont})
         out += [m["title"] for m in d.get("query", {}).get("categorymembers", [])]
         if "continue" not in d:
+            # The pause belongs to the FETCHER, not to its callers. The planner
+            # asks for one category per zone — sixty of them for an expansion —
+            # and pacing a run of listings anywhere else would either be
+            # forgotten or would slow the tests, which hand in a fake `members`
+            # and never touch the network at all.
+            time.sleep(PAUSE_S)
             return out
         cont = d["continue"]
         time.sleep(PAUSE_S)

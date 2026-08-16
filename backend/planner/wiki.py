@@ -67,6 +67,76 @@ CATEGORIES = {
     for key, name in ERAS.items()
 }
 
+# ---------- the expansion category is NOT the whole expansion ----------
+#
+# **THE WIKI DOES NOT TAG MID-EXPANSION CONTENT WITH THE EXPANSION.** A monster
+# added by a live update is filed under `LU39 Named Monsters` and its tier, and
+# under nothing else — `Kza'Bok` carries `LU39`, `Tier 8` and `Shard of Fear`
+# and never `Echoes of Faydwer`. So `Category:Echoes of Faydwer Named Monsters`
+# holds 382 mobs where the expansion actually ran to 499, and the whole of
+# Shard of Fear — 14 nameds and 74 dropped items, level-70 treasured gear that
+# is on the broker right now — was invisible to a crawl that asked only the
+# expansion (measured 2026-08-16).
+#
+# The fix is to ask by ZONE, because which expansion a zone belongs to is
+# already reference data here (`refdata/zone_eras.json`, `zones.in_era`) and
+# `tools/sync_zone_eras.py` already resolved the live-update numbers against
+# the expansion launch dates. Every named lives in a zone and every zone knows
+# its era, so the zone categories are strictly broader than the expansion's own
+# and need no date arithmetic and no second list to maintain.
+#
+# `<zone> Dropped Items` is the other half, and it is the only way to reach a
+# TRASH drop at all: the mob inversion can only ever find what a NAMED page
+# links, and most of what a level-70 broker search returns fell off something
+# with no page of its own.
+NAMED_SUFFIX = "Named Monsters"
+DROPS_SUFFIX = "Dropped Items"
+
+# What a world drop's SOURCE kind is. Not raid/group/solo even in a raid
+# instance: nothing in particular drops it, which is a different claim about
+# how you get it than "this named has it on its table", and the reader filtering
+# the table is asking which. The zone's own difficulty rides along in `detail`.
+ZONE_SOURCE_KIND = "zone"
+
+
+def era_zones(era: str) -> list[dict]:
+    """The zone rows reference data places in one expansion."""
+    return zones.in_era(ERAS.get(era, ""))
+
+
+def named_categories(era: str) -> list[str]:
+    """Every category that enumerates this expansion's named monsters.
+
+    The expansion's own first — it is the one that carries the mobs whose zone
+    page the wiki never made — then one per zone."""
+    cats = [CATEGORIES[era]["named"]]
+    cats += [f"Category:{z['page_title']} {NAMED_SUFFIX}" for z in era_zones(era)]
+    return list(dict.fromkeys(cats))
+
+
+def drop_categories(era: str) -> list[tuple[str, dict]]:
+    """`[(category, zone row)]` for this expansion's world drops.
+
+    The zone row travels with the category because it IS the source: a trash
+    drop has no monster to name, and the place is the whole of what can honestly
+    be said about where it came from."""
+    return [(f"Category:{z['page_title']} {DROPS_SUFFIX}", z)
+            for z in era_zones(era)]
+
+
+def zone_source(zone_row: dict, era: str) -> dict:
+    """One zone -> the `plan_sources` fields a world drop gets.
+
+    No level: a zone does not have one, and inventing the era's cap would be a
+    claim the wiki never made."""
+    detail = " ".join(w for w in (zone_row.get("instance"), zone_row.get("size"))
+                      if w)
+    return {
+        "source_page": zone_row["page_title"], "source": zone_row["zone"],
+        "kind": ZONE_SOURCE_KIND, "zone": zone_row["zone"], "level": None,
+        "detail": detail or None, "era": era,
+    }
+
 # EQ2 gained Beastlord in 2011 and Channeler in 2014, so neither exists on a
 # server running EoF or RoK. The wiki's own class templates carry `no_b=y` /
 # `no_c=y` to exclude them from later-era items, which is the same correction
@@ -127,6 +197,31 @@ _PLAIN_LINK = re.compile(r"\[\[([^\]|]+)")
 # priest one. Both are already excluded era-wide, so these are read only so the
 # flags are not mistaken for class names.
 _NO_FLAG = re.compile(r"no_[bc]\s*=", re.I)
+
+
+def class_restriction(classes) -> list[str] | None:
+    """A class list -> what an examine window should PRINT, or None.
+
+    None when everything on this server can equip it. A list of every class is
+    not a restriction and the game does not print one either, so the card says
+    it by having no line rather than by having a line naming twenty-two
+    classes. One definition because both cards ask — the Planner's and the
+    loot/chat one — and they have to agree."""
+    names = sorted({c for c in (classes or []) if c})
+    if not names or len(names) >= len(SUBCLASSES):
+        return None
+    return [c.title() for c in names]
+
+
+def classes_on_page(wikitext: str) -> list[str]:
+    """An `EquipInformation` page -> who can equip it, era-filtered.
+
+    The whole-page form of `classes_of`, so `items.py` can put the same line on
+    a LOOT card without restating how the class templates expand. This module
+    is the one that knows what `EquipInformation` means; the loot path knows
+    Census, and Census's own class list is inside a `typeinfo` blob the items
+    table does not keep."""
+    return classes_of(_field(_clean(wikitext), "classes"))
 
 
 def classes_of(value: str) -> list[str]:
@@ -353,6 +448,37 @@ def parse_equip(page_title: str, wikitext: str) -> dict | None:
     }
 
 
+# ---------- the box the drop actually is ----------
+#
+# **A SET PIECE IS BEHIND A CRATE, AND THE CRATE IS WHAT THE MOB DROPS.** The
+# Priest of Fear drops `Faydwer Cloth Pattern: Head`; what you equip is one of
+# the three hoods inside it, and only one of those has Reuse Speed on it. The
+# crate is an `ItemInformation` page, so `parse_equip` correctly refuses it —
+# and the armour it stands in front of was then reachable from nothing at all.
+#
+# `contains` is a `CItemList` of numbered fields, and a piped display name is
+# escaped `{{!}}` because a bare pipe would end the template parameter. The
+# page title is the half before it.
+_CITEM = re.compile(r"^\s*\|?\s*item\d+\s*=\s*(.+?)\s*\|?\s*$", re.M)
+_PIPE_ESCAPE = re.compile(r"\{\{\s*!\s*\}\}")
+
+
+def crate_contents(wikitext: str) -> list[str]:
+    """A crate page -> the item pages it hands out, or nothing.
+
+    Nothing for an ordinary item page: this is only asked of pages the equipment
+    parser already rejected, and the numbered-field shape is the crate's own."""
+    text = _clean(wikitext)
+    if not re.search(r"\{\{\s*CItemList\b", text, re.I):
+        return []
+    out = []
+    for raw in _CITEM.findall(text):
+        title = _PIPE_ESCAPE.split(raw)[0].strip().strip("[]").strip()
+        if title and not _NOT_A_TITLE.search(title):
+            out.append(title)
+    return out
+
+
 _MARKUP = re.compile(r"'''''|'''|''|\[\[([^\]|]*\|)?|\]\]|\{\{[^}]*\}\}")
 
 
@@ -541,9 +667,37 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
 # ---------- the set bonus, which is not on the armour ----------
 
 _ADORN_SET = re.compile(r"\{\{\s*AdornmentSet\s*\|\s*([^|}\n]+)", re.I)
-# `*(3) Applies '''''Focus: Magi's Shielding.'''''` — the tier count, then what
-# it does. The sub-bullets under it are the explanation and are kept with it.
-_BONUS = re.compile(r"^\*\s*\((\d+)\)\s*(.*?)$", re.M)
+# `*(3) Applies '''''Focus: Magi's Shielding.'''''` — the tier count, then a
+# BLOCK that runs to the next tier or the end of the template.
+#
+# **A TIER IS NOT ONE LINE, AND READING IT AS ONE LOSES THE STATS.** The page
+# writes the proc on the `*(N)` line, its explanation in `**` sub-bullets under
+# it, and the tier's flat stats as BARE LINES after those — one per stat:
+#
+#     *(2) Applies '''''Focus: Lifetap IV.'''''
+#     **Reduces power cost of Lifetap IV by 200.
+#     3 Potency
+#     *(6)
+#     4 Potency
+#     100 Ability Modifier
+#     5 Crit Chance
+#
+# The game draws those bare lines ON the tier's own line ("(6) 4 Potency, 100
+# Ability Mod, 5 Crit Chance"), which is where they belong and where the
+# previous single-line read could never find them: `(2)` and `(4)` lost their
+# Potency outright, `(6)` kept the first of three, and a tier whose own line is
+# empty was dropped altogether.
+#
+# Bounded by the next tier, by the template's next named field and by its
+# closing braces — the same three stops `_block` uses. Without the last two the
+# final tier reads `level =70` and `}}` as two more of its stats.
+_BONUS_TIER = re.compile(
+    r"^\*\s*\((\d+)\)[ \t]*(.*?)"
+    r"(?=^\*\s*\(\d+\)|^\s*\|?\s*\w+\s*=|^\s*\|?\}\}|\Z)", re.M | re.S)
+# Inside a tier: a bulleted line is prose about the proc, anything else is a
+# stat line. The depth is the number of asterisks and is not kept — the card
+# shows one flat list, the way the examine window does.
+_BULLET = re.compile(r"^\*+\s*")
 
 
 def parse_adorn_set(page_title: str, wikitext: str) -> dict | None:
@@ -560,10 +714,27 @@ def parse_adorn_set(page_title: str, wikitext: str) -> dict | None:
         return None
     pieces = [p.strip() for p in _EQUIP_TPL.findall(text)]
     bonuses = []
-    for count, line in _BONUS.findall(text):
-        body = _strip_markup(line)
-        if body:
-            bonuses.append({"pieces": int(count), "text": body})
+    for count, block in _BONUS_TIER.findall(text):
+        head, detail, stats = "", [], []
+        for i, raw in enumerate(block.splitlines()):
+            line = _strip_markup(raw.strip().strip("|")).strip()
+            if not line:
+                continue
+            if i == 0:
+                head = line               # the `(N)` line's own text, if any
+            elif _BULLET.match(raw.strip()):
+                detail.append(_BULLET.sub("", line).strip() or line)
+            else:
+                stats.append(line)
+        if head or detail or stats:
+            # `text` stays the tier's headline so nothing reading the old shape
+            # breaks. `stat_lines` and `detail` are what it was silently
+            # losing — and `stat_lines` is deliberately not called `stats`,
+            # because `catalog.sets` puts the TYPED version under that name and
+            # two different things wearing one key is how this got lost once
+            # already.
+            bonuses.append({"pieces": int(count), "text": head,
+                            "stat_lines": stats, "detail": detail})
     return {
         "page_title": page_title,
         "name": m.group(1).strip(),

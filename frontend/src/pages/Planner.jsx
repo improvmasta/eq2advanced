@@ -36,8 +36,13 @@ const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
    available as table columns. */
 const OPENING_ORDER = ['abmod', 'acspeed', 'arspeed']
 
+/* `zone` is a WORLD DROP: the item is in a zone's drop list and no named or
+   quest in the catalog claims it, which is as much as can honestly be said
+   about gear that fell off trash. It is most of what a broker search returns
+   and none of it was reachable by inverting named monsters. */
 const KIND_LABEL = {
-  raid: 'Raid', group: 'Group', solo: 'Solo', quest: 'Quest', unknown: 'Unknown',
+  raid: 'Raid', group: 'Group', solo: 'Solo', quest: 'Quest',
+  zone: 'World drop', unknown: 'Unknown',
 }
 const TRACK_LABEL = {
   abmod: 'Ability', acspeed: 'Casting', arspeed: 'Reuse', aspeed: 'Haste',
@@ -148,6 +153,23 @@ export default function Planner({ user }) {
     catch { /* private mode — the shortlist just doesn't survive a reload */ }
   }, [shortlist])
 
+  /* A LOOKED-UP CHARACTER OUTRANKS THE ACCOUNT'S. Whichever was asked for last
+     is the one being planned for, and a name somebody typed is the more
+     deliberate of the two — the account picker is a convenience, not a claim
+     about who you are working on. Held separately so switching back to an
+     owned character does not have to undo it. */
+  const [lookedUp, setLookedUp] = useState(null)
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookupErr, setLookupErr] = useState(null)
+  const lookUpCharacter = useCallback((name) => {
+    setLookupBusy(true)
+    setLookupErr(null)
+    api.planCharacter(name)
+      .then((d) => { setLookedUp(d); setCharId('') })
+      .catch(() => setLookupErr(`No Census record for “${name}”`))
+      .finally(() => setLookupBusy(false))
+  }, [])
+
   useEffect(() => {
     if (!user) { setCharacters([]); setCharacter(null); return }
     let dead = false
@@ -168,10 +190,16 @@ export default function Planner({ user }) {
     if (!user || !charId) { setCharacter(null); return undefined }
     try { localStorage.setItem('eq2adv:plan:character', String(charId)) } catch { /* no persistence */ }
     let dead = false
+    /* LOADING A CHARACTER DOES NOT SET THE CLASS FILTER. It used to, and the
+       result was a search that silently answered a narrower question than the
+       one on screen: a level-70 Head search for Reuse Speed came back empty
+       because exactly one such item exists in EoF and it is illusionist-only,
+       with nothing on the table saying a class was applied. The loadout panel
+       is about one character; the item table is about the expansion, and the
+       reader narrows it when they mean to. */
     api.census(charId).then((d) => {
       if (dead) return
       setCharacter(d)
-      if (d.character?.class) setCls(d.character.class.toLowerCase())
     }).catch(() => { if (!dead) setCharacter(null) })
     return () => { dead = true }
   }, [user, charId])
@@ -344,6 +372,10 @@ export default function Planner({ user }) {
   const statPct = useMemo(
     () => Object.fromEntries((meta?.stats || []).map((s) => [s.key, s.pct])),
     [meta])
+  /* The track's short word first — a priority chip says "Reuse" and the empty
+     state has to name the same thing the reader dragged. */
+  const priorityLabel = useCallback(
+    (key) => TRACK_LABEL[key] || statLabel[key] || key, [statLabel])
   const movePriorityStat = useCallback((from, to, after = false) => {
     if (!from || !to || from === to) return
     const next = statLine.filter((key) => key !== from)
@@ -434,8 +466,11 @@ export default function Planner({ user }) {
               value={tab} onChange={(key) => setTab(key === 'gear' ? null : key)} />
 
         {tab === 'gear' && (
-          <PlanLoadout characters={characters} character={character} charId={charId}
-            signedIn={!!user} onCharacter={setCharId} shortlist={shortlist}
+          <PlanLoadout characters={characters} character={lookedUp || character}
+            charId={charId}
+            signedIn={!!user} onCharacter={(id) => { setLookedUp(null); setCharId(id) }}
+            onLookup={lookUpCharacter} lookupBusy={lookupBusy} lookupErr={lookupErr}
+            shortlist={shortlist}
             active={shortlist.active || {}} focusSlot={focusSlot}
             onFocusSlot={focusEquipmentSlot} onCycle={cycleEquipmentSlot}
             onSetAdornment={setSlotAdornment}
@@ -578,7 +613,7 @@ export default function Planner({ user }) {
                   ? <><b>{data.total}</b> matching item{data.total === 1 ? '' : 's'}</>
                   : 'Loading matching items…'}</span>
                 <span>{order.length
-                  ? <>Scoring <b>{order.map((key) => TRACK_LABEL[key] || statLabel[key] || key).join(' › ')}</b></>
+                  ? <>Scoring <b>{order.map(priorityLabel).join(' › ')}</b></>
                   : 'Choose a stat priority to score results'}</span>
               </div>
             </>
@@ -602,10 +637,8 @@ export default function Planner({ user }) {
         {data && tab === 'gear' && mode !== 'sets' && (
           <>
             {data.total === 0 ? (
-              <p className="muted">
-                Nothing in {eras.length > 1 ? 'these expansions' : 'this expansion'} matches.
-                {required.length > 0 && ' A required stat is a hard filter — try dropping one.'}
-              </p>
+              <EmptyTable data={data} eras={eras} cls={cls} order={order}
+                          required={required} label={priorityLabel} />
             ) : (
               <>
                 <SortableTable
@@ -643,6 +676,61 @@ export default function Planner({ user }) {
             setReq(csv(r.filter((k) => o.includes(k))))
           }} />
       )}
+    </div>
+  )
+}
+
+/* AN EMPTY TABLE HAS TO SAY WHICH CONTROL EMPTIED IT.
+
+   "Nothing in this expansion matches" reads as "no such item exists", and that
+   is a claim about EverQuest II this page is in no position to make: the
+   catalog is a crawl of the wiki, and the wiki is somebody else's incomplete
+   notes. The real level-70 Head search that prompted this said nothing matched
+   while the broker was full of them — the class filter had done it, and the
+   page gave the reader no way to tell.
+
+   So the server answers how many rows survived everything EXCEPT the stat
+   priorities (`before_priorities`), and this splits the two cases apart: the
+   stats found nothing among rows that DO exist, or the plain filters had
+   already left nothing to score. Either way it ends by saying the catalog is a
+   crawl, because the last possibility is always that we simply never walked to
+   the item. */
+function EmptyTable({ data, eras, cls, order, required, label }) {
+  const where = eras.length > 1 ? 'these expansions' : 'this expansion'
+  const stats = (order || []).map(label)
+  const narrowed = data.before_priorities || 0
+  return (
+    <div className="muted planempty">
+      {narrowed > 0 ? (
+        <p>
+          <b>{narrowed}</b> item{narrowed === 1 ? '' : 's'} in {where}{' '}
+          {narrowed === 1 ? 'matches' : 'match'} your filters, but{' '}
+          {narrowed === 1 ? 'it does not carry' : 'none of them carry'}{' '}
+          {required.length ? (
+            <>the required <b>{required.map(label).join(' and ')}</b>.{' '}
+              A required stat is absolute — clear it to see them.</>
+          ) : (
+            <>{data.match_min > 1 ? `${data.match_min} of ` : ''}
+              <b>{stats.join(', ')}</b>.{' '}
+              {data.match_min > 1
+                ? `Score fewer stats, or ask for ${data.match_min - 1}, to see them.`
+                : 'Score a different stat to see them.'}</>
+          )}
+        </p>
+      ) : (
+        <p>
+          Nothing in {where} matches these filters
+          {cls && <> for a <b>{cls}</b></>}.
+          {cls && ' Clearing the class is usually the one that did it.'}
+        </p>
+      )}
+      <p className="planemptynote">
+        The catalog is {data.catalog ? <><b>{data.catalog}</b> items</> : 'a crawl'} of
+        the wiki for {where} — every named, quest reward and zone drop it could be
+        walked to. An item the wiki never filed under a zone we know is not in
+        here, so an empty table is a statement about this table and not about the
+        game.
+      </p>
     </div>
   )
 }
@@ -768,7 +856,11 @@ function Sources({ row }) {
   const more = row.sources.length - 1
   return (
     <span className="plansource" title={row.sources
-      .map((s) => `${KIND_LABEL[s.kind]}: ${s.source}${s.zone ? ` (${s.zone})` : ''}`)
+      .map((s) => `${KIND_LABEL[s.kind]}: ${s.source}`
+        // A world drop's source IS its zone, so the parenthetical would repeat
+        // the name it just printed.
+        + (s.zone && s.zone !== s.source ? ` (${s.zone})` : '')
+        + (s.detail ? ` — ${s.detail}` : ''))
       .join('\n')}>
       <i className={`skind ${first.kind}`}>{KIND_LABEL[first.kind]}</i>
       {first.source}

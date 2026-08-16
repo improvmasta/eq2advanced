@@ -95,6 +95,13 @@ def cards(conn: sqlite3.Connection, item_ids) -> dict[int, dict]:
     return out
 
 
+def _class_restriction(classes):
+    """Deferred so this module keeps importing nothing of the Planner's at load
+    time; `planner.wiki` owns the one definition both examine cards use."""
+    from planner.wiki import class_restriction
+    return class_restriction(classes)
+
+
 def display(card: dict) -> dict:
     """One `cards()` record as the fields a page draws an examine window from.
 
@@ -116,6 +123,11 @@ def display(card: dict) -> dict:
         "slot": card.get("slot"),
         "level": card.get("level"),
         "tier": tier_of(card.get("level")),
+        # The class restriction, drawn only when it IS one — the wiki side
+        # sends nothing when every class on this server can equip it, so an
+        # unrestricted item has no line, the way the game shows it. Rows
+        # resolved before this existed carry no list and are simply quiet.
+        "classes": _class_restriction((card.get("effects") or {}).get("classes")),
         # Prebuilt at resolve time — a hover card is a READ of this, never a
         # request (see stat_block).
         "stats": card.get("stats"),
@@ -171,7 +183,13 @@ EFFECT_TYPES = ("modifyproperty", "normalizedmod")            # blue block
 # The blue block's leaders, in this order and always. Potency and Crit Chance
 # are what a raider checks first; everything else follows in ITS order below.
 EFFECT_FIRST = ("Potency", "Crit Chance")
-EFFECT_THEN = ("Multi Attack", "DPS", "Ability Mod", "Flurry")
+EFFECT_THEN = ("Multi Attack", "DPS", "Flurry")
+# **ABILITY MOD GOES LAST**, which is where the game itself puts it — game
+# knowledge, from Lindsay. It is one of the two numbers a raider compares items
+# on and it is still not what the examine window leads with, so the block reads
+# in the order somebody already has in their head rather than in importance
+# order. It stays in the BLUE block; only its position moved.
+EFFECT_LAST = ("Ability Mod",)
 # Most of the blue block is a percentage in the game's own display. The flat
 # ones are the exception the wiki also makes: a weapon's DPS rating is a
 # number, and so is Ability Mod.
@@ -235,14 +253,16 @@ def _line(mod: dict, key: str) -> dict:
 
 def _effect_rank(row: dict) -> tuple:
     """The blue block's order: Potency, then Crit Chance, then the named
-    throughput stats, then whatever is left biggest-first. Fixed rather than
-    sorted by value because the question a raider asks of this block is always
-    the same one in the same order."""
+    throughput stats, then whatever is left biggest-first, and Ability Mod at
+    the bottom. Fixed rather than sorted by value because the question a raider
+    asks of this block is always the same one in the same order."""
     name = row["name"]
     if name in EFFECT_FIRST:
         return (0, EFFECT_FIRST.index(name), 0.0, "")
     if name in EFFECT_THEN:
         return (1, EFFECT_THEN.index(name), 0.0, "")
+    if name in EFFECT_LAST:
+        return (3, EFFECT_LAST.index(name), 0.0, "")
     return (2, 0, -float(row["value"]), name)
 
 
@@ -441,10 +461,18 @@ def item_effects(wikitext: str) -> dict | None:
                 desc.append({"depth": len(line) - len(line.lstrip("*")),
                              "text": text})
     adorn_set = _ADORN_SET.search(wikitext or "")
-    if not names and not desc and not adorn_set:
+    # WHO CAN WEAR IT, off the same page and for the same reason the effect is
+    # read here: it is already in hand. Census does carry a class list, but
+    # inside the `typeinfo` blob this table does not keep, and `planner.wiki` is
+    # the module that already knows how `EquipInformation`'s class TEMPLATES
+    # expand and which subclasses this server actually has.
+    from planner.wiki import classes_on_page
+    classes = classes_on_page(wikitext or "")
+    if not names and not desc and not adorn_set and not classes:
         return None
     return {"names": names, "desc": desc,
-            "set": adorn_set.group(1).strip() if adorn_set else None}
+            "set": adorn_set.group(1).strip() if adorn_set else None,
+            "classes": classes or None}
 
 
 def _resolve_titles(names: list[str]) -> dict[str, tuple]:

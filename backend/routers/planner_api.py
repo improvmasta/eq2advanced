@@ -4,11 +4,20 @@
   GET /api/plan/items?…             -> the item table, ranked against an ORDER
   GET /api/plan/sets?…              -> the set-adornment view
   GET /api/plan/outline?…           -> the prelude, then what to do about a shortlist
+  GET /api/plan/character?name=…    -> a public Census character, no account needed
 
 **Open to anybody, signed in or not**, for the same reason `/chat` is: none of
 these routes reaches a parse, a session or an account. Every row is reference
 data about the GAME — one row serves every reader forever — and there is no
 POST here at all. The catalog is filled by `tools/sync_planner.py`, run by hand.
+
+**`/plan/character` is the ONE route here that can reach the network**, and it
+is the exception the rule was already making elsewhere: it runs on a name a
+reader TYPED and pressed, never on a page load, which is the same shape as
+`POST /characters/{id}/census/refresh`. It answers from cache first, falls back
+to a stale answer when Census is unavailable, and writes nothing anybody owns —
+a Census character record is public, and trying gear on your own toon should
+not be the one part of this page that needs an account.
 
 **WHICH EXPANSIONS COUNT IS THE READER'S**, which is why `eras` is a parameter
 on all three and never a constant: EoF, RoK, or both. An era nobody has synced
@@ -19,8 +28,12 @@ request handler (`docs/sharing.md`), and the same rule holds for the wiki: a
 reader pressing a filter must not start a crawl.
 """
 
-from fastapi import APIRouter, Query
+import ratelimit
+import siteconfig
+from fastapi import APIRouter, HTTPException, Query, Request
 
+from census import client as census_client
+from census import sync as census_sync
 from db import get_db
 from planner import catalog, outline, wiki
 
@@ -104,3 +117,39 @@ def plan_outline(
     account, and the page is still a GET that a link can carry."""
     return outline.outline(get_db(), eras=_eras(eras), items=item or [],
                            sets=set_ or [], targets=target or [])
+
+
+# A typed name is not a credential, but a FORCED refresh is a way to make this
+# server talk to Census on demand, so it is counted the way every other
+# unauthenticated way of spending our budget is. `ratelimit` counts to
+# `MAX_FAILURES` in a 15-minute window, which is the right order for this:
+# nobody legitimately re-reads the same toon six times in a quarter of an hour,
+# and an ordinary lookup is not counted at all.
+LOOKUP_SCOPE = "plan_character"
+
+
+@router.get("/plan/character")
+def plan_character(request: Request,
+                   name: str = Query(..., min_length=2, max_length=40),
+                   refresh: bool = Query(False)):
+    """One public Census character, by the name a reader typed.
+
+    404 when Census does not know the name AND nothing was cached for it — the
+    two are one answer here, because "we cannot tell you" and "there is no such
+    character" lead to the same next move and distinguishing them would mean
+    reporting Census's health to somebody who did not ask about it."""
+    conn = get_db()
+    if refresh:
+        # Only the FORCED path is limited. A plain lookup is answered from the
+        # cache almost always, and rate-limiting a cache read would punish the
+        # reader for the page being useful.
+        who = siteconfig.client_ip(request)
+        wait = ratelimit.retry_after(LOOKUP_SCOPE, who)
+        if wait:
+            raise HTTPException(429, f"try again in {wait}s")
+        ratelimit.fail(LOOKUP_SCOPE, who)
+    out = census_sync.lookup_by_name(
+        conn, census_client.shared_client(), name, refresh=refresh)
+    if out is None:
+        raise HTTPException(404, f"no Census record for {name!r}")
+    return out

@@ -343,9 +343,28 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
   )
 }
 
+/* Look a toon up by name. A submit, never a keystroke: this is the one control
+   on the page that can reach Census, so it runs when somebody asks it to. */
+function CharacterLookup({ onLoad, busy, err }) {
+  const [name, setName] = useState('')
+  return (
+    <form className="plancharacterlookup"
+          onSubmit={(e) => { e.preventDefault(); if (name.trim()) onLoad(name.trim()) }}>
+      <input value={name} onChange={(e) => setName(e.target.value)}
+             placeholder="Load a character by name" aria-label="Character name"
+             maxLength={40} spellCheck={false} />
+      <button className="chip" type="submit" disabled={busy || name.trim().length < 2}>
+        {busy ? 'Looking up…' : 'Load'}
+      </button>
+      {err && <span className="lookuperr" role="status">{err}</span>}
+    </form>
+  )
+}
+
 export default function PlanLoadout({ characters, character, charId, onCharacter,
                                      shortlist, active, focusSlot, onFocusSlot,
                                      onCycle, onReset, onSetAdornment, signedIn,
+                                     onLookup, lookupBusy, lookupErr,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
@@ -374,7 +393,7 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
           </h2>
         </div>
         <div className="loadoutactions">
-          {characters === null && <span className="muted">Loading characters…</span>}
+          {signedIn && characters === null && <span className="muted">Loading characters…</span>}
           {characters?.length > 0 && (
             <label className="plancharacterpick">
               <span>Planning for</span>
@@ -383,11 +402,12 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                       options={charOptions} />
             </label>
           )}
-          {characters?.length === 0 && (
-            <a className="chip" href={signedIn ? '/characters' : '/login'}>
-              {signedIn ? 'Add a character' : 'Sign in to load current gear'}
-            </a>
-          )}
+          {/* A CENSUS CHARACTER IS PUBLIC, so looking one up needs no account.
+              Trying gear on your own toon is the whole point of this panel, and
+              making that the one part of a signed-out page that demands signing
+              up is backwards. Signed-in readers keep the picker AND get this,
+              because an alt you never added is still an alt. */}
+          <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
           <button className="chip resetgear" type="button" onClick={onReset}
                   disabled={!Object.keys(active).length}>Reset planned gear</button>
         </div>

@@ -37,6 +37,9 @@ def main() -> int:
     ap.add_argument("--icons-only", action="store_true",
                     help="skip the crawl; only cache the item icons the "
                          "catalog already names")
+    ap.add_argument("--force", action="store_true",
+                    help="write the crawl even if it came back far smaller "
+                         "than the last one (see ingest.COLLAPSE_RATIO)")
     args = ap.parse_args()
     eras = args.era or list(wiki.DEFAULT_ERAS)
 
@@ -45,11 +48,15 @@ def main() -> int:
 
     if args.dry_run:
         for era in eras:
-            cats = wiki.CATEGORIES[era]
-            mobs = len(gamewiki.category_members(cats["named"]))
-            quests = len(gamewiki.category_members(cats["quests"]))
-            print(f"{era} ({wiki.ERAS[era]}): {mobs} named monsters, "
-                  f"{quests} quests — {(mobs + quests) // gamewiki.BATCH + 1} "
+            named = {t for cat in wiki.named_categories(era)
+                     for t in gamewiki.category_members(cat)}
+            quests = len(gamewiki.category_members(wiki.CATEGORIES[era]["quests"]))
+            drops = sum(len(gamewiki.category_members(cat))
+                        for cat, _ in wiki.drop_categories(era))
+            print(f"{era} ({wiki.ERAS[era]}): {len(named)} named monsters over "
+                  f"{len(wiki.era_zones(era))} zones, {quests} quests, "
+                  f"{drops} zone drops — "
+                  f"{(len(named) + quests + drops) // gamewiki.BATCH + 1} "
                   f"requests before the items they name")
         return 0
 
@@ -65,8 +72,15 @@ def main() -> int:
     for era in eras:
         print(f"{era} ({wiki.ERAS[era]})")
         crawled = ingest.crawl(era, progress=progress)
+        try:
+            report = ingest.store(conn, crawled, force=args.force)
+        except ingest.CrawlCollapsed as exc:
+            # Loud and non-zero: this is the one failure mode that matters on a
+            # schedule, because the alternative is a silently emptied catalog.
+            print(f"\r  REFUSED: {exc}")
+            return 2
         crawls.append(crawled)
-        reports.append(ingest.store(conn, crawled))
+        reports.append(report)
 
     # Resolve graphs once more with every requested era now present. A RoK
     # quest can depend on an EoF quest, and `--era rok --era eof` must not lose
@@ -82,6 +96,12 @@ def main() -> int:
               f"-> {report['items']} items, {report['sources']} sources, "
               f"{report['sets']} adornment sets ({report['pages']} pages read)")
         print(f"  {report['edges']} prerequisite edges between quests")
+        if report["zone_drops"]:
+            # What the mob and quest inversions cannot reach: gear that fell
+            # off something with no page of its own. This number IS the gap the
+            # expansion categories used to leave behind.
+            print(f"  {report['zone_drops']} item pages came from a zone's "
+                  f"drop list and no named or quest")
         if report["dangling"]:
             # A prerequisite naming a page this catalog does not have. A couple
             # of percent is normal — they point at another expansion's quest or
@@ -103,11 +123,12 @@ def main() -> int:
     for r in conn.execute(
             "SELECT s.era, COUNT(DISTINCT s.page_title) n, "
             "SUM(s.kind='raid') raid, SUM(s.kind='group') grp, "
-            "SUM(s.kind='solo') solo, SUM(s.kind='quest') quest "
+            "SUM(s.kind='solo') solo, SUM(s.kind='quest') quest, "
+            "SUM(s.kind='zone') zone "
             "FROM plan_sources s GROUP BY s.era"):
         print(f"  {r['era']:4} {r['n']:5} items   raid {r['raid'] or 0:4}  "
               f"group {r['grp'] or 0:4}  solo {r['solo'] or 0:4}  "
-              f"quest {r['quest'] or 0:4}")
+              f"quest {r['quest'] or 0:4}  world {r['zone'] or 0:4}")
     unlinked = conn.execute(
         "SELECT COUNT(*) FROM plan_items WHERE census_id IS NULL").fetchone()[0]
     if unlinked:

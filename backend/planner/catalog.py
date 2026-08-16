@@ -47,13 +47,40 @@ _SET_STAT_LABELS = {
 
 
 def set_bonus_stats(text: str) -> dict[str, float]:
-    """Conservatively type one additive set-bonus line."""
+    """Conservatively type one additive set-bonus line.
+
+    A line may name SEVERAL stats — the game draws a tier as "4 Potency, 100
+    Ability Mod, 5 Crit Chance" — so a comma list is read when EVERY segment
+    types. Fail closed on the whole line if any of them does not: half of a
+    sentence typed as arithmetic is worse than none of it, which is the same
+    call the single-value form was already making."""
     import re
-    match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s+(.+?)\|?\s*", text or "")
-    if not match:
-        return {}
-    key = _SET_STAT_LABELS.get(match.group(2).strip().lower())
-    return {key: float(match.group(1))} if key else {}
+    body = (text or "").strip().strip("|")
+    parts = [p for p in body.split(",") if p.strip()] if "," in body else [body]
+    out: dict[str, float] = {}
+    for part in parts:
+        match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s+(.+?)\s*", part)
+        key = _SET_STAT_LABELS.get(
+            match.group(2).strip().lower()) if match else None
+        if not key:
+            return {}
+        out[key] = out.get(key, 0.0) + float(match.group(1))
+    return out
+
+
+def bonus_stats(bonus: dict) -> dict[str, float]:
+    """Every additive stat one set TIER grants.
+
+    The page writes them one per bare line under the tier (`wiki._BONUS_TIER`),
+    so this is the sum over those; the headline is read too, for the tiers that
+    put a stat on the `(N)` line itself and for rows stored before the block
+    parser existed."""
+    lines = [bonus.get("text") or "", *(bonus.get("stat_lines") or [])]
+    out: dict[str, float] = {}
+    for line in lines:
+        for key, value in set_bonus_stats(line).items():
+            out[key] = out.get(key, 0.0) + value
+    return out
 
 
 def weights(order: list[str]) -> dict[str, float]:
@@ -106,7 +133,11 @@ def _sources(conn, pages: list[str]) -> dict[str, list[dict]]:
             out.setdefault(r["page_title"], []).append(dict(r))
     # A raid drop and a solo quest reward are both true; the raid one is listed
     # first because it is the harder claim and the one a reader is deciding on.
-    order = {"raid": 0, "group": 1, "quest": 2, "solo": 3, "unknown": 4}
+    # A world drop sorts last: naming the zone is the least that can be said
+    # about where something came from, and it is only ever the answer when
+    # nothing better exists.
+    order = {"raid": 0, "group": 1, "quest": 2, "solo": 3, "unknown": 4,
+             "zone": 5}
     for rows in out.values():
         rows.sort(key=lambda s: (order.get(s["kind"], 9), s["source"]))
     return out
@@ -201,6 +232,7 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
 
     sources = _sources(conn, [r["page_title"] for r in rows])
     kept = []
+    before_priorities = 0
     for row in rows:
         if want_classes and not want_classes & set(row["classes"]):
             continue
@@ -223,14 +255,20 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
             continue
         if has_proc and not row["effects"]:
             continue
+        row["sources"] = sources.get(row["page_title"], [])
+        if want_kinds and not want_kinds & {s["kind"] for s in row["sources"]}:
+            continue
+        # EVERY FILTER BUT THE STAT ONES HAS NOW RUN, and the count is kept:
+        # an empty table has two completely different causes and the reader
+        # cannot tell them apart from nothing. "No Head item at level 70 in
+        # this expansion" and "46 of them, none carrying Reuse Speed" are the
+        # same blank table and lead to opposite next moves.
+        before_priorities += 1
         if any(not row["stats"].get(s) for s in need):
             continue
         # The four-stat floor. Counted over the stats that actually RANK, so a
         # hand-built order carrying potency does not let a row in on it.
         if floor and sum(1 for s in w if row["stats"].get(s)) < floor:
-            continue
-        row["sources"] = sources.get(row["page_title"], [])
-        if want_kinds and not want_kinds & {s["kind"] for s in row["sources"]}:
             continue
         row["score"] = score(row["stats"], w, scale)
         kept.append(row)
@@ -254,6 +292,13 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
         # say so.
         "match_min": floor,
         "ranked": list(w),
+        # THE CATALOG IS A CRAWL AND IT IS NOT THE GAME. It holds what an
+        # expansion's zones, nameds and quests could be walked to; a blank
+        # table is a statement about this table and never about EverQuest II,
+        # and the page has to be able to say which of its own controls emptied
+        # it before it implies the item does not exist.
+        "before_priorities": before_priorities,
+        "catalog": len(rows),
     }
 
 
@@ -262,9 +307,14 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
 # attributes, resistances and the defensive numbers. Same split `items.py`
 # makes from Census's `type` field — made here from the field name instead,
 # because the wiki has no type on a field and the answer is fixed anyway.
-_BLUE = ("potency", "crit", "abmod", "multi", "dps", "aspeed", "acspeed",
+#
+# **ABILITY MOD IS LAST**, which is where the game puts it — game knowledge,
+# from Lindsay, and the same order `items.EFFECT_LAST` keeps so the two examine
+# cards agree. It is one of the two numbers a raider compares items on and is
+# still not what the window leads with.
+_BLUE = ("potency", "crit", "multi", "dps", "aspeed", "acspeed",
          "arspeed", "flurry", "aeauto", "dblcast", "strike", "bchance",
-         "maxhealth", "mitinc", "accuracy")
+         "maxhealth", "mitinc", "accuracy", "abmod")
 
 
 def card(row: dict) -> dict:
@@ -295,10 +345,19 @@ def card(row: dict) -> dict:
         included = {
             "name": row["set_name"], "color": "turquoise", "predicate": None,
             "flags": [], "requires_equip": True,
+            # THE TIER LINE IS THE STATS, the way the game draws it — "(6) 4
+            # Potency, 100 Ability Mod, 5 Crit Chance" — with the proc and its
+            # explanation as the bullets under it. A tier whose own line is
+            # empty is still a tier; dropping it on a falsy `text` is what hid
+            # the largest bonus on the set.
             "set_bonuses": [{
-                "required": bonus.get("pieces"), "effect": None,
-                "descriptions": [bonus.get("text", "").replace("|", "").strip()],
-            } for bonus in row.get("_set_bonuses", []) if bonus.get("text")],
+                "required": bonus.get("pieces"),
+                "effect": ", ".join(bonus.get("stat_lines") or []) or None,
+                "descriptions": [line for line in
+                                 [bonus.get("text", "").replace("|", "").strip(),
+                                  *(bonus.get("detail") or [])] if line],
+            } for bonus in row.get("_set_bonuses", [])
+                if bonus.get("text") or bonus.get("stat_lines")],
         }
     return {
         "name": row["name"],
@@ -308,6 +367,10 @@ def card(row: dict) -> dict:
         "type": row.get("dtype") or row.get("wtype"),
         "slot": row.get("slot_label") or row.get("slot"),
         "level": row.get("level"),
+        # WHO CAN WEAR IT, which is the one property that rules an item out
+        # before any number on it matters. Silence when it is not a restriction
+        # — see `wiki.class_restriction`, which the loot card asks too.
+        "classes": wiki.class_restriction(row.get("classes")),
         "stats": {
             "stats": stats, "effects": effects,
             "flags": [f.strip().title() for f in (row["flags"] or "").split()
@@ -395,7 +458,7 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
             key=lambda x: (-x["score"], x["name"]))
         bonuses = json.loads(r["bonuses_json"] or "[]")
         for bonus in bonuses:
-            bonus["stats"] = set_bonus_stats(bonus.get("text") or "")
+            bonus["stats"] = bonus_stats(bonus)
         out.append({
             "name": r["name"], "page_title": r["page_title"], "era": r["era"],
             "level": r["level"],

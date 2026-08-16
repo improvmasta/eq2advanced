@@ -515,6 +515,20 @@ def character_summary(conn, char) -> dict:
                           "census_id": char["census_character_id"]}}
     if doc is None:
         return {**base, "synced": False}
+    return _summary_of(conn, doc, base,
+                       {"id": row["id"], "fetched_ts": row["fetched_ts"]},
+                       char["class"])
+
+
+def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
+                char_class: str | None) -> dict:
+    """One Census document as the page's summary.
+
+    Split out of `character_summary` so the by-name lookup on /plan renders the
+    IDENTICAL shape (`planner_api.plan_character`). A reader trying gear on a
+    toon they did not sign in for must get the same window as one who did —
+    two builders would drift, and the difference would be invisible until a
+    field went missing on the path nobody uses."""
     stats = doc.get("stats") or {}
     key_stats = []
     for label, (grp, key), is_pct in KEY_STATS:
@@ -531,14 +545,83 @@ def character_summary(conn, char) -> dict:
     guild = (doc.get("guild") or {}).get("name")
     return {
         **base, "synced": True,
-        "snapshot": {"id": row["id"], "fetched_ts": row["fetched_ts"]},
+        "snapshot": snapshot,
         "guild": guild,
         "key_stats": key_stats, "attributes": attributes, "vitals": vitals,
         "resists": resists, "aa_spent": aa.get("spentpoints"),
         "planner_stats": planner_character_stats(doc),
         "gear": _gear(conn, doc),
-        "spells": _spells(conn, doc, char["class"]),
+        "spells": _spells(conn, doc, char_class),
     }
+
+
+# How long a by-name lookup is served from the cache before Census is asked
+# again. A character's gear changes when they raid, not when they refresh a
+# page, and the cache is also what keeps this working at all while Census is
+# unavailable — which is normal and comes and goes by time of day.
+LOOKUP_TTL_S = 6 * 3600
+
+
+def lookup_by_name(conn, client, name: str, world_id: int = 618,
+                   refresh: bool = False) -> dict | None:
+    """A public character by NAME -> the same summary an owned one produces.
+
+    **Cache first, and cache the MISS too.** Census intermittency is normal and
+    is not an outage, so a lookup that cannot reach it falls back to whatever
+    was last seen rather than failing: a reader planning gear does not care
+    that the record is six hours old. A name Census does not know is stored
+    with a NULL document so a typo is not re-asked every time it is typed.
+
+    Returns None when the name is unknown and nothing is cached. Writes no
+    account state — see the `plan_characters` comment in `db.py`."""
+    key = base_name(name).strip()
+    if not key:
+        return None
+    lower = key.lower()
+    row = conn.execute(
+        "SELECT * FROM plan_characters WHERE name_lower=? AND world_id=?",
+        (lower, world_id)).fetchone()
+    fresh = row and (time.time() - row["fetched_ts"]) < LOOKUP_TTL_S
+    if row and fresh and not refresh:
+        return _lookup_out(conn, row)
+
+    try:
+        doc = client.character_by_name(key, world_id)
+    except Exception:                      # noqa: BLE001 — one failure mode
+        # Census is unreachable. Stale is better than nothing and much better
+        # than an error page on a tab that needs no account.
+        return _lookup_out(conn, row) if row else None
+    if doc:
+        doc = _trim(doc)
+        ensure_items(conn, client, _equipped_item_ids(doc))
+    now = int(time.time())
+    with conn:
+        conn.execute(
+            "INSERT INTO plan_characters (name_lower, world_id, name, doc_json, "
+            "fetched_ts) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(name_lower, world_id) DO UPDATE SET name=excluded.name, "
+            "doc_json=excluded.doc_json, fetched_ts=excluded.fetched_ts",
+            (lower, world_id, (doc or {}).get("displayname") or key,
+             json.dumps(doc, separators=(",", ":")) if doc else None, now))
+    return _lookup_out(conn, conn.execute(
+        "SELECT * FROM plan_characters WHERE name_lower=? AND world_id=?",
+        (lower, world_id)).fetchone())
+
+
+def _lookup_out(conn, row) -> dict | None:
+    if row is None or not row["doc_json"]:
+        return None
+    doc = json.loads(row["doc_json"])
+    ctype = doc.get("type") or {}
+    cls = ctype.get("class")
+    # `public: True` is how the page knows this is a looked-up record rather
+    # than one of yours: no snapshot history, no refresh button, nothing to own.
+    base = {"character": {
+        "id": None, "name": row["name"], "class": cls,
+        "level": ctype.get("level"), "world": "Wuoshi",
+        "last_census_ts": row["fetched_ts"], "census_id": doc.get("id"),
+        "public": True}}
+    return _summary_of(conn, doc, base, None, cls)
 
 
 def snapshot_list(conn, character_id: int) -> list[dict]:

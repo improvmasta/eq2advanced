@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 42
+SCHEMA_VERSION = 43
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -1046,6 +1046,27 @@ CREATE TABLE IF NOT EXISTS plan_syncs (
   synced_ts INTEGER NOT NULL
 );
 
+-- v43: a character looked up BY NAME on /plan, with no account behind it.
+--
+-- The Planner needs no account and neither should trying your own gear on it —
+-- the whole point of the loadout is to mess about with a toon before chasing
+-- anything, and making that the one part that needs signing up is backwards.
+--
+-- **This is a CACHE of a public Census record, not a character.** No user_id,
+-- no snapshots, no history, nothing that could become somebody's account
+-- state: `characters` remains the only owned thing and this table can be
+-- dropped without losing anything a person typed. It exists so the lookup
+-- survives Census being down (which is normal and comes and goes by time of
+-- day) and so a reader refreshing the page does not re-ask Census.
+CREATE TABLE IF NOT EXISTS plan_characters (
+  name_lower TEXT NOT NULL,
+  world_id INTEGER NOT NULL,
+  name TEXT NOT NULL,                     -- as Census spells it
+  doc_json TEXT,                          -- NULL when Census has no such name
+  fetched_ts INTEGER NOT NULL,
+  PRIMARY KEY (name_lower, world_id)
+);
+
 -- v42: the Planner's OUTLINE (Phase 2, docs/planner.md). The crawl already
 -- read every quest page in the era to find its rewards and threw the rest
 -- away; these two tables are what it keeps. Same category of row as the
@@ -1653,6 +1674,10 @@ def init_db() -> None:
                          "INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE plan_syncs ADD COLUMN edges "
                          "INTEGER NOT NULL DEFAULT 0")
+        # v43: `plan_characters`, the by-name Census lookup behind /plan's
+        # loadout. A new table and nothing else — `CREATE TABLE IF NOT EXISTS`
+        # in SCHEMA is the whole migration, and an empty one is a Planner whose
+        # loadout has simply not been asked about anybody yet.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

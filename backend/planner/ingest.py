@@ -9,22 +9,34 @@ somebody else's server.
 Item pages have no era and their `obtain` field is blank more often than not;
 the monster that drops a thing says `patch = Rise of Kunark`, `diff = epic x4`
 and `zone = The Protector's Realm`, and the quest that rewards it says the
-same. So the crawl walks `Category:<era> Named Monsters` and
-`Category:<era> Quests`, collects what they point at, and fetches only those
+same. So the crawl collects what those pages point at and fetches only those
 item pages. Source, era and the raid/group/solo split all arrive with the
 link — none of them could have been read off the item.
 
-Four rounds of fetching, all batched at `gamewiki.BATCH` titles per request:
+**WHICH mobs is asked BY ZONE, not by expansion**, because the wiki does not
+tag mid-expansion content with the expansion — a live-update monster carries
+`LU39` and its tier and nothing else. Asking `Category:<era> Named Monsters`
+alone left whole zones out of the catalog. `wiki.named_categories` says why and
+`zones.in_era` is what makes it answerable.
 
-1. the named monsters of the era — drops, zone, difficulty
+**And the two inversions can never see a TRASH drop**, since nothing links what
+an unnamed mob carries — which is most of what a level-70 broker search
+returns. The zone's `Dropped Items` category is the only index of those, and it
+is read for the items no named and no quest already accounts for.
+
+Five rounds of fetching, all batched at `gamewiki.BATCH` titles per request:
+
+1. the era's named monsters, from the expansion's category and every zone's —
+   drops, zone, difficulty
 2. its quests — equipment rewards, level, timeline
-3. every item those two named — and every VERSION behind a disambiguation,
+3. each zone's dropped-item category, for what neither of those named
+4. every item all three named — and every VERSION behind a disambiguation,
    because `Focused Mind Slippers` is two real items at two levels and the
    catalog wants both
-4. the adornment sets those items belong to
+5. the adornment sets those items belong to
 
-RoK is roughly 350 monsters and 900 quests, so a full era is a few hundred
-requests at a quarter-second apiece — minutes, not hours.
+RoK is roughly 350 monsters and 900 quests over 29 zones, so a full era is a
+few hundred requests at a quarter-second apiece — minutes, not hours.
 """
 
 import json
@@ -35,6 +47,12 @@ from planner import wiki
 
 # A page whose title is one of these is a category or a file, not a thing.
 _SKIP_PREFIXES = ("category:", "file:", "template:", "image:")
+
+# How many times a page behind a link may itself be a pointer. Two hops is the
+# real depth — a crate naming a disambiguation naming its versions — and the
+# third is slack rather than a case anybody has seen. It is a bound and not a
+# budget: the loop stops the moment a round finds nothing new.
+_FOLLOW_ROUNDS = 3
 
 
 def _titles(links) -> list[str]:
@@ -68,7 +86,11 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
     pages_read = 0
 
     # --- 1 & 2: the two inversions -------------------------------------
-    mob_titles = _titles(members(cats["named"]))
+    # ASKED BY ZONE AS WELL AS BY EXPANSION. The wiki files a mid-expansion
+    # monster under its live update and never under the expansion, so the
+    # expansion category alone misses whole zones — see `wiki.named_categories`.
+    mob_titles = _titles(
+        t for cat in wiki.named_categories(era) for t in members(cat))
     mob_pages = _fetch_all(mob_titles, fetch, progress, "monsters")
     pages_read += len(mob_pages)
     mobs = [m for title, text in mob_pages.items()
@@ -101,23 +123,68 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
                 "era": wiki.era_of_patch(quest["era"]) or era,
             })
 
+    # --- 2b: the world drops the two inversions cannot reach --------------
+    #
+    # A NAMED page links what it drops; nothing links what a trash mob drops,
+    # and that is most of what a level-70 broker search returns. The zone's
+    # `Dropped Items` category is the only index of it — 1,611 pages across
+    # EoF's zones and 1,345 across RoK's (measured 2026-08-16).
+    #
+    # Only for items no named and no quest already accounts for. A drop that
+    # HAS a monster gets a better answer from the monster, and adding "…and it
+    # is also in this zone's category" beside it would be a second row saying
+    # less. Counted, because the size of this set is the size of the gap the
+    # expansion categories left.
+    zone_drops = 0
+    drop_cats = wiki.drop_categories(era)
+    for i, (cat, zone_row) in enumerate(drop_cats, 1):
+        src = wiki.zone_source(zone_row, era)
+        for link in _titles(members(cat)):
+            if link in wanted:
+                continue
+            wanted[link] = [dict(src)]
+            zone_drops += 1
+        if progress:
+            progress("zones", i, len(drop_cats))
+
     # --- 3: the items, and the versions behind a disambiguation ---------
     item_pages = _fetch_all(_titles(wanted), fetch, progress, "items")
     pages_read += len(item_pages)
-    # A disambiguation is the COMMON case here — `Focused Mind Slippers` points
-    # at `(Level 78)` and `(Level 80)`, which are two real items — so both are
-    # taken and both inherit the source that named the pointer. items.py picks
-    # the first version instead, because there it is resolving ONE logged drop
-    # and here we are building a catalog.
-    versions: dict[str, str] = {}          # version page -> the link that led here
-    for title, text in item_pages.items():
-        if gamewiki.is_disambiguation(text):
-            for link in _titles(wiki.links(text)):
-                versions[link] = title
-    if versions:
-        version_pages = _fetch_all(sorted(versions), fetch, progress, "versions")
-        pages_read += len(version_pages)
-        item_pages.update(version_pages)
+    # WHAT A LINK POINTS AT IS OFTEN NOT THE ITEM, in two different ways, and
+    # both are followed the same way: the pages behind it are taken and all of
+    # them inherit the source that named the pointer.
+    #
+    # A DISAMBIGUATION is the common case — `Focused Mind Slippers` points at
+    # `(Level 78)` and `(Level 80)`, which are two real items. (`items.py`
+    # picks the first version instead, because there it is resolving ONE logged
+    # drop and here we are building a catalog.)
+    #
+    # A CRATE is the other, and it is where the set armour lives. The mob drops
+    # `Faydwer Cloth Pattern: Head` and you unpack one of three hoods out of
+    # it — of which exactly one carries Reuse Speed. The crate is not equipment
+    # and is correctly refused by `parse_equip`, so before this the armour
+    # behind it was reachable from nothing.
+    #
+    # Followed until nothing new appears rather than once, because a crate can
+    # name a disambiguation and that is two hops from the mob.
+    origin: dict[str, str] = {}            # a page -> the link that led to it
+    frontier = dict(item_pages)
+    for _ in range(_FOLLOW_ROUNDS):
+        found: dict[str, str] = {}
+        for title, text in frontier.items():
+            came_from = origin.get(title, title)
+            behind = (_titles(wiki.links(text)) if gamewiki.is_disambiguation(text)
+                      else wiki.crate_contents(text))
+            for link in behind:
+                if link not in item_pages and link not in found:
+                    found[link] = came_from
+        if not found:
+            break
+        pages = _fetch_all(sorted(found), fetch, progress, "versions")
+        pages_read += len(pages)
+        item_pages.update(pages)
+        origin.update(found)
+        frontier = pages
 
     items: dict[str, dict] = {}
     sources: list[dict] = []
@@ -126,8 +193,7 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         row = wiki.parse_equip(title, text)
         if not row:
             continue                       # a pattern, a recipe, a pointer page
-        origin = versions.get(title, title)
-        named_by = wanted.get(origin)
+        named_by = wanted.get(origin.get(title, title))
         if not named_by:
             continue                       # a version nothing actually pointed at
         # An item above an expansion's level cap cannot be equipped in it, so
@@ -179,6 +245,10 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         "quest_count": len(quests),
         "pages": pages_read,
         "over_cap": over_cap,
+        # How many item pages entered on a ZONE's category alone. It is the
+        # measure of what the two inversions cannot see, so it is reported
+        # rather than folded into the item count.
+        "zone_drops": zone_drops,
     }
 
 
@@ -252,7 +322,23 @@ SET_UPSERT = (
     "bonuses_json=excluded.bonuses_json, fetched_ts=excluded.fetched_ts")
 
 
-def store(conn, crawled: dict) -> dict:
+# A CRAWL THAT CAME BACK EMPTY MUST NOT EMPTY THE CATALOG.
+#
+# `store` reconciles, which means it DELETES — that is what lets a correction
+# land, and it is safe exactly as long as a person is watching the run. Once
+# this is on a schedule nobody is, and a rate limit, a redirect loop or an hour
+# of Fandom being unhappy comes back as "the wiki no longer says any of this"
+# and takes the catalog with it. So a crawl that collapses is refused rather
+# than written, and the operator is told. A real itemization change never halves
+# an expansion; a broken fetch always does.
+COLLAPSE_RATIO = 0.6
+
+
+class CrawlCollapsed(RuntimeError):
+    """A crawl returned so much less than the last one that it is not credible."""
+
+
+def store(conn, crawled: dict, force: bool = False) -> dict:
     """Write one crawl, and RECONCILE that era against it.
 
     Upsert, then delete this era's source rows the crawl did not produce, then
@@ -288,6 +374,18 @@ def store(conn, crawled: dict) -> dict:
             "effects": row["effects"], "effect_desc": row["effect_desc"],
             "icon": row["icon"], "fetched_ts": now,
         })
+    prev = conn.execute("SELECT items FROM plan_syncs WHERE era=?",
+                        (era,)).fetchone()
+    # `max(1, …)` because a crawl that returns NOTHING where there was
+    # something is always the network and never the wiki, however small the
+    # catalog was.
+    had = prev["items"] if prev else 0
+    floor = max(1, int(had * COLLAPSE_RATIO)) if had else 0
+    if not force and len(items) < floor:
+        raise CrawlCollapsed(
+            f"{era}: crawl returned {len(items)} items against "
+            f"{prev['items']} last time — refusing to reconcile. Re-run when "
+            f"the wiki is answering, or pass force=True if the drop is real.")
     known = {r["page_title"] for r in items}
     sources = [s for s in crawled["sources"] if s["page_title"] in known]
     sets = [{
@@ -345,7 +443,8 @@ def store(conn, crawled: dict) -> dict:
             "mobs": crawled["mobs"], "quests": len(quests),
             "edges": edge_report["edges"],
             "dangling": edge_report["dangling"],
-            "over_cap": crawled["over_cap"]}
+            "over_cap": crawled["over_cap"],
+            "zone_drops": crawled["zone_drops"]}
 
 
 def _reconcile_edges(conn, era: str, claims: list[dict]) -> dict:
@@ -453,5 +552,5 @@ def _era_rank(era: str) -> int:
     return zones.era_rank(wiki.ERAS.get(era, era))
 
 
-def sync(conn, era: str, **kw) -> dict:
-    return store(conn, crawl(era, **kw))
+def sync(conn, era: str, force: bool = False, **kw) -> dict:
+    return store(conn, crawl(era, **kw), force=force)

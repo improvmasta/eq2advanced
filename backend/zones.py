@@ -164,6 +164,23 @@ def era_of(zone: str | None) -> str | None:
     return row["era"] if row else None
 
 
+def in_era(era: str | None) -> list[dict]:
+    """Every zone this reference file places in one expansion.
+
+    The reverse of `era_of`, and it exists because the wiki cannot answer it.
+    An expansion's own categories hold what SHIPPED with it; a zone added by a
+    live update six months later is filed under `LU39` and under nothing else,
+    so "the places that are part of Echoes of Faydwer" is a question only this
+    hand-synced file can answer (`tools/sync_zone_eras.py` already resolved the
+    update number to the expansion that was live). The Planner crawls by zone
+    for exactly that reason — see `planner/wiki.zone_categories`."""
+    name = (era or "").strip()
+    if not name:
+        return []
+    return sorted((r for r in _BY_NAME.values() if r.get("era") == name),
+                  key=lambda r: r["zone"])
+
+
 def era_rank(era: str | None) -> int:
     """Sort key. An unknown era goes last rather than first: the outline is
     read top-down and the zones we can place belong at the top."""

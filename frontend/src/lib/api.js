@@ -88,6 +88,9 @@ export const api = {
   // Sonarr-style: revokes every live key and mints the replacement
   refreshToken: (label) => req('/api/tokens/refresh', json({ label })),
   census: (charId) => req(`/api/characters/${charId}/census`),
+  // A public Census character by name — no account, `/plan`'s own route.
+  planCharacter: (name) =>
+    req(`/api/plan/character?name=${encodeURIComponent(name)}`),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
   censusSnapshots: (charId) => req(`/api/characters/${charId}/census/snapshots`),
   censusDiff: (charId, snapId) => req(`/api/characters/${charId}/census/snapshots/${snapId}/diff`),

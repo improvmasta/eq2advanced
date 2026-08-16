@@ -484,7 +484,8 @@ def test_censuss_all_is_ability_mod_and_belongs_with_the_modifiers():
 
 def test_the_blue_block_always_leads_with_potency_then_crit_chance():
     """Fixed, not sorted by value: the question a raider asks of this block is
-    always the same one in the same order."""
+    always the same one in the same order — and **Ability Mod goes last**,
+    which is where the game puts it, however much it matters."""
     s = items.stat_block({**CENSUS_ITEM, "modifiers": {
         "attackspeed": {"displayname": "Haste", "type": "modifyproperty", "value": 4.0},
         "all": {"displayname": "All", "type": "normalizedmod", "value": 62},
@@ -493,7 +494,7 @@ def test_the_blue_block_always_leads_with_potency_then_crit_chance():
         "basemodifier": {"displayname": "Potency", "type": "modifyproperty", "value": 2.6},
     }})
     assert [r["name"] for r in s["effects"]] == [
-        "Potency", "Crit Chance", "DPS", "Ability Mod", "Haste"]
+        "Potency", "Crit Chance", "DPS", "Haste", "Ability Mod"]
     # DPS and Ability Mod are figures; everything else in here is a percentage
     pct = {r["name"]: r["pct"] for r in s["effects"]}
     assert pct == {"Potency": True, "Crit Chance": True, "DPS": False,
@@ -627,8 +628,25 @@ def test_a_turquoise_adornment_keeps_its_slot_predicate_and_set_bonus():
 
 def test_an_adornment_page_supplies_its_set_name():
     fx = items.item_effects("{{AdornInformation2|\n set = Arcanist Abomination Anihiliation|\n}}")
-    assert fx == {"names": [], "desc": [],
+    # `classes` rides along on the same read — an adornment page names none,
+    # and an unrestricted item is quiet rather than listing every class.
+    assert fx == {"names": [], "desc": [], "classes": None,
                   "set": "Arcanist Abomination Anihiliation"}
+
+
+def test_an_equipment_page_says_who_can_wear_it_and_only_when_it_restricts():
+    """The one property that rules an item out before any number on it matters.
+    Read off the page already in hand, the same way the proc is."""
+    fx = items.item_effects(
+        "{{EquipInformation|\n classes = {{AllShamanCats|Equipment|yes}}|\n}}")
+    assert fx and "mystic" in fx["classes"] and "wizard" not in fx["classes"]
+    # The tier expands to the SUBCLASSES that can equip it, never to its own
+    # name — a grant is to a tier, and what wears the item is a class.
+    assert items.display({"effects": fx})["classes"] == ["Defiler", "Mystic"]
+    # Everybody can wear it -> no line at all, the way the game shows it.
+    everyone = items.item_effects(
+        "{{EquipInformation|\n classes = {{AllAdvCats|Equipment|yes}}|\n}}")
+    assert items.display({"effects": everyone})["classes"] is None
 
 
 def test_the_adorn_gem_route_refuses_a_colour_the_game_has_no_slot_for(client):

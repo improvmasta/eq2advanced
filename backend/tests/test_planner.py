@@ -8,6 +8,7 @@ exercised end to end with `fetch` and `members` handed in.
 """
 
 import json
+import pytest
 import sqlite3
 import sys
 from pathlib import Path
@@ -133,6 +134,67 @@ def test_only_plain_additive_set_bonuses_become_projectable_stats():
     assert catalog.set_bonus_stats("65 Health|") == {"health": 65.0}
     assert catalog.set_bonus_stats("Applies Focus: Rift.") == {}
     assert catalog.set_bonus_stats("More damage sometimes") == {}
+    # The game draws a tier as a comma list. Every segment has to type or the
+    # line is prose: half a sentence read as arithmetic is worse than none.
+    assert catalog.set_bonus_stats("4 Potency, 100 Ability Modifier, 5 Crit Chance") == {
+        "potency": 4.0, "abmod": 100.0, "crit": 5.0}
+    assert catalog.set_bonus_stats("3 Potency, and sometimes more") == {}
+
+
+SPIRIT_SIPHONING = """{{AdornmentSet|Spirit Siphoning Set|
+*{{Equip|Spirit Siphoning Set: Head}}
+----
+*(2) Applies '''''Focus: Lifetap IV.'''''
+**Reduces power cost of Lifetap IV by 200.
+3 Potency
+*(6)
+4 Potency
+100 Ability Modifier
+5 Crit Chance|
+ level   =70|
+}}"""
+
+
+def test_a_set_tier_is_a_BLOCK_and_its_stats_are_the_bare_lines_under_it():
+    """A TIER IS NOT ONE LINE. The page writes the proc on the `(N)` line, its
+    explanation in sub-bullets, and the tier's flat stats as bare lines after
+    those — which the game draws back ON the tier line ("(6) 4 Potency, 100
+    Ability Mod, 5 Crit Chance"). Reading only the `(N)` line lost the Potency
+    off every tier that had a proc, kept one stat of three where a tier had no
+    proc, and dropped that tier entirely when its own line was empty."""
+    s = wiki.parse_adorn_set("Spirit Siphoning Set (Adornment Set)",
+                             SPIRIT_SIPHONING)
+    two, six = s["bonuses"]
+    assert two["text"] == "Applies Focus: Lifetap IV."
+    assert two["stat_lines"] == ["3 Potency"]
+    assert two["detail"] == ["Reduces power cost of Lifetap IV by 200."]
+    assert catalog.bonus_stats(two) == {"potency": 3.0}
+    # A tier whose own line is empty is still a tier, and it is the big one.
+    assert six["pieces"] == 6 and six["text"] == ""
+    assert catalog.bonus_stats(six) == {
+        "potency": 4.0, "abmod": 100.0, "crit": 5.0}
+    # ...and the block stops at the template's own fields rather than reading
+    # `level =70` and `}}` as two more stats.
+    assert six["stat_lines"] == ["4 Potency", "100 Ability Modifier",
+                                 "5 Crit Chance"]
+
+
+def test_a_set_tier_reaches_the_examine_card_the_way_the_game_draws_it(tmp_path):
+    """Stats on the tier line, proc and explanation as the bullets under it."""
+    conn = loaded(tmp_path)
+    parsed = wiki.parse_adorn_set("Spirit Siphoning Set (Adornment Set)",
+                                  SPIRIT_SIPHONING)
+    row = dict(conn.execute("SELECT * FROM plan_items").fetchone())
+    row.update(stats={}, adorns={}, icon=None, effects=None, effect_desc=None,
+               classes=[], set_name="Spirit Siphoning Set",
+               _set_bonuses=parsed["bonuses"])
+    tiers = catalog.card(row)["stats"]["included_adornment"]["set_bonuses"]
+    assert [t["required"] for t in tiers] == [2, 6]
+    assert tiers[0]["effect"] == "3 Potency"
+    assert tiers[0]["descriptions"] == [
+        "Applies Focus: Lifetap IV.",
+        "Reduces power cost of Lifetap IV by 200."]
+    assert tiers[1]["effect"] == "4 Potency, 100 Ability Modifier, 5 Crit Chance"
 
 
 # ---------- Phase 2: quest chains ----------
@@ -190,12 +252,19 @@ def test_junk_references_are_rejected_and_scaling_level_is_kept_as_text():
 
 # ---------- the crawl ----------
 
-def fake_wiki():
+def fake_wiki(drops=()):
     """The crawl driven off recorded pages. `Adkar Vyx` drops the boots; the
-    disambiguation is included so the version-following round is exercised."""
+    disambiguation is included so the version-following round is exercised.
+
+    THREE category shapes are asked for now, not two — the crawl walks a
+    `Named Monsters` category per zone as well as the expansion's, and a
+    `Dropped Items` one per zone — so the fake answers each by name rather than
+    letting anything unrecognised fall through to the quest list."""
     def members(cat):
-        if cat.endswith("Named Monsters"):
+        if cat.endswith(wiki.NAMED_SUFFIX):
             return ["Adkar Vyx", "Admiral Tylix"]
+        if cat.endswith(wiki.DROPS_SUFFIX):
+            return list(drops)
         return ["Acts of Contrition"]
 
     def fetch(titles):
@@ -225,6 +294,95 @@ def test_the_crawl_inverts_mobs_into_items_with_their_source(tmp_path):
     assert src["zone"] == "The Protector's Realm"
 
 
+def test_named_monsters_are_asked_for_by_zone_and_not_only_by_expansion():
+    """THE EXPANSION CATEGORY IS NOT THE WHOLE EXPANSION.
+
+    The wiki files a monster added between expansions under its live update and
+    its tier and nothing else — `Kza'Bok` carries `LU39`, `Tier 8` and
+    `Shard of Fear`, never `Echoes of Faydwer`. So asking the expansion alone
+    left every zone it added mid-cycle out of the catalog, along with the
+    level-70 gear those zones drop. Which expansion a ZONE belongs to is
+    already reference data here, and it is the question that has an answer."""
+    cats = wiki.named_categories("eof")
+    assert cats[0] == "Category:Echoes of Faydwer Named Monsters"
+    assert "Category:Shard of Fear Named Monsters" in cats
+    assert "Category:Shard of Fear Dropped Items" in [
+        cat for cat, _ in wiki.drop_categories("eof")]
+
+
+def test_a_world_drop_enters_on_its_zone_when_no_named_links_it(tmp_path):
+    """The two inversions can only find what a page LINKS, and nothing links
+    what a trash mob drops — which is most of what a broker search returns.
+    The zone's own drop list is the only index of it."""
+    conn = fresh_db(tmp_path)
+    orphan = dict(PAGES)
+    orphan["Adkar Vyx"] = PAGES["Adkar Vyx"].replace(
+        f"*[[{BOOTS}|Mist Covered Boots]]", "")
+    _, members = fake_wiki(drops=[BOOTS])
+    report = ingest.sync(conn, "rok", members=members,
+                         fetch=lambda ts: {t: orphan[t] for t in ts if t in orphan})
+    assert report["zone_drops"] == 1
+    rows = conn.execute("SELECT * FROM plan_sources WHERE page_title=?",
+                        (BOOTS,)).fetchall()
+    assert [r["kind"] for r in rows] == ["zone"]
+    assert rows[0]["zone"] in {z["zone"] for z in wiki.era_zones("rok")}
+    # The place is the source, and that is the whole of the honest claim: no
+    # monster, and no level invented for a zone that has none.
+    assert rows[0]["source"] == rows[0]["zone"] and rows[0]["level"] is None
+
+
+CRATE = "Faydwer Cloth Pattern: Head"
+# The real shape, cut to one item. `{{!}}` is how a piped display name is
+# escaped inside a template parameter — a bare pipe would end the parameter.
+CRATE_PAGE = ("{{ItemInformation|\n type      =Crate|\n icat      = LEGENDARY|\n"
+              " contains  ={{CItemList|\n"
+              " item1 = " + BOOTS + "{{!}}Mist Covered Boots|\n"
+              " iconnum1 = 528|\n }}|\n"
+              " obtain    = {{DroppedItem|The Priest of Fear||"
+              "The Estate of Unrest|Ornate}}|\n}}")
+
+
+def test_a_crate_names_the_armour_and_the_armour_inherits_its_source(tmp_path):
+    """**A SET PIECE IS BEHIND A CRATE, AND THE CRATE IS WHAT DROPS.** The mob
+    hands you `Faydwer Cloth Pattern: Head` and you unpack one of three hoods
+    out of it, only one of which carries Reuse Speed. A crate is an
+    `ItemInformation` page, so the equipment parser rightly refuses it — and
+    until the crawl looked INSIDE it, every set piece in both expansions was
+    reachable from nothing at all."""
+    assert wiki.crate_contents(CRATE_PAGE) == [BOOTS]
+    assert wiki.crate_contents(PAGES[BOOTS]) == []      # not asked of equipment
+
+    conn = fresh_db(tmp_path)
+    pages = dict(PAGES, **{CRATE: CRATE_PAGE})
+    pages["Adkar Vyx"] = PAGES["Adkar Vyx"].replace(
+        f"*[[{BOOTS}|Mist Covered Boots]]", "")        # nothing links the boots
+    _, members = fake_wiki(drops=[CRATE])
+    ingest.sync(conn, "rok", members=members,
+                fetch=lambda ts: {t: pages[t] for t in ts if t in pages})
+    row = conn.execute("SELECT * FROM plan_items WHERE page_title=?",
+                       (BOOTS,)).fetchone()
+    assert row is not None
+    # The crate is not equipment and never becomes a row of its own.
+    assert conn.execute("SELECT COUNT(*) FROM plan_items WHERE page_title=?",
+                        (CRATE,)).fetchone()[0] == 0
+    # What you equip inherits where the box came from.
+    src = conn.execute("SELECT * FROM plan_sources WHERE page_title=?",
+                       (BOOTS,)).fetchone()
+    assert src["kind"] == "zone"
+
+
+def test_a_named_drop_does_not_also_become_a_world_drop(tmp_path):
+    """A monster that names the item answers better than the zone it stands in,
+    and a second row saying less is not more information."""
+    conn = fresh_db(tmp_path)
+    fetch, members = fake_wiki(drops=[BOOTS])
+    report = ingest.sync(conn, "rok", fetch=fetch, members=members)
+    assert report["zone_drops"] == 0
+    kinds = [r["kind"] for r in conn.execute(
+        "SELECT kind FROM plan_sources WHERE page_title=?", (BOOTS,))]
+    assert kinds == ["raid"]
+
+
 def test_an_item_above_the_era_cap_is_not_in_that_era(tmp_path):
     """A RoK quest page rewritten for a live revamp hands back a level-100
     item. One of those in the catalog becomes the largest value the scorer has
@@ -243,6 +401,28 @@ def test_an_item_above_the_era_cap_is_not_in_that_era(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 0
 
 
+def test_a_crawl_that_collapses_is_refused_rather_than_reconciled(tmp_path):
+    """`store` DELETES, which is what lets a correction land and is safe only
+    while a person is watching. On a schedule nobody is, and a rate limit or an
+    hour of Fandom being unhappy comes back as "the wiki no longer says any of
+    this". A real itemization change never halves an expansion; a broken fetch
+    always does."""
+    conn = fresh_db(tmp_path)
+    fetch, members = fake_wiki()
+    ingest.sync(conn, "rok", fetch=fetch, members=members)
+    assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 1
+
+    def nothing(_titles):
+        return {}
+    with pytest.raises(ingest.CrawlCollapsed):
+        ingest.sync(conn, "rok", fetch=nothing, members=members)
+    # ...and the catalog is still there, which is the whole point.
+    assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 1
+    # An operator who knows the drop is real can still say so.
+    ingest.sync(conn, "rok", fetch=nothing, members=members, force=True)
+    assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 0
+
+
 def test_a_resync_removes_what_the_wiki_no_longer_says(tmp_path):
     """The catalog is a cache of a crawl, so a drop removed from a mob page has
     to be able to LEAVE. Reconciling is per-era, so the other era's rows stay."""
@@ -254,14 +434,20 @@ def test_a_resync_removes_what_the_wiki_no_longer_says(tmp_path):
     stripped = dict(PAGES)
     stripped["Adkar Vyx"] = PAGES["Adkar Vyx"].replace(
         f"*[[{BOOTS}|Mist Covered Boots]]", "")
-    ingest.sync(conn, "rok", members=members,
+    # `force` because this fixture is a ONE-item era, and emptying a one-item
+    # era is indistinguishable from a broken fetch — which is the whole reason
+    # `CrawlCollapsed` exists. The guard is about SCALE and this test is about
+    # reconciliation semantics; the guard has its own test above.
+    ingest.sync(conn, "rok", members=members, force=True,
                 fetch=lambda ts: {t: stripped[t] for t in ts if t in stripped})
     assert conn.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 0
 
 
 def quest_wiki(pages):
     def members(cat):
-        return [] if cat.endswith("Named Monsters") else list(pages)
+        if cat.endswith((wiki.NAMED_SUFFIX, wiki.DROPS_SUFFIX)):
+            return []
+        return list(pages)
 
     def fetch(titles):
         return {t: pages[t] for t in titles if t in pages}
@@ -529,6 +715,34 @@ def test_a_class_filter_uses_the_class_tree(tmp_path):
     conn = loaded(tmp_path)
     assert catalog.search(conn, eras=["rok"], classes=["mystic"])["total"] == 1
     assert catalog.search(conn, eras=["rok"], classes=["necromancer"])["total"] == 0
+
+
+def test_the_card_says_who_can_wear_it_and_stays_quiet_when_everyone_can(tmp_path):
+    """The one property that rules an item out before any number on it matters.
+
+    Silence is the answer for an unrestricted item, because a list of every
+    class on the server is not a restriction and the game does not print one
+    either."""
+    conn = loaded(tmp_path)
+    card = catalog.search(conn, eras=["rok"])["items"][0]["card"]
+    assert "Mystic" in card["classes"] and "Necromancer" not in card["classes"]
+    everyone = dict(conn.execute("SELECT * FROM plan_items").fetchone())
+    everyone.update(stats={}, adorns={}, icon=None, effects=None,
+                    effect_desc=None, classes=list(wiki.SUBCLASSES))
+    assert catalog.card(everyone)["classes"] is None
+
+
+def test_an_empty_table_says_which_control_emptied_it(tmp_path):
+    """"Nothing matches" reads as "no such item exists", which is a claim about
+    the GAME that a crawl of somebody else's wiki cannot make. Answering how
+    many rows survived everything but the stat controls separates "the stats
+    found nothing among rows that do exist" from "there were no rows"."""
+    conn = loaded(tmp_path)
+    out = catalog.search(conn, eras=["rok"], required=["flurry"])
+    assert out["total"] == 0 and out["before_priorities"] == 1
+    assert out["catalog"] == 1
+    out = catalog.search(conn, eras=["rok"], slots=["head"])
+    assert out["total"] == 0 and out["before_priorities"] == 0
 
 
 def test_item_level_range_filters_both_edges(tmp_path):

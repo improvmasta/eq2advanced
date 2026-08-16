@@ -285,6 +285,26 @@ segmentation)
 - **The catalog is built by INVERTING mobs and quests** (`planner/ingest.py`),
   because an item page has no era and its `obtain` field is usually blank. The
   monster carries `patch`, `zone` and the raid/group/solo split.
+- **MOBS ARE ASKED FOR BY ZONE, NOT BY EXPANSION** — the wiki tags
+  mid-expansion content with its LIVE UPDATE and never with the expansion
+  (`Kza'Bok` is `LU39`/`Tier 8`/`Shard of Fear`, never EoF). `zones.in_era`
+  answers what the wiki cannot; the expansion category alone missed 117 EoF
+  nameds and all of Shard of Fear.
+- **A TRASH DROP IS REACHABLE ONLY FROM `Category:<zone> Dropped Items`** —
+  nothing links what an unnamed mob drops, and that is most of a broker
+  search. Source kind `zone` ("World drop"), and only for items no named or
+  quest already claims.
+- **A SET PIECE IS BEHIND A CRATE AND THE CRATE IS WHAT DROPS** — a crate is
+  `ItemInformation`, so `parse_equip` refuses it; the crawl follows its
+  `contains` list the way it follows a disambiguation and the armour inherits
+  the crate's source.
+- **A SET TIER IS A BLOCK, NOT A LINE** (`wiki._BONUS_TIER`) — the flat stats
+  are BARE lines under the proc's sub-bullets, and the game draws them back on
+  the `(N)` line. Reading one line lost the Potency off every proc tier and
+  dropped any tier whose own line was empty.
+- **An empty item table says WHICH CONTROL emptied it** (`before_priorities`)
+  and that the catalog is a crawl. "Nothing matches" is a claim about the game
+  this page cannot make. Loading a character must NOT set the class filter.
 - **An ITEM above the era's level cap is DROPPED** (`wiki.ERA_CAP`, EoF 70 /
   RoK 80) — one live-revamp reward at 3,632 Ability Mod becomes the top of the
   scoring scale and every real drop scores 2/100. **Not the same rule as a
@@ -325,9 +345,20 @@ segmentation)
   from the set view adds the ADORNMENT, never the armour it came in.
 - **`catalog.card` builds `items.display`'s shape** so `ItemCard.jsx` is reused
   unchanged — three ways to meet an item, one examine window.
-- **`tools/sync_planner.py` is HAND-RUN and reconciles per era**; it must NOT
-  set `CENSUS_AUTO_REFRESH=0` (that switch also gates the icon downloads).
-  Nothing on a page load fetches anything.
+- **`tools/sync_planner.py` now runs MONTHLY on cron** (`scripts/scheduled-sync.sh
+  planner`, 2026-08-16 — this replaces "hand-run, never scheduled" for the
+  PLANNER crawl only; `sync_wiki.py` is unchanged). Safe unattended because
+  `ingest.CrawlCollapsed` REFUSES a crawl that came back under
+  `COLLAPSE_RATIO` of the last one — `store` deletes, and a broken fetch would
+  otherwise empty the catalog. It must NOT set `CENSUS_AUTO_REFRESH=0` (that
+  switch also gates the icon downloads).
+- **A Census outage is picked up automatically** — `scripts/scheduled-sync.sh
+  census` probes every 30 min and, only when it answers, finishes the item and
+  roster backfills. A down probe is a quiet no-op, never an alert.
+- **`GET /api/plan/character?name=` is the ONE `/plan` route that may reach the
+  network** — a name somebody TYPED, cache-first, stale-on-failure, no account,
+  `plan_characters` (v43) is a cache of a PUBLIC record and never account
+  state. Nothing on a page load fetches anything.
 - **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
   `refdata/planner_standard.json`, then prerequisite-before-level body from
   `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
@@ -475,6 +506,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
 - 2026-08-15 (codex): Replace parchment light mode with neutral application palette
@@ -494,4 +526,3 @@ builds here with `bash build.sh`.
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
-- 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS

@@ -374,3 +374,56 @@ def test_resolve_network_failure_writes_nothing(client):
     assert report["failed"] == 1
     assert conn.execute("SELECT 1 FROM roster_classes WHERE name_lower='ghosty'"
                         ).fetchone() is None
+
+
+# ---- the by-name lookup behind /plan's loadout (no account) ----
+
+def test_a_character_loads_by_name_with_no_account(client, fake):
+    """A CENSUS CHARACTER RECORD IS PUBLIC, so trying gear on your own toon is
+    not the one part of a signed-out page that needs signing up. The answer is
+    the SAME shape an owned character produces — one builder, so the path
+    nobody is signed in for cannot quietly lose a field."""
+    signed_out = TestClient(client.app)
+    r = signed_out.get("/api/plan/character", params={"name": "Bobby"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["character"]["name"].lower().startswith("bobby")
+    assert body["character"]["public"] is True
+    assert body["character"]["id"] is None          # nothing is owned
+    assert body["synced"] is True and body["gear"]
+    assert "planner_stats" in body
+
+
+def test_a_second_lookup_is_answered_from_the_cache(client, fake):
+    signed_out = TestClient(client.app)
+    signed_out.get("/api/plan/character", params={"name": "Bobby"})
+    before = fake.calls
+    signed_out.get("/api/plan/character", params={"name": "bobby"})   # case too
+    assert fake.calls == before
+
+
+def test_a_lookup_falls_back_to_the_cache_when_census_is_unreachable(client, fake):
+    """CENSUS INTERMITTENCY IS NORMAL AND IS NOT AN OUTAGE. A reader planning
+    gear does not care that the record is six hours old; they care that the
+    page works."""
+    from census import sync as census_sync
+    conn = dbmod.get_db()
+
+    class Dead:
+        def character_by_name(self, name, world_id=618):
+            raise RuntimeError("census down")
+
+    census_sync.lookup_by_name(conn, fake, "Bobby")                  # seed
+    out = census_sync.lookup_by_name(conn, Dead(), "Bobby", refresh=True)
+    assert out is not None and out["gear"]
+
+
+def test_a_name_census_does_not_know_is_a_404_and_is_not_re_asked(client, fake):
+    signed_out = TestClient(client.app)
+    assert signed_out.get("/api/plan/character",
+                          params={"name": "Nobodyatall"}).status_code == 404
+    before = fake.calls
+    assert signed_out.get("/api/plan/character",
+                          params={"name": "Nobodyatall"}).status_code == 404
+    # The MISS is cached too, so a typo does not re-ask Census every time.
+    assert fake.calls == before

@@ -268,16 +268,27 @@ function Examine({ row }) {
         </div>
       )}
 
+      {/* TWO COLUMNS, FILLED DOWN THEN ACROSS — the game's own arrangement.
+          Potency sits above Crit Chance on the left and the rest run down the
+          right with Ability Mod last, which is a property of the ORDER plus a
+          column fill rather than of any per-stat placement: `items.py` and
+          `planner/catalog.py` both hand these over already sorted, so the
+          layout never has to know what a stat is. */}
       {!!s?.stats.length && (
-        <div className="ew-stats">
+        <div className="ew-stats ew-cols">
           {s.stats.map((r) => <div key={r.name}>{num(r)}&nbsp;{r.name}</div>)}
         </div>
       )}
       {/* The proc's NAME sits with the modifiers, in the same light blue, and
-          its description gets its own block below — EQ2i's own arrangement. */}
+          its description gets its own block below — EQ2i's own arrangement.
+          The name is NOT columnised: it is a sentence, not a figure. */}
       {(!!s?.effects.length || !!fx?.names.length) && (
         <div className="ew-effectlist">
-          {s?.effects.map((r) => <div key={r.name}>{num(r)}&nbsp;{r.name}</div>)}
+          {!!s?.effects.length && (
+            <div className="ew-cols">
+              {s.effects.map((r) => <div key={r.name}>{num(r)}&nbsp;{r.name}</div>)}
+            </div>
+          )}
           {fx?.names.map((n) => <div key={n}>{n}</div>)}
         </div>
       )}
@@ -342,6 +353,15 @@ function Examine({ row }) {
           )}
         </tbody>
       </table>
+
+      {/* WHO CAN WEAR IT. The one property that rules an item out before any
+          number on it matters, and the reason a search can come back empty
+          with the broker full of the thing you asked for. Drawn only when it
+          is a RESTRICTION: the source sends nothing when every class on the
+          server can equip it, the same silence the game keeps. */}
+      {!!row.classes?.length && (
+        <div className="ew-classes">{row.classes.join(', ')}</div>
+      )}
 
       {!!adorn?.set_bonuses.length && (
         <div className="ew-set">

@@ -262,7 +262,7 @@ order as a whole and says nothing about which of them a row has.
 
 Separate from ranking and behaving as filters: class, **armour weight**, slot,
 level range, tier (`icat`), era, and source kind (raid / group / solo / quest /
-crafted).
+**world drop**).
 
 **A two-hander says so in the slot: `Primary/2H`.** The wiki files a greatsword
 and a dagger under the same `slot = Primary`, which invites comparing them as
@@ -481,10 +481,23 @@ name, icon, type, level, stats and set thresholds when those records are cached.
 
 Every change recomputes installed pieces and the set threshold ledger
 immediately. Named effects remain prose and visibly activate at their threshold.
-Simple whole-line additive bonuses (Ability Mod, Potency, Crit Chance, Casting
-Speed, Flurry, attributes, Health and Power) are conservatively typed by the
-server and also feed projected stats. Any sentence that is not exactly a known
-number-plus-stat remains prose.
+Simple additive bonuses (Ability Mod, Potency, Crit Chance, Casting Speed,
+Flurry, attributes, Health and Power) are conservatively typed by the server and
+also feed projected stats. Any sentence that is not exactly a known
+number-plus-stat remains prose, and a comma list types only when EVERY segment
+does — half a sentence read as arithmetic is worse than none of it.
+
+**A SET TIER IS A BLOCK, NOT A LINE** (`wiki._BONUS_TIER`, corrected
+2026-08-16). The page writes the proc on the `*(N)` line, its explanation in
+`**` sub-bullets under it, and the tier's flat stats as **bare unbulleted lines
+after those**, one per stat. The game draws those bare lines back onto the
+tier's own line — "(6) 4 Potency, 100 Ability Mod, 5 Crit Chance" — which is
+where they belong and where a single-line read could never find them. Reading
+only the `(N)` line lost the Potency off every tier that also had a proc, kept
+one stat of three where a tier had no proc, and **dropped the biggest tier
+outright** whenever its own line was empty. The card now shows the stats as the
+tier line and the proc plus its explanation as the bullets beneath, which is
+the examine window's own arrangement.
 
 ### The priority editor
 
@@ -524,8 +537,31 @@ priority stats as their own columns, source, and two badge columns.
 
 The name, slot, armour, tier, source and **minimum/maximum item level** filters
 are independent of scoring. The name hover uses the full examine shape: item
-level, slot/type, additive stats, effects, socket colors, included set adornment
-and every known threshold—not merely the small table columns.
+level, slot/type, additive stats, effects, socket colors, **class restriction**,
+included set adornment and every known threshold—not merely the small table
+columns.
+
+**The card names who can wear it, and stays quiet when everyone can.** It is
+the one property that rules an item out before any number on it matters, and
+`catalog.card` sends nothing when the class list is the whole era-filtered
+subclass set — a list of every class on the server is not a restriction, and the
+game does not print one either.
+
+**Loading a Census character does NOT set the class filter** (removed
+2026-08-16). It did, and the result was a search that silently answered a
+narrower question than the one on screen: the level-70 Head/Reuse search that
+started all of this came back empty because exactly one such item exists in EoF
+and it is illusionist-only, with nothing on the table saying a class had been
+applied. The loadout panel is about one character; the item table is about the
+expansion, and the reader narrows it when they mean to.
+
+**AN EMPTY TABLE SAYS WHICH CONTROL EMPTIED IT** (`Planner.EmptyTable`).
+"Nothing in this expansion matches" reads as "no such item exists", which is a
+claim about EverQuest II that a crawl of somebody else's wiki is in no position
+to make. `search` answers `before_priorities` — how many rows survived every
+filter EXCEPT the stat controls — which separates "the stats found nothing among
+rows that do exist" from "there were no rows", and the note under it says the
+catalog is a crawl either way.
 
 **The two badges are the point of the table.** *Carries a set turquoise* and
 *has a proc* both say "this row's value is not in its stat columns." Clicking
@@ -683,8 +719,93 @@ account forever**, exactly as `items.py` puts it.
 Offline, hand-run, never scheduled — the same rule as the wiki ability ingest,
 for the same reason.
 
-1. **Crawl** wiki categories for the era: quests, named monsters, timelines,
-   equipment. RoK has 500+ quests and 345 named monsters catalogued.
+### What the crawl has to ask, and why the obvious question is the wrong one
+
+Three separate things had to be added on 2026-08-16, after a level-70 Head
+search for Reuse Speed came back empty while the broker was full of matches.
+All three are the same mistake in different clothes: **asking the index the
+wiki organises its own way instead of the one that answers our question.**
+
+**1. The expansion category is not the expansion.** The wiki does not tag
+mid-expansion content with the expansion. A monster added by a live update
+carries `LU39`, `Tier 8` and its zone, and never `Echoes of Faydwer` —
+`Kza'Bok` is exactly that, and he drops the level-70 treasured gear the search
+was looking for. `Category:Echoes of Faydwer Named Monsters` holds 382 mobs
+where the expansion really ran to 499, and the whole of Shard of Fear was
+invisible. **So mobs are asked for BY ZONE**, because which expansion a zone
+belongs to is already reference data here (`refdata/zone_eras.json`,
+`zones.in_era`) and `tools/sync_zone_eras.py` already resolved the live-update
+numbers against the launch dates. Strictly broader, no date arithmetic, no
+second list. (`wiki.named_categories`.)
+
+**2. Inverting mobs can never see a trash drop.** A named page LINKS what it
+drops; nothing links what an unnamed mob drops, and that is most of what a
+broker search returns. `Category:<zone> Dropped Items` is the only index of it
+— 1,611 pages across EoF's zones and 1,345 across RoK's. Those enter as a
+source kind of their own, **`zone`, shown as "World drop"**, and only for items
+no named and no quest already accounts for: a drop that HAS a monster gets a
+better answer from the monster. (`wiki.drop_categories`, `wiki.zone_source`.)
+
+**3. A set piece is behind a CRATE, and the crate is what drops.** The Priest of
+Fear drops `Faydwer Cloth Pattern: Head`; what you equip is one of three hoods
+inside it, and only one of those carries Reuse Speed. A crate is an
+`ItemInformation` page, so `parse_equip` rightly refuses it — and the armour
+behind it was reachable from nothing at all. The crawl now follows a crate's
+`contains` list the same way it follows a disambiguation, and the items inherit
+the crate's source. Followed until nothing new appears (bounded by
+`ingest._FOLLOW_ROUNDS`), because a crate can name a disambiguation.
+
+*Legendary set pieces drop off group-instance and open-world nameds; fabled off
+raid zones — game knowledge, from Lindsay. The turquoise moves between them,
+which is why the adornment and the armour are separate rows (below).*
+
+### Running it unattended (2026-08-16)
+
+The crawl is now **monthly on cron** (`scripts/scheduled-sync.sh planner`),
+which replaces "hand-run, never scheduled" for the *planner* crawl. The ability
+ingest (`sync_wiki.py`) is unchanged and stays hand-run.
+
+The rule existed for a real reason — `store` RECONCILES, and reconciling means
+deleting what the wiki no longer says, which is safe exactly as long as a
+person is watching. So the protection moved from the habit into the code:
+**`ingest.CrawlCollapsed` refuses to write a crawl that came back under
+`COLLAPSE_RATIO` (60%) of the last one**, and a crawl returning nothing where
+there was something is always refused. A real itemization change never halves
+an expansion; a rate limit or an hour of Fandom being unhappy always does. The
+tool exits 2, the log says so, and the previous catalog keeps being served.
+`--force` is the operator's override for a drop that is genuinely real.
+
+**Census gets picked back up automatically.** `scripts/scheduled-sync.sh census`
+runs every 30 minutes, probes with one real query (Census answers HTTP 200 with
+an `error` body when it is unavailable, so a status code proves nothing), and
+only when it answers runs the two backfills that were waiting on it — item
+resolution and the roster. A down probe is a quiet no-op and never an alert,
+because **Census intermittency is normal and is not an outage**.
+
+### Loading a character without an account
+
+`GET /api/plan/character?name=` is the **one route on this page that may reach
+the network**, and it is the exception the app already makes for
+`POST /characters/{id}/census/refresh`: it runs on a name a reader TYPED and
+submitted, never on a page load. A Census character record is public, and
+trying gear on your own toon should not be the one part of a signed-out page
+that demands an account.
+
+It is cache-first (`plan_characters`, v43, TTL 6h) and falls back to a stale
+answer when Census is unreachable, so the panel keeps working through an
+outage. **The cache is a cache of a public record, not a character**: no
+`user_id`, no snapshots, no history, nothing anybody owns — `characters`
+remains the only owned thing and this table could be dropped without losing
+anything a person typed. The miss is cached too, so a typo is not re-asked.
+`census.sync._summary_of` builds the answer for both this and an owned
+character, because two builders would drift and the difference would only show
+on the path nobody is signed in for.
+
+### The steps
+
+1. **Crawl** wiki categories for the era: quests, named monsters (per zone and
+   per expansion), each zone's dropped items, timelines, equipment. RoK has
+   500+ quests and 418 named monsters over 29 zones.
 2. **Parse templates** into layer-1 fields. Batched at 50 titles per request;
    the whole equipment corpus is on the order of hundreds of requests.
 3. **Extract steps and coordinates** with the wikq2 TS extractors, emitting JSON.

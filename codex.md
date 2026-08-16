@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
 - 2026-08-15 (codex): Replace parchment light mode with neutral application palette
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
 - 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)
-- 2026-08-06 (claude): Docs and repo cleanup: rewrite README, drop shipped plan files, remove dead ShareBar component + CSS
