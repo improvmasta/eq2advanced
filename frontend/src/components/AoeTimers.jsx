@@ -468,9 +468,9 @@ function ReflectRow({ row, at, running }) {
       <span className="split"
             title={`${row.casts} cast${row.casts === 1 ? '' : 's'} reflected`
               + ` from ${row.casters} raider${row.casters === 1 ? '' : 's'}`
-              + `${row.damage ? `, for ${fmt(row.damage)} back at them` : ''}`}>
+              + `${row.damage ? `, for ${fmt.num(row.damage)} back at them` : ''}`}>
         <b className="hitn">{row.casts}</b> eaten
-        {row.damage > 0 && <>{' · '}<b className="blkn">{fmt(row.damage)}</b></>}
+        {row.damage > 0 && <>{' · '}<b className="blkn">{fmt.num(row.damage)}</b></>}
       </span>
       <span className="cd">
         {done
