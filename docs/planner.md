@@ -873,7 +873,12 @@ or Prerequisites section appears first, with language and access quests kept as
 clickable quests, followed by the canonical heroic chain (Fabled) and then the
 raid quest (Mythical). This avoids treating contradictory individual-page
 `prereq`/`next` fields as a loop. `npm run audit:epics -- --fresh` in wikq2
-checks all 24 original class timelines and every chain page's navigation.
+checks all 24 original class timelines, every chain page's navigation, and
+every actionable objective in each page's complete Steps section. Known stable
+wiki markup failures are repaired explicitly rather than silently truncating a
+quest; the split lists on the Necromancer's `The Bones of Insanity` are the
+first authoritative repair, with its nested objectives promoted into the real
+consecutive 16-step sequence.
 
 Quest checkboxes mean **done** and persist in this browser. Hovering a quest in
 either the Outline or an item-table source exposes two compact links in this
