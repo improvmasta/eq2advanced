@@ -369,6 +369,14 @@ def planner_item_stats(rec: dict) -> dict[str, float]:
         value = mod.get("value") if isinstance(mod, dict) else None
         if key and isinstance(value, (int, float)) and value:
             out[key] = float(value)
+    # Census serializes the grouped item rating under a legacy attribute key
+    # (normally `strength`). On TLE the examine window calls it Primary
+    # Attributes and it grants the same amount to STR, AGI, WIS and INT.
+    primary_keys = ("str", "agi", "wis", "int")
+    primary = [out[key] for key in primary_keys if out.get(key)]
+    if primary:
+        value = max(primary)
+        out.update({key: value for key in primary_keys})
     # Flat mitigation lives on the armour type rather than in `modifiers`.
     # It is the same number EquipInformation calls `mit`.
     mit = (rec.get("typeinfo") or {}).get("maxarmorclass")

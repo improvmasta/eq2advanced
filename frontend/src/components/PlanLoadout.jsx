@@ -50,9 +50,9 @@ export function eligiblePlanSlots(item) {
 const STAT_GROUPS = [
   ['Attributes', ['str', 'agi', 'sta', 'int', 'wis']],
   ['Defense', ['mit', 'vselemental', 'vsnoxious', 'vsarcane', 'bchance']],
-  ['Offense', ['crit', 'potency', 'abmod', 'dps', 'aspeed', 'multi', 'aeauto',
-    'flurry', 'strike', 'accuracy']],
-  ['Casting', ['acspeed', 'arspeed']],
+  ['Offense', ['crit', 'potency', 'abmod', 'acspeed', 'arspeed']],
+  ['Autoattack', ['dps', 'aspeed', 'multi', 'aeauto', 'strike', 'accuracy',
+    'flurry']],
 ]
 
 const FALLBACK_LABEL = {
@@ -63,6 +63,11 @@ const FALLBACK_LABEL = {
   flurry: 'Flurry', strike: 'Strikethrough', accuracy: 'Accuracy',
   acspeed: 'Casting Speed', arspeed: 'Reuse Speed',
 }
+
+/* EQ2's stat window shows these as ratings, not percentages. Census metadata
+   groups several modifier fields under one percent flag, so the display needs
+   the game's narrower rule. */
+const RATING_STATS = new Set(['dps', 'aspeed', 'multi'])
 
 function addStats(to, stats, sign) {
   Object.entries(stats || {}).forEach(([key, value]) => {
@@ -370,6 +375,7 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
   const out = useMemo(() => projection(character, shortlist, active),
     [character, shortlist, active])
   const base = character?.planner_stats || {}
+  const statState = (delta) => delta > 0 ? 'upgrade' : delta < 0 ? 'downgrade' : 'equipped'
   if (!character?.synced) {
     return (
       <div className="planstats empty">
@@ -382,16 +388,19 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
     <div className="planstats">
       <div className="planstathead">
         <b>Projected Stats</b>
-        <span>{Object.keys(out.selected).length
-          ? `${Object.keys(out.selected).length} slot${Object.keys(out.selected).length === 1 ? '' : 's'} changed`
-          : 'Current equipment'}</span>
+        <span className="planstatlegend">
+          <i className="equipped">Equipped</i>
+          <i className="upgrade">Upgrade</i>
+          <i className="downgrade">Downgrade</i>
+        </span>
       </div>
       <div className="planstatgeneral">
         {['health', 'power'].map((key) => {
           const value = out.totals[key] ?? base[key]
           const delta = value - base[key]
-          return <span key={key}>{key === 'health' ? 'Health' : 'Power'} <b>{fmt.num(value)}</b>
-            {delta !== 0 && <em className={delta > 0 ? 'up' : 'down'}>
+          const state = statState(delta)
+          return <span key={key}>{key === 'health' ? 'Health' : 'Power'} <b className={state}>{fmt.num(value)}</b>
+            {delta !== 0 && <em className={state}>
               {delta > 0 ? '+' : ''}{fmt.num(delta)}
             </em>}</span>
         })}
@@ -405,12 +414,13 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
             {rows.map((key) => {
               const value = out.totals[key] ?? base[key]
               const delta = value - base[key]
-              const pct = statPct[key]
+              const pct = statPct[key] && !RATING_STATS.has(key)
+              const state = statState(delta)
               return (
                 <div className="planstatrow" key={key}>
                   <span>{statLabel[key] || FALLBACK_LABEL[key] || key}</span>
-                  <b>{fmt.num(Math.round(value * 10) / 10)}{pct ? '%' : ''}</b>
-                  <em className={delta > 0 ? 'up' : delta < 0 ? 'down' : ''}>
+                  <b className={state}>{fmt.num(Math.round(value * 10) / 10)}{pct ? '%' : ''}</b>
+                  <em className={state}>
                     {delta ? `${delta > 0 ? '+' : ''}${Math.round(delta * 10) / 10}${pct ? '%' : ''}` : '—'}
                   </em>
                 </div>

@@ -20,7 +20,7 @@ the matching file rather than here.
 | `docs/census-abilities.md` | Census sync, guild vote, proc exposure, pet/proc rulings and the Abilities console, provenance, the class tree, the wiki as reference data, why gear procs are wontfix |
 | `docs/coach.md` | Coach engine (descriptive, fit, replay, calibration), the five correctness rules, ability catalog, raid report |
 | `docs/admin-redesign.md` | Implemented Admin operations workspace: dashboard, incidents, support workflows, ability review, and database-backed AoE timer curation |
-| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions (EoF and/or RoK), Census-backed current gear, slot-aware candidate cycling, projected stats, dynamic set adornments, gear search, and the stable prerequisite outline. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v42): Phase 0 measured 2,584 matched coordinates across 899 RoK quests; co-location tags / multi-class epic planning remain planned |
+| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions (EoF and/or RoK), Census-backed current gear, slot-aware candidate cycling, TLE Primary Attributes normalization, in-game-grouped projected stats with equipped/upgrade/downgrade colors, dynamic set adornments, gear search, and a contextual collapsible prerequisite-outline column. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v42): Phase 0 measured 2,584 matched coordinates across 899 RoK quests; co-location tags / multi-class epic planning remain planned |
 
 `docs/skillissue-proposal.md` is an outbound proposal to another project, not
 reference material.

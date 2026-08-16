@@ -141,11 +141,15 @@ def test_planner_stats_translate_census_items_and_character_totals():
         "basemodifier": {"value": 3.7},
         "spelltimecastpct": {"value": 2.1},
         "arcane": {"value": 280},
+        "strength": {"value": 46},   # Census storage for Primary Attributes
+        "stamina": {"value": 46},
         "critbonus": {"value": 9},       # live-only and deliberately absent
     }, "typeinfo": {"maxarmorclass": 42}}
     assert planner_item_stats(item) == {
         "abmod": 98.0, "potency": 3.7, "acspeed": 2.1,
         "vsarcane": 280.0, "mit": 42.0,
+        "str": 46.0, "agi": 46.0, "wis": 46.0, "int": 46.0,
+        "sta": 46.0,
     }
     doc = json.load(open(FIXTURES / "character_bobby.json"))
     totals = planner_character_stats(doc)

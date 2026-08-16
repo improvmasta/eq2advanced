@@ -37,6 +37,9 @@ def test_equip_information_is_a_census_dump_in_template_form():
     assert row["stats"]["abmod"] == 98
     assert row["stats"]["potency"] == 3.7
     assert row["stats"]["acspeed"] == 2.1
+    # The page's legacy AGI field is the grouped TLE Primary Attributes rating.
+    assert {row["stats"][key] for key in ("str", "agi", "wis", "int")} == {46}
+    assert row["stats"]["sta"] == 46
     # `\aITEM 2117508092 …` — the id the log writes, unsigned
     assert row["census_id"] == 2117508092
     assert row["icon"] == 3645
@@ -767,6 +770,11 @@ def test_the_card_is_items_display_shape_so_ItemCard_is_reused(tmp_path):
     assert card["level"] == 80 and card["slot"] == "Feet"
     assert {"stats", "effects", "flags", "adornments"} <= set(card["stats"])
     assert card["stats"]["adornments"] == ["white", "orange", "turquoise"]
+    primary = [s for s in card["stats"]["stats"]
+               if s["name"] == "Primary Attributes"]
+    assert primary == [{"name": "Primary Attributes", "value": 46.0, "pct": False}]
+    assert not {"Strength", "Agility", "Wisdom", "Intelligence"} & {
+        s["name"] for s in card["stats"]["stats"]}
     included = card["stats"]["included_adornment"]
     assert included["name"] == "Mist Covered Set" and included["color"] == "turquoise"
     assert [b["required"] for b in included["set_bonuses"]] == [2, 4]

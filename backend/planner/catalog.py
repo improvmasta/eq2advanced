@@ -106,7 +106,11 @@ def _rows(conn, eras: list[str]) -> list[dict]:
     out = []
     for r in conn.execute(f"SELECT * FROM plan_items i WHERE {where}", params):
         row = dict(r)
-        row["stats"] = json.loads(row.pop("stats_json") or "{}")
+        # Stored crawls may predate Primary Attributes normalization. Apply it
+        # on read as well as ingest so the existing catalog is corrected now,
+        # without requiring a destructive re-crawl.
+        row["stats"] = wiki.expand_primary_attributes(
+            json.loads(row.pop("stats_json") or "{}"))
         row["adorns"] = json.loads(row.pop("adorns_json") or "{}")
         row["classes"] = [c for c in (row["classes"] or "").split(",") if c]
         # Lifted out of `dtype` rather than stored beside it — one string op
@@ -353,7 +357,14 @@ def card(row: dict) -> dict:
     worse than a card with no image."""
     from items import icon_path
     stats, effects = [], []
+    primary = [row["stats"].get(key) for key in wiki.PRIMARY_ATTRIBUTE_KEYS
+               if row["stats"].get(key)]
+    if primary:
+        stats.append({"name": "Primary Attributes", "value": max(primary),
+                      "pct": False})
     for key, value in row["stats"].items():
+        if key in wiki.PRIMARY_ATTRIBUTE_KEYS:
+            continue
         line = {"name": wiki.STAT_LABEL.get(key, key), "value": value,
                 "pct": key in wiki.STAT_PCT}
         (effects if key in _BLUE else stats).append(line)

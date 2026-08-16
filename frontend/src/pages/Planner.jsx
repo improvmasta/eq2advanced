@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Picker from '../components/Picker.jsx'
 import PlanLoadout, { eligiblePlanSlots } from '../components/PlanLoadout.jsx'
 import PlanOutline from '../components/PlanOutline.jsx'
 import SortableTable from '../components/SortableTable.jsx'
-import Tabs from '../components/Tabs.jsx'
 /* The examine card is SHARED with the Loot tab and /chat. There are now three
    ways to meet an item and all three must open the same window — the server
    hands this page its cards in `items.display`'s shape for exactly that
@@ -17,12 +16,11 @@ import { useQueryState } from '../lib/useQueryState.js'
    WHICH EXPANSIONS COUNT IS THE READER'S CHOICE, and it is the first control
    on the page: EoF, RoK, or both. Everything else — the facets, the scale a
    score is measured against, the sets — follows from that choice, which is why
-   it sits in the rail head above the shortlist rather than among the filters.
+   it sits in the item-search header rather than among the filters.
 
-   Two regions, permanently: a compact plan rail on the left and the main area
-   on the right. Gear choices themselves live in concrete equipment positions
-   in the loadout, while the rail keeps the expansion/class frame and the two
-   non-gear plan kinds visible for the Outline. */
+   Gear choices live in concrete equipment positions in the loadout. The
+   Outline becomes a contextual right column only once the plan contains a
+   choice, reclaiming that width for search while the plan is empty. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
 /* THREE CHOICES, EACH DEFAULTING TO ANY. The priority list is still an ORDER
@@ -87,7 +85,6 @@ export default function Planner({ user }) {
      class and the priority order are what make this page YOURS, so a link to
      it is the plan and not just the page. */
   const [erasParam, setEras] = useQueryState('eras', 'rok')
-  const [tabParam, setTab] = useQueryState('tab', 'gear')
   const [orderParam, setOrderLine] = useQueryState('order', '')
   const [cls, setCls] = useQueryState('class', '')
   const [slot, setSlot] = useQueryState('slot', '')
@@ -102,7 +99,6 @@ export default function Planner({ user }) {
   const [proc, setProc] = useQueryState('proc', '')
 
   const eras = useMemo(() => split(erasParam), [erasParam])
-  const tab = tabParam === 'outline' ? 'outline' : 'gear'
   const requestedOrder = useMemo(() => split(orderParam), [orderParam])
   const kinds = useMemo(() => split(kindParam), [kindParam])
 
@@ -121,8 +117,18 @@ export default function Planner({ user }) {
 
   const [meta, setMeta] = useState(null)
   const [data, setData] = useState(null)
+  const [outlineData, setOutlineData] = useState(null)
+  const [outlineErr, setOutlineErr] = useState(null)
   const [err, setErr] = useState(null)
   const [shortlist, setShortlist] = useState(loadShortlist)
+  const planCount = shortlist.items.length + shortlist.sets.length + shortlist.targets.length
+  const [outlineOpen, setOutlineOpen] = useState(planCount > 0)
+  const previousPlanCount = useRef(planCount)
+  useEffect(() => {
+    if (planCount > previousPlanCount.current) setOutlineOpen(true)
+    if (planCount === 0) setOutlineOpen(false)
+    previousPlanCount.current = planCount
+  }, [planCount])
   /* CHANGING WHO YOU ARE PLANNING FOR PUTS THE WINDOW BACK TO WHAT THEY WEAR.
      A planned choice only means anything against one character's current
      equipment — a ring that is +40 Ability Mod on the fury is a downgrade on
@@ -247,7 +253,6 @@ export default function Planner({ user }) {
   }, [erasParam, shortlist])
 
   useEffect(() => {
-    if (tab !== 'gear') return undefined
     setErr(null)
     setData(null)
     const call = mode === 'sets' ? api.planSets : api.planItems
@@ -255,17 +260,17 @@ export default function Planner({ user }) {
     call(query).then((d) => { if (!dead) setData(d) })
       .catch((e) => { if (!dead) setErr(e.message) })
     return () => { dead = true }
-  }, [tab, query, mode])
+  }, [query, mode])
 
   useEffect(() => {
-    if (tab !== 'outline') return undefined
-    setErr(null)
-    setData(null)
+    if (!planCount) { setOutlineData(null); setOutlineErr(null); return undefined }
+    setOutlineErr(null)
+    setOutlineData(null)
     let dead = false
-    api.planOutline(outlineQuery).then((d) => { if (!dead) setData(d) })
-      .catch((e) => { if (!dead) setErr(e.message) })
+    api.planOutline(outlineQuery).then((d) => { if (!dead) setOutlineData(d) })
+      .catch((e) => { if (!dead) setOutlineErr(e.message) })
     return () => { dead = true }
-  }, [tab, outlineQuery])
+  }, [outlineQuery, planCount])
 
   /* At least one expansion always stays on. "Nothing selected" is not a plan,
      it is an empty page with no way to say why it is empty — so the last one
@@ -445,36 +450,35 @@ export default function Planner({ user }) {
     carries, proc, q].filter(Boolean).length
 
   return (
-    /* NO RAIL. This page is a wide table and a wide equipment window, and a
-       fixed left column was spending a fifth of the screen on three controls
-       and a list — the item table then scrolled sideways and the projected
-       stats scrolled vertically, both of them for room the rail was holding.
-       The three controls moved into the bands that were already there.
+    /* NO PERMANENT NAVIGATION RAIL. This page is a wide table and equipment
+       window. The plan itself earns a contextual right column only after the
+       reader picks something; it can be collapsed whenever search needs the
+       full width again.
 
-       THE EXPANSION CHOICE STAYS OUT OF THE FILTERS, in the head beside the
-       tabs. Everything else on the page follows from it — which items exist,
-       what a score is measured against, which sets are offered, which quests
-       the Outline knows — and the Outline has no filter band to put it in. A
-       control that governs both tabs lives where both tabs can see it. */
+       THE EXPANSION CHOICE STAYS OUT OF THE FILTERS, in the search-window
+       header. Everything else on the page follows from it — which items exist,
+       what a score is measured against, which sets are offered, and which
+       quests the Outline knows. */
     <div className="planner">
-      {/* THE HOUSE PAGE HEAD, unmodified: `h1`, `.sub`, right-aligned
-          `.actions`, then the tabs on their own line under it. Every other page
-          on this site opens that way, and a hand-built head line — small title,
-          tabs floated into the middle of it — read as a different site. "The
-          Planner" was this page's working name and went with it; the nav says
-          Gear Planner and so does the page. */}
+      {/* THE HOUSE PAGE HEAD, with only the name and the contextual reopen
+          action. The old pitch repeated the job implied by Gear Planner and
+          cost a line without helping a decision. */}
       <div className="pagehead">
         <h1>Gear Planner</h1>
-        <span className="sub">What to chase, and where it comes from.</span>
+        {!outlineOpen && planCount > 0 && (
+          <span className="actions">
+            <button type="button" className="btnlink disclose"
+                    onClick={() => setOutlineOpen(true)}>
+              Outline <b>{planCount}</b> <span className="caret">›</span>
+            </button>
+          </span>
+        )}
       </div>
 
-      <Tabs tabs={[{ key: 'gear', label: 'Gear' }, { key: 'outline', label: 'Outline' }]}
-            value={tab} onChange={(key) => setTab(key === 'gear' ? null : key)} />
+      <div className={`plannerworkspace${outlineOpen ? ' outline-open' : ''}`}>
+      <div className="wsmain plannermain">
 
-      <div className="wsmain">
-
-        {tab === 'gear' && (
-          <PlanLoadout characters={characters} character={lookedUp || character}
+        <PlanLoadout characters={characters} character={lookedUp || character}
             charId={charId} signedIn={!!user}
             onCharacter={(id) => {
               setLookedUp(null); setCharId(id); clearPlannedGear()
@@ -486,9 +490,8 @@ export default function Planner({ user }) {
             onSetAdornment={setSlotAdornment} onResetSlot={resetEquipmentSlot}
             onReset={clearPlannedGear}
             statLabel={statLabel} statPct={statPct} />
-        )}
 
-        {tab === 'gear' && <div className="card planbar">
+        <div className="card planbar">
           <div className="plansearchhead">
             <div className="plansearchtitle">
               <span className="seclabel">Item search</span>
@@ -616,7 +619,7 @@ export default function Planner({ user }) {
               </div>
             </>
           )}
-        </div>}
+        </div>
 
         {err && <p className="err">{err}</p>}
         {!!emptyEras?.length && (
@@ -628,11 +631,11 @@ export default function Planner({ user }) {
 
         {!data && !err && <p className="muted">Loading…</p>}
 
-        {data && tab === 'gear' && mode === 'sets' && (
+        {data && mode === 'sets' && (
           <SetList sets={data.sets} inList={setsInList} onToggle={toggleSet} />
         )}
 
-        {data && tab === 'gear' && mode !== 'sets' && (
+        {data && mode !== 'sets' && (
           <>
             {data.total === 0 ? (
               <EmptyTable data={data} eras={eras} cls={cls} order={order}
@@ -665,27 +668,27 @@ export default function Planner({ user }) {
           </>
         )}
 
-        {/* THE SHORTLIST IS ON THE TAB THAT CONSUMES IT. It was a rail
-            section visible from both, but on the Gear tab it repeated what
-            the equipment window and the worn-set panel already showed, and
-            targets can only be added over here in the first place. */}
-        {tab === 'outline' && (
-          <>
-            {/* The Outline is drawn from the same expansions and has no search
-                block to carry them, so it gets its own copy of the one
-                control — never two of them in the same view. */}
-            <div className="outlineeras">
-              <EraFacet meta={meta} eras={eras} onToggle={toggleEra} />
+      </div>
+      {outlineOpen && planCount > 0 && (
+        <aside className="planneroutline">
+          <header className="planneroutlinehead">
+            <div>
+              <span className="seclabel">Plan</span>
+              <h2>Outline</h2>
             </div>
-            <Shortlist list={shortlist} onDropSet={toggleSet}
-                       onDropTarget={toggleTarget} />
-          </>
-        )}
-
-        {data && tab === 'outline' && (
-          <PlanOutline data={data} targetsInList={targetsInList}
-                       onToggleTarget={toggleTarget} />
-        )}
+            <button type="button" className="iconbtn" aria-label="Collapse outline"
+                    title="Collapse outline" onClick={() => setOutlineOpen(false)}>›</button>
+          </header>
+          <Shortlist list={shortlist} onDropSet={toggleSet}
+                     onDropTarget={toggleTarget} />
+          {outlineErr && <p className="err">{outlineErr}</p>}
+          {!outlineData && !outlineErr && <p className="muted">Building outline…</p>}
+          {outlineData && (
+            <PlanOutline data={outlineData} targetsInList={targetsInList}
+                         onToggleTarget={toggleTarget} />
+          )}
+        </aside>
+      )}
       </div>
     </div>
   )
@@ -998,7 +1001,7 @@ function Shortlist({ list, onDropSet, onDropTarget }) {
       <div className="seclabel">Shortlist</div>
       {empty && (
         <p className="muted">
-          Pick gear on the Gear tab and it is kept here. It stays in this
+          Pick gear and it is kept here. It stays in this
           browser and is never written to an account.
         </p>
       )}

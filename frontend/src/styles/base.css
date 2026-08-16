@@ -6039,17 +6039,48 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 /* ---------- the Planner (/plan) ---------- */
 
-/* FULL WIDTH, NO RAIL. This page is a wide table and a wide equipment window;
-   a fixed left column was spending a fifth of the screen on three controls and
-   a list, and paying for it twice over — the item table scrolled sideways and
-   the projected stats scrolled vertically for room the rail was holding. The
-   controls moved into the bands that already existed.
+/* NO PERMANENT NAVIGATION RAIL. This page is a wide table and equipment
+   window; the plan itself appears as a contextual right column only once it
+   contains something, and can be collapsed to return the width to search.
 
-   One head line: what the page is, which tab, and the expansion choice. The
-   eras stay here rather than joining the filters because everything on both
-   tabs follows from them and the Outline has no filter band. */
-/* The head is `.pagehead` unchanged — h1, subtitle, right-aligned actions — so
-   this page opens the way every other page does. */
+   One clean page head, with the expansion choice in the search window. The
+   eras stay there rather than joining the filters because
+   the catalog, set view, projection, and Outline all follow from them. */
+/* The head keeps the house `.pagehead` and its right-aligned action slot. */
+.plannerworkspace {
+  min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: 12px; align-items: start;
+}
+.plannerworkspace.outline-open {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 25%);
+}
+.plannermain { min-width: 0; }
+.planneroutline {
+  min-width: 0; position: sticky; top: 10px; max-height: calc(100vh - 20px);
+  overflow-y: auto; padding: 10px;
+  border: 1px solid var(--gold-dim); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.planneroutlinehead {
+  position: sticky; top: -10px; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  margin: -10px -10px 8px; padding: 9px 10px;
+  border-bottom: 1px solid var(--border); background: var(--surface-raised);
+}
+.planneroutlinehead h2 { margin-top: 1px; color: var(--gold-bright); }
+.planneroutlinehead .iconbtn { font-size: 1rem; }
+.planneroutline > .shortlist { padding: 8px; }
+.planneroutline > .planoutline { gap: 10px; margin-top: 10px; }
+.planneroutline .outlineprelude { padding: 10px; }
+.planneroutline .outlinehead { align-items: flex-start; }
+.planneroutline .outlinehead > .muted { display: none; }
+.planneroutline .outlinerow {
+  grid-template-columns: 22px 16px minmax(0, 1fr); gap: 5px; padding: 8px 6px;
+}
+.planneroutline .outlinetitle { flex-wrap: wrap; gap: 4px 6px; }
+.planneroutline .outlinetitle > .outlinemeta {
+  flex-basis: 100%; margin-left: 0; justify-content: flex-start;
+}
 .erafacet { margin-left: auto; }
 .plansearchhead .erafacet { margin: 0 auto 0 24px; }
 .outlineeras { display: flex; margin-top: 12px; }
@@ -6227,6 +6258,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstathead { display: flex; justify-content: space-between; gap: 7px; align-items: baseline; }
 .planstathead > b { color: var(--gold-bright); font-family: var(--font-heading); }
 .planstathead > span { color: var(--text-muted); font-size: var(--fs-label); }
+.planstatlegend { display: flex; gap: 8px; }
+.planstatlegend i { font-style: normal; }
 .planstatgeneral {
   display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 8px 0;
 }
@@ -6235,7 +6268,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   padding: 5px 6px; color: var(--text-muted); font-size: var(--fs-label);
   border: 1px solid var(--row-line); background: rgba(var(--gold-rgb), 0.035);
 }
-.planstatgeneral b { margin-left: auto; color: var(--text); font-family: var(--font-data); }
+.planstatgeneral b { margin-left: auto; font-family: var(--font-data); }
 .planstatgeneral em { flex-basis: 100%; text-align: right; font-style: normal; }
 .planstats section { margin-top: 7px; }
 .planstats section h3 {
@@ -6251,8 +6284,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right;
 }
 .planstatrow em { color: var(--text-muted); font-size: var(--fs-label); font-style: normal; }
-.planstats .up { color: var(--success); }
-.planstats .down { color: var(--danger); }
+.planstats .equipped { color: var(--success); }
+.planstats .upgrade { color: var(--joust); }
+.planstats .downgrade { color: var(--danger); }
 /* WORN SET BONUSES, UNDER THE GEAR THEY COME OFF. Directly below the window
    because that is where the adornment clicks are: the fourth piece lighting up
    has to be visible in the same glance as the click that made it the fourth.
@@ -6286,6 +6320,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .shortgearcount b { color: var(--text); }
 
 @media (max-width: 1140px) {
+  .plannerworkspace.outline-open { grid-template-columns: minmax(0, 1fr); }
+  .planneroutline { position: static; max-height: none; grid-row: 1; }
   .loadoutbody { grid-template-columns: minmax(0, 1fr); }
 }
 

@@ -284,9 +284,10 @@ STAT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("mitinc", "mitinc", "Mitigation Increase", True),
     ("hregen", "hregen", "Combat Health Regen", False),
     ("accuracy", "accuracy", "Accuracy", True),
-    # attributes, spelled out. EoF and RoK are before EQ2 merged them into one
-    # "Primary Attribute", so `str` here is Strength and nothing else — the
-    # rename `items.py` applies to CENSUS records would be wrong on this data.
+    # The wiki preserves the legacy field that originally carried an item's
+    # class-facing attribute. The TLE examine window groups any one of these as
+    # Primary Attributes, granting the same amount to all four; normalization
+    # immediately below turns the old storage shape into that game rule.
     ("str", "str", "Strength", False),
     ("sta", "sta", "Stamina", False),
     ("agi", "agi", "Agility", False),
@@ -302,6 +303,25 @@ STAT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
 STAT_LABEL = {key: label for _, key, label, _ in STAT_FIELDS}
 STAT_PCT = {key for _, key, _, pct in STAT_FIELDS if pct}
 STAT_KEYS = tuple(key for _, key, _, _ in STAT_FIELDS)
+PRIMARY_ATTRIBUTE_KEYS = ("str", "agi", "wis", "int")
+
+
+def expand_primary_attributes(stats: dict[str, float]) -> dict[str, float]:
+    """Apply EQ2's grouped Primary Attributes rule to an item's flat stats.
+
+    EQ2i's template still exposes the legacy str/agi/wis/int fields, including
+    a small number of old pages with more than one. The current examine window
+    has one grouped rating: if any legacy primary is present, every primary
+    attribute gets the largest stated rating. Taking the maximum preserves the
+    one visible rating without multiplying equal legacy fields together.
+    Stamina is deliberately outside this group.
+    """
+    out = dict(stats or {})
+    values = [out[key] for key in PRIMARY_ATTRIBUTE_KEYS if out.get(key)]
+    if values:
+        primary = max(values)
+        out.update({key: primary for key in PRIMARY_ATTRIBUTE_KEYS})
+    return out
 
 # WHAT YOU CAN ACTUALLY PRIORITIZE, and the order the editor offers it in.
 # Lindsay's list, from the game — this is the whole set, and everything else a
@@ -457,6 +477,7 @@ def parse_equip(page_title: str, wikitext: str) -> dict | None:
         value = _num(_field(text, field))
         if value:
             stats[key] = value
+    stats = expand_primary_attributes(stats)
     adorns = {c: n for c in ADORN_COLORS
               if (n := _int(_field(text, f"{c}slot")))}
     census_id = None

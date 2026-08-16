@@ -13,7 +13,7 @@ A page that answers three questions for one character on one expansion:
   project additive stat changes before chasing the gear.
 
 **Which expansions count is the READER's choice** — a set of toggles in the
-page head, beside the tabs, not a build-time constant. EoF and RoK are what
+item-search header, not a build-time constant. EoF and RoK are what
 exist today, either or both; RoK is the priority and the default. A third
 expansion is a re-sync and one entry in `wiki.ERAS`, never a migration.
 
@@ -441,17 +441,20 @@ temples" is a trip. "Cluster 7" is a database row.
 
 ### The shape of the page
 
-**ONE FULL-WIDTH COLUMN. THE RAIL IS GONE** (Lindsay, 2026-08-16). The first
+**ONE PRIMARY COLUMN WITH A CONTEXTUAL OUTLINE** (Lindsay, 2026-08-16). The first
 build used `ZoneRun`'s rail-plus-main geometry, with a 292px left column
 holding the title, the expansion chips, the class picker and the shortlist.
 Lindsay's read of it: that block is obsolete. It was true — three controls and
 a list were costing a fifth of the screen, and the page paid for it twice, with
 an item table that scrolled sideways and a projected-stats panel that scrolled
 vertically for room the rail was holding. Everything in it had a better home.
+The Outline now uses otherwise idle space as a collapsible right column: it is
+absent for an empty plan, opens when the first item, adornment, or target is
+selected, and can be collapsed back to a compact button in the page head.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Gear Planner   [ Gear ] [ Outline ]      Expansions [EoF][RoK]│
+│  Gear Planner                                  [Outline 3 ›]    │
 │  EQUIPMENT & STATS / Bobby · Level 70 Necromancer   [lookup][▾]│
 │  ┌ armour + weapons ┬ charms + jewelry ┬ projected stats ─────┐│
 │  │ items + sockets + per-slot reset    │ (two columns, no     ││
@@ -464,24 +467,25 @@ vertically for room the rail was holding. Everything in it had a better home.
 │  └────────────────────────────┴───────────────────────────────┘│
 │  ┌────────────────────────────────────────────────────────────┐│
 │  │ item table (SortableTable, frozen)                         ││
-│  └────────────────────────────────────────────────────────────┘│
+│  └──────────────────────────────────────────┬ Outline ─────────┤
+│                                             │ shortlist + path │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 Where the rail's four things went, and why:
 
-- **The title** is a head line with the tabs beside it.
-- **The expansions stay OUT of the filters**, in that head line. Lindsay
+- **The title** is a clean page head; the old descriptive tagline is removed.
+- **The expansions stay OUT of the filters**, in the item-search header. Lindsay
   offered them to the filter band; they govern more than the item table —
   which items exist, what a score is measured against, which sets are offered,
-  which quests the Outline knows — and **the Outline tab has no filter band**.
-  A control both tabs obey lives where both tabs can see it.
+  which quests the Outline knows. A control all of those surfaces obey lives
+  above the catalog rather than pretending to be one more result filter.
 - **Class joined the facets**, which is what it is. Alone in the rail it read
   as a page-wide setting, and it is the single control most likely to be what
   emptied a table — `EmptyTable` names it by name for that reason.
-- **The shortlist moved to the Outline tab**, which is the page that consumes
-  it. On the Gear tab it repeated what the equipment window and the worn-set
-  panel already showed, and a target can only be added from the Outline anyway.
+- **The shortlist moved into the contextual Outline column**, which is the
+  surface that consumes it. The column opens only once there is something to
+  act on, so it does not tax the empty gear-search state.
   It still holds THREE kinds of thing separately: items, adornments, and
   targets (a mob or a quest you want for its own sake). A turquoise is not its
   host item and a raid target is not a slot.
@@ -506,6 +510,17 @@ keep its right-side sequence. There is deliberately no paper doll: it consumed
 the page's most valuable vertical space without helping a gear decision. Rows
 and icons are compact enough to keep search and results prominent, while the
 stat ledger remains clean site UI.
+
+Projected stats follow the in-game grouping more closely: Attributes, Defense,
+Offense, and Autoattack. Casting Speed and Reuse Speed sit in Offense directly
+after Ability Mod, in that order. A current equipped value is green; a planned
+increase is cyan and a planned decrease is red. The signed delta repeats the
+direction so color is never the only signal. DPS, Haste, and Multi Attack are
+displayed as ratings without percent signs, matching the in-game stat window.
+Item Primary Attributes are normalized before projection: the wiki's legacy
+STR/AGI/WIS/INT field and Census's grouped `strength` storage both expand to
+Strength, Agility, Wisdom, and Intelligence by the same amount. Stamina remains
+its own stat. Catalog examine cards show that value once as Primary Attributes.
 
 Clicking a slot filters the catalog to legal choices for that position. Adding
 an item puts it in that concrete slot and activates it. Multiple candidates stay
@@ -749,9 +764,9 @@ progress tracking is a later concern and should not hold up the joint route.
 
 ### States and edges
 
-- **Empty shortlist** — the Outline tab shows the prelude only, which is
-  correct and useful on its own: the expansion's standard work does not depend
-  on what you are chasing.
+- **Empty shortlist** — the Outline column stays closed. The expansion prelude
+  appears with the derived path once the reader has selected something to
+  chase; until then the page gives its width to equipment search.
 - **No clusters found** — the tag strip is absent, not empty. An empty legend
   reads as broken.
 - **Unresolved item** — a name, no card. `GET /api/items/{id}/card` answers
@@ -1008,8 +1023,8 @@ no tags. Ordered, readable, and honest about what it does not know.
 ## State of play — 2026-08-15 (Phases 0–2 complete)
 
 **Phases 1 and 2 are BUILT and both expansions are synced; Phase 0 is now
-MEASURED.** The Gear tab builds a slot-aware loadout and the Outline tab consumes
-the same plan as a hand-kept prelude followed by the prerequisite DAG. Phase 3
+MEASURED.** The gear workspace builds a slot-aware loadout and its contextual
+Outline column consumes the same plan as a hand-kept prelude followed by the prerequisite DAG. Phase 3
 cluster tags may now proceed over the matched coordinate corpus. Phase 4 remains
 planned and must not pretend unresolved cross-zone epic coordinates are located.
 

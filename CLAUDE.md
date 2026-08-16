@@ -324,10 +324,10 @@ segmentation)
   untouched.
 - **Clicking an item's ROW puts it in the window**; the name cell stops the
   click and still opens the wiki.
-- **`/plan` HAS NO RAIL — one full-width column.** The expansion toggles are in
-  the page head beside the tabs (they govern the Outline too, which has no
-  filter band); class is a FACET with the others; the shortlist heads the
-  Outline tab, which is what consumes it.
+- **`/plan` HAS NO PERMANENT RAIL.** The expansion toggles are in the item-search
+  header and class is a FACET with the others. A contextual right Outline stays
+  closed for an empty plan, opens when a pick is added, and can be collapsed;
+  its shortlist and path consume the same plan as the equipment window.
 - **Worn set bonuses belong under the equipped gear, not in the stats panel** —
   counted off the WINDOW, from both a set the reader installed and a turquoise
   Census says is already worn. **Changing character empties the window** (the
@@ -497,9 +497,9 @@ Details per area live in the `docs/` file named beside it.
   every drop and quest reward with where it comes from — plus the set
   adornments on their own axis, since the turquoise detaches. Load a Census
   character and the equipment window projects what a swap would change. The
-  Outline tab puts a hand-kept prelude ahead of the prerequisite-ordered quests
-  and targets that serve the browser's shortlist. **In the nav right of
-  Compare, signed-out**; one full-width column, no rail; filled by
+  contextual Outline column puts a hand-kept prelude ahead of the
+  prerequisite-ordered quests and targets that serve the browser's shortlist.
+  **In the nav right of Compare, signed-out**; filled by
   `tools/sync_planner.py` on a monthly cron. Phases 0-2 are complete; spatial
   tags are not.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
@@ -538,6 +538,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
 - 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
@@ -557,4 +558,3 @@ builds here with `bash build.sh`.
 - 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE
-- 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
