@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 45
+SCHEMA_VERSION = 46
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -1141,6 +1141,20 @@ CREATE TABLE IF NOT EXISTS plan_quest_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_plan_quest_edges_to ON plan_quest_edges(to_page);
 CREATE INDEX IF NOT EXISTS idx_plan_quest_edges_era ON plan_quest_edges(era);
+
+-- v46: wikq2's structured reading of the 24 original class epic timelines.
+-- This is one offline synchronization boundary: wikq2 decides which links are
+-- requirements and which are the ordered heroic/raid chain; the Planner stores
+-- that exact result instead of independently interpreting the same wiki prose.
+CREATE TABLE IF NOT EXISTS plan_epic_timelines (
+  title TEXT PRIMARY KEY,
+  class_name TEXT NOT NULL UNIQUE,
+  quests_json TEXT NOT NULL,
+  requirements_json TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  source_version INTEGER NOT NULL,
+  fetched_ts INTEGER NOT NULL
+);
 """
 
 
@@ -1712,6 +1726,9 @@ def init_db() -> None:
         # v45: `planner_saved_sets` gives every account five renameable gear
         # builds. It is a new table, so an old database receives five implicit
         # empty defaults and no existing Planner state changes.
+        # v46: `plan_epic_timelines` is wikq2's structured epic prerequisite
+        # and quest-chain export. It is an offline cache and starts empty until
+        # the next Planner sync, like the rest of the catalog.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

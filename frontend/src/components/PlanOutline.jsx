@@ -21,13 +21,14 @@ export default function PlanOutline({ data }) {
   }, [done])
   const zones = useMemo(() => {
     const grouped = new Map()
-    data.rows.forEach((row) => {
+    data.rows.filter((row) => !row.requirement).forEach((row) => {
       const zone = row.zone || 'Other'
       if (!grouped.has(zone)) grouped.set(zone, { name: zone, mobs: [], quests: [] })
       grouped.get(zone)[row.kind === 'quest' ? 'quests' : 'mobs'].push(row)
     })
     return [...grouped.values()]
   }, [data.rows])
+  const requirements = data.rows.filter((row) => row.requirement)
   const toggle = (key) => setDone((held) => {
     const next = new Set(held)
     if (next.has(key)) next.delete(key); else next.add(key)
@@ -37,6 +38,21 @@ export default function PlanOutline({ data }) {
   if (!data.rows.length) return <p className="muted outlineempty">Select an item to build the list.</p>
   return (
     <div className="planoutline zonelist">
+      {!!requirements.length && (
+        <section className="outlinezone outlinerequirements">
+          <h3>Epic prerequisites</h3>
+          <div className="outlinekindlist">
+            {requirements.map((row) => (
+              <label className={`outlineentry quest${done.has(row.key) ? ' done' : ''}`} key={row.key}>
+                <input type="checkbox" checked={done.has(row.key)} onChange={() => toggle(row.key)} />
+                <span>{row.name}</span>
+                {row.requirement_text !== row.name && <em>{row.requirement_text}</em>}
+                {row.kind === 'quest' && <QuestLinks page={row.key} />}
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
       {zones.map((zone) => (
         <section className="outlinezone" key={zone.name}>
           <h3>{zone.name}</h3>

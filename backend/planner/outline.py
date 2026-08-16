@@ -18,6 +18,7 @@ of `/plan` keeps, and here the whole answer is a few hundred rows and a heap.
 """
 
 import heapq
+import json
 
 from planner import wiki
 
@@ -94,6 +95,65 @@ def _quests(conn, pages: list[str]) -> dict[str, dict]:
                 f"({','.join('?' * len(chunk))})", chunk):
             out[r["page_title"]] = dict(r)
     return out
+
+
+def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict]) -> tuple[dict[str, dict], list[dict], list[tuple[str, str]], set[str]]:
+    """wikq2's canonical epic chain plus its timeline-level requirements."""
+    extra_pages: set[str] = set()
+    requirements: dict[str, dict] = {}
+    canonical_edges: list[tuple[str, str]] = []
+    epic_pages: set[str] = set()
+    for seed in seeds:
+        quest = seed_quests.get(seed)
+        timeline = (quest or {}).get("timeline") or ""
+        if "epic weapon" not in timeline.lower():
+            continue
+        title = timeline if timeline.lower().endswith(" timeline") else f"{timeline} Timeline"
+        record = conn.execute(
+            "SELECT quests_json, requirements_json, source_url "
+            "FROM plan_epic_timelines WHERE title=?", (title,)).fetchone()
+        if not record:
+            continue
+        chain = json.loads(record["quests_json"])
+        chain_titles = [row["title"] for row in chain]
+        known = _quests(conn, chain_titles)
+        include_raid = quest.get("kind") == "raid"
+        included = [page for page in chain_titles
+                    if include_raid or (known.get(page) or {}).get("kind") != "raid"]
+        extra_pages.update(included)
+        epic_pages.update(included)
+        canonical_edges.extend(zip(included, included[1:]))
+        first = included[0] if included else seed
+        for index, requirement in enumerate(json.loads(record["requirements_json"])):
+            linked = requirement.get("quests") or []
+            if linked:
+                keys = []
+                for linked_quest in linked:
+                    key = linked_quest["title"]
+                    keys.append(key)
+                    requirements.setdefault(key, {
+                        "kind": "quest", "key": key, "name": key,
+                        "level": None, "level_text": None, "zone": None,
+                        "timeline": title, "jcat": None, "difficulty": "unknown",
+                        "diff": requirement["text"], "era": "rok",
+                        "wiki": linked_quest.get("url") or _wiki_url(key), "gets": [],
+                        "why": "prerequisite", "opens": [seed],
+                        "requirement": True, "requirement_text": requirement["text"],
+                    })
+                canonical_edges.extend((key, first) for key in keys)
+            else:
+                key = f"requirement:{title}:{index}"
+                requirements[key] = {
+                    "kind": "requirement", "key": key,
+                    "name": requirement["text"], "level": None,
+                    "level_text": None, "zone": None, "timeline": title,
+                    "jcat": None, "difficulty": "unknown", "diff": None,
+                    "era": "rok", "wiki": record["source_url"], "gets": [],
+                    "why": "prerequisite", "opens": [seed],
+                    "requirement": True, "requirement_text": requirement["text"],
+                }
+                canonical_edges.append((key, first))
+    return _quests(conn, list(extra_pages)), list(requirements.values()), canonical_edges, epic_pages
 
 
 def _ancestors(conn, seeds: set[str]) -> tuple[dict[str, set[str]], set[str]]:
@@ -180,6 +240,8 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
     # that was crawled as a named monster.
     quests = _quests(conn, list(wanted))
     seeds = {p for p in wanted if p in quests}
+    epic_quests, epic_requirements, epic_edges, epic_pages = _epic_plan(conn, seeds, quests)
+    quests.update(epic_quests)
     need, _ = _ancestors(conn, seeds)
     chain = _quests(conn, [p for p in need if p not in quests])
     quests.update(chain)
@@ -192,6 +254,9 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             "SELECT from_page, to_page FROM plan_quest_edges WHERE kind='hard' "
             f"AND to_page IN ({','.join('?' * len(chunk))})", chunk)]
     edges = [(a, b) for a, b in edges if a in quests]
+    edges = [(a, b) for a, b in edges
+             if not (a in epic_pages and b in epic_pages)]
+    edges.extend(epic_edges)
 
     rows: list[dict] = []
     for page, q in quests.items():
@@ -207,9 +272,12 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             # and exist only to open the one that does.
             "why": ("reward" if gets else
                     "prerequisite"),
+            "requirement": False,
             "opens": sorted(quests[g]["name"] for g in need.get(page, ())
                             if g in quests and g != page),
         })
+
+    rows.extend(epic_requirements)
 
     for page in wanted:
         if page in quests:
@@ -228,6 +296,7 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             "diff": src["detail"], "era": src["era"],
             "wiki": _wiki_url(page), "gets": gets,
             "why": "drop", "opens": [],
+            "requirement": False,
         })
 
     ordered = _order(rows, edges)[:MAX_ROWS]

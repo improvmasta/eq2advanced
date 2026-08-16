@@ -5,10 +5,12 @@
     .venv/bin/python backend/tools/sync_planner.py --era rok --era eof
     .venv/bin/python backend/tools/sync_planner.py --dry-run
 
-Run it BY HAND. It is not on a schedule and should not be: an expansion's
-itemization changes when the expansion changes, and a nightly crawl against
-somebody else's wiki buys nothing and costs them bandwidth. The same rule
-`sync_wiki.py` keeps, for the same reason.
+Run it by hand or through the monthly `scripts/scheduled-sync.sh planner` job.
+The low cadence fits expansion itemization, and the collapse guard refuses to
+reconcile a suspiciously incomplete crawl. `sync_wiki.py` remains hand-run.
+
+For RoK, the run first invokes wikq2's versioned 24-class epic export. This is
+an offline sibling-repo boundary, not a request-time service dependency.
 
 RoK is ~350 named monsters and ~900 quests, and what those two point at is
 ~1,500 item pages. Batched at 40 titles a request with a quarter-second pause,
@@ -25,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import gamewiki                                   # noqa: E402
 from db import get_db, init_db                    # noqa: E402
-from planner import ingest, wiki                  # noqa: E402
+from planner import epic_timelines, ingest, wiki  # noqa: E402
 
 
 def main() -> int:
@@ -40,11 +42,18 @@ def main() -> int:
     ap.add_argument("--force", action="store_true",
                     help="write the crawl even if it came back far smaller "
                          "than the last one (see ingest.COLLAPSE_RATIO)")
+    ap.add_argument("--skip-wikq2", action="store_true",
+                    help="leave the last structured epic timeline snapshot in place")
     args = ap.parse_args()
     eras = args.era or list(wiki.DEFAULT_ERAS)
 
     init_db()
     conn = get_db()
+
+    epic_data = None
+    if "rok" in eras and not args.skip_wikq2 and not args.dry_run and not args.icons_only:
+        print("wikq2 (24 class epic timelines)")
+        epic_data = epic_timelines.export()
 
     if args.dry_run:
         for era in eras:
@@ -89,6 +98,9 @@ def main() -> int:
         for crawled, report in zip(crawls, reports):
             report.update(ingest.reconcile_edges(
                 conn, crawled["era"], crawled["edges"]))
+
+    if epic_data is not None:
+        print(f"  {epic_timelines.store(conn, epic_data)} structured epic timelines imported")
 
     for report in reports:
         print(f"\r{report['era']}  {report['mobs']} named monsters, "

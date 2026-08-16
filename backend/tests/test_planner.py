@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
-from planner import adornments, catalog, ingest, outline, wiki
+from planner import adornments, catalog, epic_timelines, ingest, outline, wiki
 
 PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
@@ -545,6 +545,59 @@ def test_item_and_set_picks_are_reported_when_they_cannot_be_placed(tmp_path):
         fresh_db(tmp_path), eras=["rok"], items=["Missing Item"],
         sets=["Missing Set"])
     assert out["unplaced"] == ["Missing Item", "Missing Set"]
+
+
+def test_wikq2_epic_timeline_supplies_requirements_and_replaces_the_loop(tmp_path):
+    conn = fresh_db(tmp_path)
+    quests = [
+        ("An Ayonic Journey", "solo"),
+        ("Feeding the Flame of Yore", "solo"),
+        ("Son'Nia's Song", "raid"),
+    ]
+    with conn:
+        conn.execute(
+            "INSERT INTO plan_items (page_title,name,era,slot,level,tier,classes,"
+            "stats_json,adorns_json,fetched_ts) VALUES "
+            "('Ayonic Axe (Fabled)','Ayonic Axe','rok','Primary',80,'FABLED',"
+            "'troubador','{}','{}',0)")
+        conn.execute(
+            "INSERT INTO plan_sources (page_title,source_page,source,kind,era,detail) "
+            "VALUES ('Ayonic Axe (Fabled)','An Ayonic Journey','An Ayonic Journey',"
+            "'quest','rok','Troubador Epic Weapon')")
+        conn.executemany(
+            "INSERT INTO plan_quests (page_title,name,era,timeline,kind,fetched_ts) "
+            "VALUES (?,?, 'rok','Troubador Epic Weapon',?,0)",
+            [(title, title, kind) for title, kind in quests])
+        conn.executemany(
+            "INSERT INTO plan_quest_edges (from_page,to_page,era,kind,or_group) "
+            "VALUES (?,?,'rok','hard',0)", [
+                ("Feeding the Flame of Yore", "An Ayonic Journey"),
+                ("An Ayonic Journey", "Feeding the Flame of Yore"),
+            ])
+        conn.execute(
+            "INSERT INTO plan_epic_timelines "
+            "(title,class_name,quests_json,requirements_json,source_url,source_version,fetched_ts) "
+            "VALUES (?,?,?,?,?,1,0)", (
+                "Troubador Epic Weapon Timeline", "troubador",
+                json.dumps([{"title": title, "url": f"https://wik/{title}"}
+                            for title, _ in quests]),
+                json.dumps([
+                    {"text": "Uruvanian from Words of Air", "quests": [
+                        {"title": "Words of Air", "url": "https://wik/Words_of_Air"}]},
+                    {"text": "Complete The Poets Palace Access", "quests": []},
+                ]), "https://wik/Troubador_Epic_Weapon_Timeline"))
+
+    result = outline.outline(conn, eras=["rok"], items=["Ayonic Axe (Fabled)"])
+    assert [row["name"] for row in result["rows"]] == [
+        "Complete The Poets Palace Access", "Words of Air",
+        "An Ayonic Journey", "Feeding the Flame of Yore"]
+    assert "Son'Nia's Song" not in [row["name"] for row in result["rows"]]
+    assert [row["requirement"] for row in result["rows"]] == [True, True, False, False]
+
+
+def test_wikq2_epic_export_requires_all_24_original_classes():
+    with pytest.raises(ValueError, match="24 timelines"):
+        epic_timelines.validate({"version": 1, "timelines": []})
 
 
 # ---------- the read side ----------

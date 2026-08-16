@@ -853,6 +853,14 @@ by **zone**, then lists the source **mobs** and reward **quests** there. A rewar
 quest brings in its complete hard-prerequisite chain; unrelated expansion
 prelude work and manually kept mob/quest targets are gone.
 
+Class epics have one deliberate exception to the generic quest-edge walk:
+**wikq2's structured Epic Weapon timeline is authoritative.** Its Requirements
+or Prerequisites section appears first, with language and access quests kept as
+clickable quests, followed by the canonical heroic chain (Fabled) and then the
+raid quest (Mythical). This avoids treating contradictory individual-page
+`prereq`/`next` fields as a loop. `npm run audit:epics -- --fresh` in wikq2
+checks all 24 original class timelines and every chain page's navigation.
+
 Quest checkboxes mean **done** and persist in this browser. Hovering a quest in
 either the Outline or an item-table source exposes two compact links in this
 order: `wikq2`, then EQ2 Wiki.
@@ -937,7 +945,7 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 
 Catalog tables are reference data and touch no parse or visibility predicate.
 `planner_saved_sets` is the one account-owned Planner table: five bounded JSON
-loadouts per user. Current schema is v45, guarded by table shape like every
+loadouts per user. Current schema is v46, guarded by table shape like every
 other migration in `db.py`.
 
 | Table | Holds |
@@ -948,6 +956,7 @@ other migration in `db.py`.
 | `plan_sources` | item → source (mob / quest / merchant), with kind raid / group / solo / quest |
 | `plan_quests` | Quest, timeline, level, zone, difficulty, journal category, era |
 | `plan_quest_edges` | `prereq`/`next`, typed **hard** or **enable**, with OR-groups |
+| `plan_epic_timelines` | wikq2's versioned 24-class prerequisite and ordered-chain snapshot |
 | `plan_steps` *(planned)* | Steps per quest, with an `any_order` group id |
 | `plan_waypoints` *(planned)* | Step → coordinate → map/POI match, with match confidence |
 | `plan_clusters`, `plan_cluster_members` *(planned)* | Computed tags and membership |
@@ -965,8 +974,8 @@ account forever**, exactly as `items.py` puts it.
 
 ## Ingest
 
-Offline, hand-run, never scheduled — the same rule as the wiki ability ingest,
-for the same reason.
+Offline and monthly for Planner data. The wiki ability ingest remains a
+separate hand-run operation.
 
 ### What the crawl has to ask, and why the obvious question is the wrong one
 
@@ -1013,6 +1022,12 @@ which is why the adornment and the armour are separate rows (below).*
 The crawl is now **monthly on cron** (`scripts/scheduled-sync.sh planner`),
 which replaces "hand-run, never scheduled" for the *planner* crawl. The ability
 ingest (`sync_wiki.py`) is unchanged and stays hand-run.
+
+The same run invokes wikq2's `export:epics` script before changing Planner
+state and stores all 24 original-class timelines in `plan_epic_timelines`.
+This is the established offline TypeScript→JSON→Python boundary: request-time
+Planner reads never call wikq2, while every refresh inherits wikq2 parser fixes.
+`--skip-wikq2` deliberately retains the last good snapshot for maintenance.
 
 The rule existed for a real reason — `store` RECONCILES, and reconciling means
 deleting what the wiki no longer says, which is safe exactly as long as a
@@ -1201,10 +1216,10 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
 | The outline read side: selected-item sources and prerequisite walk | `backend/planner/outline.py` |
 | Public catalog/outline/character GETs plus authenticated saved-set GET/PUT | `backend/routers/planner_api.py` |
-| Reference catalog and graph plus five account saved-set slots (schema v45) | `backend/db.py` |
+| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots (schema v46) | `backend/db.py` |
 | The page: game-grouped concrete slots, named saved sets, Fabled→Mythical epic suggestion, adornment choices, projected stats, gear/set search, and zone-grouped source list | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
-| The hand-run sync | `backend/tools/sync_planner.py` |
+| The monthly sync, including wikq2's offline epic export | `backend/tools/sync_planner.py`, `backend/planner/epic_timelines.py` |
 | The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |
 | Planner tests including recorded wiki pages, set-bonus typing, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |
 

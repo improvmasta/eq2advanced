@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v42**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v46**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -420,6 +420,12 @@ segmentation)
   mobs and reward quests, plus those quests' hard prerequisites. No prelude or
   manually kept targets. Quest checks are browser-local completion marks;
   quest hover exposes `wikq2` first and EQ2 Wiki second.
+- **wikq2 owns class-epic timeline structure** (`plan_epic_timelines`, v46).
+  The monthly Planner sync runs wikq2's offline export for all 24 original
+  classes before writing it here. Timeline requirements are a separate block,
+  linked language/access quests remain quests, and the canonical heroic/raid
+  order replaces contradictory quest-page edges such as the old Troubador
+  `An Ayonic Journey` / `Feeding the Flame of Yore` loop.
 - **A comma in `prereq` or `next` is part of the quest title, never a
   separator.** Only linked `prelist` / `nextlist` fields are multi-valued;
   alternatives are stored as OR-groups. Outline shortlist values use repeated
@@ -576,6 +582,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
 - 2026-08-16 (codex): Complete equipped item examine cards
 - 2026-08-16 (codex): Improve planner adornments and gear planning
@@ -595,4 +602,3 @@ builds here with `bash build.sh`.
 - 2026-08-14 (codex): Implement complete admin operations redesign
 - 2026-08-14 (codex): Add public in-game chat archive and visitor insights
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
-- 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
