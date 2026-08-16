@@ -6151,7 +6151,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planslots { min-width: 0; display: grid; align-content: start; gap: 2px; }
 .planslot {
   position: relative; min-width: 0; min-height: 34px;
-  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 6px; align-items: center; padding: 2px 4px;
   border: 1px solid var(--row-line); border-radius: 3px;
   background: rgba(var(--bg-rgb), 0.28); cursor: pointer;
@@ -6169,9 +6169,26 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .planslot.occupied { opacity: 0.6; }
 .plansloticon {
-  width: 30px; height: 30px; display: grid; place-items: center; overflow: hidden;
+  position: relative; width: 30px; height: 30px; display: grid; place-items: center;
   border: 1px solid var(--gold-dim); border-radius: 3px;
   background: rgba(var(--bg-rgb), 0.55);
+}
+.plansloticon.multiple {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.28),
+    inset 0 0 7px rgba(var(--gold-rgb), 0.2);
+}
+.plansloticoncycle {
+  position: absolute; z-index: 2; left: -8px; top: 6px;
+  width: 12px; height: 18px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--gold); border-radius: 3px;
+  background: #24251f; color: var(--gold-bright);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.plansloticoncycle:hover, .plansloticoncycle:focus-visible {
+  background: var(--gold); color: #171813;
 }
 .plansloticon img { width: 28px; height: 28px; object-fit: contain; }
 .planslotempty { color: var(--text-muted); font-size: 16px; }
@@ -6189,53 +6206,70 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--fs-label);
 }
-.planslotcycle { display: grid; grid-template-columns: 15px auto 15px; align-items: center; }
-.planslotcycle button {
-  width: 15px; height: 22px; padding: 0; border: 0; background: transparent;
-  color: var(--gold-bright); font-size: 16px; cursor: pointer;
-}
-.planslotcycle em {
-  min-width: 25px; color: var(--text-muted); font-family: var(--font-data);
-  font-size: var(--fs-label); font-style: normal; text-align: center;
-}
 .plannedmark {
   position: absolute; right: 4px; bottom: 1px; color: var(--success);
   font-family: var(--font-data); font-size: 8px; font-style: normal;
   text-transform: uppercase; letter-spacing: 0.05em;
 }
-/* Only on a slot that HAS been changed — a reset beside twenty untouched
-   slots is twenty buttons that do nothing. */
-.planslotreset {
-  width: 20px; height: 20px; flex: none; padding: 0;
+/* A planned candidate can leave from the place it is visible. This removes
+   the shortlist entry too, rather than disguising it behind a reset state. */
+.planslot.planned { padding-right: 27px; }
+.planslotremove {
+  position: absolute; top: 3px; right: 3px;
+  width: 19px; height: 19px; padding: 0;
   display: grid; place-items: center;
   border: 1px solid var(--border); border-radius: 3px;
   background: var(--surface-raised); color: var(--text-muted);
-  font-size: 12px; line-height: 1; cursor: pointer;
+  font-size: 15px; line-height: 1; cursor: pointer;
 }
-.planslotreset:hover, .planslotreset:focus-visible {
-  border-color: var(--gold); color: var(--gold-bright);
+.planslotremove:hover, .planslotremove:focus-visible {
+  border-color: var(--danger); color: var(--danger);
 }
 .planadorns { min-width: 0; display: flex; align-items: center; gap: 5px; }
-.planadornicon {
-  position: relative; width: 34px; height: 34px; padding: 2px; flex: none;
-  border: 1px solid var(--border); border-radius: 3px; background: var(--surface-raised);
+.planadornicon, .adornpicker .pickerbtn {
+  position: relative; width: 34px; min-width: 34px; height: 34px; min-height: 34px;
+  padding: 2px; flex: none; overflow: hidden;
+  border: 1px solid #8d8b82; border-radius: 2px;
+  background: linear-gradient(135deg, #d1d0c7 0 8%, #55564f 10% 18%,
+    #252824 22% 78%, #8c8c82 82% 90%, #d8d6cc 92%);
+  box-shadow: inset 0 0 0 1px #151815, inset 0 0 5px rgba(0, 0, 0, 0.92),
+    0 1px 2px rgba(0, 0, 0, 0.65);
 }
-.planadornicon.turquoise { cursor: pointer; border-color: #2ba8b7; }
-.planadornicon:disabled { opacity: 0.72; }
-.planadornicon img { width: 28px; height: 28px; object-fit: contain; }
-.planadornicon i {
-  position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px;
-  display: grid; place-items: center; border-radius: 50%;
-  color: var(--bg); background: var(--success); font-size: 9px; font-style: normal;
+.planadornicon:disabled,
+.planadornicon[aria-disabled="true"] { opacity: 1; cursor: default; }
+.planadornicon.turquoise, .adornpicker .pickerbtn { border-color: #8db8ba; }
+.plansocketart {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border: 1px solid rgba(215, 219, 211, 0.42); border-radius: 1px;
+  background: radial-gradient(circle at 48% 42%, #4b504b 0, #1d211e 68%, #090b09 100%);
+  box-shadow: inset 0 0 7px rgba(0, 0, 0, 0.78);
+}
+.plansocketart.turquoise { box-shadow: inset 0 0 8px rgba(28, 224, 225, 0.34); }
+.plansocketart.orange { box-shadow: inset 0 0 8px rgba(223, 129, 45, 0.28); }
+.plansocketart.white { box-shadow: inset 0 0 8px rgba(226, 235, 239, 0.24); }
+.plansocketart.empty::after {
+  content: ''; width: 58%; height: 58%; transform: rotate(45deg);
+  border: 1px solid rgba(222, 226, 218, 0.28);
+  background: rgba(0, 0, 0, 0.3);
+}
+.plansocketart img { width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
+.adornpicker .pickerbtn { cursor: pointer; }
+.adornpicker .pickerbtn .pv,
+.adornpicker .pickerbtn .ph,
+.adornpicker .pickerbtn .caret { display: none; }
+.adornpicker .pickerbtn:hover,
+.adornpicker .pickerbtn:focus-visible,
+.adornpicker.open .pickerbtn {
+  border-color: #56d6df; box-shadow: inset 0 0 0 1px #151815,
+    inset 0 0 7px rgba(37, 224, 229, 0.4), 0 0 0 1px rgba(86, 214, 223, 0.25);
 }
 .planadorns.compact { gap: 2px; }
-.planadorns.compact .planadornicon {
-  width: 21px; height: 21px; padding: 1px; border-color: var(--gold-dim);
+.planadorns.compact .planadornicon,
+.planadorns.compact .adornpicker .pickerbtn {
+  width: 23px; min-width: 23px; height: 23px; min-height: 23px; padding: 2px;
 }
-.planadorns.compact .planadornicon img { width: 17px; height: 17px; }
-.planadorns.compact .planadornicon i {
-  right: -2px; bottom: -2px; width: 9px; height: 9px; font-size: 6px;
-}
+.planadorns.compact .plansocketart { width: 17px; height: 17px; }
+.pickermenu .plansocketart { width: 27px; height: 27px; flex: none; }
 .socketchoice {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text-muted); font-size: var(--fs-label);
@@ -6277,32 +6311,80 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstats .equipped { color: var(--success); }
 .planstats .upgrade { color: var(--joust); }
 .planstats .downgrade { color: var(--danger); }
-/* WORN SET BONUSES, UNDER THE GEAR THEY COME OFF. Directly below the window
-   because that is where the adornment clicks are: the fourth piece lighting up
-   has to be visible in the same glance as the click that made it the fourth.
+.examinecard.plancomparecard {
+  width: max-content; max-width: calc(100vw - 16px); padding: 3px;
+}
+.planitemcompare { display: flex; align-items: stretch; gap: 5px; }
+.planitemcompare > section { width: 350px; display: flex; flex-direction: column; }
+.plancomparelabel {
+  padding: 2px 7px 3px; background: #252525; color: #d8cfb4;
+  font-family: var(--font-data); font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.planitemcompare .examinewindow { flex: 1 1 auto; }
+/* WORN SET BONUSES, UNDER THE WHOLE GEAR + STATS ROW. They still sit directly
+   below the equipment window, but span the otherwise wasted space beneath the
+   stats column too so four worn sets can read across on a normal desktop.
+   The fourth piece lighting up stays in the same glance as the click.
    A tier that is EARNED is in full colour with a filled diamond; one still out
    of reach is dimmed, so the panel reads as a ladder you are climbing. */
 .wornsets {
-  min-width: 0; padding: 8px 10px;
+  min-width: 0; grid-column: 1 / -1; padding: 8px 10px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: rgba(var(--bg-rgb), 0.28);
 }
+.wornsetshead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.wornsetshead .btnlink { color: var(--text-muted); font-size: var(--fs-label); }
 .wornsets > p { margin: 3px 0 0; font-size: var(--fs-label); line-height: 1.45; }
-.wornset { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--row-line); }
-.wornset:first-of-type { border-top: 0; }
+.wornsets.collapsed { padding-block: 7px; }
+.wornsetgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 7px; margin-top: 7px;
+}
+.wornset {
+  min-width: 0; padding: 7px 8px;
+  border: 1px solid var(--row-line); border-radius: 3px;
+  background: var(--surface);
+}
 .wornsethead { display: flex; align-items: baseline; gap: 7px; }
-.wornsethead b { color: #44bfd0; font-size: var(--fs-data); }
+.wornsethead b {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #44bfd0; font-size: var(--fs-data);
+}
 .wornsethead em {
-  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
+  margin-left: auto; flex: none; color: var(--text-muted);
+  font-size: var(--fs-label); font-style: normal;
 }
-.wornset p {
-  margin: 2px 0 0; color: var(--text-muted); opacity: 0.72;
-  font-size: var(--fs-label); line-height: 1.35;
+.wornsettier {
+  margin-top: 4px; padding: 4px 6px;
+  border-left: 2px solid var(--row-line);
+  color: var(--text-muted); opacity: 0.76;
+  font-size: var(--fs-label); line-height: 1.42;
 }
-.wornset p i { margin-right: 5px; color: var(--text-muted); font-style: normal; }
-.wornset p b { color: inherit; font-family: var(--font-data); }
-.wornset p.on { color: var(--text); opacity: 1; }
-.wornset p.on i { color: #44bfd0; }
+.wornsettierhead { display: grid; grid-template-columns: 12px auto 1fr; gap: 5px; }
+.wornsettierhead i { color: var(--text-muted); font-style: normal; }
+.wornsettierhead b { color: inherit; font-family: var(--font-data); }
+.wornsettierhead span { color: inherit; font-weight: 600; }
+.wornsetdetails { position: relative; margin: 3px 0 0 34px; }
+.wornsetdetails.collapsible { padding-right: 22px; }
+.wornsetdetailtext {
+  max-height: 2.84em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+}
+.wornsetdetailtext span { display: block; margin-top: 2px; }
+.wornsetdetails.expanded .wornsetdetailtext {
+  max-height: none; -webkit-mask-image: none; mask-image: none;
+}
+.wornsetdetails .btnlink {
+  position: absolute; right: 0; bottom: 0; min-width: 20px; padding: 0;
+  color: var(--gold-bright); font-size: var(--fs-data); text-align: right;
+}
+.wornsettier.on {
+  border-left-color: rgba(68, 191, 208, 0.72);
+  color: var(--text); opacity: 1;
+}
+.wornsettier.on .wornsettierhead i { color: #44bfd0; }
 .planstatnote {
   margin: 9px 2px 0; color: var(--text-muted); font-size: 0.62rem; line-height: 1.4;
 }
@@ -6313,13 +6395,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .plannerworkspace.outline-open { grid-template-columns: minmax(0, 1fr); }
   .planneroutline { position: static; max-height: none; grid-row: 1; }
   .loadoutbody { grid-template-columns: minmax(0, 1fr); }
+  .planitemcompare { flex-direction: column; }
 }
 
 @media (max-width: 760px) {
   .loadouthead { align-items: flex-start; flex-direction: column; }
   .equipmentwindow { grid-template-columns: 1fr 1fr; }
-  .planslot { grid-template-columns: 30px minmax(0, 1fr) auto auto; }
-  .planslotcycle { grid-column: 2 / -1; justify-content: center; }
+  .planslot { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .planstats { grid-template-columns: minmax(0, 1fr); }
   .planstathead, .planstatnote { grid-column: 1; }
 }

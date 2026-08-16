@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 import db as dbmod
 from census.effects import parse_effect, parse_effects
-from census.sync import (base_name, planner_character_stats,
+from census.sync import (adornment_set_name, base_name, planner_character_stats,
                          planner_item_stats, typed_fields)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "census"
@@ -133,6 +133,15 @@ def test_base_name():
     assert base_name("Bloody Ritual III") == "Bloody Ritual"
     assert base_name("Aqueous Soul") == "Aqueous Soul"
     assert base_name("Contrapt") == "Contrapt"
+    assert adornment_set_name("Spirit Siphoning Set: Shoulders") == \
+        "Spirit Siphoning Set"
+    assert adornment_set_name("Arcanist Abomination Anihiliation: Ears") == \
+        "Arcanist Abomination Anihiliation"
+    bobby_six = [
+        f"Spirit Siphoning Set: {slot}"
+        for slot in ("Head", "Chest", "Shoulders", "Forearms", "Hands", "Legs")]
+    assert {adornment_set_name(name) for name in bobby_six} == \
+        {"Spirit Siphoning Set"}
 
 
 def test_planner_stats_translate_census_items_and_character_totals():
@@ -157,6 +166,80 @@ def test_planner_stats_translate_census_items_and_character_totals():
     assert totals["potency"] == 68.1
     assert totals["crit"] == 53.48
     assert totals["int"] == doc["stats"]["int"]["effective"]
+
+
+def test_lexicon_fills_missing_worn_item_and_set_details(client):
+    """Census owns the equipped ids; Lexicon may enrich only those ids and
+    keeps its rows separate so a later Census item always takes precedence."""
+    from census import lexicon
+    from census.sync import _gear
+
+    conn = dbmod.get_db()
+    host_id, adorn_id = 683663547, 565003261
+    doc = json.load(open(FIXTURES / "character_bobby.json"))
+    head = next(s for s in doc["equipmentslot_list"]
+                if s.get("displayname") == "Head")
+    head["item"]["adornment_list"] = [
+        {"color": "turquoise", "id": adorn_id}]
+    doc["equipmentslot_list"] = [head]
+    with conn:
+        conn.execute("DELETE FROM census_items WHERE item_id IN (?,?)",
+                     (host_id, adorn_id))
+        conn.execute("DELETE FROM lexicon_items WHERE item_id IN (?,?)",
+                     (host_id, adorn_id))
+
+    class FakeLexicon:
+        def __init__(self):
+            self.character_calls = 0
+            self.item_calls = []
+
+        def character(self, name):
+            self.character_calls += 1
+            return {"name": "Bobby", "equipment": [{
+                "slot": "Head", "name": "Najena's Voidcaller Hood",
+                "item_id": str(host_id), "icon_id": "2857", "tier": "LEGENDARY",
+                "adorn_slots": [{
+                    "color": "Turquoise",
+                    "adorn_name": "Spirit Siphoning Set: Head",
+                    "adorn_id": str(adorn_id), "ilvl_bonus": 2.5,
+                }],
+            }]}
+
+        def items_by_ids(self, ids):
+            self.item_calls.append(ids)
+            return [{
+                "id": str(host_id), "name": "Najena's Voidcaller Hood",
+                "quality": "legendary", "icon_id": "2857", "item_level": 70,
+                "slot_type": "Head", "armor_type": "Cloth Armor",
+                "stats": [], "effects": [], "adornment_slots": ["Turquoise"],
+                "flags": [], "set_bonuses": [],
+            }, {
+                "id": str(adorn_id), "name": "Spirit Siphoning Set: Head",
+                "quality": "fabled", "icon_id": "4254", "item_level": 70,
+                "slot_type": "Head", "armor_type": "Turquoise Adornment",
+                "stats": [], "effects": [], "adornment_slots": [],
+                "flags": ["NO-VALUE"], "set_bonuses": [{
+                    "required_items": 2, "effect": "+3 Potency",
+                    "lines": ["Applies Focus: Lifetap IV.",
+                              "Reduces power cost of Lifetap IV by 200."],
+                }],
+            }]
+
+    fallback = FakeLexicon()
+    assert lexicon.enrich_equipment(conn, "Bobby", doc, fallback, now=1000) == 2
+    gear = _gear(conn, doc)
+    assert gear[0]["name"] == "Najena's Voidcaller Hood"
+    adorn = gear[0]["adornments"][0]
+    assert adorn["name"] == "Spirit Siphoning Set: Head"
+    assert adorn["set_name"] == "Spirit Siphoning Set"
+    assert adorn["stats"]["adornment"]["set_bonuses"][0] == {
+        "required": 2, "effect": "+3 Potency",
+        "descriptions": ["Applies Focus: Lifetap IV.",
+                         "Reduces power cost of Lifetap IV by 200."],
+    }
+    # Complete fallback rows are durable and make the next render a local read.
+    assert lexicon.enrich_equipment(conn, "Bobby", doc, fallback, now=2000) == 0
+    assert fallback.character_calls == 1
 
 
 # ---- sync + summary through the API ----
@@ -420,6 +503,26 @@ def test_a_lookup_falls_back_to_the_cache_when_census_is_unreachable(client, fak
     census_sync.lookup_by_name(conn, fake, "Bobby")                  # seed
     out = census_sync.lookup_by_name(conn, Dead(), "Bobby", refresh=True)
     assert out is not None and out["gear"]
+
+
+def test_a_lookup_uses_an_owned_snapshot_when_public_cache_is_empty(client, fake):
+    """A known Census snapshot remains usable while both the public lookup
+    cache and live Census are unavailable. Lexicon may fill its item details,
+    but the snapshot remains authoritative for what is equipped."""
+    from census import sync as census_sync
+    conn = dbmod.get_db()
+
+    class Dead:
+        def character_by_name(self, name, world_id=618):
+            raise RuntimeError("census down")
+
+    with conn:
+        conn.execute("DELETE FROM plan_characters WHERE name_lower='bobby'")
+    out = census_sync.lookup_by_name(conn, Dead(), "Bobby")
+    assert out is not None and out["gear"]
+    assert out["character"]["public"] is True
+    assert out["snapshot"]["local"] is True
+    census_sync.lookup_by_name(conn, fake, "Bobby")  # restore public cache
 
 
 def test_a_name_census_does_not_know_is_a_404_and_is_not_re_asked(client, fake):

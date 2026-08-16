@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 43
+SCHEMA_VERSION = 44
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -1067,6 +1067,21 @@ CREATE TABLE IF NOT EXISTS plan_characters (
   PRIMARY KEY (name_lower, world_id)
 );
 
+-- v44: item records recovered from EQ2 Lexicon when Census supplied the
+-- equipped ids but its item collection was unavailable.  Keep provenance
+-- separate: Census always wins when it has a row, while this durable cache
+-- prevents every character-page read from becoming a request to Lexicon.
+-- `complete=0` is the name/icon-only character response; a later bounded
+-- enrichment may replace it with `/api/item/<id>`'s full examine data.
+CREATE TABLE IF NOT EXISTS lexicon_items (
+  item_id INTEGER PRIMARY KEY,
+  name TEXT,
+  tier TEXT,
+  json TEXT NOT NULL,
+  complete INTEGER NOT NULL DEFAULT 0,
+  fetched_ts INTEGER NOT NULL
+);
+
 -- v42: the Planner's OUTLINE (Phase 2, docs/planner.md). The crawl already
 -- read every quest page in the era to find its rewards and threw the rest
 -- away; these two tables are what it keeps. Same category of row as the
@@ -1678,6 +1693,10 @@ def init_db() -> None:
         # loadout. A new table and nothing else — `CREATE TABLE IF NOT EXISTS`
         # in SCHEMA is the whole migration, and an empty one is a Planner whose
         # loadout has simply not been asked about anybody yet.
+        # v44: `lexicon_items` is a separate fallback cache for worn item and
+        # adornment ids Census could not resolve. It is intentionally not a
+        # column on `census_items`: source precedence must remain explicit and
+        # a later Census answer must supersede the fallback without a rewrite.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

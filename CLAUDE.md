@@ -328,10 +328,29 @@ segmentation)
   header and class is a FACET with the others. A contextual right Outline stays
   closed for an empty plan, opens when a pick is added, and can be collapsed;
   its shortlist and path consume the same plan as the equipment window.
-- **Worn set bonuses belong under the equipped gear, not in the stats panel** —
+- **Worn set bonuses span beneath equipped gear AND stats** —
   counted off the WINDOW, from both a set the reader installed and a turquoise
   Census says is already worn. **Changing character empties the window** (the
-  shortlist survives), and **every changed slot carries its own reset**.
+  shortlist survives). Four sets should use that full row rather than stack in
+  the gear column.
+- **PLANNED GEAR MUST NEVER GET TRAPPED** — the highlighted item icon gets one
+  left-edge clicker when a slot has alternatives; never spend item-name width
+  on `1/2` plus previous/next controls. Every non-equipped item has a direct
+  `×` that removes its shortlist entry and promotes the next candidate or
+  returns to equipped. Search-name hover compares Candidate, Equipped, and a
+  different active Planned item side by side for the focused concrete slot.
+- **A TURQUOISE'S SLOT SUFFIX IS NOT ITS SET IDENTITY** — Census/Lexicon name
+  the items `Spirit Siphoning Set: Head`, `: Chest`, etc.; the character payload
+  carries canonical `set_name` and the loadout groups on it. Tier bonuses are a
+  headline plus indented details, never one middle-dot paragraph.
+- **SOCKETS LOOK AND ACT LIKE SOCKETS** — framed tiles use the installed
+  adornment's real icon. Turquoise opens a searchable catalog picker filtered
+  to the concrete slot, loaded class, host level, and at most one tier back;
+  choosing a set does not require shortlisting it. Worn sets flow in responsive
+  columns, the whole area collapses, and long tier details clamp behind `…`.
+- **PLANNER DECIMALS ARE SOURCE PRECISION** — projected values and deltas show
+  up to the two decimals preserved by the Census bridge; do not pass them
+  through integer `fmt.num` or force them to one decimal.
 - **POTENCY AND CRIT ARE NOT PRIORITY OPTIONS** — they are on 80% and 72% of
   the catalog, so ordering by them orders by nothing. `catalog.weights` honours
   only `wiki.PRIORITY_STATS` whatever the URL says. They stay on the card and
@@ -387,6 +406,13 @@ segmentation)
   STOPS when a row's stamp does not move — `lookup_by_name` swallows an
   unreachable Census on purpose, so a raised error is not the only way a run
   can be failing.
+- **LEXICON IS THE WORN-ITEM FALLBACK, NOT THE EQUIPMENT AUTHORITY**
+  (`census/lexicon.py`, schema v44) — Census/local snapshots decide which ids
+  are equipped. When those ids lack item records, one bounded Lexicon character
+  lookup and item batch enriches only that allow-list into separate
+  `lexicon_items`; `census_items` always wins. Complete rows are durable,
+  incomplete summaries retry after 6h, and fallback failure never fails the
+  character page.
 - **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
   `refdata/planner_standard.json`, then prerequisite-before-level body from
   `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
@@ -538,6 +564,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
 - 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
 - 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
@@ -557,4 +584,3 @@ builds here with `bash build.sh`.
 - 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
 - 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page
 - 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)
-- 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)

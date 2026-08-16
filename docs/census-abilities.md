@@ -16,7 +16,11 @@ Query shapes are recorded in `client.py`'s docstring.
   `name.first_lower` + `locationdata.worldid=618`, updates
   `characters.class/level/census_character_id`, snapshots a TRIMMED doc
   (identity, stats, resists, gear, spell_list, AA points — not quests or
-  collections), and fills the `census_spells` / `census_items` caches.
+  collections), and fills the `census_spells` / `census_items` caches. When
+  Census returns those equipped ids but its item collection is unavailable,
+  the shared summary path can enrich only those ids from EQ2 Lexicon into the
+  provenance-separated `lexicon_items` fallback cache (schema v44); Census
+  remains authoritative and always wins when its item row exists.
 - **Snapshots only when Census's own `last_update` moved**, so a history row means
   the character actually changed and the diff endpoint stays meaningful. Manual
   refresh has a 60s cooldown.

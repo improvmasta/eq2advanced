@@ -15,6 +15,7 @@ import re
 import time
 
 from census import catalog
+from census.client import CensusError
 from census.effects import parse_effects
 from db import json_dumps
 
@@ -27,12 +28,22 @@ TRIM_KEYS = (
 )
 
 _ROMAN = re.compile(r"^(.*\S)\s+([IVXLCDM]+)$")
+_SET_SLOT = re.compile(
+    r":\s*(?:primary|secondary|head|chest|shoulders?|forearms?|hands?|legs?|feet|"
+    r"fingers?|ears?|neck|wrists?|ranged|waist|cloak|charms?)\s*$", re.I)
 
 
 def base_name(name: str) -> str:
     """'Soulrot VI' -> 'Soulrot' (damage log lines drop the numeral)."""
     m = _ROMAN.match(name or "")
     return m.group(1) if m else name
+
+
+def adornment_set_name(name: str | None) -> str | None:
+    """A portable set's slot-specific item name -> its shared set identity."""
+    if not name:
+        return None
+    return _SET_SLOT.sub("", name).strip() or name
 
 
 def _trim(doc: dict) -> dict:
@@ -280,7 +291,15 @@ def sync_character(conn, client, character_id: int) -> dict:
                 "VALUES (?,?,?)",
                 (character_id, now, json_dumps(trimmed))).lastrowid
     spells_fetched = ensure_spells(conn, client, doc.get("spell_list") or [])
-    items_fetched = ensure_items(conn, client, _equipped_item_ids(doc))
+    try:
+        items_fetched = ensure_items(conn, client, _equipped_item_ids(doc))
+    except CensusError:
+        # Census exposes characters and items through separate collections;
+        # one regularly survives while the other answers service_unavailable.
+        # Do not discard a valid character refresh after its snapshot was
+        # already committed. The summary path makes one bounded Lexicon pass
+        # for any equipped ids still missing from the item cache.
+        items_fetched = 0
     return {"found": True, "changed": changed, "snapshot_id": snapshot_id,
             "spells_fetched": spells_fetched, "items_fetched": items_fetched}
 
@@ -434,11 +453,15 @@ def _snapshot_doc(conn, character_id: int, snapshot_id: int | None = None):
 
 def _gear(conn, doc: dict) -> list[dict]:
     from items import stat_block
+    from census.lexicon import as_census_item
 
     slots = doc.get("equipmentslot_list") or []
     ids = _equipped_item_ids(doc)
     names = {r["item_id"]: r for r in conn.execute(
         f"SELECT item_id, displayname, tier, json FROM census_items WHERE item_id IN "
+        f"({','.join('?' * len(ids))})", ids)} if ids else {}
+    lexicon = {r["item_id"]: r for r in conn.execute(
+        f"SELECT item_id, name, tier, json FROM lexicon_items WHERE item_id IN "
         f"({','.join('?' * len(ids))})", ids)} if ids else {}
     known_adorns = {r["item_id"]: r for r in conn.execute(
         f"SELECT item_id, name, tier, type, level, iconid, icon_ok, stats_json "
@@ -447,22 +470,38 @@ def _gear(conn, doc: dict) -> list[dict]:
     for slot in sorted(slots, key=lambda s: s.get("id", 0)):
         item = slot.get("item") or {}
         cached = names.get(item.get("id"))
-        rec = json.loads(cached["json"]) if cached and cached["json"] else {}
+        lcached = lexicon.get(item.get("id"))
+        rec = (json.loads(cached["json"]) if cached and cached["json"] else
+               as_census_item(json.loads(lcached["json"]))
+               if lcached and lcached["json"] else {})
+        item_name = (cached["displayname"] if cached else
+                     lcached["name"] if lcached else None)
+        item_tier = cached["tier"] if cached else lcached["tier"] if lcached else None
         host_stats = stat_block(rec) if rec else None
         adornments = []
         for adorn in item.get("adornment_list") or []:
             arow = names.get(adorn.get("id"))
             fallback = known_adorns.get(adorn.get("id"))
-            arec = json.loads(arow["json"]) if arow and arow["json"] else {}
-            display_stats = (stat_block(arec) if arec else
-                             json.loads(fallback["stats_json"])
-                             if fallback and fallback["stats_json"] else None)
+            lrow = lexicon.get(adorn.get("id"))
+            arec = (json.loads(arow["json"]) if arow and arow["json"] else
+                    as_census_item(json.loads(lrow["json"]))
+                    if lrow and lrow["json"] else {})
+            display_stats = (
+                stat_block(arec) if arow and arec else
+                json.loads(fallback["stats_json"])
+                if fallback and fallback["stats_json"] else
+                stat_block(arec) if arec else None)
+            adorn_name = (arow["displayname"] if arow else
+                          fallback["name"] if fallback else
+                          lrow["name"] if lrow else None)
             adornments.append({
                 "id": adorn.get("id"), "color": adorn.get("color"),
-                "name": (arow["displayname"] if arow else
-                         fallback["name"] if fallback else None),
+                "name": adorn_name,
+                "set_name": (adornment_set_name(adorn_name)
+                             if adorn.get("color") == "turquoise" else None),
                 "tier": (arow["tier"] if arow else
-                         fallback["tier"] if fallback else None),
+                         fallback["tier"] if fallback else
+                         lrow["tier"] if lrow else None),
                 "icon": (arec.get("iconid") if arec else
                          fallback["iconid"] if fallback and fallback["icon_ok"] else None),
                 "level": (arec.get("itemlevel") if arec else
@@ -476,19 +515,19 @@ def _gear(conn, doc: dict) -> list[dict]:
             "key": slot.get("name"),
             "slot": slot.get("displayname") or slot.get("name"),
             "item_id": item.get("id"),
-            "name": cached["displayname"] if cached else None,
-            "tier": cached["tier"] if cached else None,
+            "name": item_name,
+            "tier": item_tier,
             "level": rec.get("itemlevel"),
             "icon": rec.get("iconid"),
             "planner_stats": planner_item_stats(rec),
             "card": ({
-                "name": cached["displayname"],
-                "rarity": (cached["tier"] or "").title() or None,
+                "name": item_name,
+                "rarity": (item_tier or "").title() or None,
                 "icon": rec.get("iconid"), "type": rec.get("type"),
                 "slot": slot.get("displayname") or slot.get("name"),
                 "level": rec.get("itemlevel"), "stats": host_stats,
                 "effects": None,
-            } if cached else None),
+            } if item_name else None),
             "adornments": adornments,
             "adorns": sum(1 for a in item.get("adornment_list") or [] if a.get("id")),
         })
@@ -537,6 +576,15 @@ def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
     toon they did not sign in for must get the same window as one who did —
     two builders would drift, and the difference would be invisible until a
     field went missing on the path nobody uses."""
+    # Census is still the authority for the equipped ids. If its separate item
+    # collection did not answer, Lexicon can fill only those allowed ids into
+    # its own durable cache. Once filled this is a local read; an outage in the
+    # fallback never turns a usable character snapshot into an error.
+    from census import lexicon
+    lexicon_name = ((doc.get("name") or {}).get("first")
+                    or (base.get("character") or {}).get("name") or "")
+    lexicon.maybe_enrich_equipment(conn, lexicon_name, doc)
+
     stats = doc.get("stats") or {}
     key_stats = []
     for label, (grp, key), is_pct in KEY_STATS:
@@ -570,6 +618,36 @@ def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
 LOOKUP_TTL_S = 6 * 3600
 
 
+def _known_snapshot_by_name(conn, name_lower: str, world_id: int) -> dict | None:
+    """Use a locally owned character snapshot when the public lookup cache is empty.
+
+    This is still Census-authored equipment data; it simply came through the
+    account sync path first. It is especially useful during a Census outage,
+    when Lexicon can enrich the known equipped ids but must not invent which
+    items the character is wearing.
+    """
+    row = conn.execute(
+        "SELECT c.name, c.class, c.level, c.census_character_id, "
+        "s.fetched_ts, s.json FROM characters c "
+        "JOIN census_char_snapshots s ON s.character_id=c.id "
+        "WHERE lower(c.name)=? AND c.world_id=? "
+        "ORDER BY s.fetched_ts DESC, s.id DESC LIMIT 1",
+        (name_lower, world_id)).fetchone()
+    if row is None:
+        return None
+    doc = json.loads(row["json"])
+    ctype = doc.get("type") or {}
+    cls = ctype.get("class") or row["class"]
+    base = {"character": {
+        "id": None, "name": row["name"], "class": cls,
+        "level": ctype.get("level") or row["level"], "world": "Wuoshi",
+        "last_census_ts": row["fetched_ts"],
+        "census_id": doc.get("id") or row["census_character_id"],
+        "public": True}}
+    return _summary_of(conn, doc, base,
+                       {"fetched_ts": row["fetched_ts"], "local": True}, cls)
+
+
 def lookup_by_name(conn, client, name: str, world_id: int = 618,
                    refresh: bool = False) -> dict | None:
     """A public character by NAME -> the same summary an owned one produces.
@@ -598,10 +676,21 @@ def lookup_by_name(conn, client, name: str, world_id: int = 618,
     except Exception:                      # noqa: BLE001 — one failure mode
         # Census is unreachable. Stale is better than nothing and much better
         # than an error page on a tab that needs no account.
-        return _lookup_out(conn, row) if row else None
+        return (_lookup_out(conn, row) if row else
+                _known_snapshot_by_name(conn, lower, world_id))
+    if not doc and row is None:
+        known = _known_snapshot_by_name(conn, lower, world_id)
+        if known is not None:
+            return known
     if doc:
         doc = _trim(doc)
-        ensure_items(conn, client, _equipped_item_ids(doc))
+        try:
+            ensure_items(conn, client, _equipped_item_ids(doc))
+        except CensusError:
+            # Character and item queries are separate Census failure domains.
+            # Cache the character now; `_summary_of` asks Lexicon only for the
+            # equipped ids the Census document actually supplied.
+            pass
     now = int(time.time())
     with conn:
         conn.execute(

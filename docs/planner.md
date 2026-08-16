@@ -526,9 +526,19 @@ its own stat. Catalog examine cards show that value once as Primary Attributes.
 
 Clicking a slot filters the catalog to legal choices for that position. Adding
 an item puts it in that concrete slot and activates it. Multiple candidates stay
-in the slot and cycle with previous/next controls; **Current is always option
-one**. Finger, Ear, Wrist and Charm keep their first/second identities. A
+in the slot; the item icon gains a highlighted frame and a small left-edge
+clicker that cycles them without taking width from the item name. **Current is
+always option one**. A planned item carries an `×` in the loadout row that
+removes it from the shortlist immediately, promotes another candidate when one
+remains, or returns the slot to equipped gear. Finger, Ear, Wrist and Charm
+keep their first/second identities. A
 planned two-hander occupies Primary and removes Secondary from the projection.
+
+Hovering an item name in search shows its candidate examine window beside the
+currently equipped item for that concrete slot and, when different, the active
+planned item already in the slot. This comparison follows the focused slot for
+paired jewelry positions, so a ring search does not silently compare the wrong
+finger.
 
 The projection is explicit arithmetic over cached data:
 
@@ -561,12 +571,27 @@ what is excluded.
 
 ### Adornment sockets and set bonuses
 
-Adornments are **socket icons on every equipment row**, beside the item they
-belong to rather than in a detail strip below the window. White and orange
-sockets show whether Census reports an installed id; clicking a turquoise
-socket cycles through the shortlisted set adornments the host item's level can
-accept. Hovering an installed adorn opens the same examine window with its
-name, icon, type, level, stats and set thresholds when those records are cached.
+Adornments are **in-game-style framed socket tiles on every equipment row**,
+beside the item they belong to rather than in a detail strip below the window.
+An installed adornment uses its actual cached icon; an open socket keeps the
+dark framed recess, so the row reads like the in-game strip rather than three
+colored status badges. White and orange sockets currently show the equipped
+state and retain their examine hover. Clicking turquoise opens a searchable
+picker instead of blindly cycling.
+
+The retired Census image URL is not used. Icon ids admitted by the equipped
+Census document are resolved through EQ2i in the same bounded fallback pass,
+cached under `data/icons/`, and served from `/api/items/icon/{iconid}.png`;
+until a picture resolves, the tile falls back to the socket-colour gem.
+
+The turquoise picker is built from the selected-era set catalog whether or not
+the reader visited Sets mode. It filters to a set piece matching the concrete
+equipment slot and to adornments no newer than the host item and no more than
+**one equipment tier back** (for a level-70 host: levels 60–70), with the loaded
+character's class applied when known. Results are grouped by tier, carry their
+level and threshold ladder, and include explicit `Equipped` and `Empty` rows.
+Picking an unshortlisted set is allowed—the picker is an equipment decision;
+the shortlist remains a separate acquisition/outline decision.
 
 Every change recomputes installed pieces and the set threshold ledger
 immediately. Named effects remain prose and visibly activate at their threshold.
@@ -575,6 +600,30 @@ Flurry, attributes, Health and Power) are conservatively typed by the server and
 also feed projected stats. Any sentence that is not exactly a known
 number-plus-stat remains prose, and a comma list types only when EVERY segment
 does — half a sentence read as arithmetic is worse than none of it.
+
+The equipped ids still come from the character's Census document, but item
+metadata now has a **bounded EQ2 Lexicon fallback**. If Census returned the
+character while its separate item collection did not answer, the server asks
+Lexicon for that character once, accepts only ids already present in the Census
+equipment snapshot, resolves those item cards in a bounded batch, and stores
+them in `lexicon_items` (schema v44). The caches are deliberately separate:
+`census_items` always wins and a later Census answer needs no provenance
+rewrite. Complete fallback rows are durable; an incomplete name/icon summary
+is eligible for retry after six hours. A Lexicon outage is swallowed because a
+fallback must never turn a usable local snapshot into an error.
+
+Turquoise item names are slot-specific (`Spirit Siphoning Set: Head`, `: Chest`,
+and so on), but their shared identity is not. The character payload therefore
+also carries canonical `set_name`; the loadout groups on that field and renders
+one partial or completed set instead of one one-piece set per item. Tier text is
+kept in examine-window structure: the threshold and flat bonus form a readable
+headline, with proc and condition sentences as indented lines beneath it.
+Set cards span the full width beneath both equipment and projected stats, then
+flow across the loadout in responsive columns rather than consuming
+one full-width row apiece. The entire area can collapse to a one-line set count;
+within an open card, thresholds and stat headlines stay visible while verbose
+proc/condition details clamp to two lines and expand through an explicit
+ellipsis control.
 
 **A SET TIER IS A BLOCK, NOT A LINE** (`wiki._BONUS_TIER`, corrected
 2026-08-16). The page writes the proc on the `*(N)` line, its explanation in
@@ -921,13 +970,23 @@ that demands an account.
 
 It is cache-first (`plan_characters`, v43, TTL 6h) and falls back to a stale
 answer when Census is unreachable, so the panel keeps working through an
-outage. **The cache is a cache of a public record, not a character**: no
+outage. If that public cache is empty but the same name already has a local
+Census snapshot through the owned-character path, the read-only lookup may use
+that snapshot too; it still exposes no ownership or history. **The cache is a
+cache of a public record, not a character**: no
 `user_id`, no snapshots, no history, nothing anybody owns — `characters`
 remains the only owned thing and this table could be dropped without losing
 anything a person typed. The miss is cached too, so a typo is not re-asked.
 `census.sync._summary_of` builds the answer for both this and an owned
 character, because two builders would drift and the difference would only show
 on the path nobody is signed in for.
+
+An owned character still begins with its local `census_char_snapshots` row, and
+a public lookup begins with `plan_characters` (or the matching local Census
+snapshot during an outage); neither substitutes Lexicon's idea of what is
+equipped. Both summary paths may make the same
+one-time item-metadata fallback when their equipped ids are unresolved, then
+serve the local `lexicon_items` cache on subsequent reads.
 
 ### The steps
 
@@ -1061,7 +1120,8 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The outline read side: layer-3 prelude, prerequisite walk, stable topological order | `backend/planner/outline.py`, `backend/refdata/planner_standard.json` |
 | `GET /api/plan/meta` `/items` `/sets` `/outline` — no account, no POST | `backend/routers/planner_api.py` |
 | `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
-| The page: game-grouped concrete slots, candidate cycling, per-slot reset, projected stats, worn set bonuses under the window, three numbered priority dropdowns beside labelled facets, checkbox source filter, click-the-row-to-equip, inline socket icons, level/name filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
+| The page: game-grouped concrete slots, icon-edge candidate cycling, direct planned-item removal, search-hover equipped/planned comparison, projected stats, canonically grouped worn set bonuses under the full loadout row, three numbered priority dropdowns beside labelled facets, checkbox source filter, click-the-row-to-equip, inline socket icons, level/name filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
+| Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
 | The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |
 | Planner tests including recorded wiki pages, set-bonus typing, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |

@@ -141,6 +141,7 @@ export default function Planner({ user }) {
   const [focusSlot, setFocusSlot] = useState(null)
   const [characters, setCharacters] = useState(null)
   const [character, setCharacter] = useState(null)
+  const [adornmentSets, setAdornmentSets] = useState([])
   const [charId, setCharId] = useState(() => {
     try { return localStorage.getItem('eq2adv:plan:character') || '' }
     catch { return '' }
@@ -216,6 +217,21 @@ export default function Planner({ user }) {
     }).catch(() => { if (!dead) setCharacter(null) })
     return () => { dead = true }
   }, [user, charId])
+
+  const planningCharacter = lookedUp || character
+  const adornmentClass = planningCharacter?.character?.class?.toLowerCase() || ''
+  /* Socket choices are useful while the item table is open, so they cannot
+     depend on visiting the separate Sets mode first. This is the same local
+     planner catalog, narrowed to the loaded character's class when known. */
+  useEffect(() => {
+    const p = new URLSearchParams({ eras: csv(eras) })
+    if (adornmentClass) p.set('classes', adornmentClass)
+    let dead = false
+    api.planSets(p.toString()).then((d) => {
+      if (!dead) setAdornmentSets(d.sets || [])
+    }).catch(() => { if (!dead) setAdornmentSets([]) })
+    return () => { dead = true }
+  }, [erasParam, adornmentClass])
 
   useEffect(() => {
     api.planMeta(new URLSearchParams({ eras: csv(eras) }).toString())
@@ -335,22 +351,27 @@ export default function Planner({ user }) {
 
   const setSlotAdornment = useCallback((key, setName) => setShortlist((s) => {
     const setSlots = { ...(s.set_slots || {}) }
-    if (setName) setSlots[key] = setName
+    if (setName === null) setSlots[key] = null
+    else if (setName) setSlots[key] = setName
     else delete setSlots[key]
     return { ...s, set_slots: setSlots }
   }), [])
 
-  /* ONE SLOT BACK TO WHAT IS ACTUALLY WORN. Cycling could already reach the
-     equipped item, but only by counting positions past every candidate in that
-     slot — and "put this ring back" is a thing you want to say directly once
-     you have three rings on the list. The candidates stay on the shortlist;
-     this is about the window, not about the search. */
-  const resetEquipmentSlot = useCallback((key) => setShortlist((s) => {
+  /* REMOVE THE PLANNED ITEM WHERE IT IS VISIBLE. Requiring somebody to find
+     the same row in search just to uncheck it traps stale candidates in the
+     loadout. Promote another candidate in the concrete slot when one remains;
+     otherwise the slot naturally returns to the equipped item. */
+  const removeEquipmentItem = useCallback((key, page) => setShortlist((s) => {
+    const items = s.items.filter((item) => item.page_title !== page)
     const active = { ...(s.active || {}) }
     const setSlots = { ...(s.set_slots || {}) }
-    delete active[key]
+    if (active[key] === page) {
+      const next = items.find((item) => item.equip_slot === key)
+      if (next) active[key] = next.page_title
+      else delete active[key]
+    }
     delete setSlots[key]
-    return { ...s, active, set_slots: setSlots }
+    return { ...s, items, active, set_slots: setSlots }
   }), [])
 
   /* Shortlisting from the set view adds the ADORNMENT, never the armour it
@@ -431,8 +452,9 @@ export default function Planner({ user }) {
   const ranked = data?.ranked?.length ?? order.length
 
   const columns = useMemo(
-    () => itemColumns({ order, ranked, statLabel, statPct }),
-    [order, ranked, statLabel, statPct])
+    () => itemColumns({ order, ranked, statLabel, statPct,
+      character: planningCharacter, shortlist, focusSlot }),
+    [order, ranked, statLabel, statPct, planningCharacter, shortlist, focusSlot])
 
   /* Every rankable stat, grouped the way a raider already thinks about them
      ("Abilities", "Melee", "Tanking") — the groups are the server's
@@ -478,16 +500,16 @@ export default function Planner({ user }) {
       <div className={`plannerworkspace${outlineOpen ? ' outline-open' : ''}`}>
       <div className="wsmain plannermain">
 
-        <PlanLoadout characters={characters} character={lookedUp || character}
+        <PlanLoadout characters={characters} character={planningCharacter}
             charId={charId} signedIn={!!user}
             onCharacter={(id) => {
               setLookedUp(null); setCharId(id); clearPlannedGear()
             }}
             onLookup={lookUpCharacter} lookupBusy={lookupBusy} lookupErr={lookupErr}
-            shortlist={shortlist}
+            shortlist={shortlist} adornmentSets={adornmentSets}
             active={shortlist.active || {}} focusSlot={focusSlot}
             onFocusSlot={focusEquipmentSlot} onCycle={cycleEquipmentSlot}
-            onSetAdornment={setSlotAdornment} onResetSlot={resetEquipmentSlot}
+            onSetAdornment={setSlotAdornment} onRemoveItem={removeEquipmentItem}
             onReset={clearPlannedGear}
             statLabel={statLabel} statPct={statPct} />
 
@@ -796,7 +818,8 @@ function TIER_LABEL(meta, key) {
   return (meta?.tiers || []).find((t) => t.key === key)?.label || key
 }
 
-function itemColumns({ order, ranked, statLabel, statPct }) {
+function itemColumns({ order, ranked, statLabel, statPct,
+                       character, shortlist, focusSlot }) {
   const shown = order.slice(0, 4)
   const stat = (key) => ({
     key,
@@ -813,7 +836,8 @@ function itemColumns({ order, ranked, statLabel, statPct }) {
          column got wide enough that right-aligned names sat a third of the
          page away from the checkbox that selects them. */
       key: 'name', label: 'Item', fixed: true, align: 'l',
-      render: (r) => <ItemName row={r} />,
+      render: (r) => <ItemName row={r} character={character}
+                              shortlist={shortlist} focusSlot={focusSlot} />,
       sortValue: (r) => r.name,
     },
     {
@@ -897,8 +921,37 @@ function itemColumns({ order, ranked, statLabel, statPct }) {
   ]
 }
 
-function ItemName({ row }) {
+function comparisonCards(row, character, shortlist, focusSlot) {
+  const eligible = eligiblePlanSlots(row)
+  const slot = eligible.includes(focusSlot) ? focusSlot : eligible[0]
+  const equipped = character?.gear?.find((item) => item.key === slot)
+  const plannedPage = (shortlist.active || {})[slot]
+  const planned = shortlist.items.find((item) => item.page_title === plannedPage)
+  return [
+    { label: 'Candidate', card: row.card },
+    ...(equipped?.card ? [{ label: 'Equipped', card: equipped.card }] : []),
+    ...(planned?.card && planned.page_title !== row.page_title
+      ? [{ label: 'Planned', card: planned.card }] : []),
+  ]
+}
+
+function ItemComparison({ cards }) {
+  return (
+    <div className="planitemcompare">
+      {cards.map(({ label, card }) => (
+        <section key={`${label}-${card.name}`}>
+          <div className="plancomparelabel">{label}</div>
+          <Examine row={card} />
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function ItemName({ row, character, shortlist, focusSlot }) {
   const label = <span className={rarityClass(row.tier)}>{row.name}</span>
+  const cards = comparisonCards(row, character, shortlist, focusSlot)
+  const width = cards.length * 350 + Math.max(0, cards.length - 1) * 5 + 6
   return (
     <span className="lootitem">
       <span className="looticon">
@@ -907,7 +960,8 @@ function ItemName({ row }) {
                height="24" loading="lazy" />
         )}
       </span>
-      <Hover className="examinecard" width={350} card={<Examine row={row.card} />}>
+      <Hover className="examinecard plancomparecard" width={width}
+             card={<ItemComparison cards={cards} />}>
         {/* The row equips the item; the NAME still goes to the wiki, so its
             click must not also do the row's job. */}
         <a href={row.card.wiki} target="_blank" rel="noreferrer noopener"

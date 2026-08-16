@@ -588,6 +588,27 @@ def _download_icon(iconid: int, url: str) -> bool:
     return True
 
 
+def ensure_icons(iconids) -> int:
+    """Cache a bounded collection of Census icon ids from EQ2i.
+
+    Character equipment and Lexicon fallback rows can introduce icons outside
+    the hand-ingested planner catalog. Keep the browser on our proven local
+    icon route instead of the retired Census image URL. Tests and offline runs
+    remain network-free through the shared network switch.
+    """
+    if not network_allowed():
+        return 0
+    need = sorted({int(iconid) for iconid in iconids
+                   if iconid and not icon_path(iconid).exists()})
+    got = 0
+    for i in range(0, len(need), WIKI_BATCH):
+        chunk = need[i:i + WIKI_BATCH]
+        urls = _icon_urls(chunk)
+        got += sum(1 for iconid in chunk
+                   if urls.get(iconid) and _download_icon(iconid, urls[iconid]))
+    return got
+
+
 IMAGE_TYPES = ((b"\x89PNG\r\n\x1a\n", ".png", "image/png"),
                (b"\xff\xd8\xff", ".jpg", "image/jpeg"))
 
