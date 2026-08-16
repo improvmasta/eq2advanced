@@ -587,6 +587,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Refine Planner workspace and recommendations rail
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
@@ -606,4 +607,3 @@ builds here with `bash build.sh`.
 - 2026-08-14 (codex): Improve item cards and public chat controls
 - 2026-08-14 (codex): Mark admin redesign documentation implemented
 - 2026-08-14 (codex): Implement complete admin operations redesign
-- 2026-08-14 (codex): Add public in-game chat archive and visitor insights

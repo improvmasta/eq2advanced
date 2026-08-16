@@ -450,16 +450,18 @@ temples" is a trip. "Cluster 7" is a database row.
 
 ### The shape of the page
 
-**ONE PRIMARY COLUMN WITH A CONTEXTUAL OUTLINE** (Lindsay, 2026-08-16). The first
+**ONE PRIMARY COLUMN WITH A RECOMMENDATIONS/OUTLINE WORK RAIL** (Lindsay,
+2026-08-16). The first
 build used `ZoneRun`'s rail-plus-main geometry, with a 292px left column
 holding the title, the expansion chips, the class picker and the shortlist.
 Lindsay's read of it: that block is obsolete. It was true — three controls and
 a list were costing a fifth of the screen, and the page paid for it twice, with
 an item table that scrolled sideways and a projected-stats panel that scrolled
 vertically for room the rail was holding. Everything in it had a better home.
-The Outline now uses otherwise idle space as a collapsible right column: it is
-absent for an empty plan, opens when the first item, adornment, or target is
-selected, and can be collapsed back to a compact button in the page head.
+The right column now uses otherwise idle space for **Recommended Items** even
+before a plan exists. The class epic weapon is its first recommendation. When
+the first item, adornment, or target is selected, the Outline opens above
+recommendations and can be collapsed back to a compact button in the page head.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -492,9 +494,9 @@ Where the rail's four things went, and why:
 - **Class joined the facets**, which is what it is. Alone in the rail it read
   as a page-wide setting, and it is the single control most likely to be what
   emptied a table — `EmptyTable` names it by name for that reason.
-- **The shortlist moved into the contextual Outline column**, which is the
-  surface that consumes it. The column opens only once there is something to
-  act on, so it does not tax the empty gear-search state.
+- **The shortlist moved into the contextual Outline card**, which is the
+  surface that consumes it. The card opens only once there is something to act
+  on; the rail itself remains useful in the empty state through recommendations.
   It holds selected items and detachable set adornments. The route list is
   derived from those picks; mobs and quests are no longer independently kept.
 
@@ -542,17 +544,29 @@ remains, or returns the slot to equipped gear. Finger, Ear, Wrist and Charm
 keep their first/second identities. A
 planned two-hander occupies Primary and removes Secondary from the projection.
 
-The identity line also owns **Gear sets**: five named slots, not numbered action
-buttons at the far edge of the header. Opening a slot offers Load, Save current,
-Rename, and Leave without saving. Guests use the same workflow in browser
-storage with the terse note “Saved by cookie. Create an account to save
-long-term.”; signed-in saves also persist to the account. Signed-out readers get
-the public character-name search directly in this main block.
+The identity line also owns **Gear sets**: it starts with one named slot and a
+compact `+` that reveals another, up to five, instead of spending header width
+on five slots before they are needed. Previously saved or renamed slots remain
+visible. Opening a slot offers Load, Save current, Rename, and Leave without
+saving. Guests use the same workflow in browser storage with the terse note
+“Saved by cookie. Create an account to save long-term.”; signed-in saves also
+persist to the account. Before a signed-out reader loads a character, the normal
+equipment window stays in place as a dimmed backdrop and centers the public
+“Look up a character on the Wuoshi server...” search over it. Loading a result
+removes the overlay and restores the same working layout used by an account.
 
-The class epic suggestion is always visible while its next step is outstanding,
-not only after clicking Primary. It advances from Fabled to Mythical when the
-Fabled is equipped, active in the loadout, or present in a saved set, and
-disappears when the suggested stage is already loaded or saved.
+For signed-in readers, the header is a shared two-column, two-row grid: the
+character name shares its row with character-name search, while level and Gear
+sets share the next row with **Reset to Equipped** and the **Select Char**
+account picker. A dirty gear set uses the short `Save...` action and an
+icon-only edit control so these secondary controls do not stretch the identity
+line.
+
+The class epic suggestion lives in **Recommended Items** and remains visible
+while its next step is outstanding, not only after clicking Primary. It
+advances from Fabled to Mythical when the Fabled is equipped, active in the
+loadout, or present in a saved set, and disappears when the suggested stage is
+already loaded or saved.
 
 Hovering an item name in search shows its candidate examine window beside the
 currently equipped item for that concrete slot and, when different, the active
@@ -915,8 +929,8 @@ progress tracking is a later concern and should not hold up the joint route.
 
 ### States and edges
 
-- **Empty shortlist** — the Outline column stays closed. Selecting an item or
-  set adornment opens its derived source list.
+- **Empty shortlist** — Recommended Items is the first and only rail card.
+  Selecting an item or set adornment inserts its derived Outline above it.
 - **No clusters found** — the tag strip is absent, not empty. An empty legend
   reads as broken.
 - **Unresolved item** — a name, no card. `GET /api/items/{id}/card` answers

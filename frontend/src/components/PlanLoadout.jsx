@@ -793,13 +793,13 @@ function ProjectedStats({ character, shortlist, active, catalog, statLabel, stat
 /* Look a toon up by name. A submit, never a keystroke: this is the one control
    on the page that can reach a public character service, so it runs when
    somebody asks it to. */
-function CharacterLookup({ onLoad, busy, err }) {
+function CharacterLookup({ onLoad, busy, err, placeholder = 'Look up a name' }) {
   const [name, setName] = useState('')
   return (
     <form className="plancharacterlookup"
           onSubmit={(e) => { e.preventDefault(); if (name.trim()) onLoad(name.trim()) }}>
       <input value={name} onChange={(e) => setName(e.target.value)}
-             placeholder="Look up a name" aria-label="Character name"
+             placeholder={placeholder} aria-label="Character name"
              maxLength={40} spellCheck={false} />
       <button className="chip" type="submit" disabled={busy || name.trim().length < 2}>
         {busy ? '…' : 'Load'}
@@ -828,6 +828,7 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
     value: String(c.id), label: c.name,
     hint: c.class ? `${c.class} ${c.level ?? ''}` : 'not synced',
   }))
+  const guestNeedsCharacter = !signedIn && !character?.character
   const slots = (rows) => rows.map((def) => (
     <EquipmentSlot key={def.key} def={def} character={character} shortlist={shortlist}
       active={active} focused={focusSlot === def.key}
@@ -856,17 +857,10 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
               onSlot={onSavedSetSlot} onSave={onSaveSet}
               onLoad={onLoadSet} />
           </div>
-          {!signedIn && (
-            <div className="guestcharacterlookup">
-              <span className="seclabel">Character</span>
-              <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
-            </div>
-          )}
         </div>
-        {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It sits before the picker
-            and stays small: who you are planning for is the answer this row
-            exists to show, and a full-width search box beside it read as the
-            more important of the two.
+        {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It occupies the compact
+            top-right row; reset and the account picker share the row below,
+            aligned with level and Gear sets on the left.
 
             CHARACTER RECORDS ARE PUBLIC, so looking one up needs no account.
             Trying gear on your own toon is the whole point of this panel, and
@@ -874,24 +868,30 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             up is backwards. Signed-in readers keep the picker AND get this,
             because an alt you never added is still an alt. */}
         <div className="loadoutactions">
-            {signedIn && <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />}
+          <div className="loadoutsearchrow">
+            {!guestNeedsCharacter && (
+              <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
+            )}
+          </div>
+          <div className="loadoutcharacterrow">
             {signedIn && characters === null && <span className="muted">Loading…</span>}
+            <button className="chip resetgear" type="button" onClick={onReset}
+                    disabled={!Object.keys(active).length
+                      && !Object.keys(shortlist.set_slots || {}).length
+                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset to Equipped</button>
             {characters?.length > 0 && (
               <label className="plancharacterpick">
-                <span>Planning for</span>
+                <span>Select Char</span>
                 <Picker className="characterpicker" value={charId ? String(charId) : ''}
                         onChange={onCharacter} placeholder="Choose character"
                         options={charOptions} />
               </label>
             )}
-            <button className="chip resetgear" type="button" onClick={onReset}
-                    disabled={!Object.keys(active).length
-                      && !Object.keys(shortlist.set_slots || {}).length
-                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset all</button>
+          </div>
         </div>
       </div>
       <div className="loadoutbody">
-        <div className="loadoutgear">
+        <div className={`loadoutgear${guestNeedsCharacter ? ' awaitingcharacter' : ''}`}>
           <div className="equipmentwindow">
             <div className="planslots left">{slots(left)}</div>
             <div className="planslots right">
@@ -899,6 +899,12 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
               <div className="planslotpair">{slots(compact)}</div>
             </div>
           </div>
+          {guestNeedsCharacter && (
+            <div className="guestgearlookup">
+              <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr}
+                placeholder="Look up a character on the Wuoshi server..." />
+            </div>
+          )}
         </div>
         <ProjectedStats character={character} shortlist={shortlist} active={active}
                         catalog={adornmentSets}
@@ -913,8 +919,15 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
 function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
                             onSlot, onSave, onLoad }) {
   const selected = sets?.find((row) => row.slot === slot)
+  const meaningfulCount = Math.max(1, ...(sets || [])
+    .filter((row) => row.payload || row.name !== `Set ${row.slot}`)
+    .map((row) => row.slot))
+  const [visibleCount, setVisibleCount] = useState(meaningfulCount)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(selected?.name || '')
+  useEffect(() => {
+    setVisibleCount((count) => Math.max(count, meaningfulCount))
+  }, [meaningfulCount])
   useEffect(() => {
     setDraft(selected?.name || '')
     setEditing(false)
@@ -929,6 +942,15 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
     setDraft(selected?.name || '')
     setEditing(false)
   }
+  const add = () => {
+    const nextCount = Math.min(visibleCount + 1, sets?.length || 0)
+    const row = sets?.[nextCount - 1]
+    if (!row) return
+    setVisibleCount(nextCount)
+    onSlot(row.slot)
+    setDraft(row.name)
+    setEditing(true)
+  }
   const save = () => {
     onSave(slot, draft)
     setEditing(false)
@@ -937,22 +959,29 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
     <div className="plansavedsets">
       <span className="seclabel">Gear sets</span>
       <div className="plansavedtabs" aria-label="Saved equipment sets">
-        {(sets || []).map((row) => (
+        {(sets || []).slice(0, visibleCount).map((row) => (
           <button type="button" key={row.slot}
                   className={row.slot === slot ? 'on' : ''}
                   title={row.payload ? `Load ${row.name}` : `Select ${row.name}`}
                   onClick={() => choose(row)}>{row.name}</button>
         ))}
+        {visibleCount < (sets?.length || 0) && (
+          <button type="button" className="plansavedadd" disabled={busy}
+                  aria-label="Add gear set" title="Add gear set"
+                  onClick={add}>+</button>
+        )}
       </div>
       {!editing && selected && (
         <div className="plansavedactions">
           {dirty && (
             <button type="button" className="chip on" disabled={busy}
-                    onClick={() => onSave(slot, selected.name)}>Save changes</button>
+                    onClick={() => onSave(slot, selected.name)}>Save...</button>
           )}
-          <button type="button" className="btnlink" disabled={busy}
+          <button type="button" className="iconbtn plansavededit" disabled={busy}
+                  aria-label={selected.payload ? `Edit ${selected.name}` : `Save ${selected.name}`}
+                  title={selected.payload ? `Edit ${selected.name}` : `Save ${selected.name}`}
                   onClick={() => setEditing(true)}>
-            {selected.payload ? 'Edit' : `Save ${selected.name}`}
+            ✎
           </button>
           {status && <span className="plansavedstatus">{status}</span>}
         </div>

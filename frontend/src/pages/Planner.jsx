@@ -19,9 +19,9 @@ import { useQueryState } from '../lib/useQueryState.js'
    score is measured against, the sets — follows from that choice, which is why
    it sits in the item-search header rather than among the filters.
 
-   Gear choices live in concrete equipment positions in the loadout. The
-   Outline becomes a contextual right column only once the plan contains a
-   choice, reclaiming that width for search while the plan is empty. */
+   Gear choices live in concrete equipment positions in the loadout. A
+   persistent right work rail starts with recommendations; the Outline joins
+   above them only once the plan contains a choice. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
 const SAVED_SETS_KEY = 'eq2adv:plan:saved-sets:v1'
@@ -756,10 +756,9 @@ export default function Planner({ user }) {
   }, [planningCharacter, shortlist])
 
   return (
-    /* NO PERMANENT NAVIGATION RAIL. This page is a wide table and equipment
-       window. The plan itself earns a contextual right column only after the
-       reader picks something; it can be collapsed whenever search needs the
-       full width again.
+    /* THIS IS A WORK RAIL, NOT NAVIGATION. Recommendations give it a useful
+       empty-plan state; once the reader picks something, the derived Outline
+       appears above them and can still be collapsed independently.
 
        THE EXPANSION CHOICE STAYS OUT OF THE FILTERS, in the search-window
        header. Everything else on the page follows from it — which items exist,
@@ -781,7 +780,7 @@ export default function Planner({ user }) {
         )}
       </div>
 
-      <div className={`plannerworkspace${outlineOpen ? ' outline-open' : ''}`}>
+      <div className="plannerworkspace">
       <div className="wsmain plannermain">
 
         <PlanLoadout characters={characters} character={planningCharacter}
@@ -804,22 +803,6 @@ export default function Planner({ user }) {
             onSaveSet={(slotNumber, name) => persistSavedSet(slotNumber, true, name)}
             onLoadSet={loadSavedSet}
             statLabel={statLabel} statPct={statPct} />
-
-        {suggestedEpic && (
-          <div className="card epicsuggestion">
-            <div>
-              <span className="seclabel">Epic weapon</span>
-              <b className={rarityClass(suggestedEpic.tier)}>{suggestedEpic.name}</b>
-              <small>{suggestedEpic.epic_stage === 'mythical'
-                ? 'Fabled complete — pursue the Mythical upgrade'
-                : 'Start with the Fabled class epic'}</small>
-            </div>
-            <button type="button" className={`chip${inList.has(suggestedEpic.page_title) ? ' on' : ''}`}
-                    onClick={() => toggleItem(suggestedEpic)}>
-              {inList.has(suggestedEpic.page_title) ? 'In loadout' : 'Add to loadout'}
-            </button>
-          </div>
-        )}
 
         <div className="card planbar">
           <div className="plansearchhead">
@@ -1029,24 +1012,52 @@ export default function Planner({ user }) {
         )}
 
       </div>
-      {outlineOpen && planCount > 0 && (
-        <aside className="planneroutline">
-          <header className="planneroutlinehead">
-            <div>
-              <span className="seclabel">Plan</span>
-              <h2>Outline</h2>
-            </div>
-            <button type="button" className="iconbtn" aria-label="Collapse outline"
-                    title="Collapse outline" onClick={() => setOutlineOpen(false)}>›</button>
+      <aside className="plannerrail">
+        {outlineOpen && planCount > 0 && (
+          <section className="planneroutline">
+            <header className="planneroutlinehead">
+              <div>
+                <span className="seclabel">Plan</span>
+                <h2>Outline</h2>
+              </div>
+              <button type="button" className="iconbtn" aria-label="Collapse outline"
+                      title="Collapse outline" onClick={() => setOutlineOpen(false)}>›</button>
+            </header>
+            <Shortlist list={shortlist} onDropSet={toggleSet} />
+            {outlineErr && <p className="err">{outlineErr}</p>}
+            {!outlineData && !outlineErr && <p className="muted">Building outline…</p>}
+            {outlineData && <PlanOutline data={outlineData} />}
+          </section>
+        )}
+        <section className="card plannerrecommendations">
+          <header className="plannerrecommendationshead">
+            <span className="seclabel">Plan</span>
+            <h2>Recommended Items</h2>
           </header>
-          <Shortlist list={shortlist} onDropSet={toggleSet} />
-          {outlineErr && <p className="err">{outlineErr}</p>}
-          {!outlineData && !outlineErr && <p className="muted">Building outline…</p>}
-          {outlineData && (
-            <PlanOutline data={outlineData} />
+          {suggestedEpic ? (
+            <div className="epicsuggestion">
+              <div>
+                <span className="seclabel">Epic weapon</span>
+                <b className={rarityClass(suggestedEpic.tier)}>{suggestedEpic.name}</b>
+                <small>{suggestedEpic.epic_stage === 'mythical'
+                  ? 'Fabled complete — pursue the Mythical upgrade'
+                  : 'Start with the Fabled class epic'}</small>
+              </div>
+              <button type="button"
+                      className={`chip${inList.has(suggestedEpic.page_title) ? ' on' : ''}`}
+                      onClick={() => toggleItem(suggestedEpic)}>
+                {inList.has(suggestedEpic.page_title) ? 'In loadout' : 'Add to loadout'}
+              </button>
+            </div>
+          ) : (
+            <p className="recommendedempty">
+              {planningCharacter?.character
+                ? 'No current recommendations.'
+                : 'Load a character to see recommendations.'}
+            </p>
           )}
-        </aside>
-      )}
+        </section>
+      </aside>
       </div>
     </div>
   )
