@@ -6070,22 +6070,31 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .planneroutlinehead {
   display: flex; align-items: center; justify-content: space-between;
-  margin: -10px -10px 8px; padding: 9px 10px;
+  margin: -10px -10px 8px; padding: 7px 10px;
   border-bottom: 1px solid var(--border); background: var(--surface-raised);
 }
-.planneroutlinehead h2 { margin-top: 1px; color: var(--gold-bright); }
+.planneroutlinehead h2 { margin: 0; color: var(--gold-bright); }
+.planneroutlinehead h2 small {
+  margin-left: 7px; color: var(--text); font-family: var(--font-data);
+  font-size: var(--fs-data); font-weight: 600; text-transform: none;
+  letter-spacing: 0;
+}
 .planneroutlinehead .iconbtn { font-size: 1rem; }
-.planneroutline > .shortlist { padding: 8px; }
-.planneroutline > .planoutline { gap: 10px; margin-top: 10px; }
+.planneroutline > .shortlist {
+  margin: 0 0 8px;
+}
+.planneroutline > .shortlist > summary { padding: 4px 1px 6px; color: var(--text-muted); }
+.planneroutline > .shortlist > summary:hover { color: var(--text); background: transparent; }
+.planneroutline > .shortlist .shortloaded {
+  padding: 3px 1px 5px 16px; border-top-color: var(--row-line);
+}
+.planneroutline > .planoutline { gap: 10px; margin-top: 0; }
 .plannerrecommendations { overflow: hidden; padding: 10px; border-color: var(--gold-dim); }
 .plannerrecommendationshead {
-  margin: -10px -10px 10px; padding: 9px 10px;
+  margin: -10px -10px 8px; padding: 7px 10px;
   border-bottom: 1px solid var(--border); background: var(--surface-raised);
 }
-.plannerrecommendationshead h2 { margin-top: 1px; color: var(--gold-bright); }
-.recommendedempty {
-  margin: 2px; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.45;
-}
+.plannerrecommendationshead h2 { margin: 0; color: var(--gold-bright); }
 .erafacet { margin-left: auto; }
 .plansearchhead .erafacet { margin: 0 auto 0 24px; }
 .outlineeras { display: flex; margin-top: 12px; }
@@ -6108,7 +6117,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .loadoutwho > h2 { grid-column: 1; grid-row: 1; align-self: end; }
 .loadoutidentityline {
   grid-column: 1; grid-row: 2;
-  display: flex; align-items: center; gap: 48px; min-width: 0;
+  display: flex; align-items: center; gap: 9px; min-width: 0;
 }
 .loadoutmeta {
   padding-top: 3px; color: var(--text); font-family: var(--font-data);
@@ -6136,8 +6145,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .loadoutsearchrow { grid-column: 2; grid-row: 1; align-self: end; }
 .loadoutcharacterrow { grid-column: 2; grid-row: 2; }
 .plansavedsets {
-  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center; gap: 4px 7px; padding-left: 12px;
+  min-width: 0; display: flex; align-items: center; gap: 7px; padding-left: 12px;
   border-left: 1px solid var(--row-line);
 }
 .plansavedtabs { min-width: 0; display: flex; flex-wrap: nowrap; gap: 3px; }
@@ -6161,14 +6169,15 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .plansavedactions .chip { min-height: 24px; padding: 2px 8px; font-size: var(--fs-label); }
 .plansavedactions .plansavededit { width: 24px; height: 24px; font-size: 0.88rem; }
 .plansavedactions .plansavededit:disabled { opacity: 0.42; cursor: default; }
+.plansavedactions .plansavedsave { color: var(--text); border-color: var(--border); }
 .plansavedpanel {
-  grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap;
-  gap: 5px; padding: 5px 6px; border: 1px solid var(--border);
-  border-radius: 3px; background: var(--surface-raised);
+  display: flex; align-items: center; gap: 5px;
 }
 .plansavedpanel > input { width: 130px; min-height: 26px; padding: 3px 7px; font-size: var(--fs-label); }
 .plansavedpanel > .chip { min-height: 26px; padding: 3px 8px; font-size: var(--fs-label); }
-.plansavedpanel > .btnlink { font-size: var(--fs-label); }
+.plansavedpanel > .plansavedclose {
+  width: 26px; height: 26px; color: var(--text-muted); font-size: 1.05rem;
+}
 .plansavedstatus, .plansavedhint { color: var(--text-muted); font-size: var(--fs-label); }
 .plansavedhint a { color: var(--gold-bright); }
 .loadoutactions .chip { padding: 2px 9px; cursor: pointer; }
@@ -6184,24 +6193,24 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: var(--gold-bright); font-size: var(--fs-label);
 }
 .characterpicker .pickerbtn .ph { color: var(--text); }
-.loadoutactions .resetgear {
+.loadoutidentityline .resetgear {
   min-height: 28px; padding: 3px 9px; font-size: var(--fs-label);
-  border-color: var(--gold-dim); color: var(--text);
-  background: var(--surface-raised);
+  border-color: var(--border); color: var(--text-muted); background: transparent;
 }
+.loadoutidentityline .resetgear:disabled { opacity: 0.42; cursor: default; }
 .loadoutbody {
   display: grid; grid-template-columns: minmax(520px, 1fr) minmax(380px, 0.85fr);
   gap: 12px; align-items: start; margin-top: 10px;
 }
 .epicsuggestion {
-  display: grid; gap: 9px; padding: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: 8px; padding: 8px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: rgba(var(--bg-rgb), 0.28);
 }
-.epicsuggestion > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
-.epicsuggestion .seclabel { flex-basis: 100%; }
+.epicsuggestion > div { min-width: 0; display: grid; gap: 2px; }
 .epicsuggestion small { color: var(--text-muted); }
-.epicsuggestion .chip { justify-self: start; }
+.epicsuggestion .chip { white-space: nowrap; }
 .loadoutgear {
   position: relative; min-width: 0; display: grid; align-content: start; gap: 8px;
 }
@@ -6283,6 +6292,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   background: var(--gold); color: #171813;
 }
 .plansloticon img { width: 28px; height: 28px; object-fit: contain; }
+.plansloticon .hoverbox, .plansloticonexamine {
+  width: 100%; height: 100%; display: grid; place-items: center;
+}
+.plansloticonexamine:focus-visible { outline: 1px solid var(--gold-bright); outline-offset: -2px; }
 .planslotempty { color: var(--text-muted); font-size: 16px; }
 .planslotcopy { min-width: 0; display: grid; gap: 1px; }
 .planslotcopy > b {
@@ -6405,8 +6418,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstathead { display: flex; justify-content: space-between; gap: 7px; align-items: baseline; }
 .planstathead > b { color: var(--gold-bright); font-family: var(--font-heading); }
 .planstathead > span { color: var(--text-muted); font-size: var(--fs-label); }
-.planstatlegend { display: flex; gap: 8px; }
-.planstatlegend i { font-style: normal; }
 .planstats section { margin-top: 7px; }
 .planstats section h3 {
   margin: 0 0 2px; padding: 2px 5px; color: var(--text);
@@ -6550,7 +6561,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .loadoutwho, .loadoutactions { display: contents; }
   .loadoutsearchrow, .loadoutcharacterrow { justify-content: flex-start; }
   .loadoutidentityline { flex-direction: column; gap: 7px; }
-  .plansavedsets { padding-left: 0; border-left: 0; }
+  .plansavedsets { flex-wrap: wrap; padding-left: 0; border-left: 0; }
   .equipmentwindow { grid-template-columns: 1fr 1fr; }
   .planslot { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .planstats { grid-template-columns: minmax(0, 1fr); }
@@ -6576,14 +6587,42 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   background: rgba(var(--gold-rgb), 0.12);
 }
 
-.planner .shortlist { padding: 9px 12px; }
-.shortkind {
-  color: var(--text-muted); font-size: var(--fs-label);
-  text-transform: uppercase; letter-spacing: 0.09em; margin-top: 5px;
+.shortlist > summary {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 7px; padding: 7px 10px;
+  color: var(--text); font-size: var(--fs-label); cursor: pointer;
+  list-style: none;
 }
+.shortlist > summary::before {
+  content: '▶'; color: var(--gold-bright); font-size: 0.58rem;
+  transform-origin: center; transition: transform 100ms ease;
+}
+.shortlist[open] > summary::before { transform: rotate(90deg); }
+.shortlist > summary::-webkit-details-marker { display: none; }
+.shortlist > summary:hover { background: var(--surface-raised); }
+.shortlist > summary:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: -2px; }
+.shortlist > summary small {
+  color: var(--text-muted); font: inherit; font-family: var(--font-data);
+}
+.shortloaded { padding: 1px 10px 8px; border-top: 1px solid var(--row-line); }
 .shortrow {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 6px;
-  align-items: baseline; font-size: var(--fs-data);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px;
+  align-items: center; margin-top: 5px; font-size: var(--fs-data);
+}
+.shortitemidentity {
+  min-width: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px; align-items: center; border-radius: 3px;
+}
+.shortitemidentity:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: 2px; }
+.shortitemidentity > img, .shortrowicon {
+  width: 24px; height: 24px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 3px; object-fit: cover;
+}
+.shortrowicon { color: var(--gold-bright); font-size: 0.55rem; }
+.shortrowname { min-width: 0; display: grid; gap: 1px; }
+.shortrowname small {
+  color: var(--text-muted); font-size: 0.52rem; font-weight: 700;
+  letter-spacing: 0.09em; text-transform: uppercase;
 }
 .shortrow em { font-style: normal; color: var(--text-muted); font-size: var(--fs-label); }
 .shortrow .iconbtn { padding: 0 4px; line-height: 1; }
@@ -6827,7 +6866,11 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .plantable tbody tr.picked > td:first-child {
   box-shadow: inset 3px 0 0 var(--success);
 }
-
+/* Still searchable, because the catalog is broader than one character. The
+   absence of a checkbox plus a quiet fade says this row cannot enter the
+   loaded character's plan; clicking it explains the known class mismatch. */
+.plantable tbody tr.ineligible > td { opacity: 0.58; }
+.plantable tbody tr.ineligible:hover > td { opacity: 0.78; }
 /* Two badges, one job each: "this row's value is not in its stat columns."
    Distinct GLYPHS as well as colours — the set diamond and the proc star are
    told apart at a glance and are still told apart with no colour at all. */
@@ -6891,6 +6934,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface);
 }
+.outlineepic, .outlinequestline {
+  border-color: color-mix(in srgb, var(--border) 58%, var(--text-muted) 42%);
+}
 .outlinezone > h3 {
   margin: 0; padding: 6px 8px; color: var(--gold-bright);
   border-bottom: 1px solid var(--row-line); background: var(--surface-raised);
@@ -6907,6 +6953,20 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-top: 1px solid var(--row-line); font-size: var(--fs-label);
 }
 .outlineentry.quest { grid-template-columns: 16px minmax(0, 1fr) auto auto; cursor: pointer; }
+.outlineentry.mob.zonesource {
+  grid-template-columns: minmax(0, 1fr); gap: 5px; padding-top: 7px; padding-bottom: 7px;
+}
+.zonesourcehead { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.outlineentry.quest.zonesource {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-areas: "check source links" ". rewards rewards";
+  row-gap: 5px;
+}
+.outlineentry.quest.zonesource > input { grid-area: check; }
+.outlineentry.quest.zonesource > span:not(.outlinegets) { grid-area: source; }
+.outlineentry.quest.zonesource > .questlinks { grid-area: links; }
+.outlineentry.quest.zonesource > .outlinegets { grid-area: rewards; }
+.outlineentry.zonesource > .outlinegets { justify-content: flex-start; }
 .outlineentry > em { color: var(--text-muted); font-style: normal; text-align: right; }
 .outlineentry.quest.done > span { color: var(--text-muted); text-decoration: line-through; }
 .outlineentry input { margin: 0; accent-color: var(--success); }
@@ -6916,11 +6976,191 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .questlinks a {
   min-width: 19px; height: 19px; padding: 0 4px; display: grid; place-items: center;
   border: 1px solid var(--border); border-radius: 3px;
-  color: var(--gold-bright); background: var(--surface-raised);
+  color: var(--text-muted); background: var(--surface-raised);
   font: 700 10px/1 var(--font-data); text-decoration: none;
 }
+.questlinks a:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
 .plansource .questlinks { margin-left: 4px; vertical-align: middle; }
 .outlineempty { margin-top: 8px; padding: 13px 15px; }
+.outlineitemheading {
+  min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr);
+  gap: 9px; align-items: center;
+}
+.outlineitemheading > div { min-width: 0; }
+.outlineitemicon {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 1px solid var(--gold-dim); border-radius: 4px;
+  background: var(--bg); object-fit: cover;
+}
+.outlineitemicon.fallback { color: var(--gold-bright); font-size: 0.78rem; }
+.outlineitemicon.compact {
+  width: 24px; height: 24px; border-radius: 3px; font-size: 0.52rem;
+}
+.outlinetype {
+  display: inline-block; color: var(--text-muted); font-size: 0.56rem;
+  font-weight: 700; line-height: 1; letter-spacing: 0.11em; text-transform: uppercase;
+}
+.outlinetype.item { color: var(--gold-bright); }
+.outlinetype.item i { color: var(--text-muted); font-style: normal; }
+.outlineitemheading h3 {
+  overflow: hidden; margin: 2px 0 0;
+  font-size: var(--fs-data); line-height: 1.15; text-overflow: ellipsis;
+}
+.outlineitemheading h3.rarity-common { color: var(--rarity-common); }
+.outlineitemheading h3.rarity-treasured { color: var(--rarity-treasured); }
+.outlineitemheading h3.rarity-legendary { color: var(--rarity-legendary); }
+.outlineitemheading h3.rarity-fabled { color: var(--rarity-fabled); }
+.outlineitemheading h3.rarity-mythical { color: var(--rarity-mythical); }
+.outlineitemheading em {
+  display: block; margin-top: 3px; color: var(--text-muted);
+  font-size: var(--fs-label); font-style: normal; text-transform: capitalize;
+}
+
+/* A CLASS EPIC IS A SEQUENCE, NOT A PILE OF ZONES. The timeline owns the
+   hierarchy; locations ride on each numbered step so crossing zones never
+   destroys what comes next. */
+.outlineepichead {
+  position: relative; padding: 8px 30px 8px 10px;
+  background: rgba(var(--gold-rgb), 0.035);
+  cursor: pointer; list-style: none;
+}
+.outlineepichead::-webkit-details-marker,
+.epicrequirements > summary::-webkit-details-marker { display: none; }
+.outlineepichead::after {
+  content: '▶'; position: absolute; top: 50%; right: 11px;
+  color: var(--gold-bright); font-size: 0.62rem;
+  transform: translateY(-50%); transition: transform 100ms ease;
+}
+.outlineepic[open] > .outlineepichead::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+.outlineepichead:hover { background: rgba(var(--gold-rgb), 0.07); }
+.outlineepichead:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: -2px; }
+.epicrequirements, .epicsequence { display: grid; }
+.epicrequirements {
+  margin: 0; border-top: 1px solid var(--row-line);
+  border-radius: 0; background: transparent;
+}
+.epicrequirements > summary {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 7px; padding: 7px 9px;
+  color: var(--text-muted); cursor: pointer; list-style: none;
+  font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.epicrequirements > summary::before {
+  content: '▶'; color: var(--gold-bright); font-size: 0.55rem;
+  transition: transform 100ms ease;
+}
+.epicrequirements[open] > summary::before { transform: rotate(90deg); }
+.epicrequirements > summary:hover { color: var(--text); background: rgba(var(--gold-rgb), 0.035); }
+.epicrequirements > summary small {
+  color: var(--text-muted); font: inherit; font-family: var(--font-data);
+}
+.epicrequirementlist { padding: 0 9px 7px; }
+.epicsequence > b {
+  color: var(--text-muted); font-size: var(--fs-label); text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.epicrequirement {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 7px; align-items: center; margin-top: 5px;
+  color: var(--text); font-size: var(--fs-label); cursor: pointer;
+}
+.epicrequirement > span { display: grid; gap: 2px; }
+.epicrequirement > span > small {
+  color: var(--text-muted); font-size: 0.54rem; font-weight: 700;
+  letter-spacing: 0.09em; text-transform: uppercase;
+}
+.epicrequirement input, .epicstep input { margin: 0; accent-color: var(--success); }
+.epicrequirement.done span, .epicstep.done strong {
+  color: var(--text-muted); text-decoration: line-through;
+}
+.epicsequence > b { padding: 7px 9px 3px; }
+.epicstep {
+  position: relative; min-width: 0; display: grid;
+  grid-template-columns: 16px 22px minmax(0, 1fr) auto auto;
+  gap: 7px; align-items: center; padding: 7px 9px; cursor: pointer;
+}
+.epicstep::before {
+  content: ''; position: absolute; left: 42px; top: 0; bottom: 0;
+  width: 1px; background: var(--row-line);
+}
+.epicstep:first-of-type::before { top: 50%; }
+.epicstep:last-child::before { bottom: 50%; }
+.epicstep:hover { background: rgba(var(--gold-rgb), 0.035); }
+.epicstep > i {
+  position: relative; z-index: 1;
+}
+.epicstep > i {
+  width: 20px; height: 20px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 50%; color: var(--text-muted);
+  background: var(--surface); font: normal 700 0.55rem/1 var(--font-data);
+}
+.epicstep > span { min-width: 0; display: grid; gap: 2px; }
+.questmeta {
+  min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; color: var(--text-muted); font-size: 0.54rem; font-weight: 700;
+  line-height: 1.15; letter-spacing: 0.09em; text-transform: uppercase;
+}
+.questmeta > span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.questmeta i { font-style: normal; }
+.questmeta b { flex: none; color: var(--text-muted); font: inherit; }
+.questtype {
+  color: var(--text-muted); font-size: 0.54rem; font-weight: 700;
+  line-height: 1; letter-spacing: 0.09em; text-transform: uppercase;
+}
+.epicstep strong { color: var(--text); font-size: var(--fs-label); line-height: 1.3; }
+.epicstep > span > em {
+  overflow: hidden; color: var(--text-muted); font-size: var(--fs-label);
+  font-style: normal; text-overflow: ellipsis; white-space: nowrap;
+}
+.epicstep.next { background: rgba(var(--gold-rgb), 0.045); }
+.epicstep.next > i { color: var(--bg); border-color: var(--gold); background: var(--gold); }
+.epicstep.done > i { color: var(--success); border-color: var(--success); }
+.epicstep .questlinks, .epicrequirement .questlinks { opacity: 1; }
+.outlinegets { min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
+.outlineget {
+  min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-muted); font-size: var(--fs-label); border-radius: 3px;
+}
+.outlineget > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.outlineget[tabindex]:hover, .outlineget[tabindex]:focus-visible { color: var(--text); }
+.outlineget[tabindex]:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: 1px; }
+.waypointcopy {
+  max-width: 110px; overflow: hidden; padding: 2px 6px;
+  border: 1px solid var(--gold-dim); border-radius: 3px;
+  color: var(--gold-bright); background: rgba(var(--gold-rgb), 0.09);
+  font: 600 var(--fs-label)/1.25 var(--font-data);
+  text-overflow: ellipsis; white-space: nowrap; cursor: copy;
+}
+.waypointcopy:hover { background: rgba(var(--gold-rgb), 0.16); }
+.waypointcopy.copied { color: var(--success); border-color: var(--success); }
+
+/* An item behind a prerequisite closure is ONE acquisition task. Like an epic,
+   its closed state is only the item identity; opening it reveals the complete
+   topological order without promoting every prerequisite to an outline peer. */
+.questlinehead {
+  position: relative; display: block; padding: 8px 30px 9px 10px;
+  background: rgba(var(--gold-rgb), 0.035);
+  cursor: pointer; list-style: none;
+}
+.questlinehead::-webkit-details-marker { display: none; }
+.questlinehead::after {
+  content: '▶'; position: absolute; top: 17px; right: 11px;
+  color: var(--gold-bright); font-size: 0.62rem; transition: transform 100ms ease;
+}
+.outlinequestline[open] > .questlinehead::after { transform: rotate(90deg); }
+.questlinehead:hover { background: rgba(var(--gold-rgb), 0.07); }
+.questlinehead:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: -2px; }
+.questlinesteps { display: grid; }
+.questlinestep > em {
+  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
+  text-align: right;
+}
 
 /* ---- the priority editor ----
    Rendered into `document.body`: every card here carries `backdrop-filter`,

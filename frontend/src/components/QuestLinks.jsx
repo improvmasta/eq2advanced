@@ -11,7 +11,7 @@ export default function QuestLinks({ page }) {
          onClick={(event) => event.stopPropagation()}>wikq2</a>
       <a href={wikiQuestUrl(page)} target="_blank" rel="noreferrer noopener"
          title="Open in EQ2 Wiki" aria-label={`${page} in EQ2 Wiki`}
-         onClick={(event) => event.stopPropagation()}>W</a>
+         onClick={(event) => event.stopPropagation()}>EQ2i</a>
     </span>
   )
 }

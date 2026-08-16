@@ -142,6 +142,7 @@ def put_plan_saved_set(slot: int, body: SavedSetIn,
 @router.get("/plan/outline")
 def plan_outline(
     eras: str | None = Query(None),
+    class_name: str | None = Query(None, alias="class"),
     # REPEATED PARAMETERS, NOT A COMMA LIST — every other list on this router
     # is a comma list because a stat key cannot contain a comma, and a page
     # title can: `One Fish, Two Fish` and `Mischief, Mayhem, Clockwork` are
@@ -152,11 +153,12 @@ def plan_outline(
     set_: list[str] | None = Query(None, alias="set",
                                    description="shortlisted adornment sets"),
 ):
-    """The Outline. The shortlist lives in the reader's browser, so it arrives
-    with the request rather than being stored — nothing here is anybody's
-    account, and the page is still a GET that a link can carry."""
+    """One character's Outline. The character-keyed shortlist lives in the
+    reader's browser, so it arrives with the request rather than being stored.
+    The class is repeated here to enforce known item/epic eligibility on the
+    read side as well as at the browser click."""
     return outline.outline(get_db(), eras=_eras(eras), items=item or [],
-                           sets=set_ or [])
+                           sets=set_ or [], class_name=class_name)
 
 
 # A typed name is not a credential, but a FORCED refresh is a way to make this

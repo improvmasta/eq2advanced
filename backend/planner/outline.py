@@ -19,8 +19,13 @@ of `/plan` keeps, and here the whole answer is a few hundred rows and a heap.
 
 import heapq
 import json
+from pathlib import Path
 
 from planner import wiki
+
+_EPIC_WAYPOINT_FILE = (Path(__file__).resolve().parent.parent / "refdata" /
+                       "planner_epic_waypoints.json")
+EPIC_WAYPOINTS = json.loads(_EPIC_WAYPOINT_FILE.read_text())["waypoints"]
 
 # How far back a prerequisite chain is walked from something you want. Kunark's
 # longest are a dozen or so steps; the cap is a loop guard rather than an
@@ -39,8 +44,8 @@ def _wiki_url(page: str) -> str:
     return f"https://eq2.fandom.com/wiki/{page.replace(' ', '_')}"
 
 
-def _wanted(conn, eras: list[str], items: list[str],
-            sets: list[str]) -> dict[str, list[dict]]:
+def _wanted(conn, eras: list[str], items: list[str], sets: list[str],
+            class_name: str | None = None) -> tuple[dict[str, list[dict]], set[str]]:
     """Shortlisted items (and set carriers) -> {source page: what it gets you}.
 
     A SET IS SHORTLISTED AS THE ADORNMENT, never as the armour it came in, so
@@ -50,25 +55,40 @@ def _wanted(conn, eras: list[str], items: list[str],
     outline instead of quietly collapsing back into an item list."""
     keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
     wanted: dict[str, list[dict]] = {}
+    rejected: set[str] = set()
     rows: list[tuple[dict, str | None]] = []
+
+    def eligible(row) -> bool:
+        classes = {value for value in (row["classes"] or "").split(",") if value}
+        # An empty class field is unknown, not proof that nobody can use it.
+        return not class_name or not classes or class_name in classes
 
     for page in items[:MAX_INPUT]:
         row = conn.execute(
-            "SELECT page_title, name, tier, slot, dtype, level, set_name "
+            "SELECT page_title, name, tier, slot, dtype, level, set_name, classes, icon "
             "FROM plan_items WHERE page_title=?", (page,)).fetchone()
-        if row:
+        if row and eligible(row):
             rows.append((dict(row), None))
+        elif row:
+            rejected.add(page)
     for name in sets[:MAX_INPUT]:
+        found = False
         for row in conn.execute(
-                "SELECT page_title, name, tier, slot, dtype, level, set_name "
+                "SELECT page_title, name, tier, slot, dtype, level, set_name, classes, icon "
                 "FROM plan_items WHERE set_name=?", (name,)):
-            rows.append((dict(row), name))
+            if eligible(row):
+                rows.append((dict(row), name))
+                found = True
+        if not found and conn.execute(
+                "SELECT 1 FROM plan_items WHERE set_name=? LIMIT 1", (name,)).fetchone():
+            rejected.add(name)
 
     for row, via_set in rows:
         got = {
             "page_title": row["page_title"], "name": row["name"],
             "tier": row["tier"], "level": row["level"],
             "slot": wiki.slot_label(row["slot"], row["dtype"]),
+            "icon": row["icon"],
             # Which shortlist entry this row is answering. A piece reached
             # through a set is a step towards the ADORNMENT, and saying so is
             # the difference between "you wanted these boots" and "any of these
@@ -83,7 +103,7 @@ def _wanted(conn, eras: list[str], items: list[str],
             if not any(g["page_title"] == got["page_title"] and
                        g["via_set"] == via_set for g in entry):
                 entry.append(got)
-    return wanted
+    return wanted, rejected
 
 
 def _quests(conn, pages: list[str]) -> dict[str, dict]:
@@ -97,12 +117,14 @@ def _quests(conn, pages: list[str]) -> dict[str, dict]:
     return out
 
 
-def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict]) -> tuple[dict[str, dict], list[dict], list[tuple[str, str]], set[str]]:
+def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict],
+               class_name: str | None = None) -> tuple[dict[str, dict], list[dict], list[tuple[str, str]], set[str]]:
     """wikq2's canonical epic chain plus its timeline-level requirements."""
     extra_pages: set[str] = set()
     requirements: dict[str, dict] = {}
     canonical_edges: list[tuple[str, str]] = []
     epic_pages: set[str] = set()
+    epic_meta: dict[str, dict] = {}
     for seed in seeds:
         quest = seed_quests.get(seed)
         timeline = (quest or {}).get("timeline") or ""
@@ -110,19 +132,34 @@ def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict]) -> tuple[dic
             continue
         title = timeline if timeline.lower().endswith(" timeline") else f"{timeline} Timeline"
         record = conn.execute(
-            "SELECT quests_json, requirements_json, source_url "
+            "SELECT class_name, quests_json, requirements_json, source_url "
             "FROM plan_epic_timelines WHERE title=?", (title,)).fetchone()
         if not record:
+            continue
+        if class_name and record["class_name"] != class_name:
             continue
         chain = json.loads(record["quests_json"])
         chain_titles = [row["title"] for row in chain]
         known = _quests(conn, chain_titles)
-        include_raid = quest.get("kind") == "raid"
-        included = [page for page in chain_titles
-                    if include_raid or (known.get(page) or {}).get("kind") != "raid"]
+        # The selected item's source quest is the acquisition boundary. This
+        # is stronger than guessing the Fabled/Mythical split from difficulty:
+        # some timelines continue with non-raid setup after the Fabled reward,
+        # and a few canonical steps are absent from the general quest crawl.
+        # Show the complete ordered prefix through what earns this target.
+        try:
+            included = chain_titles[:chain_titles.index(seed) + 1]
+        except ValueError:
+            include_raid = quest.get("kind") == "raid"
+            included = [page for page in chain_titles
+                        if include_raid or (known.get(page) or {}).get("kind") != "raid"]
         extra_pages.update(included)
         epic_pages.update(included)
         canonical_edges.extend(zip(included, included[1:]))
+        for order, page in enumerate(included, 1):
+            epic_meta[page] = {
+                "epic": True, "epic_title": title,
+                "epic_order": order,
+            }
         first = included[0] if included else seed
         for index, requirement in enumerate(json.loads(record["requirements_json"])):
             linked = requirement.get("quests") or []
@@ -139,6 +176,8 @@ def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict]) -> tuple[dic
                         "wiki": linked_quest.get("url") or _wiki_url(key), "gets": [],
                         "why": "prerequisite", "opens": [seed],
                         "requirement": True, "requirement_text": requirement["text"],
+                        "epic": True, "epic_title": title,
+                        "epic_order": index + 1,
                     })
                 canonical_edges.extend((key, first) for key in keys)
             else:
@@ -151,9 +190,56 @@ def _epic_plan(conn, seeds: set[str], seed_quests: dict[str, dict]) -> tuple[dic
                     "era": "rok", "wiki": record["source_url"], "gets": [],
                     "why": "prerequisite", "opens": [seed],
                     "requirement": True, "requirement_text": requirement["text"],
+                    "epic": True, "epic_title": title,
+                    "epic_order": index + 1,
                 }
                 canonical_edges.append((key, first))
-    return _quests(conn, list(extra_pages)), list(requirements.values()), canonical_edges, epic_pages
+    quests = _quests(conn, list(extra_pages))
+    for page, meta in epic_meta.items():
+        if page not in quests:
+            # The epic export is authoritative for membership and order even
+            # when the expansion category crawl never found the quest page.
+            # Preserve that known step and stay explicitly silent on facts the
+            # snapshot does not carry (zone, level and difficulty).
+            quests[page] = {
+                "page_title": page, "name": page, "level": None,
+                "level_text": None, "zone": None,
+                "timeline": meta["epic_title"].removesuffix(" Timeline"),
+                "jcat": None, "kind": "unknown", "diff": None,
+                "era": "rok",
+            }
+        quests[page].update(meta)
+    return quests, list(requirements.values()), canonical_edges, epic_pages
+
+
+def _exclude_other_class_epics(conn, wanted: dict[str, list[dict]],
+                               quests: dict[str, dict], class_name: str | None,
+                               rejected: set[str]) -> None:
+    """Drop a seed when the epic snapshot itself proves another class owns it.
+
+    Item class metadata normally catches this first. The timeline is a second,
+    independent authority for old/incomplete item rows and prevents falling
+    back to the contradictory generic quest-edge walk for somebody else's epic.
+    """
+    if not class_name:
+        return
+    candidates: set[str] = set()
+    for page, quest in list(quests.items()):
+        timeline = quest.get("timeline") or ""
+        if "epic weapon" not in timeline.lower():
+            continue
+        title = timeline if timeline.lower().endswith(" timeline") else f"{timeline} Timeline"
+        record = conn.execute(
+            "SELECT class_name FROM plan_epic_timelines WHERE title=?", (title,)
+        ).fetchone()
+        if not record or record["class_name"] == class_name:
+            continue
+        for got in wanted.pop(page, []):
+            candidates.add(got.get("via_set") or got["page_title"])
+        quests.pop(page, None)
+    remaining = {got.get("via_set") or got["page_title"]
+                 for gets in wanted.values() for got in gets}
+    rejected.update(candidates - remaining)
 
 
 def _ancestors(conn, seeds: set[str]) -> tuple[dict[str, set[str]], set[str]]:
@@ -230,17 +316,83 @@ def _order(rows: list[dict], edges: list[tuple[str, str]]) -> list[dict]:
     return out
 
 
+def _questlines(ordered: list[dict], seeds: set[str],
+                need: dict[str, set[str]]) -> list[dict]:
+    """Connected prerequisite closures as acquisition units.
+
+    One reward quest with fifty-two prerequisites is one thing the reader
+    added, not fifty-three peers. Goals whose closures overlap are merged so a
+    shared prerequisite appears once and the unit can name every selected item
+    the work advances.
+    """
+    by_key = {row["key"]: row for row in ordered}
+    goal_pages: dict[str, set[str]] = {}
+    for goal in seeds:
+        row = by_key.get(goal)
+        if not row or row.get("epic"):
+            continue
+        pages = {goal}
+        pages.update(page for page, goals in need.items() if goal in goals)
+        pages &= set(by_key)
+        if len(pages) > 1:
+            goal_pages[goal] = pages
+
+    components: list[dict[str, set[str]]] = []
+    for goal, pages in goal_pages.items():
+        touching = [part for part in components if part["pages"] & pages]
+        if not touching:
+            components.append({"goals": {goal}, "pages": set(pages)})
+            continue
+        merged = {"goals": {goal}, "pages": set(pages)}
+        for part in touching:
+            merged["goals"].update(part["goals"])
+            merged["pages"].update(part["pages"])
+            components.remove(part)
+        components.append(merged)
+
+    out = []
+    for part in components:
+        pages = [row["key"] for row in ordered if row["key"] in part["pages"]]
+        goals = [by_key[key] for key in pages if key in part["goals"]]
+        targets = []
+        seen = set()
+        for row in goals:
+            for item in row.get("gets") or []:
+                identity = item.get("via_set") or item["page_title"]
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                targets.append(item)
+        timelines = {by_key[key].get("timeline") for key in pages
+                     if by_key[key].get("timeline")}
+        out.append({
+            "key": f"questline:{'|'.join(sorted(part['goals']))}",
+            "pages": pages,
+            "goals": sorted(part["goals"]),
+            "targets": targets,
+            "timeline": next(iter(timelines)) if len(timelines) == 1 else None,
+            "count": len(pages),
+        })
+    return out
+
+
 def outline(conn, *, eras: list[str], items: list[str] | None = None,
-            sets: list[str] | None = None) -> dict:
+            sets: list[str] | None = None, class_name: str | None = None) -> dict:
     """Selected items -> source mobs and reward quests + quest prerequisites."""
     keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
-    wanted = _wanted(conn, keys, items or [], sets or [])
+    wanted_class = (class_name or "").strip().lower()
+    if wanted_class not in wiki.SUBCLASSES:
+        wanted_class = None
+    wanted, ineligible = _wanted(
+        conn, keys, items or [], sets or [], wanted_class)
     # A source page is a quest page or a monster page and the catalog knows
     # which — the quest table is the authority, and anything not in it is a mob
     # that was crawled as a named monster.
     quests = _quests(conn, list(wanted))
+    _exclude_other_class_epics(conn, wanted, quests, wanted_class, ineligible)
     seeds = {p for p in wanted if p in quests}
-    epic_quests, epic_requirements, epic_edges, epic_pages = _epic_plan(conn, seeds, quests)
+    epic_quests, epic_requirements, epic_edges, epic_pages = _epic_plan(
+        conn, seeds, quests, wanted_class)
     quests.update(epic_quests)
     need, _ = _ancestors(conn, seeds)
     chain = _quests(conn, [p for p in need if p not in quests])
@@ -273,6 +425,10 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             "why": ("reward" if gets else
                     "prerequisite"),
             "requirement": False,
+            "epic": bool(q.get("epic")),
+            "epic_title": q.get("epic_title"),
+            "epic_order": q.get("epic_order"),
+            "start_waypoint": EPIC_WAYPOINTS.get(page) if q.get("epic") else None,
             "opens": sorted(quests[g]["name"] for g in need.get(page, ())
                             if g in quests and g != page),
         })
@@ -300,20 +456,25 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
         })
 
     ordered = _order(rows, edges)[:MAX_ROWS]
+    questlines = _questlines(ordered, seeds, need)
     return {
         "rows": ordered,
+        "questlines": questlines,
         "total": len(rows),
         "eras": keys,
         # What the reader put in that the catalog could not place. A shortlist
         # entry with no source in the selected expansions is not an error and
         # is not silently dropped: it is usually a reader who narrowed the era
         # after shortlisting, and saying so is how they find that out.
-        "unplaced": sorted(
+        "unplaced": sorted((
             (set(items or []) -
              {g["page_title"] for r in rows for g in r["gets"]}) |
             (set(sets or []) -
              {g["via_set"] for r in rows for g in r["gets"] if g["via_set"]})
-        ),
+        ) - ineligible),
+        # Separate from unplaced: these entries exist, but their authoritative
+        # item class list rules them out for the character named by the plan.
+        "ineligible": sorted(ineligible),
         "counts": {
             "quests": sum(1 for r in ordered if r["kind"] == "quest"),
             "mobs": sum(1 for r in ordered if r["kind"] != "quest"),

@@ -544,11 +544,14 @@ remains, or returns the slot to equipped gear. Finger, Ear, Wrist and Charm
 keep their first/second identities. A
 planned two-hander occupies Primary and removes Secondary from the projection.
 
-The identity line also owns **Gear sets**: it starts with one named slot and a
+The right side of the header owns **Gear sets**: it starts with one named slot and a
 compact `+` that reveals another, up to five, instead of spending header width
 on five slots before they are needed. Previously saved or renamed slots remain
-visible. Opening a slot offers Load, Save current, Rename, and Leave without
-saving. Guests use the same workflow in browser storage with the terse note
+visible. Choosing a populated tab loads it. The selected tab offers the explicit
+**Save changes** action only when the current gear differs, while the pencil
+renames without overwriting the saved gear. The inline name editor closes with
+an `×` (or Escape). Guests use the same workflow in browser storage with the
+terse note
 “Saved by cookie. Create an account to save long-term.”; signed-in saves also
 persist to the account. Before a signed-out reader loads a character, the normal
 equipment window stays in place as a dimmed backdrop and centers the public
@@ -556,17 +559,17 @@ equipment window stays in place as a dimmed backdrop and centers the public
 removes the overlay and restores the same working layout used by an account.
 
 For signed-in readers, the header is a shared two-column, two-row grid: the
-character name shares its row with character-name search, while level and Gear
-sets share the next row with **Reset to Equipped** and the **Select Char**
-account picker. A dirty gear set uses the short `Save...` action and an
-icon-only edit control so these secondary controls do not stretch the identity
-line.
+character name shares its row with character-name search, while level/class and
+**Reset Gear** stay together on the left. The **Select Char** account picker
+and Gear sets occupy the right side of the next row.
 
-The class epic suggestion lives in **Recommended Items** and remains visible
-while its next step is outstanding, not only after clicking Primary. It
-advances from Fabled to Mythical when the Fabled is equipped, active in the
-loadout, or present in a saved set, and disappears when the suggested stage is
-already loaded or saved.
+The class epic suggestion lives in **Recommended Items** only until it is added
+to the plan. At that point the Outline owns the work and the recommendation card
+disappears instead of repeating plan status. It advances from Fabled to Mythical
+only when the Fabled weapon is present in the character's current Census
+equipment, and disappears when the suggested stage is actually worn. A planned
+or saved build is intent, not ownership; adding a target to the outline must
+never claim the Fabled quest is complete.
 
 Hovering an item name in search shows its candidate examine window beside the
 currently equipped item for that concrete slot and, when different, the active
@@ -819,6 +822,14 @@ and it is illusionist-only, with nothing on the table saying a class had been
 applied. The loadout panel is about one character; the item table is about the
 expansion, and the reader narrows it when they mean to.
 
+**Discovery stays broad; a plan does not.** The catalog continues to show
+other-class equipment so a reader can inspect and compare the expansion, but
+an outline is locked to one loaded character. Known class-restricted items are
+visibly unavailable and cannot be equipped or shortlisted for that character;
+the outline API applies the same class check to items and set carriers, so
+stale browser state and hand-built URLs cannot introduce another class's quest
+line. Empty/unknown class metadata is not treated as proof of incompatibility.
+
 **AN EMPTY TABLE SAYS WHICH CONTROL EMPTIED IT** (`Planner.EmptyTable`).
 "Nothing in this expansion matches" reads as "no such item exists", which is a
 claim about EverQuest II that a crawl of somebody else's wiki is in no position
@@ -867,11 +878,46 @@ by **zone**, then lists the source **mobs** and reward **quests** there. A rewar
 quest brings in its complete hard-prerequisite chain; unrelated expansion
 prelude work and manually kept mob/quest targets are gone.
 
-Class epics have one deliberate exception to the generic quest-edge walk:
-**wikq2's structured Epic Weapon timeline is authoritative.** Its Requirements
-or Prerequisites section appears first, with language and access quests kept as
-clickable quests, followed by the canonical heroic chain (Fabled) and then the
-raid quest (Mythical). This avoids treating contradictory individual-page
+**A prerequisite closure is one acquisition task.** A selected item earned by
+one quest remains one quest in the outline. When earning it requires two or
+more connected quests, the backend returns one questline unit keyed by the
+reward goal, merging overlapping closures so shared prerequisites appear once.
+Long questlines begin collapsed as one compact item row showing only the item,
+quest count, and progress—matching a collapsed epic instead of repeating a
+second miniature timeline. Opening the unit reveals the complete
+prerequisite-first order and its per-quest progress. The unit follows the
+connected graph even when the wiki files its members under several timeline
+labels or zones.
+
+Outline types are explicit rather than implied by typography. Acquisition
+cards begin with an **Item · Slot** label, the item's icon and rarity-coloured name;
+every ordered step puts **Quest N · Zone** and its solo/group/raid kind on one
+metadata line above the quest name. One neutral vertical path connects quest
+markers instead of a stack of horizontal rules and nested navy boxes. Gold
+belongs to the selected item and disclosure actions, and green belongs only to
+completed progress—not to an unearned reward.
+
+Directly under the Outline header, an explicit **Selected items** disclosure
+names every gear and set-adornment input currently driving the outline and
+removes any of them in place. It is part of the panel structure, with no nested
+card or container chrome, so correcting the plan never requires finding the
+originating catalog row again. The loaded character's name sits beside
+**Outline**, without another `Character` label. Selected item identities,
+acquisition headers, and concrete zone/quest rewards use the shared EQ2 examine
+hover (and keyboard focus) already used by gear; an item icon or item name is
+never presented as inert decoration when its card is available.
+
+Class epics have one deliberate exception to the generic quest-edge walk and
+to the outline's normal zone grouping:
+**wikq2's structured Epic Weapon timeline is authoritative.** Its compact,
+collapsed **Requirements** disclosure appears first, with language and access
+quests kept as clickable quests, followed by one numbered canonical sequence
+with each step's zone and difficulty kept as metadata. The first unfinished step is actionable,
+not merely labelled: when the measured waypoint corpus has a finite coordinate
+for that quest's earliest extracted step, the row exposes the exact copyable
+`/waypoint x, y, z` command. Missing coverage stays blank rather than inventing
+a location. The heroic chain (Fabled) precedes the raid quest (Mythical). This
+avoids treating contradictory individual-page
 `prereq`/`next` fields as a loop. `npm run audit:epics -- --fresh` in wikq2
 checks all 24 original class timelines, every chain page's navigation, and
 every actionable objective in each page's complete Steps section. Known stable
@@ -880,7 +926,18 @@ quest; the split lists on the Necromancer's `The Bones of Insanity` are the
 first authoritative repair, with its nested objectives promoted into the real
 consecutive 16-step sequence.
 
-Quest checkboxes mean **done** and persist in this browser. Hovering a quest in
+The selected weapon's reward quest is the stage boundary: a Fabled outline is
+the canonical prefix through the quest that awards that weapon, while a
+Mythical outline continues through its own reward step. Difficulty labels do
+not guess that boundary. The epic snapshot remains authoritative for title and
+order when a canonical step is absent from the general expansion quest crawl;
+such a step stays visible with unknown zone/difficulty instead of disappearing.
+The 2026-08-16 read-side audit exercised both stages for all 24 classes (48
+outlines) with continuous numbering and no class rejection or empty chain.
+The epic card begins expanded and can collapse as a whole; its **Before you
+begin** checklist is a second, independently collapsible disclosure inside it.
+
+Quest checkboxes mean **done** and persist per character in this browser. Hovering a quest in
 either the Outline or an item-table source exposes two compact links in this
 order: `wikq2`, then EQ2 Wiki.
 
@@ -1165,12 +1222,14 @@ thresholds. It remains useful with no outline and with no account.
   rather than pretending there is something to load. Opening the contextual
   Outline gives the character/set identity and the lookup/account controls
   separate rows, so the five tabs never wrap into a back-and-forth block.
-- **Changing who you are planning for empties the window.** A planned choice
+- **Plans are character-keyed.** Changing who you are planning for loads that
+  character's own shortlist, equipment choices, outline, and quest completion
+  state. A planned choice
   only means anything against one character's current equipment — a ring worth
   +40 Ability Mod on the fury is a downgrade on the guardian — and leaving the
   projection populated across a switch showed an "upgrade" measured against
   somebody else's gear. Both routes in (the account picker and the typed
-  lookup) clear it. The shortlist survives.
+  lookup) switch the entire plan; returning to a character restores theirs.
 - **THE CHARACTER IS THE ONLY HEADLINE OF THE GEAR CARD.** It began the other
   way round — "EQUIPMENT & STATS" in the site's gold display caps, with the
   toon's name in small muted type trailing after it — and briefly retained the

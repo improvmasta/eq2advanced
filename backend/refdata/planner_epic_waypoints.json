@@ -1,0 +1,816 @@
+{
+  "version": 1,
+  "source": "planner-waypoints-rok schema 1; first finite coordinate at the earliest extracted quest step",
+  "waypoints": {
+    "A Broken Barrier": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 1,
+      "label": "Veryn P'Neru",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "A Fiery Heart": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "The Apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "A Flow of Pure Water (Quest)": {
+      "x": 1825.23,
+      "y": 487.62,
+      "z": -796.28,
+      "step": 0,
+      "label": "Vence Laden",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "A Lick of Pure Fire": {
+      "x": 1825.23,
+      "y": 487.62,
+      "z": -796.28,
+      "step": 0,
+      "label": "Vence Laden",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "A Mysterious Trinket": {
+      "x": -1702,
+      "y": 25,
+      "z": -774,
+      "step": 0,
+      "label": "Rylana's dead body",
+      "zone": "Nektulos Forest",
+      "confidence": 0.98
+    },
+    "A Paladin's Crusade": {
+      "x": 140,
+      "y": -25,
+      "z": 150,
+      "step": 0,
+      "label": "Kaherdin Surechest",
+      "zone": "The City of Freeport",
+      "confidence": 0.98
+    },
+    "A Reet's Freedom": {
+      "x": -255,
+      "y": -25,
+      "z": 434,
+      "step": 0,
+      "label": "Blipd",
+      "zone": "Sebilis",
+      "confidence": 0.98
+    },
+    "A Sleeping Stone": {
+      "x": 700,
+      "y": -17,
+      "z": -335,
+      "step": 0,
+      "label": "Takk",
+      "zone": "Qeynos Province District",
+      "confidence": 0.94
+    },
+    "A Strange Bird": {
+      "x": -2161.66,
+      "y": -228.9,
+      "z": 15.69,
+      "step": 1,
+      "label": "Captain Shoreflow",
+      "zone": "Sinking Sands",
+      "confidence": 0.98
+    },
+    "A Taste of Past Glory": {
+      "x": -2346,
+      "y": 231,
+      "z": 1132,
+      "step": 0,
+      "label": "Borga Rallok",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "A Watery Heart": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "The Apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "A Wisp of Pure Air": {
+      "x": 1825.23,
+      "y": 487.62,
+      "z": -796.28,
+      "step": 0,
+      "label": "Vence Laden",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Acts of Contrition": {
+      "x": -688.91,
+      "y": -108.14,
+      "z": -855.74,
+      "step": 0,
+      "label": "Izzal Din",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "An Airy Heart": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "The Apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "An Ayonic Journey": {
+      "x": 51.71,
+      "y": 0.86,
+      "z": 1392.33,
+      "step": 0,
+      "label": "Maestra Orlita",
+      "zone": "The Thundering Steppes",
+      "confidence": 0.98
+    },
+    "An Earthy Heart": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "The Apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Awakening the Cudgel": {
+      "x": 700,
+      "y": -17,
+      "z": -335,
+      "step": 0,
+      "label": "Takk",
+      "zone": "Qeynos Province District",
+      "confidence": 0.94
+    },
+    "Borrowed Time": {
+      "x": 553.28,
+      "y": -0.35,
+      "z": -72.06,
+      "step": 0,
+      "label": "Old Man Pomerenke",
+      "zone": "The Thundering Steppes",
+      "confidence": 0.98
+    },
+    "Bringing the Hammer Down on Venril": {
+      "x": 16,
+      "y": 5,
+      "z": 204,
+      "step": 1,
+      "label": "Drusella Sathir",
+      "zone": "Veeshan's Peak",
+      "confidence": 0.71
+    },
+    "Broken Barrier: Elemental Bindings": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru Arch Druid",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Lessons of the Fallen": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Sealing of the Blade": {
+      "x": 450,
+      "y": -7,
+      "z": -268,
+      "step": 0,
+      "label": "Tilzax V'Reryn",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: The Bite of the Wolf": {
+      "x": 450,
+      "y": -7,
+      "z": -268,
+      "step": 0,
+      "label": "Speak to Tilzax V'Reryn in the Darklight Woods ( 450, -7, -268 ) Copy",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Tilzax V'Reryn": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Veryn's Call": {
+      "x": 450,
+      "y": -7,
+      "z": -268,
+      "step": 0,
+      "label": "Tilzax V'Reryn",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Wounded of the Air": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Wounded of the Earth": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Wounded of the Fire": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru Arch Druid",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Broken Barrier: Wounded of the Water": {
+      "x": 442.71,
+      "y": -15.62,
+      "z": -265.41,
+      "step": 0,
+      "label": "Veryn P'Neru Arch Druid",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Chel'dok's Fiery Cinch": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "The Apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Defender of the Faith": {
+      "x": 2015.48,
+      "y": 487.62,
+      "z": -694.82,
+      "step": 1,
+      "label": "Isa Fernandi",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Feeding the Flame of Yore": {
+      "x": -2430,
+      "y": 92,
+      "z": 1690,
+      "step": 0,
+      "label": "The Yore Flame",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "Find the Fury": {
+      "x": 445,
+      "y": -8,
+      "z": -267,
+      "step": 0,
+      "label": "Talk with Thelia N'Fyre in Darklight Wood at ( 445, -8, -267 ) Copy",
+      "zone": "Darklight Wood",
+      "confidence": 0.97
+    },
+    "For a Better Tomorrow": {
+      "x": -73,
+      "y": -21,
+      "z": -66,
+      "step": 0,
+      "label": "Preceptor Nyjuss",
+      "zone": "The City of Freeport",
+      "confidence": 0.98
+    },
+    "Greed, Deceit, and Destruction!": {
+      "x": -427,
+      "y": 9,
+      "z": -16,
+      "step": 0,
+      "label": "Madame Dulcine",
+      "zone": "Loping Plains",
+      "confidence": 0.89
+    },
+    "High Seas Adventure": {
+      "x": 802,
+      "y": -33,
+      "z": 159,
+      "step": 1,
+      "label": "Charasis",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "Honing the Lust of the Dragon's Temper": {
+      "x": -690,
+      "y": -109,
+      "z": -849,
+      "step": 0,
+      "label": "Talk again to Izzal Din in JW ( -690, -109, -849 ) Copy",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "In a Pirate's Wake": {
+      "x": 532,
+      "y": -9,
+      "z": 137,
+      "step": 0,
+      "label": "Casey",
+      "zone": "Qeynos Capitol District",
+      "confidence": 0.98
+    },
+    "Into the Chamber of Phrotis": {
+      "x": 1825.23,
+      "y": 487.62,
+      "z": -796.28,
+      "step": 0,
+      "label": "Vence Laden",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Investigate the Death": {
+      "x": 193,
+      "y": -43,
+      "z": 169,
+      "step": 0,
+      "label": "A Mutilated Deer",
+      "zone": "Darklight Wood",
+      "confidence": 0.98
+    },
+    "Kyrtoxxulous' Challenge": {
+      "x": -984.59,
+      "y": -82.24,
+      "z": 590.72,
+      "step": 1,
+      "label": "Find a babbling reet slave in Fens of Nathsar standing on top of a big rock about halfway between Western and Eastern Pens",
+      "zone": "Fens of Nathsar",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: Daranus": {
+      "x": -930,
+      "y": 264,
+      "z": 728,
+      "step": 1,
+      "label": "Daranus",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: Drusella's Extraction": {
+      "x": 16,
+      "y": 5,
+      "z": 204,
+      "step": 1,
+      "label": "Drusella Sathir",
+      "zone": null,
+      "confidence": null
+    },
+    "Leandre's Shard: Harvesting Ripe Minds": {
+      "x": 564,
+      "y": -147,
+      "z": 1341,
+      "step": 1,
+      "label": "Chelsith",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: Kunzar Extract": {
+      "x": 726.85,
+      "y": 36.83,
+      "z": -135.47,
+      "step": 1,
+      "label": "The City of Jinisk",
+      "zone": "Kunzar Jungle",
+      "confidence": 0.95
+    },
+    "Leandre's Shard: Merging": {
+      "x": -26.16,
+      "y": 134.73,
+      "z": -916.18,
+      "step": 0,
+      "label": "Slay Mistgoblins ( -26, 135, -916 ) Copy",
+      "zone": "Kunzar Jungle",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: Pietre's Requests": {
+      "x": -572.66,
+      "y": 21.76,
+      "z": 199.34,
+      "step": 0,
+      "label": "Pietre",
+      "zone": "Neriak, City of Hate",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: Seeking Pietre": {
+      "x": -572.66,
+      "y": 21.76,
+      "z": 199.34,
+      "step": 1,
+      "label": "Pietre",
+      "zone": "Neriak, City of Hate",
+      "confidence": 0.98
+    },
+    "Leandre's Shard: What's Eating You?": {
+      "x": 23,
+      "y": -34,
+      "z": -148,
+      "step": 1,
+      "label": "your left as you enter and you will see some elevators",
+      "zone": null,
+      "confidence": null
+    },
+    "Loose Lips Find Ships": {
+      "x": 40,
+      "y": 4,
+      "z": 117,
+      "step": 0,
+      "label": "Captain Screewoggins",
+      "zone": "Enchanted Lands",
+      "confidence": null
+    },
+    "Of Fire and Ice": {
+      "x": -407.6,
+      "y": 49.39,
+      "z": -979.63,
+      "step": 2,
+      "label": "Cerennhir Aelindel",
+      "zone": "New Tunaria",
+      "confidence": 0.98
+    },
+    "Of Fire and Ice: A Codex in Crisis": {
+      "x": -407.6,
+      "y": 49.39,
+      "z": -979.63,
+      "step": 0,
+      "label": "Cerennhir Aelindel",
+      "zone": "New Tunaria",
+      "confidence": 0.98
+    },
+    "Of Fire and Ice: Band of the Frost Maiden": {
+      "x": -2,
+      "y": 28,
+      "z": 6,
+      "step": 0,
+      "label": "Jaestin Chaldean",
+      "zone": "The Tower of the Moon",
+      "confidence": null
+    },
+    "Of Fire and Ice: Suitable Components": {
+      "x": -517,
+      "y": 175,
+      "z": 1035,
+      "step": 0,
+      "label": "Hedwocket Cobbleblork",
+      "zone": "New Tunaria",
+      "confidence": null
+    },
+    "Of Fire and Ice: The Dragon's Marrow": {
+      "x": -2,
+      "y": 28,
+      "z": 6,
+      "step": 2,
+      "label": "Jaestin Chaldean",
+      "zone": "The Tower of the Moon",
+      "confidence": null
+    },
+    "Of Fire and Ice: The Flame Disciple's Ring": {
+      "x": -2,
+      "y": 28,
+      "z": 6,
+      "step": 0,
+      "label": "Jaestin Chaldean",
+      "zone": "The Tower of the Moon",
+      "confidence": null
+    },
+    "Of Fire and Ice: With These Rings I Thee Wonder": {
+      "x": -517,
+      "y": 175,
+      "z": 1035,
+      "step": 1,
+      "label": "Go to the Gnomeland Security Headquarters in Steamfont Mountains and speak with Hedwocket Cobbleblork",
+      "zone": "Steamfont Mountains",
+      "confidence": 0.92
+    },
+    "Reclaiming the Crystal Foci": {
+      "x": 1825.23,
+      "y": 487.62,
+      "z": -796.28,
+      "step": 0,
+      "label": "Vence Laden",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "Removing the Darkness From Within...": {
+      "x": 649,
+      "y": -13,
+      "z": 240,
+      "step": 2,
+      "label": "Talk to Allysha Lanne in South Qeynos located on the second floor of The Herb Jar on Lucie Street.",
+      "zone": "South Qeynos",
+      "confidence": null
+    },
+    "Restoration of the Lamentation": {
+      "x": 29,
+      "y": 1,
+      "z": 29,
+      "step": 0,
+      "label": "Return to Ashe Boderra ( 29, 1, 29 ) Copy",
+      "zone": "Enchanted Lands",
+      "confidence": 0.63
+    },
+    "Restored To Glory": {
+      "x": 445,
+      "y": -8,
+      "z": -267,
+      "step": 0,
+      "label": "Talk with Thelia N'Fyre in Darklight Wood at ( 445, -8, -267 ) Copy",
+      "zone": "Darklight Wood",
+      "confidence": 0.97
+    },
+    "Rrarwrk": {
+      "x": 3170,
+      "y": -1,
+      "z": 1119,
+      "step": 0,
+      "label": "In Timorous Deep, head west of Gorowyn until you find a Pirate Ship on the water ( 3170, -1, 1119 ) Copy",
+      "zone": "Timorous Deep",
+      "confidence": 0.95
+    },
+    "Shattered Sanity of the Mad": {
+      "x": -707.58,
+      "y": 32.06,
+      "z": 232.25,
+      "step": 0,
+      "label": "Dartain",
+      "zone": "Neriak, City of Hate",
+      "confidence": 0.98
+    },
+    "Sing a Song of Sorrow": {
+      "x": 2604,
+      "y": 87,
+      "z": 1296,
+      "step": 0,
+      "label": "Smendrik",
+      "zone": "Timorous Deep",
+      "confidence": 0.98
+    },
+    "Son'Nia's Song": {
+      "x": -74.84,
+      "y": -42.1,
+      "z": 398.88,
+      "step": 0,
+      "label": "Son'Nia",
+      "zone": "The Barren Sky",
+      "confidence": 0.98
+    },
+    "The Bones of Insanity": {
+      "x": 5.09,
+      "y": -37.95,
+      "z": -109.31,
+      "step": 0,
+      "label": "Tohsa B'hondus",
+      "zone": "The City of Freeport",
+      "confidence": 0.98
+    },
+    "The Broken Fist": {
+      "x": 215,
+      "y": -4,
+      "z": 101,
+      "step": 1,
+      "label": "Speak with Gurb the Master Weaponsmith in the City of Freeport at West Freeport",
+      "zone": "West Freeport",
+      "confidence": null
+    },
+    "The Broken Hand": {
+      "x": 31,
+      "y": -56,
+      "z": -1184,
+      "step": 0,
+      "label": "Chronicler Lao",
+      "zone": "The Pillars of Flame",
+      "confidence": 0.98
+    },
+    "The Consequences of a Berserker's Rage": {
+      "x": -1025,
+      "y": -231,
+      "z": -1215,
+      "step": 0,
+      "label": "Speak to Apprentice Neemari, at",
+      "zone": null,
+      "confidence": null
+    },
+    "The Cunning of the Trakaraptor": {
+      "x": -605,
+      "y": -40,
+      "z": 276,
+      "step": 1,
+      "label": "Go to Kunzar Jungle (the druid ring in there is close to the area you need.)",
+      "zone": "Kunzar Jungle",
+      "confidence": 0.98
+    },
+    "The Dream Scorcher": {
+      "x": -2631,
+      "y": -396,
+      "z": -2104,
+      "step": 0,
+      "label": "Crowhood the Olden",
+      "zone": "Fens of Nathsar",
+      "confidence": 0.98
+    },
+    "The Everlasting Quill of Ashe Boderra": {
+      "x": 29,
+      "y": 1,
+      "z": 29,
+      "step": 1,
+      "label": "Speak to Ashe Boderra",
+      "zone": "Enchanted Lands",
+      "confidence": 0.63
+    },
+    "The Fist of War": {
+      "x": 70,
+      "y": -17,
+      "z": 125,
+      "step": 0,
+      "label": "A Juggernaut taskmaster",
+      "zone": "The City of Freeport",
+      "confidence": 0.75
+    },
+    "The Flute of a Thousand Colors": {
+      "x": 1725.91,
+      "y": 5.14,
+      "z": 648.57,
+      "step": 1,
+      "label": "silver threaded windhowler reed",
+      "zone": "Timorous Deep",
+      "confidence": 0.98
+    },
+    "The Healing of Amree": {
+      "x": 1908.6,
+      "y": 480,
+      "z": -769.66,
+      "step": 0,
+      "label": "the mailbox in Teren's Grasp",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "The Heart of Treachery": {
+      "x": 104,
+      "y": -60,
+      "z": -503,
+      "step": 0,
+      "label": "Traitor's Pass",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.78
+    },
+    "The Legacy of Yasva V'Alear": {
+      "x": -331,
+      "y": -61,
+      "z": -503,
+      "step": 1,
+      "label": "the Fort",
+      "zone": "Kylong Plains",
+      "confidence": null
+    },
+    "The Maiden of Masks": {
+      "x": -693,
+      "y": -127,
+      "z": 684,
+      "step": 0,
+      "label": "Free the hafling Tofus Jepner at",
+      "zone": null,
+      "confidence": null
+    },
+    "The Mended Hand": {
+      "x": -276,
+      "y": 150,
+      "z": -1123,
+      "step": 1,
+      "label": "rock formation",
+      "zone": "Kunzar Jungle",
+      "confidence": 0.98
+    },
+    "The Pride of the Chokidai": {
+      "x": 1767,
+      "y": 155,
+      "z": -2564,
+      "step": 1,
+      "label": "Find the Chokidai pack at",
+      "zone": "Chardok",
+      "confidence": null
+    },
+    "The Responsibilities of a Berserker's Rage": {
+      "x": 44.49,
+      "y": -9.99,
+      "z": 72.07,
+      "step": 0,
+      "label": "Vettius Or'Kales",
+      "zone": "Shattered Lands",
+      "confidence": null
+    },
+    "The Saga of Yasva V'Alear": {
+      "x": -366.27,
+      "y": -111.84,
+      "z": 1049.53,
+      "step": 1,
+      "label": "Loremaster Hax",
+      "zone": "Kunzar Jungle",
+      "confidence": 0.98
+    },
+    "The Search for Vel'Arek": {
+      "x": -1875,
+      "y": -35,
+      "z": -637,
+      "step": 0,
+      "label": "The NEW Steel Warriors",
+      "zone": "Antonica",
+      "confidence": 0.98
+    },
+    "The Sphere of Containment": {
+      "x": 1832.5,
+      "y": 483.33,
+      "z": -805.93,
+      "step": 0,
+      "label": "an apprentice",
+      "zone": "Kylong Plains",
+      "confidence": 0.98
+    },
+    "The Survival of the Rhino": {
+      "x": -850,
+      "y": -121,
+      "z": -607,
+      "step": 1,
+      "label": "Travel to Jarsath Wastes and head to",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.57
+    },
+    "The Untapped Power!": {
+      "x": -886.24,
+      "y": -16.15,
+      "z": -1157.02,
+      "step": 0,
+      "label": "Ryvenar Sal'Vara",
+      "zone": "Jarsath Wastes",
+      "confidence": 0.98
+    },
+    "The Vanity of the Cockatrice": {
+      "x": 357,
+      "y": -59,
+      "z": 1012,
+      "step": 1,
+      "label": "Head to Fens of Nathsar, use Cockatrice mask and speak to a sharp stonebeak at",
+      "zone": "Fens of Nathsar",
+      "confidence": 0.7
+    },
+    "The Will of Kyrtoxxulous": {
+      "x": -238,
+      "y": -56,
+      "z": -4,
+      "step": 0,
+      "label": "Take A gaudy looking dagger from over the fireplace inside the East Freeport inn ( -238, -56, -4 ) Copy",
+      "zone": "East Freeport",
+      "confidence": null
+    },
+    "They Have Searched an Age for a Dark Champion...": {
+      "x": -295.57,
+      "y": 29.2,
+      "z": 184.01,
+      "step": 0,
+      "label": "Xilania Nevagon",
+      "zone": "Neriak, City of Hate",
+      "confidence": 0.98
+    },
+    "Wounds of the Heart": {
+      "x": -181,
+      "y": 11,
+      "z": -129,
+      "step": 3,
+      "label": "Find and speak with Daluntiir Tiwele right next to the The Abandoned Village Sokokar post in a small columned gazebo",
+      "zone": null,
+      "confidence": null
+    }
+  }
+}

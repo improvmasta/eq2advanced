@@ -587,6 +587,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Refine character-bound planner outlines
 - 2026-08-16 (codex): Document authoritative epic step coverage
 - 2026-08-16 (codex): Refine Planner workspace and recommendations rail
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
@@ -606,4 +607,3 @@ builds here with `bash build.sh`.
 - 2026-08-15 (codex): Polish chat trade labels and window chrome
 - 2026-08-14 (codex): Overhaul admin workspace around accounts and site health
 - 2026-08-14 (codex): Improve item cards and public chat controls
-- 2026-08-14 (codex): Mark admin redesign documentation implemented

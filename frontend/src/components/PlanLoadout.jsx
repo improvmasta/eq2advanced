@@ -597,7 +597,16 @@ function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
                   title={`Cycle ${def.label} — choice ${index + 1} of ${options.length}`}
                   onClick={(e) => cycle(1, e)}>›</button>
         )}
-        <GearIcon item={shown} current={isCurrent} />
+        {shown?.card && !occupied ? (
+          <Hover className="examinecard" width={350} card={<Examine row={shown.card} />}>
+            <span className="plansloticonexamine" tabIndex="0"
+                  aria-label={`Examine ${shown.name}`}>
+              <GearIcon item={shown} current={isCurrent} />
+            </span>
+          </Hover>
+        ) : (
+          <GearIcon item={shown} current={isCurrent} />
+        )}
       </span>
       <span className="planslotcopy">
         <b>{def.label}</b>
@@ -759,11 +768,6 @@ function ProjectedStats({ character, shortlist, active, catalog, statLabel, stat
     <div className="planstats">
       <div className="planstathead">
         <b>Projected Stats</b>
-        <span className="planstatlegend">
-          <i className="equipped">Equipped</i>
-          <i className="upgrade">Upgrade</i>
-          <i className="downgrade">Downgrade</i>
-        </span>
       </div>
       {STAT_GROUPS.map(([title, keys]) => {
         const rows = keys.filter((key) => base[key] != null)
@@ -817,7 +821,7 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                                      onLookup, lookupBusy, lookupErr,
                                      savedSets, savedSetSlot, savedSetBusy, savedSetStatus,
                                      savedSetDirty,
-                                     onSavedSetSlot, onSaveSet,
+                                     onSavedSetSlot, onSaveSet, onRenameSet,
                                      onLoadSet,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
@@ -851,16 +855,15 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             <span className="loadoutmeta">{character?.character
               ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}</>
               : 'Look one up, or plan against an empty window'}</span>
-            <SavedSetControls sets={savedSets} slot={savedSetSlot}
-              signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
-              dirty={savedSetDirty}
-              onSlot={onSavedSetSlot} onSave={onSaveSet}
-              onLoad={onLoadSet} />
+            <button className="chip resetgear" type="button" onClick={onReset}
+                    disabled={!Object.keys(active).length
+                      && !Object.keys(shortlist.set_slots || {}).length
+                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset Gear</button>
           </div>
         </div>
         {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It occupies the compact
-            top-right row; reset and the account picker share the row below,
-            aligned with level and Gear sets on the left.
+            top-right row. Reset belongs beside the class it resets; the
+            account picker and Gear sets form the right-aligned row below.
 
             CHARACTER RECORDS ARE PUBLIC, so looking one up needs no account.
             Trying gear on your own toon is the whole point of this panel, and
@@ -875,10 +878,6 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
           </div>
           <div className="loadoutcharacterrow">
             {signedIn && characters === null && <span className="muted">Loading…</span>}
-            <button className="chip resetgear" type="button" onClick={onReset}
-                    disabled={!Object.keys(active).length
-                      && !Object.keys(shortlist.set_slots || {}).length
-                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset to Equipped</button>
             {characters?.length > 0 && (
               <label className="plancharacterpick">
                 <span>Select Char</span>
@@ -887,6 +886,11 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                         options={charOptions} />
               </label>
             )}
+            <SavedSetControls sets={savedSets} slot={savedSetSlot}
+              signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
+              dirty={savedSetDirty}
+              onSlot={onSavedSetSlot} onSave={onSaveSet} onRename={onRenameSet}
+              onLoad={onLoadSet} />
           </div>
         </div>
       </div>
@@ -917,7 +921,7 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
 }
 
 function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
-                            onSlot, onSave, onLoad }) {
+                            onSlot, onSave, onRename, onLoad }) {
   const selected = sets?.find((row) => row.slot === slot)
   const meaningfulCount = Math.max(1, ...(sets || [])
     .filter((row) => row.payload || row.name !== `Set ${row.slot}`)
@@ -952,7 +956,8 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
     setEditing(true)
   }
   const save = () => {
-    onSave(slot, draft)
+    if (selected?.payload) onRename(slot, draft)
+    else onSave(slot, draft)
     setEditing(false)
   }
   return (
@@ -975,13 +980,15 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
         <div className="plansavedactions">
           {dirty && (
             <button type="button" className="chip on" disabled={busy}
-                    onClick={() => onSave(slot, selected.name)}>Save...</button>
+                    onClick={() => onSave(slot, selected.name)}>Save changes</button>
           )}
-          <button type="button" className="iconbtn plansavededit" disabled={busy}
-                  aria-label={selected.payload ? `Edit ${selected.name}` : `Save ${selected.name}`}
-                  title={selected.payload ? `Edit ${selected.name}` : `Save ${selected.name}`}
+          <button type="button"
+                  className={selected.payload ? 'iconbtn plansavededit' : 'chip plansavedsave'}
+                  disabled={busy}
+                  aria-label={selected.payload ? `Rename ${selected.name}` : 'Save current gear as a set'}
+                  title={selected.payload ? `Rename ${selected.name}` : 'Save current gear as a set'}
                   onClick={() => setEditing(true)}>
-            ✎
+            {selected.payload ? '✎' : 'Save gear set'}
           </button>
           {status && <span className="plansavedstatus">{status}</span>}
         </div>
@@ -989,10 +996,16 @@ function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
       {editing && (
         <div className="plansavedpanel">
           <input value={draft} maxLength={40} aria-label={`Name for gear set ${slot}`}
-                 onChange={(event) => setDraft(event.target.value)} />
+                 autoFocus
+                 onChange={(event) => setDraft(event.target.value)}
+                 onKeyDown={(event) => {
+                   if (event.key === 'Enter') save()
+                   if (event.key === 'Escape') leave()
+                 }} />
           <button type="button" className="chip on" disabled={busy}
-                  onClick={save}>Save set</button>
-          <button type="button" className="btnlink" onClick={leave}>Cancel</button>
+                  onClick={save}>{selected?.payload ? 'Save name' : 'Save set'}</button>
+          <button type="button" className="iconbtn plansavedclose" onClick={leave}
+                  aria-label="Close gear set editor" title="Close">×</button>
           <span className="plansavedstatus">{status}</span>
           {!signedIn && (
             <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>

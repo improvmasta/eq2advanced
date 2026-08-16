@@ -540,11 +540,89 @@ def test_prerequisites_beat_level_in_the_outline_order():
     assert keys == ["free", "first", "later"]
 
 
+def test_a_prerequisite_closure_is_one_questline_unit():
+    ordered = [
+        {"key": "first", "name": "First", "epic": False, "timeline": "A"},
+        {"key": "middle", "name": "Middle", "epic": False, "timeline": "B"},
+        {"key": "reward", "name": "Reward", "epic": False, "timeline": "B",
+         "gets": [{"page_title": "Hammer", "name": "Worker Sledgemallet",
+                   "via_set": None}]},
+    ]
+    lines = outline._questlines(
+        ordered, {"reward"}, {"first": {"reward"}, "middle": {"reward"}})
+    assert lines == [{
+        "key": "questline:reward",
+        "pages": ["first", "middle", "reward"],
+        "goals": ["reward"],
+        "targets": [{"page_title": "Hammer", "name": "Worker Sledgemallet",
+                     "via_set": None}],
+        "timeline": None,
+        "count": 3,
+    }]
+
+
 def test_item_and_set_picks_are_reported_when_they_cannot_be_placed(tmp_path):
     out = outline.outline(
         fresh_db(tmp_path), eras=["rok"], items=["Missing Item"],
         sets=["Missing Set"])
     assert out["unplaced"] == ["Missing Item", "Missing Set"]
+
+
+def test_outline_rejects_items_and_set_carriers_for_another_class(tmp_path):
+    conn = fresh_db(tmp_path)
+    with conn:
+        conn.executemany(
+            "INSERT INTO plan_items (page_title,name,era,slot,level,tier,classes,"
+            "set_name,stats_json,adorns_json,fetched_ts) VALUES "
+            "(?,?, 'rok','Primary',80,'FABLED',?,?, '{}','{}',0)", [
+                ("Necro Epic", "Necro Epic", "necromancer", None),
+                ("Wizard Epic", "Wizard Epic", "wizard", None),
+                ("Wizard Set Hat", "Wizard Set Hat", "wizard", "Arcane Set"),
+            ])
+        conn.executemany(
+            "INSERT INTO plan_sources (page_title,source_page,source,kind,era) "
+            "VALUES (?,? ,?,'quest','rok')", [
+                ("Necro Epic", "Necro Quest", "Necro Quest"),
+                ("Wizard Epic", "Wizard Quest", "Wizard Quest"),
+                ("Wizard Set Hat", "Wizard Set Quest", "Wizard Set Quest"),
+            ])
+        conn.executemany(
+            "INSERT INTO plan_quests (page_title,name,era,kind,fetched_ts) "
+            "VALUES (?,?,'rok','solo',0)", [
+                ("Necro Quest", "Necro Quest"),
+                ("Wizard Quest", "Wizard Quest"),
+                ("Wizard Set Quest", "Wizard Set Quest"),
+            ])
+
+    result = outline.outline(
+        conn, eras=["rok"], items=["Necro Epic", "Wizard Epic"],
+        sets=["Arcane Set"], class_name="necromancer")
+    assert [row["name"] for row in result["rows"]] == ["Necro Quest"]
+    assert result["ineligible"] == ["Arcane Set", "Wizard Epic"]
+
+
+def test_epic_timeline_rejects_another_class_when_item_classes_are_unknown(tmp_path):
+    conn = fresh_db(tmp_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO plan_items (page_title,name,era,slot,classes,stats_json,"
+            "adorns_json,fetched_ts) VALUES "
+            "('Old Wizard Epic','Old Wizard Epic','rok','Primary','', '{}','{}',0)")
+        conn.execute(
+            "INSERT INTO plan_sources (page_title,source_page,source,kind,era) "
+            "VALUES ('Old Wizard Epic','Wizard Start','Wizard Start','quest','rok')")
+        conn.execute(
+            "INSERT INTO plan_quests (page_title,name,era,timeline,kind,fetched_ts) "
+            "VALUES ('Wizard Start','Wizard Start','rok','Wizard Epic Weapon','solo',0)")
+        conn.execute(
+            "INSERT INTO plan_epic_timelines "
+            "(title,class_name,quests_json,requirements_json,source_url,source_version,fetched_ts) "
+            "VALUES ('Wizard Epic Weapon Timeline','wizard','[]','[]','https://wik',1,0)")
+
+    result = outline.outline(
+        conn, eras=["rok"], items=["Old Wizard Epic"], class_name="necromancer")
+    assert result["rows"] == []
+    assert result["ineligible"] == ["Old Wizard Epic"]
 
 
 def test_wikq2_epic_timeline_supplies_requirements_and_replaces_the_loop(tmp_path):
@@ -562,7 +640,7 @@ def test_wikq2_epic_timeline_supplies_requirements_and_replaces_the_loop(tmp_pat
             "'troubador','{}','{}',0)")
         conn.execute(
             "INSERT INTO plan_sources (page_title,source_page,source,kind,era,detail) "
-            "VALUES ('Ayonic Axe (Fabled)','An Ayonic Journey','An Ayonic Journey',"
+            "VALUES ('Ayonic Axe (Fabled)','Feeding the Flame of Yore','Feeding the Flame of Yore',"
             "'quest','rok','Troubador Epic Weapon')")
         conn.executemany(
             "INSERT INTO plan_quests (page_title,name,era,timeline,kind,fetched_ts) "
@@ -593,6 +671,46 @@ def test_wikq2_epic_timeline_supplies_requirements_and_replaces_the_loop(tmp_pat
         "An Ayonic Journey", "Feeding the Flame of Yore"]
     assert "Son'Nia's Song" not in [row["name"] for row in result["rows"]]
     assert [row["requirement"] for row in result["rows"]] == [True, True, False, False]
+    epic_quests = sorted(
+        (row for row in result["rows"] if row["kind"] == "quest"
+         and not row["requirement"]),
+        key=lambda row: row["epic_order"])
+    assert [row["name"] for row in epic_quests] == [
+        "An Ayonic Journey", "Feeding the Flame of Yore"]
+    assert all(row["epic"] for row in result["rows"])
+    assert all("start_waypoint" in row for row in epic_quests)
+
+
+def test_epic_snapshot_keeps_a_canonical_step_missing_from_the_quest_crawl(tmp_path):
+    conn = fresh_db(tmp_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO plan_items (page_title,name,era,slot,tier,classes,stats_json,"
+            "adorns_json,fetched_ts) VALUES "
+            "('Test Epic','Test Epic','rok','Primary','FABLED','wizard','{}','{}',0)")
+        conn.execute(
+            "INSERT INTO plan_sources (page_title,source_page,source,kind,era,detail) "
+            "VALUES ('Test Epic','Reward Step','Reward Step','quest','rok','Wizard Epic Weapon')")
+        conn.execute(
+            "INSERT INTO plan_quests (page_title,name,era,timeline,kind,fetched_ts) "
+            "VALUES ('Reward Step','Reward Step','rok','Wizard Epic Weapon','group',0)")
+        conn.execute(
+            "INSERT INTO plan_epic_timelines "
+            "(title,class_name,quests_json,requirements_json,source_url,source_version,fetched_ts) "
+            "VALUES (?,?,?,?,?,1,0)", (
+                "Wizard Epic Weapon Timeline", "wizard",
+                json.dumps([
+                    {"title": "Uncrawled Step", "url": "https://wik/Uncrawled_Step"},
+                    {"title": "Reward Step", "url": "https://wik/Reward_Step"},
+                    {"title": "Later Mythical Work", "url": "https://wik/Later"},
+                ]), "[]", "https://wik/Wizard_Epic_Weapon_Timeline"))
+
+    result = outline.outline(
+        conn, eras=["rok"], items=["Test Epic"], class_name="wizard")
+    quests = sorted((row for row in result["rows"] if not row["requirement"]),
+                    key=lambda row: row["epic_order"])
+    assert [row["name"] for row in quests] == ["Uncrawled Step", "Reward Step"]
+    assert quests[0]["zone"] is None and quests[0]["difficulty"] == "unknown"
 
 
 def test_wikq2_epic_export_requires_all_24_original_classes():
