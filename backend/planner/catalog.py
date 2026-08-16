@@ -32,6 +32,29 @@ from planner import wiki
 # only the arithmetic that turns an order into a sort.
 DECAY = 0.6
 
+# Set pages mix typed-looking additive bonuses with named effects.  Parse only
+# the former, and only when the whole sentence is the number plus a known
+# label.  "Applies Focus: ..." remains prose: turning a named spell effect into
+# arithmetic would be the false precision the planner otherwise avoids.
+_SET_STAT_LABELS = {
+    "potency": "potency", "crit chance": "crit",
+    "ability modifier": "abmod", "ability mod": "abmod",
+    "casting speed": "acspeed", "flurry": "flurry",
+    "wis": "wis", "sta": "sta",
+    "in-combat health regeneration": "hregen",
+    "health": "health", "power": "power",
+}
+
+
+def set_bonus_stats(text: str) -> dict[str, float]:
+    """Conservatively type one additive set-bonus line."""
+    import re
+    match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s+(.+?)\|?\s*", text or "")
+    if not match:
+        return {}
+    key = _SET_STAT_LABELS.get(match.group(2).strip().lower())
+    return {key: float(match.group(1))} if key else {}
+
 
 def weights(order: list[str]) -> dict[str, float]:
     """Only `wiki.PRIORITY_STATS` rank, whatever a hand-built URL asks for.
@@ -166,6 +189,11 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
     want_classes = {c for c in (classes or []) if c}
     want_armor = {a.title() for a in (armor or []) if a}
     want_slots = {s.lower() for s in (slots or []) if s}
+    # A shield occupies the character window's Secondary position even though
+    # EquipInformation calls its item category `Shield`. Clicking that concrete
+    # slot must therefore find both off-hand items and shields.
+    if "secondary" in want_slots:
+        want_slots.add("shield")
     want_tiers = {t.upper() for t in (tiers or []) if t}
     want_kinds = {k for k in (kinds or []) if k}
     need = [s for s in (required or []) if s in wiki.STAT_LABEL]
@@ -208,6 +236,15 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
         kept.append(row)
 
     kept.sort(key=lambda r: (-r["score"], -(r["level"] or 0), r["name"]))
+    set_names = sorted({r["set_name"] for r in kept if r.get("set_name")})
+    set_hover = {}
+    if set_names:
+        for set_row in conn.execute(
+                "SELECT name, bonuses_json FROM plan_sets WHERE name IN "
+                f"({','.join('?' * len(set_names))})", set_names):
+            set_hover[set_row["name"]] = json.loads(set_row["bonuses_json"] or "[]")
+    for row in kept:
+        row["_set_bonuses"] = set_hover.get(row.get("set_name"), [])
     return {
         "total": len(kept),
         "items": [_item_out(r) for r in kept[:limit]],
@@ -253,17 +290,31 @@ def card(row: dict) -> dict:
     stats.sort(key=lambda r: (-float(r["value"]), r["name"]))
     icon = row["icon"] if row["icon"] and icon_path(row["icon"]).exists() else None
     names = [n.strip() for n in (row["effects"] or "").split(",") if n.strip()]
+    included = None
+    if row.get("set_name"):
+        included = {
+            "name": row["set_name"], "color": "turquoise", "predicate": None,
+            "flags": [], "requires_equip": True,
+            "set_bonuses": [{
+                "required": bonus.get("pieces"), "effect": None,
+                "descriptions": [bonus.get("text", "").replace("|", "").strip()],
+            } for bonus in row.get("_set_bonuses", []) if bonus.get("text")],
+        }
     return {
         "name": row["name"],
         "rarity": (row["tier"] or "").title() or None,
         "icon": icon,
         "wiki": f"https://eq2.fandom.com/wiki/{row['page_title'].replace(' ', '_')}",
+        "type": row.get("dtype") or row.get("wtype"),
+        "slot": row.get("slot_label") or row.get("slot"),
+        "level": row.get("level"),
         "stats": {
             "stats": stats, "effects": effects,
             "flags": [f.strip().title() for f in (row["flags"] or "").split()
                       if f.strip()],
             "adornments": [c for c in wiki.ADORN_COLORS
                            for _ in range(row["adorns"].get(c) or 0)],
+            "included_adornment": included,
         },
         "effects": {"names": names,
                     "desc": [{"depth": 1, "text": t} for t in
@@ -342,11 +393,14 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
         can_host = sorted(
             (h for h in hosts if (h["level"] or 0) >= level),
             key=lambda x: (-x["score"], x["name"]))
+        bonuses = json.loads(r["bonuses_json"] or "[]")
+        for bonus in bonuses:
+            bonus["stats"] = set_bonus_stats(bonus.get("text") or "")
         out.append({
             "name": r["name"], "page_title": r["page_title"], "era": r["era"],
             "level": r["level"],
             "pieces": json.loads(r["pieces_json"] or "[]"),
-            "bonuses": json.loads(r["bonuses_json"] or "[]"),
+            "bonuses": bonuses,
             "carriers": [_piece_out(x) for x in mine],
             "hosts": [_piece_out(x) for x in can_host[:12]],
             "host_count": len(can_host),

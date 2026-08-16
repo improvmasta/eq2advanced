@@ -1,6 +1,6 @@
 # The Planner — gear targets and a leveling outline
 
-A page that answers two questions for one character on one expansion:
+A page that answers three questions for one character on one expansion:
 
 - **What should I be chasing?** Given the stats you are pushing, which drops,
   quest rewards and set adornments in this era are worth your time — and where do
@@ -8,6 +8,9 @@ A page that answers two questions for one character on one expansion:
 - **What should I be doing?** Given what you picked, an ordered outline of the
   quests and targets that get you there, with the expansion's standard work
   hoisted to the front and the trips that overlap painted on top.
+- **What would that build change?** Optionally load one of your cached Census
+  characters, cycle current and planned items in concrete equipment slots, and
+  project additive stat changes before chasing the gear.
 
 **Which expansions count is the READER's choice** — a set of toggles at the top
 of the rail, not a build-time constant. EoF and RoK are what exist today,
@@ -414,47 +417,96 @@ temples" is a trip. "Cluster 7" is a database row.
 
 ### The shape of the page
 
-Two regions, permanently: a **shortlist rail** on the left and a **tabbed main
+Two regions, permanently: a compact **plan rail** on the left and a **tabbed main
 area**. This is `ZoneRun`'s rail-plus-main geometry and reuses its layout CSS
-and its `.workspace` row rules.
+and its `.workspace` row rules. The Gear tab opens on the compact
+equipment-and-stats workspace, followed by search controls and the results.
 
 ```
 ┌──────────────┬────────────────────────────────────────────────┐
-│  SHORTLIST   │  [ Gear ]  [ Outline ]                          │
+│  PLAN        │  [ Gear ]  [ Outline ]                          │
 │              │                                                 │
-│  Necromancer │  ── priority: abmod › reuse › cast ──  [edit]   │
-│  RoK · 80    │                                                 │
-│              │  filters: slot ▾  tier ▾  source ▾  class ▾     │
-│  ▸ Feet      │                                                 │
-│    Focused…  │  ┌───────────────────────────────────────────┐ │
-│  ▸ Adorns    │  │ item table (SortableTable, frozen)        │ │
-│    Mist Cov… │  │                                           │ │
-│  ▸ Targets   │  └───────────────────────────────────────────┘ │
-│    Chardok   │                                                 │
+│  Necromancer │  ┌ armour + weapons ┬ charms + jewelry ┬ stats┐│
+│  RoK · 80    │  └ items + inline sockets ─────────────┴──────┘│
+│              │  search: item name                 level 70–80 │
+│  Gear: 4     │  filter: slot ▾ armour ▾ tier ▾ source ▾       │
+│              │  [1 ability][2 casting][3 reuse] haste dps…    │
+│  Adorns      │                                                 │
+│    Mist Cov… │  ┌───────────────────────────────────────────┐ │
+│  Targets     │  │ item table (SortableTable, frozen)        │ │
+│    Chardok   │  └───────────────────────────────────────────┘ │
 └──────────────┴────────────────────────────────────────────────┘
 ```
 
-**The rail is the bridge between the tabs.** You fill it on Gear and consume it
-on Outline. It is always visible so the Outline is never a thing you generated
-and lost — it is a live view of what is in the rail.
+**The rail is the bridge between the tabs.** Gear choices live in their actual
+slots rather than being repeated as a flat shortlist; the rail says how many
+choices exist and keeps adornment sets and independent targets visible. The
+Outline consumes the same browser-local plan.
 
-**The rail holds THREE kinds of thing, and they are listed separately**: items,
-adornments, and targets (a mob or a quest you want for its own sake). They are
-separate because a turquoise is not its host item and a raid target is not a
-slot.
+The plan still holds THREE kinds of thing separately: items, adornments, and
+targets (a mob or a quest you want for its own sake). A turquoise is not its
+host item and a raid target is not a slot.
+
+### The equipment and stats workspace
+
+The layout borrows the game's **mental model**, not another site's row design:
+armour and weapons keep the game's left-side sequence, while charms and jewelry
+keep its right-side sequence. There is deliberately no paper doll: it consumed
+the page's most valuable vertical space without helping a gear decision. Rows
+and icons are compact enough to keep search and results prominent, while the
+stat ledger remains clean site UI.
+
+Clicking a slot filters the catalog to legal choices for that position. Adding
+an item puts it in that concrete slot and activates it. Multiple candidates stay
+in the slot and cycle with previous/next controls; **Current is always option
+one**. Finger, Ear, Wrist and Charm keep their first/second identities. A
+planned two-hander occupies Primary and removes Secondary from the projection.
+
+The projection is explicit arithmetic over cached data:
+
+`current Census total − current item stats + active planned item stats`
+
+Only additive numbers enter it. Procs, named focus effects, cap behavior and
+moved adornments are not guessed. The panel labels itself an estimate and says
+what is excluded.
+
+### Adornment sockets and set bonuses
+
+Adornments are **socket icons on every equipment row**, beside the item they
+belong to rather than in a detail strip below the window. White and orange
+sockets show whether Census reports an installed id; clicking a turquoise
+socket cycles through the shortlisted set adornments the host item's level can
+accept. Hovering an installed adorn opens the same examine window with its
+name, icon, type, level, stats and set thresholds when those records are cached.
+
+Every change recomputes installed pieces and the set threshold ledger
+immediately. Named effects remain prose and visibly activate at their threshold.
+Simple whole-line additive bonuses (Ability Mod, Potency, Crit Chance, Casting
+Speed, Flurry, attributes, Health and Power) are conservatively typed by the
+server and also feed projected stats. Any sentence that is not exactly a known
+number-plus-stat remains prose.
 
 ### The priority editor
 
 The most novel control on the page, and the easiest to get wrong.
 
-**Drag-to-reorder list, no numbers, no sliders.** The header shows the current
-order inline as `abmod › reuse › cast` and `[edit]` opens the list. Stats not in
-the list are not scored — absence is a statement.
+**One draggable line, no weights and no sliders.** Every rankable stat stays on
+one horizontal track. The reader chooses whether the leftmost one, two or three
+positions score; those positions are numbered and gold-filled, while every stat
+to the right stays readable on a recessed surface. Dragging (or Left/Right on
+the keyboard) moves a stat across that boundary. The complete track fits the
+working column without a horizontal scroller.
 
 **A stat can be marked *required*, which moves it from ranking to filtering.**
-One toggle per row, visually distinct from the ordering handle. This covers "I
-will not look at anything without ability mod" without pretending a weight can
-express a hard requirement.
+The Requirements panel controls this separately from ordering; the stat receives
+a quiet amber underline on the main rail, rather than another button crammed
+inside its label. This covers "I will not look at anything without ability mod"
+without pretending a weight can express a hard requirement.
+
+Search itself is one framed control window with four bands: name and item level,
+facets, stat priority, and the attached result count/scoring summary. Selected
+facets use a strong gold state; inactive controls remain readable instead of
+looking disabled.
 
 **A separate "interested in procs" switch**, because that is a different axis
 from any stat order and the reader said so in those words. On, the table's proc
@@ -469,6 +521,11 @@ everywhere.
 One `SortableTable`, frozen, with the house column-preference behavior
 (`eq2adv:cols:planner`). Columns: name, tier, level, score, the reader's
 priority stats as their own columns, source, and two badge columns.
+
+The name, slot, armour, tier, source and **minimum/maximum item level** filters
+are independent of scoring. The name hover uses the full examine shape: item
+level, slot/type, additive stats, effects, socket colors, included set adornment
+and every known threshold—not merely the small table columns.
 
 **The two badges are the point of the table.** *Carries a set turquoise* and
 *has a proc* both say "this row's value is not in its stat columns." Clicking
@@ -575,8 +632,11 @@ progress tracking is a later concern and should not hold up the joint route.
 - **Unresolved item** — a name, no card. `GET /api/items/{id}/card` answers
   `null` for an unresolved id and must not trigger resolution; **`items.ensure`
   is network-bound and never runs in a request handler.**
-- **Census dark** — the page works. Anything Census-only degrades to the wiki
-  value with no error surface; intermittency is normal, not a fault.
+- **Census dark** — the page works. Installed adorn IDs still render as
+  equipped rather than empty even when their name records have not hydrated;
+  the next successful character refresh fills names/icons/stats. The reader's
+  last cached gear/stats remain available and signed-out readers keep the
+  complete catalog. Intermittency is normal, not a fault.
 - **Narrow viewport** — the rail collapses to a summary bar above the main area
   at the same breakpoint the top nav wraps (900px). The outline stays a single
   column at every width; the item table scrolls sideways inside its wrapper.
@@ -652,10 +712,12 @@ conservatively over matched rows. No cluster is invented for the 356 remaining
 unzoned coordinates; improving those cross-zone pages is a wikq2 concern and
 still constrains Phase 4's epic group view.
 
-**Phase 1 — the catalog and the search.** `plan_items`, `plan_sources`, the
-priority editor, the item table, `ItemCard` reuse, the set-adornment view, the
-shortlist rail. **This is the launch-critical piece** and it is useful with no
-outline at all.
+**Phase 1 — the catalog, search and loadout. COMPLETE (2026-08-15).**
+`plan_items`, `plan_sources`, the priority editor, item table, `ItemCard` reuse,
+set-adornment view, concrete equipment slots, optional Census current gear and
+candidate cycling, inline installed-adorn sockets and hover data, additive stat
+projection, socket assignment, level-range search and live set thresholds. It
+remains useful with no outline and with no account.
 
 **Phase 2 — the outline.** Prelude from layer 3, body from the prerequisite DAG,
 no tags. Ordered, readable, and honest about what it does not know.
@@ -695,10 +757,10 @@ no tags. Ordered, readable, and honest about what it does not know.
 ## State of play — 2026-08-15 (Phases 0–2 complete)
 
 **Phases 1 and 2 are BUILT and both expansions are synced; Phase 0 is now
-MEASURED.** The Gear tab builds the shortlist; the Outline tab consumes it as a
-hand-kept prelude followed by the prerequisite DAG. Phase 3 cluster tags may
-now proceed over the matched coordinate corpus. Phase 4 remains planned and
-must not pretend the unresolved cross-zone epic coordinates are located.
+MEASURED.** The Gear tab builds a slot-aware loadout and the Outline tab consumes
+the same plan as a hand-kept prelude followed by the prerequisite DAG. Phase 3
+cluster tags may now proceed over the matched coordinate corpus. Phase 4 remains
+planned and must not pretend unresolved cross-zone epic coordinates are located.
 
 ### What exists
 
@@ -706,14 +768,14 @@ must not pretend the unresolved cross-zone epic coordinates are located.
 | --- | --- |
 | Template parsing (`EquipInformation`, `NamedInformation`, `QuestInformation`, `AdornmentSet`), prerequisite OR-groups, class-template expansion, era caps | `backend/planner/wiki.py` |
 | The crawl: invert mobs and quests, follow disambiguations, reconcile quests and edges per era | `backend/planner/ingest.py` |
-| The read side: era filter, priority scoring, the set view, the examine card adapter | `backend/planner/catalog.py` |
+| The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
 | The outline read side: layer-3 prelude, prerequisite walk, stable topological order | `backend/planner/outline.py`, `backend/refdata/planner_standard.json` |
 | `GET /api/plan/meta` `/items` `/sets` `/outline` — no account, no POST | `backend/routers/planner_api.py` |
 | `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
-| The page: Gear/Outline tabs, filters, item/set views, persistent three-kind shortlist, ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanOutline.jsx`, `components/PriorityEditor.jsx` |
+| The page: game-grouped concrete slots, candidate cycling, projected stats, one-line draggable priority boundary, inline socket icons/live set tiers, level/name/facet filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx`, `components/PriorityEditor.jsx` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
 | The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |
-| 41 planner tests, including recorded wiki pages, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |
+| Planner tests including recorded wiki pages, set-bonus typing, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |
 
 ### What the latest full sync found (2026-08-15)
 
@@ -750,9 +812,10 @@ hard, it is impossible.
 **Potency and crit were the opening default and should never have been.**
 Lindsay: they are on every item, so they are not something to prioritize on.
 The catalog agreed once it existed — 80% and 72%. They came out of the priority
-options entirely (`wiki.PRIORITY_STATS`, enforced in `catalog.weights`), the
-page now opens on Ability Mod › Casting Speed › Reuse Speed, and the editor
-says in one line why they are missing.
+options entirely (`wiki.PRIORITY_STATS`, enforced in `catalog.weights`). The
+draggable track opens with Ability Mod, Casting Speed and Reuse Speed at its
+numbered left edge, and the Requirements panel says in one line why potency and
+crit are missing from the track.
 
 **`hategain` was not being parsed at all.** A real `EquipInformation` field the
 first pass missed; 11 items across both expansions carry it, and a tank wanting

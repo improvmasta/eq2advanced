@@ -25,7 +25,7 @@ import { createPortal } from 'react-dom'
    high its z-index goes — the same trap Picker.jsx and ShotViewer.jsx name. */
 
 export default function PriorityEditor({
-  groups, order, required, onChange, onClose,
+  groups, order, required, onChange, onClose, fixed = false,
 }) {
   const [drag, setDrag] = useState(null)      // the key being dragged
   const [over, setOver] = useState(null)      // the key it is hovering
@@ -72,22 +72,25 @@ export default function PriorityEditor({
     <div className="prioback">
       <div className="priopanel card" ref={box}>
         <div className="priohead">
-          <h3>What are you pushing?</h3>
+          <h3>{fixed ? 'Required stat filters' : 'What are you pushing?'}</h3>
           <button className="chip" onClick={onClose}>Done</button>
         </div>
         <p className="muted">
-          Drag to reorder. The order is all this tool is told — there are no
-          weights to tune. Anything not on the list is not scored.
+          {fixed
+            ? 'These are the numbered stats from the track. Mark one Required to hide every item that lacks it.'
+            : 'Drag to reorder. The order is all this tool is told — there are no weights to tune. Anything not on the list is not scored.'}
         </p>
         {/* Said once, here, because it is the question the list invites:
             potency and crit are on four items in five, so ranking by them
             ranks by nothing. Crit bonus is absent for a different reason
             again — TLE does not have the stat. */}
-        <p className="muted priowhy">
-          Potency and crit are not here: they are on nearly every item in these
-          expansions, so ordering by them separates nothing. Crit bonus is not
-          on TLE at all.
-        </p>
+        {!fixed && (
+          <p className="muted priowhy">
+            Potency and crit are not here: they are on nearly every item in these
+            expansions, so ordering by them separates nothing. Crit bonus is not
+            on TLE at all.
+          </p>
+        )}
 
         {order.length === 0 && (
           <p className="muted priohint">
@@ -95,7 +98,7 @@ export default function PriorityEditor({
           </p>
         )}
         <ol className="priolist">
-          {order.map((key) => (
+          {order.map((key, index) => (
             <li key={key}
                 className={`${drag === key ? 'dragging' : ''}${over === key ? ' over' : ''}`}
                 draggable
@@ -103,7 +106,9 @@ export default function PriorityEditor({
                 onDragEnd={() => { setDrag(null); setOver(null) }}
                 onDragOver={(e) => { e.preventDefault(); setOver(key) }}
                 onDrop={(e) => { e.preventDefault(); move(drag, key); setOver(null) }}>
-              <span className="priohandle" aria-hidden="true">⠿</span>
+              <span className="priohandle" aria-hidden="true">
+                <i>{index + 1}</i><b>⠿</b>
+              </span>
               <span className="prioname">{label[key] || key}</span>
               {/* Keyboard reaches the same reordering the pointer does — a
                   drag handle is not an accessible control on its own. */}
@@ -118,8 +123,10 @@ export default function PriorityEditor({
               <button className={`chip req${required.includes(key) ? ' on' : ''}`}
                       title="Only show items that have this at all"
                       onClick={() => toggleReq(key)}>Required</button>
-              <button className="iconbtn" title="Remove" aria-label={`Remove ${label[key]}`}
-                      onClick={() => drop(key)}>✕</button>
+              {!fixed && (
+                <button className="iconbtn" title="Remove" aria-label={`Remove ${label[key]}`}
+                        onClick={() => drop(key)}>✕</button>
+              )}
             </li>
           ))}
         </ol>
@@ -128,7 +135,7 @@ export default function PriorityEditor({
             group reaches every class, because every class casts abilities,
             and the other two are what a melee and a tank are shopping for.
             A group with nothing left in it is gone rather than empty. */}
-        <div className="prioadd">
+        {!fixed && <div className="prioadd">
           {groups.map((g) => {
             const left = g.stats.filter((s) => !inList.has(s.key))
             if (!left.length) return null
@@ -137,7 +144,7 @@ export default function PriorityEditor({
                 <div className="seclabel">{g.label}</div>
                 <div className="priogroup">
                   {left.map((s) => (
-                    <button key={s.key} className="chip" onClick={() => add(s.key)}>
+                    <button key={s.key} className="prioavailable" onClick={() => add(s.key)}>
                       + {s.label}
                     </button>
                   ))}
@@ -145,7 +152,7 @@ export default function PriorityEditor({
               </div>
             )
           })}
-        </div>
+        </div>}
       </div>
     </div>,
     document.body)

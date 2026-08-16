@@ -22,5 +22,21 @@
   "displayname": "Test Wand of Diffing",
   "tier": "FABLED",
   "type": "Weapon"
+ },
+ {
+  "id": 274745776,
+  "displayname": "Swift Casting",
+  "tier": "TREASURED",
+  "type": "Adornment",
+  "itemlevel": 70,
+  "iconid": 1234,
+  "modifiers": {
+   "spelltimecastpct": {"value": 2.0}
+  },
+  "typeinfo": {
+   "name": "adornment",
+   "color": "white",
+   "slot_list": [{"displayname": "Primary"}]
+  }
  }
 ]

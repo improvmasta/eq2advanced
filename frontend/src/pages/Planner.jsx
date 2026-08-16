@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Picker from '../components/Picker.jsx'
+import PlanLoadout, { eligiblePlanSlots } from '../components/PlanLoadout.jsx'
 import PlanOutline from '../components/PlanOutline.jsx'
 import PriorityEditor from '../components/PriorityEditor.jsx'
 import SortableTable from '../components/SortableTable.jsx'
@@ -19,16 +20,14 @@ import { useQueryState } from '../lib/useQueryState.js'
    score is measured against, the sets — follows from that choice, which is why
    it sits in the rail head above the shortlist rather than among the filters.
 
-   Two regions, permanently: a shortlist rail on the left and the main area on
-   the right. That is `ZoneRun`'s geometry and it reuses its `.workspace` rules.
-   The rail is the bridge — you fill it on Gear and consume it on Outline — so
-   it is always visible rather than a thing you open. */
+   Two regions, permanently: a compact plan rail on the left and the main area
+   on the right. Gear choices themselves live in concrete equipment positions
+   in the loadout, while the rail keeps the expansion/class frame and the two
+   non-gear plan kinds visible for the Outline. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
-/* Where a raider starts: the group that applies whatever you play, because
-   every class casts abilities. Not a recommendation and not a default anybody
-   is stuck with — an empty priority list scores nothing at all, and a page
-   that opens on an unranked table cannot show what it is for.
+/* The initial LEFT EDGE of the draggable stat track. The first one, two or
+   three positions rank; every other available stat follows on the same line.
 
    POTENCY AND CRIT ARE NOT HERE AND ARE NOT OFFERED. They are on about four
    items in five in these expansions, so ordering by them separates nothing;
@@ -40,34 +39,53 @@ const OPENING_ORDER = ['abmod', 'acspeed', 'arspeed']
 const KIND_LABEL = {
   raid: 'Raid', group: 'Group', solo: 'Solo', quest: 'Quest', unknown: 'Unknown',
 }
+const TRACK_LABEL = {
+  abmod: 'Ability', acspeed: 'Casting', arspeed: 'Reuse', aspeed: 'Haste',
+  dps: 'DPS', multi: 'Multi', flurry: 'Flurry', aeauto: 'AE Auto',
+  bchance: 'Block', hategain: 'Hate', mit: 'Mit', strike: 'Strike',
+  maxhealth: 'Max HP',
+}
 
 function loadShortlist() {
   try {
     const saved = JSON.parse(localStorage.getItem(SHORTLIST_KEY)) || {}
+    /* The former flat shortlist did not retain an item's concrete equipment
+       position or its additive stats. It cannot safely participate in a
+       subtract-and-replace projection, so preserve the still-compatible sets
+       and targets while dropping only those legacy gear rows. */
+    const items = Array.isArray(saved.items)
+      ? saved.items.filter((item) => item?.equip_slot && item?.stats)
+      : []
     return {
-      items: Array.isArray(saved.items) ? saved.items : [],
+      items,
       sets: Array.isArray(saved.sets) ? saved.sets : [],
       targets: Array.isArray(saved.targets) ? saved.targets : [],
+      active: saved.active && typeof saved.active === 'object' ? saved.active : {},
+      set_slots: saved.set_slots && typeof saved.set_slots === 'object'
+        ? saved.set_slots : {},
     }
-  } catch { return { items: [], sets: [], targets: [] } }
+  } catch { return { items: [], sets: [], targets: [], active: {}, set_slots: {} } }
 }
 
 const csv = (a) => (a && a.length ? a.join(',') : '')
 const split = (s) => (s ? s.split(',').filter(Boolean) : [])
 
-export default function Planner() {
+export default function Planner({ user }) {
   /* The plan lives in the URL, the way a comparison does on /compare: era,
      class and the priority order are what make this page YOURS, so a link to
      it is the plan and not just the page. */
   const [erasParam, setEras] = useQueryState('eras', 'rok')
   const [tabParam, setTab] = useQueryState('tab', 'gear')
-  const [orderParam, setOrder] = useQueryState('order', OPENING_ORDER.join(','))
+  const [orderParam, setOrderLine] = useQueryState('order', '')
+  const [topParam, setTop] = useQueryState('top', '3')
   const [reqParam, setReq] = useQueryState('req', '')
   const [cls, setCls] = useQueryState('class', '')
   const [slot, setSlot] = useQueryState('slot', '')
   const [tier, setTier] = useQueryState('tier', '')
   const [kind, setKind] = useQueryState('kind', '')
   const [armor, setArmor] = useQueryState('armor', '')
+  const [levelMin, setLevelMin] = useQueryState('level_min', '')
+  const [levelMax, setLevelMax] = useQueryState('level_max', '')
   /* Blank means "whatever the four-stat floor says" — the server decides and
      answers back, so the control shows a real number without the page having
      to duplicate the rule. */
@@ -79,8 +97,8 @@ export default function Planner() {
 
   const eras = useMemo(() => split(erasParam), [erasParam])
   const tab = tabParam === 'outline' ? 'outline' : 'gear'
-  const order = useMemo(() => split(orderParam), [orderParam])
-  const required = useMemo(() => split(reqParam), [reqParam])
+  const requestedOrder = useMemo(() => split(orderParam), [orderParam])
+  const requestedRequired = useMemo(() => split(reqParam), [reqParam])
 
   /* The one control that must not reach the server on every keystroke. A
      catalog search is ~150ms over 5,000 rows, and the facets beside it are
@@ -99,12 +117,64 @@ export default function Planner() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
   const [editing, setEditing] = useState(false)
+  const [dragStat, setDragStat] = useState(null)
+  const [overStat, setOverStat] = useState(null)
   const [shortlist, setShortlist] = useState(loadShortlist)
+  const [focusSlot, setFocusSlot] = useState(null)
+  const [characters, setCharacters] = useState(null)
+  const [character, setCharacter] = useState(null)
+  const [charId, setCharId] = useState(() => {
+    try { return localStorage.getItem('eq2adv:plan:character') || '' }
+    catch { return '' }
+  })
+
+  const rankableKeys = useMemo(
+    () => (meta?.groups || []).flatMap((group) => group.stats.map((stat) => stat.key)),
+    [meta])
+  const statLine = useMemo(() => {
+    if (!rankableKeys.length) return requestedOrder.filter((key) => key !== 'none')
+    const requested = requestedOrder.filter((key) => rankableKeys.includes(key))
+    const first = requested.length ? requested : OPENING_ORDER
+    return [...new Set([...first, ...rankableKeys])]
+  }, [requestedOrder, rankableKeys])
+  const priorityCount = Math.max(1, Math.min(3, Number.parseInt(topParam, 10) || 3))
+  const order = useMemo(() => statLine.slice(0, priorityCount), [statLine, priorityCount])
+  const required = useMemo(
+    () => requestedRequired.filter((key) => order.includes(key)),
+    [requestedRequired, order])
 
   useEffect(() => {
     try { localStorage.setItem(SHORTLIST_KEY, JSON.stringify(shortlist)) }
     catch { /* private mode — the shortlist just doesn't survive a reload */ }
   }, [shortlist])
+
+  useEffect(() => {
+    if (!user) { setCharacters([]); setCharacter(null); return }
+    let dead = false
+    api.characters().then((d) => {
+      if (dead) return
+      setCharacters(d.characters)
+      const selectedExists = d.characters.some(
+        (candidate) => String(candidate.id) === String(charId),
+      )
+      if ((!charId || !selectedExists) && d.characters.length) {
+        setCharId(String(d.characters[0].id))
+      }
+    }).catch(() => { if (!dead) setCharacters([]) })
+    return () => { dead = true }
+  }, [user])
+
+  useEffect(() => {
+    if (!user || !charId) { setCharacter(null); return undefined }
+    try { localStorage.setItem('eq2adv:plan:character', String(charId)) } catch { /* no persistence */ }
+    let dead = false
+    api.census(charId).then((d) => {
+      if (dead) return
+      setCharacter(d)
+      if (d.character?.class) setCls(d.character.class.toLowerCase())
+    }).catch(() => { if (!dead) setCharacter(null) })
+    return () => { dead = true }
+  }, [user, charId])
 
   useEffect(() => {
     api.planMeta(new URLSearchParams({ eras: csv(eras) }).toString())
@@ -120,14 +190,16 @@ export default function Planner() {
       if (tier) p.set('tiers', tier)
       if (kind) p.set('kinds', kind)
       if (armor) p.set('armor', armor)
+      if (levelMin) p.set('level_min', levelMin)
+      if (levelMax) p.set('level_max', levelMax)
       if (match !== '' && match != null) p.set('match_min', match)
       if (q) p.set('q', q)
       if (carries) p.set('carries_set', '1')
       if (proc) p.set('has_proc', '1')
     }
     return p.toString()
-  }, [erasParam, orderParam, reqParam, cls, slot, tier, kind, armor, match, q,
-    carries, proc, mode])
+  }, [erasParam, order, required, cls, slot, tier, kind, armor,
+    levelMin, levelMax, match, q, carries, proc, mode])
 
   /* Page titles can contain commas, so shortlist entries are repeated query
      parameters. The shortlist itself stays in localStorage and never enters
@@ -177,25 +249,81 @@ export default function Planner() {
   const targetsInList = useMemo(
     () => new Set(shortlist.targets.map((t) => t.page_title)), [shortlist])
 
-  const toggleItem = useCallback((row) => setShortlist((s) => (
-    s.items.some((i) => i.page_title === row.page_title)
-      ? { ...s, items: s.items.filter((i) => i.page_title !== row.page_title) }
-      : {
-        ...s,
-        items: [...s.items, {
-          page_title: row.page_title, name: row.name, slot: row.slot_label,
-          level: row.level, tier: row.tier, census_id: row.census_id,
-        }],
-      })), [])
+  const toggleItem = useCallback((row) => setShortlist((s) => {
+    if (s.items.some((i) => i.page_title === row.page_title)) {
+      const active = { ...(s.active || {}) }
+      const setSlots = { ...(s.set_slots || {}) }
+      Object.entries(active).forEach(([key, page]) => {
+        if (page === row.page_title) { delete active[key]; delete setSlots[key] }
+      })
+      return {
+        ...s, active, set_slots: setSlots,
+        items: s.items.filter((i) => i.page_title !== row.page_title),
+      }
+    }
+    const eligible = eligiblePlanSlots(row)
+    const equipSlot = eligible.includes(focusSlot) ? focusSlot : eligible[0]
+    if (!equipSlot) return s
+    const item = {
+      page_title: row.page_title, name: row.name, slot: row.slot,
+      slot2: row.slot2, slot_label: row.slot_label, equip_slot: equipSlot,
+      two_handed: row.two_handed, level: row.level, tier: row.tier,
+      census_id: row.census_id, icon: row.icon, stats: row.stats,
+      adorns: row.adorns, set_name: row.set_name, card: row.card,
+    }
+    const setSlots = { ...(s.set_slots || {}) }
+    if (row.set_name && s.sets.some((set) => set.name === row.set_name)) {
+      setSlots[equipSlot] = row.set_name
+    }
+    return {
+      ...s, items: [...s.items, item],
+      active: { ...(s.active || {}), [equipSlot]: row.page_title },
+      set_slots: setSlots,
+    }
+  }), [focusSlot])
+
+  const focusEquipmentSlot = useCallback((def) => {
+    setFocusSlot(def.key)
+    setMode('items')
+    setSlot(def.catalog)
+  }, [setMode, setSlot])
+
+  const cycleEquipmentSlot = useCallback((key, page) => setShortlist((s) => {
+    const active = { ...(s.active || {}) }
+    if (page) active[key] = page
+    else delete active[key]
+    return { ...s, active }
+  }), [])
+
+  const setSlotAdornment = useCallback((key, setName) => setShortlist((s) => {
+    const setSlots = { ...(s.set_slots || {}) }
+    if (setName) setSlots[key] = setName
+    else delete setSlots[key]
+    return { ...s, set_slots: setSlots }
+  }), [])
 
   /* Shortlisting from the set view adds the ADORNMENT, never the armour it
      came in. The turquoise detaches and moves; the armour is only where you
      first find it, and confusing the two is the mistake this whole view
      exists to prevent (docs/planner.md). */
-  const toggleSet = useCallback((row) => setShortlist((s) => (
-    s.sets.some((x) => x.name === row.name)
-      ? { ...s, sets: s.sets.filter((x) => x.name !== row.name) }
-      : { ...s, sets: [...s.sets, { name: row.name, level: row.level }] })), [])
+  const toggleSet = useCallback((row) => setShortlist((s) => {
+    if (s.sets.some((x) => x.name === row.name)) {
+      const setSlots = { ...(s.set_slots || {}) }
+      Object.entries(setSlots).forEach(([key, name]) => {
+        if (name === row.name) delete setSlots[key]
+      })
+      return {
+        ...s, set_slots: setSlots,
+        sets: s.sets.filter((x) => x.name !== row.name),
+      }
+    }
+    return {
+      ...s,
+      sets: [...s.sets, {
+        name: row.name, level: row.level, bonuses: row.bonuses,
+      }],
+    }
+  }), [])
 
   const toggleTarget = useCallback((row) => setShortlist((s) => {
     const page = row.key || row.page_title
@@ -216,9 +344,42 @@ export default function Planner() {
   const statPct = useMemo(
     () => Object.fromEntries((meta?.stats || []).map((s) => [s.key, s.pct])),
     [meta])
+  const movePriorityStat = useCallback((from, to, after = false) => {
+    if (!from || !to || from === to) return
+    const next = statLine.filter((key) => key !== from)
+    let at = next.indexOf(to)
+    if (at < 0) at = next.length
+    else if (after) at += 1
+    next.splice(at, 0, from)
+    setOrderLine(csv(next))
+    setReq(csv(requestedRequired.filter((key) => next.slice(0, priorityCount).includes(key))))
+  }, [statLine, requestedRequired, priorityCount, setOrderLine, setReq])
+
+  const nudgePriorityStat = useCallback((key, delta) => {
+    const at = statLine.indexOf(key)
+    const to = at + delta
+    if (at < 0 || to < 0 || to >= statLine.length) return
+    const next = [...statLine]
+    ;[next[at], next[to]] = [next[to], next[at]]
+    setOrderLine(csv(next))
+    setReq(csv(requestedRequired.filter((candidate) =>
+      next.slice(0, priorityCount).includes(candidate))))
+  }, [statLine, requestedRequired, priorityCount, setOrderLine, setReq])
+
+  const changePriorityCount = useCallback((count) => {
+    setTop(String(count))
+    setReq(csv(requestedRequired.filter((key) => statLine.slice(0, count).includes(key))))
+  }, [requestedRequired, statLine, setTop, setReq])
+
+  const clearCatalogFilters = useCallback(() => {
+    setSlot(null); setArmor(null); setTier(null); setKind(null)
+    setLevelMin(null); setLevelMax(null)
+    setCarries(null); setProc(null); setQ(null); setTyped('')
+  }, [setSlot, setArmor, setTier, setKind, setLevelMin, setLevelMax,
+    setCarries, setProc, setQ])
 
   const columns = useMemo(
-    () => itemColumns({ order, statLabel, statPct }), [orderParam, statLabel])
+    () => itemColumns({ order, statLabel, statPct }), [order, statLabel, statPct])
 
   /* How many of the listed stats actually RANK. The server drops potency and
      crit whatever the URL says, so this is its count and not the raw order's
@@ -227,6 +388,8 @@ export default function Planner() {
 
   const emptyEras = meta && meta.eras
     .filter((e) => eras.includes(e.key) && !e.items).map((e) => e.label)
+  const filterCount = [slot, armor, tier, kind, levelMin, levelMax, carries, proc, q]
+    .filter(Boolean).length
 
   return (
     <div className="workspace planner">
@@ -270,44 +433,22 @@ export default function Planner() {
         <Tabs tabs={[{ key: 'gear', label: 'Gear' }, { key: 'outline', label: 'Outline' }]}
               value={tab} onChange={(key) => setTab(key === 'gear' ? null : key)} />
 
+        {tab === 'gear' && (
+          <PlanLoadout characters={characters} character={character} charId={charId}
+            signedIn={!!user} onCharacter={setCharId} shortlist={shortlist}
+            active={shortlist.active || {}} focusSlot={focusSlot}
+            onFocusSlot={focusEquipmentSlot} onCycle={cycleEquipmentSlot}
+            onSetAdornment={setSlotAdornment}
+            onReset={() => setShortlist((s) => ({ ...s, active: {}, set_slots: {} }))}
+            statLabel={statLabel} statPct={statPct} />
+        )}
+
         {tab === 'gear' && <div className="card planbar">
-          <div className="priostrip">
-            <span className="seclabel">Priority</span>
-            {order.length === 0
-              ? <span className="muted">nothing ranked</span>
-              : (
-                <span className="prioorder">
-                  {order.map((k, i) => (
-                    <span key={k}>
-                      {i > 0 && <i className="sep">›</i>}
-                      {statLabel[k] || k}
-                      {required.includes(k) && <b title="required">*</b>}
-                    </span>
-                  ))}
-                </span>
-              )}
-            <button className="chip" onClick={() => setEditing(true)}>Edit</button>
-            {/* EQ2 gear in these expansions is four-stat — potency and crit,
-                which everything has, plus two more — so an item can carry at
-                most about two of whatever you listed. Naming three stats and
-                being shown everything with ONE of them is how the list fills
-                with rows that miss the point. The control says which floor is
-                in force rather than dropping half the catalog silently. */}
-            {ranked > 1 && (
-              <span className="matchpick" title={
-                'How many of your priorities an item has to actually carry. '
-                + 'EQ2 items in these expansions have room for about two.'}>
-                <Picker value={String(data?.match_min ?? '')}
-                        onChange={(v) => setMatch(v)}
-                        options={[
-                          { value: '0', label: 'any item' },
-                          ...Array.from({ length: ranked }, (_, i) => ({
-                            value: String(i + 1),
-                            label: `${i + 1} of ${ranked}`,
-                          })),
-                        ]} />
-              </span>
-            )}
+          <div className="plansearchhead">
+            <div className="plansearchtitle">
+              <span className="seclabel">Item search</span>
+              <b>{slot ? `${slot} upgrades` : 'Find equipment'}</b>
+            </div>
             <span className="planmodes">
               <button className={`chip${mode !== 'sets' ? ' on' : ''}`}
                       onClick={() => setMode('items')}>Items</button>
@@ -317,28 +458,130 @@ export default function Planner() {
           </div>
 
           {mode === 'items' && (
-            <div className="filterbar planfilters">
-              <Facet value={slot} onChange={setSlot} label="Any slot"
-                     options={meta?.slots} />
-              <Facet value={armor} onChange={setArmor} label="Any armour"
-                     options={meta?.armor} />
-              <Facet value={tier} onChange={setTier} label="Any tier"
-                     options={meta?.tiers} format={(t) => t.toLowerCase()} />
-              <Facet value={kind} onChange={setKind} label="Any source"
-                     options={meta?.kinds} format={(k) => KIND_LABEL[k] || k} />
-              <input type="text" value={typed} placeholder="Name contains…"
-                     onChange={(e) => setTyped(e.target.value)} />
-              <button className={`chip${carries ? ' on' : ''}`}
-                      title="Only items that ship with a set turquoise"
-                      onClick={() => setCarries(carries ? '' : '1')}>
-                Carries a set
-              </button>
-              <button className={`chip${proc ? ' on' : ''}`}
-                      title="Only items with an effect that can fire"
-                      onClick={() => setProc(proc ? '' : '1')}>
-                Has a proc
-              </button>
-            </div>
+            <>
+              <div className="plansearchband">
+                <label className="planquicksearch">
+                  <span>Search items</span>
+                  <input type="search" value={typed} placeholder="Search item names…"
+                         onChange={(e) => setTyped(e.target.value)} />
+                </label>
+                <label className="planlevelrange">
+                  <span>Item level</span>
+                  <span className="levelinputs">
+                    <input type="number" min="1" max="200" value={levelMin}
+                           aria-label="Minimum item level" placeholder="Min"
+                           onChange={(e) => setLevelMin(e.target.value)} />
+                    <i>to</i>
+                    <input type="number" min="1" max="200" value={levelMax}
+                           aria-label="Maximum item level" placeholder="Max"
+                           onChange={(e) => setLevelMax(e.target.value)} />
+                  </span>
+                </label>
+                <button type="button" className="chip clearplanfilters"
+                        disabled={filterCount === 0}
+                        onClick={clearCatalogFilters}>Clear filters</button>
+              </div>
+
+              <div className="planfilterband">
+                <span className="planfilterlabel">Filter</span>
+                <Facet value={slot} onChange={setSlot} label="Any slot"
+                       options={meta?.slots} />
+                <Facet value={armor} onChange={setArmor} label="Any armour"
+                       options={meta?.armor} />
+                <Facet value={tier} onChange={setTier} label="Any tier"
+                       options={meta?.tiers} format={(t) => t.toLowerCase()} />
+                <Facet value={kind} onChange={setKind} label="Any source"
+                       options={meta?.kinds} format={(k) => KIND_LABEL[k] || k} />
+                <button className={`chip${carries ? ' on' : ''}`}
+                        title="Only items that ship with a set turquoise"
+                        onClick={() => setCarries(carries ? '' : '1')}>
+                  Carries a set
+                </button>
+                <button className={`chip${proc ? ' on' : ''}`}
+                        title="Only items with an effect that can fire"
+                        onClick={() => setProc(proc ? '' : '1')}>
+                  Has a proc
+                </button>
+              </div>
+
+              <div className="prioritytrackbox">
+                <div className="prioritytrackhead">
+                  <div className="priorityintro">
+                    <b>Stat priority</b>
+                    <span>Drag stats left. The numbered positions score in order.</span>
+                  </div>
+                  <div className="prioritytools">
+                    <label className="prioritycount">
+                      <span>Score top</span>
+                      {[1, 2, 3].map((count) => (
+                        <button type="button" key={count}
+                                className={priorityCount === count ? 'on' : ''}
+                                onClick={() => changePriorityCount(count)}>{count}</button>
+                      ))}
+                    </label>
+                    {ranked > 1 && (
+                      <label className="compactmatch" title="How many priority stats an item must carry">
+                        <span>Must match</span>
+                        <Picker value={String(data?.match_min ?? '')}
+                                onChange={(v) => setMatch(v)}
+                                options={[
+                                  { value: '0', label: 'any' },
+                                  ...Array.from({ length: ranked }, (_, i) => ({
+                                    value: String(i + 1), label: `${i + 1} of ${ranked}`,
+                                  })),
+                                ]} />
+                      </label>
+                    )}
+                    <button type="button" className={`chip requirements${required.length ? ' on' : ''}`}
+                            onClick={() => setEditing(true)}>
+                      Requirements{required.length ? ` (${required.length})` : ''}
+                    </button>
+                  </div>
+                </div>
+                <div className="prioritytrack" role="list" aria-label="Draggable stat priority"
+                     style={{ '--stat-count': statLine.length }}>
+                  {statLine.map((key, index) => {
+                    const activeStat = index < priorityCount
+                    return (
+                      <div key={key} role="listitem" tabIndex="0" draggable
+                           className={`prioritytoken${activeStat ? ' ranked' : ''}${required.includes(key) ? ' required' : ''}${index === priorityCount - 1 ? ' boundary' : ''}${overStat === key ? ' over' : ''}`}
+                           aria-label={`${statLabel[key] || key}${activeStat ? `, priority ${index + 1}` : ', not prioritized'}`}
+                           title="Drag to reorder; Left and Right arrows also move this stat"
+                           onDragStart={(e) => {
+                             setDragStat(key); e.dataTransfer.effectAllowed = 'move'
+                           }}
+                           onDragEnd={() => { setDragStat(null); setOverStat(null) }}
+                           onDragOver={(e) => { e.preventDefault(); setOverStat(key) }}
+                           onDrop={(e) => {
+                             e.preventDefault()
+                             const rect = e.currentTarget.getBoundingClientRect()
+                             movePriorityStat(dragStat, key, e.clientX > rect.left + rect.width / 2)
+                             setOverStat(null)
+                           }}
+                           onKeyDown={(e) => {
+                             if (e.key === 'ArrowLeft') {
+                               e.preventDefault(); nudgePriorityStat(key, -1)
+                             } else if (e.key === 'ArrowRight') {
+                               e.preventDefault(); nudgePriorityStat(key, 1)
+                             }
+                           }}>
+                        <i>{activeStat ? index + 1 : '⠿'}</i>
+                        <span>{TRACK_LABEL[key] || statLabel[key] || key}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="plansearchfooter" aria-live="polite">
+                <span>{data
+                  ? <><b>{data.total}</b> matching item{data.total === 1 ? '' : 's'}</>
+                  : 'Loading matching items…'}</span>
+                <span>{order.length
+                  ? <>Scoring <b>{order.map((key) => TRACK_LABEL[key] || statLabel[key] || key).join(' › ')}</b></>
+                  : 'Choose a stat priority to score results'}</span>
+              </div>
+            </>
           )}
         </div>}
 
@@ -392,10 +635,11 @@ export default function Planner() {
 
       {tab === 'gear' && editing && (
         <PriorityEditor
-          groups={meta?.groups || []} order={order} required={required}
+          groups={meta?.groups || []} order={order} required={required} fixed
           onClose={() => setEditing(false)}
           onChange={({ order: o, required: r }) => {
-            setOrder(csv(o))
+            const rest = statLine.filter((key) => !o.includes(key))
+            setOrderLine(csv([...o, ...rest]))
             setReq(csv(r.filter((k) => o.includes(k))))
           }} />
       )}
@@ -407,11 +651,13 @@ export default function Planner() {
    renders into `document.body` for the backdrop-filter stacking trap. */
 function Facet({ value, onChange, label, options, format }) {
   return (
-    <Picker value={value || ''} onChange={onChange} placeholder={label}
-            options={[{ value: '', label },
-              ...(options || []).map((o) => ({
-                value: o, label: format ? format(o) : o,
-              }))]} />
+    <span className={`planfacet${value ? ' selected' : ''}`}>
+      <Picker value={value || ''} onChange={onChange} placeholder={label}
+              options={[{ value: '', label },
+                ...(options || []).map((o) => ({
+                  value: o, label: format ? format(o) : o,
+                }))]} />
+    </span>
   )
 }
 
@@ -583,7 +829,7 @@ function SetList({ sets, inList, onToggle }) {
 /* The rail holds THREE KINDS of thing and lists them separately: items,
    adornments, and targets. A turquoise is not its host item and a raid target
    is not a slot, even when both happen to lead to the same source row. */
-function Shortlist({ list, onDropItem, onDropSet, onDropTarget }) {
+function Shortlist({ list, onDropSet, onDropTarget }) {
   const empty = !list.items.length && !list.sets.length && !list.targets.length
   return (
     <div className="railsec shortlist">
@@ -594,17 +840,10 @@ function Shortlist({ list, onDropItem, onDropSet, onDropTarget }) {
         </p>
       )}
       {!!list.items.length && (
-        <>
-          <div className="shortkind">Items</div>
-          {list.items.map((i) => (
-            <div className="shortrow" key={i.page_title}>
-              <span className={rarityClass(i.tier)}>{i.name}</span>
-              <em>{i.slot}</em>
-              <button className="iconbtn" aria-label={`Remove ${i.name}`}
-                      onClick={() => onDropItem(i)}>✕</button>
-            </div>
-          ))}
-        </>
+        <p className="shortgearcount">
+          <b>{list.items.length}</b> gear choice{list.items.length === 1 ? '' : 's'} in the
+          equipment window. Cycle each slot to compare builds.
+        </p>
       )}
       {!!list.sets.length && (
         <>

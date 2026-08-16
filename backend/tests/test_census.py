@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 
 import db as dbmod
 from census.effects import parse_effect, parse_effects
-from census.sync import base_name, typed_fields
+from census.sync import (base_name, planner_character_stats,
+                         planner_item_stats, typed_fields)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "census"
 
@@ -134,6 +135,26 @@ def test_base_name():
     assert base_name("Contrapt") == "Contrapt"
 
 
+def test_planner_stats_translate_census_items_and_character_totals():
+    item = {"modifiers": {
+        "all": {"value": 98},
+        "basemodifier": {"value": 3.7},
+        "spelltimecastpct": {"value": 2.1},
+        "arcane": {"value": 280},
+        "critbonus": {"value": 9},       # live-only and deliberately absent
+    }, "typeinfo": {"maxarmorclass": 42}}
+    assert planner_item_stats(item) == {
+        "abmod": 98.0, "potency": 3.7, "acspeed": 2.1,
+        "vsarcane": 280.0, "mit": 42.0,
+    }
+    doc = json.load(open(FIXTURES / "character_bobby.json"))
+    totals = planner_character_stats(doc)
+    assert totals["abmod"] == 1442
+    assert totals["potency"] == 68.1
+    assert totals["crit"] == 53.48
+    assert totals["int"] == doc["stats"]["int"]["effective"]
+
+
 # ---- sync + summary through the API ----
 
 def test_refresh_and_summary(client, fake):
@@ -142,11 +163,12 @@ def test_refresh_and_summary(client, fake):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["found"] and body["changed"]
-    assert body["spells_fetched"] == 6 and body["items_fetched"] == 3
+    assert body["spells_fetched"] == 6 and body["items_fetched"] == 4
 
     s = client.get(f"/api/characters/{cid}/census").json()
     assert s["synced"] is True
     assert s["character"]["class"] == "Necromancer" and s["character"]["level"] == 70
+    assert s["character"]["census_id"] == 2654289790664
     assert s["guild"] == "Skill Issue"
     stats = {k["label"]: k["value"] for k in s["key_stats"]}
     assert stats["Ability Mod"] == 1442
@@ -155,6 +177,12 @@ def test_refresh_and_summary(client, fake):
     gear = {g["slot"]: g for g in s["gear"]}
     assert gear["Primary"]["name"] == "Wand of Crystallized Plasma"
     assert gear["Primary"]["tier"] == "LEGENDARY"
+    assert gear["Primary"]["key"] == "primary"
+    assert gear["Primary"]["planner_stats"] == {}
+    adorn = gear["Primary"]["adornments"][0]
+    assert adorn["id"] == 274745776 and adorn["name"] == "Swift Casting"
+    assert adorn["planner_stats"] == {"acspeed": 2.0}
+    assert adorn["stats"]["adornment"]["color"] == "white"
     scribed = {sp["name"]: sp for sp in s["spells"]["scribed"]}
     assert scribed["Soulrot VI"]["tier_name"] == "Apprentice"
     assert scribed["Soulrot VI"]["base_name"] == "Soulrot"

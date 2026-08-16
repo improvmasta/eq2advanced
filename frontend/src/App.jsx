@@ -431,12 +431,11 @@ export default function App() {
                 alert rules, not what lets you read it. */}
             <Route path="/chat" element={<Chat user={user} />} />
             {/* Deliberately NOT in the nav (docs/planner.md), like
-                /characters. NO account needed, for the same reason /chat needs
-                none: every row is reference data about the GAME — what drops
-                where in an expansion — and nothing here reaches a parse, a
-                session or an account. Adding the tab is the whole publish
-                step. */}
-            <Route path="/plan" element={<Planner />} />
+                /characters. NO account needed: every catalog row is reference
+                data about the GAME. A signed-in reader may layer their OWN
+                cached Census character over it for current gear/projections;
+                signed out keeps the complete catalog. */}
+            <Route path="/plan" element={<Planner user={user} />} />
             <Route path="/sessions/:id" element={<NeedsAccount user={user}><Workspace /></NeedsAccount>} />
             <Route path="/calibration" element={<NeedsAccount user={user}><Calibration /></NeedsAccount>} />
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />

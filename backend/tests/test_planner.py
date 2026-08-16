@@ -127,6 +127,14 @@ def test_an_adornment_set_page_carries_its_tiers():
     assert "Focus: Magi's Shielding" in s["bonuses"][0]["text"]
 
 
+def test_only_plain_additive_set_bonuses_become_projectable_stats():
+    assert catalog.set_bonus_stats("100 Ability Modifier") == {"abmod": 100.0}
+    assert catalog.set_bonus_stats("2 Crit Chance|") == {"crit": 2.0}
+    assert catalog.set_bonus_stats("65 Health|") == {"health": 65.0}
+    assert catalog.set_bonus_stats("Applies Focus: Rift.") == {}
+    assert catalog.set_bonus_stats("More damage sometimes") == {}
+
+
 # ---------- Phase 2: quest chains ----------
 
 def quest_page(*, level="70", diff="Solo", prereq="", next_="",
@@ -523,14 +531,31 @@ def test_a_class_filter_uses_the_class_tree(tmp_path):
     assert catalog.search(conn, eras=["rok"], classes=["necromancer"])["total"] == 0
 
 
+def test_item_level_range_filters_both_edges(tmp_path):
+    conn = loaded(tmp_path)
+    assert catalog.search(conn, eras=["rok"], level_min=80, level_max=80)["total"] == 1
+    assert catalog.search(conn, eras=["rok"], level_min=81)["total"] == 0
+    assert catalog.search(conn, eras=["rok"], level_max=79)["total"] == 0
+
+
 def test_the_card_is_items_display_shape_so_ItemCard_is_reused(tmp_path):
     """Three ways to meet an item — a chest drop, a link in Auction, a row on
     this page — and all three must open the SAME examine window."""
-    row = catalog.search(loaded(tmp_path), eras=["rok"])["items"][0]
+    conn = loaded(tmp_path)
+    conn.execute(
+        "INSERT INTO plan_sets VALUES (?,?,?,?,?,?,?)",
+        ("Mist Covered Set", "Mist Covered Set (Adornment Set)", "rok", 80,
+         "[]", json.dumps([{"pieces": 2, "text": "100 Ability Modifier"},
+                            {"pieces": 4, "text": "2 Crit Chance"}]), 1))
+    row = catalog.search(conn, eras=["rok"])["items"][0]
     card = row["card"]
     assert card["rarity"] == "Fabled"
+    assert card["level"] == 80 and card["slot"] == "Feet"
     assert {"stats", "effects", "flags", "adornments"} <= set(card["stats"])
     assert card["stats"]["adornments"] == ["white", "orange", "turquoise"]
+    included = card["stats"]["included_adornment"]
+    assert included["name"] == "Mist Covered Set" and included["color"] == "turquoise"
+    assert [b["required"] for b in included["set_bonuses"]] == [2, 4]
     # the blue block, in the examine window's own order
     assert [e["name"] for e in card["stats"]["effects"]][:2] == ["Potency", "Crit Chance"]
     assert card["effects"]["set"] == "Mist Covered Set"

@@ -6029,6 +6029,200 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planner .railhead h1 { margin: 0; font-size: var(--fs-h2); }
 .planner .railhead .sub { color: var(--text-muted); font-size: var(--fs-label); }
 
+/* The loadout keeps the game's useful visual grammar — armour and weapons on
+   the left, charms and jewelry on the right — without spending a third column
+   on a decorative paper doll. */
+.planloadout { padding: 12px; overflow: hidden; }
+.loadouthead {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--row-line);
+}
+.loadouthead h2 { margin: 2px 0 0; font-size: var(--fs-h3); }
+.loadouthead h2 small {
+  margin-left: 9px; color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-label); font-weight: 400;
+}
+.loadoutactions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.loadoutactions .chip { padding: 2px 9px; cursor: pointer; }
+.loadoutactions .chip:disabled { opacity: 0.42; cursor: default; }
+.plancharacterpick { display: grid; gap: 2px; }
+.plancharacterpick > span {
+  color: var(--gold-dim); font-size: 0.6rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.09em;
+}
+.characterpicker .pickerbtn {
+  min-width: 220px; min-height: 34px; padding: 5px 9px;
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.13);
+  color: var(--gold-bright); font-size: var(--fs-data);
+  box-shadow: inset 0 0 0 1px rgba(var(--gold-rgb), 0.1);
+}
+.characterpicker .pickerbtn .ph { color: var(--text); }
+.loadoutactions .resetgear {
+  align-self: end; min-height: 34px; padding: 4px 10px;
+  border-color: var(--gold-dim); color: var(--text);
+  background: var(--surface-raised);
+}
+.loadoutbody {
+  display: grid; grid-template-columns: minmax(520px, 1fr) 270px;
+  gap: 12px; align-items: stretch; margin-top: 10px;
+}
+.equipmentwindow {
+  min-width: 0; display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 8px; padding: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(var(--gold-rgb), 0.09), transparent 30%),
+    linear-gradient(180deg, rgba(var(--gold-rgb), 0.035), transparent 28%),
+    rgba(var(--bg-rgb), 0.2);
+}
+.planslots { min-width: 0; display: grid; align-content: start; gap: 2px; }
+.planslot {
+  position: relative; min-width: 0; min-height: 34px;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  gap: 6px; align-items: center; padding: 2px 4px;
+  border: 1px solid var(--row-line); border-radius: 3px;
+  background: rgba(var(--bg-rgb), 0.28); cursor: pointer;
+}
+.planslot:hover, .planslot.focused {
+  border-color: var(--gold-dim); background: rgba(var(--gold-rgb), 0.075);
+}
+.planslot.focused {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.14);
+  box-shadow: inset 3px 0 0 var(--gold), 0 0 0 1px rgba(var(--gold-rgb), 0.1);
+}
+.planslot.planned:not(.focused) {
+  border-color: rgba(var(--success-rgb), 0.55);
+  background: rgba(var(--success-rgb), 0.055);
+}
+.planslot.occupied { opacity: 0.6; }
+.plansloticon {
+  width: 30px; height: 30px; display: grid; place-items: center; overflow: hidden;
+  border: 1px solid var(--gold-dim); border-radius: 3px;
+  background: rgba(var(--bg-rgb), 0.55);
+}
+.plansloticon img { width: 28px; height: 28px; object-fit: contain; }
+.planslotempty { color: var(--text-muted); font-size: 16px; }
+.planslotcopy { min-width: 0; display: grid; gap: 1px; }
+.planslotcopy > b {
+  color: var(--text-muted); font-family: var(--font-data); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.planslotcopy > span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-label);
+}
+.planslotcopy .hoverbox,
+.planslotcopy .hoverbox > span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-label);
+}
+.planslotcycle { display: grid; grid-template-columns: 15px auto 15px; align-items: center; }
+.planslotcycle button {
+  width: 15px; height: 22px; padding: 0; border: 0; background: transparent;
+  color: var(--gold-bright); font-size: 16px; cursor: pointer;
+}
+.planslotcycle em {
+  min-width: 25px; color: var(--text-muted); font-family: var(--font-data);
+  font-size: var(--fs-label); font-style: normal; text-align: center;
+}
+.plannedmark {
+  position: absolute; right: 4px; bottom: 1px; color: var(--success);
+  font-family: var(--font-data); font-size: 8px; font-style: normal;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.planadorns { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.planadornicon {
+  position: relative; width: 34px; height: 34px; padding: 2px; flex: none;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--surface-raised);
+}
+.planadornicon.turquoise { cursor: pointer; border-color: #2ba8b7; }
+.planadornicon:disabled { opacity: 0.72; }
+.planadornicon img { width: 28px; height: 28px; object-fit: contain; }
+.planadornicon i {
+  position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px;
+  display: grid; place-items: center; border-radius: 50%;
+  color: var(--bg); background: var(--success); font-size: 9px; font-style: normal;
+}
+.planadorns.compact { gap: 2px; }
+.planadorns.compact .planadornicon {
+  width: 21px; height: 21px; padding: 1px; border-color: var(--gold-dim);
+}
+.planadorns.compact .planadornicon img { width: 17px; height: 17px; }
+.planadorns.compact .planadornicon i {
+  right: -2px; bottom: -2px; width: 9px; height: 9px; font-size: 6px;
+}
+.socketchoice {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-muted); font-size: var(--fs-label);
+}
+
+.planstats {
+  min-width: 0; max-height: 425px; overflow-y: auto; padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: rgba(var(--bg-rgb), 0.28);
+}
+.planstats.empty { display: grid; align-content: start; }
+.planstats.empty p { color: var(--text-muted); font-size: var(--fs-data); line-height: 1.45; }
+.planstathead { display: flex; justify-content: space-between; gap: 7px; align-items: baseline; }
+.planstathead > b { color: var(--gold-bright); font-family: var(--font-heading); }
+.planstathead > span { color: var(--text-muted); font-size: var(--fs-label); }
+.planstatgeneral {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 8px 0;
+}
+.planstatgeneral > span {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px;
+  padding: 5px 6px; color: var(--text-muted); font-size: var(--fs-label);
+  border: 1px solid var(--row-line); background: rgba(var(--gold-rgb), 0.035);
+}
+.planstatgeneral b { margin-left: auto; color: var(--text); font-family: var(--font-data); }
+.planstatgeneral em { flex-basis: 100%; text-align: right; font-style: normal; }
+.planstats section { margin-top: 7px; }
+.planstats section h3 {
+  margin: 0 0 2px; padding: 2px 5px; color: var(--text);
+  background: var(--row-selected); font-size: var(--fs-label); letter-spacing: 0.04em;
+}
+.planstatrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) 64px 45px; gap: 5px;
+  align-items: baseline; padding: 1px 5px; font-size: var(--fs-data);
+}
+.planstatrow > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planstatrow b, .planstatrow em {
+  font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right;
+}
+.planstatrow em { color: var(--text-muted); font-size: var(--fs-label); font-style: normal; }
+.planstats .up { color: var(--success); }
+.planstats .down { color: var(--danger); }
+.plansetstatus { border-top: 1px solid var(--border); padding-top: 7px; }
+.plansetrow { padding: 5px; border-bottom: 1px solid var(--row-line); }
+.plansetrow > div { display: flex; align-items: baseline; gap: 6px; }
+.plansetrow > div b { font-size: var(--fs-data); }
+.plansetrow > div em { color: var(--text-muted); font-size: var(--fs-label); font-style: normal; }
+.plansetrow p { margin: 2px 0 0; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35; }
+.plansetrow p i { margin-right: 5px; color: var(--text-muted); font-style: normal; }
+.plansetrow p.active { color: var(--text); }
+.plansetrow p.active i { color: #44bfd0; }
+.planstatnote {
+  margin: 9px 2px 0; color: var(--text-muted); font-size: 0.62rem; line-height: 1.4;
+}
+.shortgearcount { margin: 3px 0; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.45; }
+.shortgearcount b { color: var(--text); }
+
+@media (max-width: 1140px) {
+  .loadoutbody { grid-template-columns: minmax(0, 1fr); }
+  .planstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+  .planstathead, .planstatgeneral, .planstatnote, .plansetstatus { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .loadouthead { align-items: flex-start; flex-direction: column; }
+  .equipmentwindow { grid-template-columns: 1fr 1fr; }
+  .planslot { grid-template-columns: 30px minmax(0, 1fr) auto; }
+  .planslotcycle { grid-column: 2 / -1; justify-content: center; }
+  .planstats { grid-template-columns: minmax(0, 1fr); }
+  .planstathead, .planstatgeneral, .planstatnote, .plansetstatus { grid-column: 1; }
+}
+
 /* THE EXPANSION CHOICE IS THE FIRST CONTROL ON THE PAGE, so it is a row of
    real toggles rather than a facet buried with the filters: everything else —
    which items exist, what a score is measured against, which sets are on offer
@@ -6060,20 +6254,172 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .shortrow em { font-style: normal; color: var(--text-muted); font-size: var(--fs-label); }
 .shortrow .iconbtn { padding: 0 4px; line-height: 1; }
 
-/* The strip over the table: what you are pushing, in the order you push it.
-   No numbers, ever — a weight is not something this page shows. */
-.planbar { padding: 9px 11px; }
-.priostrip { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
-.prioorder {
-  font-family: var(--font-data); font-size: var(--fs-data); color: var(--text);
+/* Item search is a small EQ2 control window, not a loose row of widgets. The
+   four horizontal bands each answer one question: what, which subset, how to
+   score it, and what the search returned. */
+.planbar {
+  padding: 0; overflow: visible;
+  border: 1px solid var(--gold-dim);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(var(--gold-rgb), 0.11),
+              0 8px 24px rgba(0, 0, 0, 0.12);
 }
-.prioorder .sep { color: var(--text-muted); font-style: normal; margin: 0 5px; }
-/* the one mark a required stat gets in the strip — it is a filter now, not a rank */
-.prioorder b { color: var(--gold-bright); }
-.planmodes { margin-left: auto; display: flex; gap: 6px; }
-.planmodes .chip, .priostrip > .chip { cursor: pointer; padding: 2px 9px; }
-.planfilters { margin-top: 9px; }
-.planfilters .chip { cursor: pointer; padding: 2px 9px; }
+.plansearchhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 44px; padding: 7px 11px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(var(--gold-rgb), 0.12), transparent 42%),
+              var(--surface-raised);
+}
+.plansearchtitle { display: flex; align-items: baseline; gap: 9px; }
+.plansearchtitle .seclabel { color: var(--text); opacity: 0.78; }
+.plansearchtitle > b {
+  color: var(--gold-bright); font-family: var(--font-body);
+  font-size: 0.9rem; letter-spacing: 0.01em;
+}
+.planmodes { margin-left: auto; display: flex; gap: 5px; }
+.planmodes .chip {
+  cursor: pointer; min-height: 29px; padding: 4px 12px;
+  color: var(--text); border-color: var(--border);
+}
+.planmodes .chip.on {
+  color: var(--bg); border-color: var(--gold); background: var(--gold);
+  font-weight: 700;
+}
+
+.plansearchband {
+  display: grid; grid-template-columns: minmax(260px, 1fr) auto auto;
+  align-items: end; gap: 10px; padding: 10px 11px;
+  background: rgba(0, 0, 0, 0.08);
+}
+.planquicksearch,
+.planlevelrange { display: flex; flex-direction: column; gap: 4px; }
+.planquicksearch > span,
+.planlevelrange > span:first-child,
+.planfilterlabel {
+  color: var(--text); font-size: var(--fs-label); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.planquicksearch input[type="search"] {
+  width: 100%; min-height: 34px; margin: 0; padding: 6px 9px;
+  border-color: var(--gold-dim); background: var(--surface-raised); color: var(--text);
+}
+.planquicksearch input[type="search"]::placeholder { color: var(--text-muted); opacity: 0.9; }
+.planquicksearch input[type="search"]:focus {
+  border-color: var(--gold); box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.22);
+}
+.levelinputs { display: flex; align-items: center; gap: 6px; }
+.levelinputs > i { color: var(--text); opacity: 0.72; font-style: normal; font-size: var(--fs-label); }
+.planlevelrange input[type="number"] {
+  width: 66px; min-height: 34px; margin: 0; padding: 6px 7px;
+  border-color: var(--border); background: var(--surface-raised);
+  color: var(--text); text-align: center;
+}
+.clearplanfilters {
+  min-height: 34px; padding: 5px 11px; color: var(--text); font-size: var(--fs-label);
+}
+.clearplanfilters:disabled { color: var(--text-muted); opacity: 0.48; }
+
+.planfilterband {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 11px; border-top: 1px solid var(--row-line);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.planfilterlabel { margin-right: 3px; color: var(--gold-bright); }
+.planfilterband .pickerbtn,
+.planfilterband .chip {
+  min-height: 29px; border-color: var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer;
+}
+.planfilterband .pickerbtn:hover,
+.planfilterband .chip:hover { border-color: var(--gold); color: var(--gold-bright); }
+.planfilterband .chip.on,
+.planfacet.selected .pickerbtn {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
+  color: var(--gold-bright); font-weight: 700;
+}
+
+.prioritytrackbox { padding: 10px 11px 11px; background: rgba(0, 0, 0, 0.12); }
+.prioritytrackhead {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px 14px; margin-bottom: 9px;
+}
+.priorityintro { display: flex; align-items: baseline; gap: 8px; }
+.priorityintro b { color: var(--gold-bright); font-size: var(--fs-data); }
+.priorityintro span { color: var(--text); opacity: 0.72; font-size: var(--fs-label); }
+.prioritytools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.prioritycount { display: inline-flex; align-items: center; gap: 2px; }
+.prioritycount > span { margin-right: 4px; color: var(--text); font-size: var(--fs-label); }
+.prioritycount button {
+  width: 27px; height: 27px; padding: 0; border-color: var(--border);
+  background: var(--surface-raised); color: var(--text);
+}
+.prioritycount button.on {
+  border-color: var(--gold); background: var(--gold); color: var(--bg); font-weight: 800;
+}
+.prioritytrackhead .requirements { min-height: 27px; padding: 3px 9px; color: var(--text); }
+.prioritytrackhead .requirements.on {
+  border-color: var(--warning); color: var(--warning); background: rgba(var(--gold-rgb), 0.11);
+}
+.prioritytrack {
+  display: grid; grid-template-columns: repeat(var(--stat-count), minmax(0, 1fr));
+  gap: 4px; width: 100%; min-width: 0;
+}
+.prioritytoken {
+  position: relative; min-width: 0; height: 34px; display: flex;
+  align-items: center; justify-content: flex-start; gap: 3px;
+  padding: 4px; overflow: hidden; cursor: grab;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface-raised); color: var(--text);
+  font-family: var(--font-data); font-size: 0.61rem; font-weight: 600;
+}
+.prioritytoken:hover,
+.prioritytoken:focus-visible { border-color: var(--gold-dim); background: var(--row-hover); color: var(--gold-bright); }
+.prioritytoken:active { cursor: grabbing; }
+.prioritytoken > i {
+  width: 16px; height: 20px; flex: none; display: grid; place-items: center;
+  color: var(--text); opacity: 0.64; font-size: 0.55rem;
+  font-style: normal; font-weight: 800;
+}
+.prioritytoken > span { min-width: 0; white-space: nowrap; }
+.prioritytoken.ranked {
+  border-color: var(--gold); background: var(--gold);
+  color: var(--bg); font-weight: 800;
+}
+.prioritytoken.ranked:hover,
+.prioritytoken.ranked:focus-visible { background: var(--gold-bright); color: var(--bg); }
+.prioritytoken.ranked > i {
+  border-right: 1px solid rgba(0, 0, 0, 0.35); color: var(--bg); opacity: 1;
+}
+.prioritytoken.required { box-shadow: inset 0 -3px 0 var(--warning); }
+.prioritytoken.boundary { margin-right: 4px; box-shadow: 4px 0 0 var(--gold-bright); }
+.prioritytoken.boundary.required {
+  box-shadow: inset 0 -3px 0 var(--warning), 4px 0 0 var(--gold-bright);
+}
+.prioritytoken.over { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
+.compactmatch { display: inline-flex; align-items: center; gap: 5px; }
+.compactmatch > span { color: var(--text); font-size: var(--fs-label); }
+.compactmatch .pickerbtn {
+  min-height: 27px; border-color: var(--border); color: var(--text);
+  font-size: var(--fs-label);
+}
+.plansearchfooter {
+  display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 5px 12px; padding: 7px 11px;
+  border-top: 1px solid var(--border); background: var(--surface-raised);
+  color: var(--text); font-size: var(--fs-label);
+}
+.plansearchfooter b { color: var(--gold-bright); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .plansearchband { grid-template-columns: 1fr auto; }
+  .planquicksearch { grid-column: 1 / -1; }
+  .priorityintro { width: 100%; }
+  .prioritytrack { gap: 2px; }
+  .prioritytoken { padding: 3px 2px; font-size: 0.55rem; }
+  .prioritytoken > i { width: 12px; }
+}
 
 /* Two badges, one job each: "this row's value is not in its stat columns."
    Distinct GLYPHS as well as colours — the set diamond and the proc star are
@@ -6212,14 +6558,20 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: grid; grid-template-columns: auto 1fr auto auto auto;
   align-items: center; gap: 8px;
   padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px;
-  background: var(--surface-raised); cursor: grab;
+  border-color: var(--gold-dim); background: rgba(var(--gold-rgb), 0.09); cursor: grab;
 }
 /* The dragged row and the row it would land on. A held row fades rather than
    lifts, and the target takes an edge — no motion, because reduced motion is
    assumed on and a list that jumps under the pointer is unreadable either way. */
 .priolist li.dragging { opacity: 0.45; }
 .priolist li.over { border-color: var(--gold-dim); box-shadow: inset 3px 0 0 var(--gold); }
-.priohandle { color: var(--text-muted); cursor: grab; }
+.priohandle { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); cursor: grab; }
+.priohandle i {
+  width: 19px; height: 19px; display: grid; place-items: center;
+  border-radius: 2px; color: var(--bg); background: var(--gold);
+  font-size: 0.64rem; font-style: normal; font-weight: 700;
+}
+.priohandle b { font-weight: 400; }
 .prioname { font-family: var(--font-data); font-size: var(--fs-data); }
 .priomove { display: inline-flex; gap: 2px; }
 .priomove .iconbtn { padding: 0 5px; line-height: 1.2; }
@@ -6234,7 +6586,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .prioadd { margin-top: 12px; border-top: 1px solid var(--row-line); padding-top: 10px; }
 .priogroup { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.priogroup .chip { cursor: pointer; padding: 2px 8px; }
+.prioavailable {
+  padding: 3px 8px; cursor: pointer; color: var(--text-muted);
+  border-color: var(--row-line); background: rgba(var(--bg-rgb), 0.38);
+}
+.prioavailable:hover {
+  color: var(--text); border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.08);
+}
 .prioadd summary { cursor: pointer; font-size: var(--fs-label); margin-top: 9px; }
 
 @media (max-width: 900px) {

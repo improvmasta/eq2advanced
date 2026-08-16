@@ -42,9 +42,16 @@ def _trim(doc: dict) -> dict:
 def _equipped_item_ids(doc: dict) -> list[int]:
     ids = []
     for slot in doc.get("equipmentslot_list") or []:
-        item_id = (slot.get("item") or {}).get("id")
+        item = slot.get("item") or {}
+        item_id = item.get("id")
         if item_id:
             ids.append(item_id)
+        # Lexicon's useful move is showing the named adornments beside their
+        # host item.  Census puts those ids inside the slot rather than in the
+        # character's main equipment list, so include them in the same bounded
+        # item-cache fill as the host gear.
+        ids.extend(a["id"] for a in (item.get("adornment_list") or [])
+                   if a.get("id"))
     return ids
 
 
@@ -314,6 +321,100 @@ KEY_STATS = (
 )
 
 
+# Census's character totals and item modifiers use a different vocabulary from
+# the planner catalog.  This is the exact bridge between them: the character
+# window starts with Census's totals, then the planner can subtract the item in
+# one equipment slot and add the candidate in the same keys.  Keep this narrow
+# to additive item numbers.  Procs, set bonuses, adornments and caps are not
+# arithmetic and the page says so rather than pretending they are.
+_ITEM_PLAN_KEYS = {
+    "basemodifier": "potency",
+    "critchance": "crit",
+    "all": "abmod",                 # Census's name for Ability Mod on items
+    "doubleattackchance": "multi",
+    "dps": "dps",
+    "attackspeed": "aspeed",
+    "spelltimecastpct": "acspeed",
+    "spelltimereusepct": "arspeed",
+    "flurry": "flurry",
+    "aeautoattackchance": "aeauto",
+    "hategainmod": "hategain",
+    "strikethrough": "strike",
+    "blockchance": "bchance",
+    "maxhpperc": "maxhealth",
+    "armormitigationincrease": "mitinc",
+    "accuracy": "accuracy",
+    "strength": "str",
+    "stamina": "sta",
+    "agility": "agi",
+    "wisdom": "wis",
+    "intelligence": "int",
+    "combatskills": "comskills",
+    "elemental": "vselemental",
+    "arcane": "vsarcane",
+    "noxious": "vsnoxious",
+}
+
+
+def planner_item_stats(rec: dict) -> dict[str, float]:
+    """One cached Census item in the planner's stat vocabulary.
+
+    The item document is already fetched as part of character sync.  This is a
+    pure read/translation and deliberately does not widen the planner request
+    path into a Census request.
+    """
+    out: dict[str, float] = {}
+    for census_key, mod in (rec.get("modifiers") or {}).items():
+        key = _ITEM_PLAN_KEYS.get(census_key)
+        value = mod.get("value") if isinstance(mod, dict) else None
+        if key and isinstance(value, (int, float)) and value:
+            out[key] = float(value)
+    # Flat mitigation lives on the armour type rather than in `modifiers`.
+    # It is the same number EquipInformation calls `mit`.
+    mit = (rec.get("typeinfo") or {}).get("maxarmorclass")
+    if isinstance(mit, (int, float)) and mit:
+        out["mit"] = float(mit)
+    return out
+
+
+def planner_character_stats(doc: dict) -> dict[str, float]:
+    """Census totals in the same keys as :func:`planner_item_stats`."""
+    stats = doc.get("stats") or {}
+    combat = stats.get("combat") or {}
+    ability = stats.get("ability") or {}
+    defense = stats.get("defense") or {}
+    resists = doc.get("resists") or {}
+    paths = {
+        "potency": combat.get("basemodifier"),
+        "crit": combat.get("critchance"),
+        "abmod": combat.get("abilitymod"),
+        "multi": combat.get("doubleattackchance"),
+        "dps": combat.get("dps"),
+        "aspeed": combat.get("attackspeed"),
+        "acspeed": ability.get("spelltimecastpct"),
+        "arspeed": ability.get("spelltimereusepct"),
+        "flurry": combat.get("flurry"),
+        "aeauto": combat.get("aeautoattackchance"),
+        "hategain": combat.get("hategainmod"),
+        "strike": combat.get("strikethrough"),
+        "bchance": combat.get("blockchance"),
+        "accuracy": combat.get("accuracy"),
+        "mit": defense.get("armor"),
+        "health": (stats.get("health") or {}).get("max"),
+        "power": (stats.get("power") or {}).get("max"),
+        "str": (stats.get("str") or {}).get("effective"),
+        "sta": (stats.get("sta") or {}).get("effective"),
+        "agi": (stats.get("agi") or {}).get("effective"),
+        "wis": (stats.get("wis") or {}).get("effective"),
+        "int": (stats.get("int") or {}).get("effective"),
+        "vselemental": (resists.get("elemental") or {}).get("effective"),
+        "vsarcane": (resists.get("arcane") or {}).get("effective"),
+        "vsnoxious": (resists.get("noxious") or {}).get("effective"),
+    }
+    return {key: round(float(value), 2) for key, value in paths.items()
+            if isinstance(value, (int, float))}
+
+
 def _snapshot_doc(conn, character_id: int, snapshot_id: int | None = None):
     q = ("SELECT * FROM census_char_snapshots WHERE character_id=? "
          + ("AND id=? " if snapshot_id else "")
@@ -324,20 +425,63 @@ def _snapshot_doc(conn, character_id: int, snapshot_id: int | None = None):
 
 
 def _gear(conn, doc: dict) -> list[dict]:
+    from items import stat_block
+
     slots = doc.get("equipmentslot_list") or []
     ids = _equipped_item_ids(doc)
     names = {r["item_id"]: r for r in conn.execute(
-        f"SELECT item_id, displayname, tier FROM census_items WHERE item_id IN "
+        f"SELECT item_id, displayname, tier, json FROM census_items WHERE item_id IN "
         f"({','.join('?' * len(ids))})", ids)} if ids else {}
+    known_adorns = {r["item_id"]: r for r in conn.execute(
+        f"SELECT item_id, name, tier, type, level, iconid, icon_ok, stats_json "
+        f"FROM items WHERE item_id IN ({','.join('?' * len(ids))})", ids)} if ids else {}
     out = []
     for slot in sorted(slots, key=lambda s: s.get("id", 0)):
         item = slot.get("item") or {}
         cached = names.get(item.get("id"))
+        rec = json.loads(cached["json"]) if cached and cached["json"] else {}
+        host_stats = stat_block(rec) if rec else None
+        adornments = []
+        for adorn in item.get("adornment_list") or []:
+            arow = names.get(adorn.get("id"))
+            fallback = known_adorns.get(adorn.get("id"))
+            arec = json.loads(arow["json"]) if arow and arow["json"] else {}
+            display_stats = (stat_block(arec) if arec else
+                             json.loads(fallback["stats_json"])
+                             if fallback and fallback["stats_json"] else None)
+            adornments.append({
+                "id": adorn.get("id"), "color": adorn.get("color"),
+                "name": (arow["displayname"] if arow else
+                         fallback["name"] if fallback else None),
+                "tier": (arow["tier"] if arow else
+                         fallback["tier"] if fallback else None),
+                "icon": (arec.get("iconid") if arec else
+                         fallback["iconid"] if fallback and fallback["icon_ok"] else None),
+                "level": (arec.get("itemlevel") if arec else
+                          fallback["level"] if fallback else None),
+                "type": (arec.get("type") if arec else
+                         fallback["type"] if fallback else None),
+                "planner_stats": planner_item_stats(arec),
+                "stats": display_stats,
+            })
         out.append({
+            "key": slot.get("name"),
             "slot": slot.get("displayname") or slot.get("name"),
             "item_id": item.get("id"),
             "name": cached["displayname"] if cached else None,
             "tier": cached["tier"] if cached else None,
+            "level": rec.get("itemlevel"),
+            "icon": rec.get("iconid"),
+            "planner_stats": planner_item_stats(rec),
+            "card": ({
+                "name": cached["displayname"],
+                "rarity": (cached["tier"] or "").title() or None,
+                "icon": rec.get("iconid"), "type": rec.get("type"),
+                "slot": slot.get("displayname") or slot.get("name"),
+                "level": rec.get("itemlevel"), "stats": host_stats,
+                "effects": None,
+            } if cached else None),
+            "adornments": adornments,
             "adorns": sum(1 for a in item.get("adornment_list") or [] if a.get("id")),
         })
     return out
@@ -367,7 +511,8 @@ def character_summary(conn, char) -> dict:
     row, doc = _snapshot_doc(conn, char["id"])
     base = {"character": {"id": char["id"], "name": char["name"],
                           "class": char["class"], "level": char["level"],
-                          "world": "Wuoshi", "last_census_ts": char["last_census_ts"]}}
+                          "world": "Wuoshi", "last_census_ts": char["last_census_ts"],
+                          "census_id": char["census_character_id"]}}
     if doc is None:
         return {**base, "synced": False}
     stats = doc.get("stats") or {}
@@ -390,6 +535,7 @@ def character_summary(conn, char) -> dict:
         "guild": guild,
         "key_stats": key_stats, "attributes": attributes, "vitals": vitals,
         "resists": resists, "aa_spent": aa.get("spentpoints"),
+        "planner_stats": planner_character_stats(doc),
         "gear": _gear(conn, doc),
         "spells": _spells(conn, doc, char["class"]),
     }
