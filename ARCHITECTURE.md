@@ -20,7 +20,7 @@ the matching file rather than here.
 | `docs/census-abilities.md` | Census sync, guild vote, proc exposure, pet/proc rulings and the Abilities console, provenance, the class tree, the wiki as reference data, why gear procs are wontfix |
 | `docs/coach.md` | Coach engine (descriptive, fit, replay, calibration), the five correctness rules, ability catalog, raid report |
 | `docs/admin-redesign.md` | Implemented Admin operations workspace: dashboard, incidents, support workflows, ability review, and database-backed AoE timer curation |
-| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions (EoF and/or RoK), Census-backed current gear with a provenance-separated EQ2 Lexicon item fallback, slot-aware candidate cycling, TLE Primary Attributes normalization, in-game-grouped projected stats with equipped/upgrade/downgrade colors, canonically grouped set adornments, gear search, and a contextual collapsible prerequisite-outline column. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v44): Phase 0 measured 2,584 matched coordinates across 899 RoK quests; co-location tags / multi-class epic planning remain planned |
+| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions, Census/Lexicon current gear, five named local/account-backed equipment sets, slot-aware candidates and adornments, projected stats, gear search, explicit Fabled→Mythical class-epic suggestions, and a contextual zone→mob/quest prerequisite list. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v45) |
 
 `docs/skillissue-proposal.md` is an outbound proposal to another project, not
 reference material.

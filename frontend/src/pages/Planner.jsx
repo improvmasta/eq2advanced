@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Picker from '../components/Picker.jsx'
 import PlanLoadout, { eligiblePlanSlots, PLAN_SLOTS } from '../components/PlanLoadout.jsx'
 import PlanOutline from '../components/PlanOutline.jsx'
+import QuestLinks from '../components/QuestLinks.jsx'
 import SortableTable from '../components/SortableTable.jsx'
 /* The examine card is SHARED with the Loot tab and /chat. There are now three
    ways to meet an item and all three must open the same window — the server
@@ -23,6 +24,8 @@ import { useQueryState } from '../lib/useQueryState.js'
    choice, reclaiming that width for search while the plan is empty. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist'
+const SAVED_SETS_KEY = 'eq2adv:plan:saved-sets:v1'
+const SAVED_SET_COUNT = 5
 /* THREE CHOICES, EACH DEFAULTING TO ANY. The priority list is still an ORDER
    and still never shows a weight — what changed is only how you say it. A
    draggable track of thirteen tokens made the reader arrange every stat in the
@@ -49,6 +52,9 @@ const KIND_LABEL = {
    searches. Checkboxes say it in one, and they show the whole list without
    being opened, which four short words can afford. */
 const KIND_ORDER = ['raid', 'group', 'solo', 'quest', 'zone', 'unknown']
+const LEVEL_OPTIONS = [{ value: '', label: 'Any' }, ...Array.from({ length: 200 }, (_, i) => ({
+  value: String(i + 1), label: String(i + 1),
+}))]
 const TRACK_LABEL = {
   abmod: 'Ability', acspeed: 'Casting', arspeed: 'Reuse', aspeed: 'Haste',
   dps: 'DPS', multi: 'Multi', flurry: 'Flurry', aeauto: 'AE Auto',
@@ -56,28 +62,76 @@ const TRACK_LABEL = {
   maxhealth: 'Max HP',
 }
 
-function loadShortlist() {
+const emptyShortlist = () => ({
+  items: [], sets: [], active: {}, set_slots: {}, adorn_slots: {},
+})
+
+function normalizeShortlist(saved) {
   try {
-    const saved = JSON.parse(localStorage.getItem(SHORTLIST_KEY)) || {}
+    saved ||= {}
     /* The former flat shortlist did not retain an item's concrete equipment
        position or its additive stats. It cannot safely participate in a
        subtract-and-replace projection, so preserve the still-compatible sets
-       and targets while dropping only those legacy gear rows. */
+       while dropping only those legacy gear rows. */
     const items = Array.isArray(saved.items)
       ? saved.items.filter((item) => item?.equip_slot && item?.stats)
       : []
     return {
       items,
       sets: Array.isArray(saved.sets) ? saved.sets : [],
-      targets: Array.isArray(saved.targets) ? saved.targets : [],
       active: saved.active && typeof saved.active === 'object' ? saved.active : {},
       set_slots: saved.set_slots && typeof saved.set_slots === 'object'
         ? saved.set_slots : {},
       adorn_slots: saved.adorn_slots && typeof saved.adorn_slots === 'object'
         ? saved.adorn_slots : {},
     }
-  } catch {
-    return { items: [], sets: [], targets: [], active: {}, set_slots: {}, adorn_slots: {} }
+  } catch { return emptyShortlist() }
+}
+
+function loadShortlist() {
+  try { return normalizeShortlist(JSON.parse(localStorage.getItem(SHORTLIST_KEY))) }
+  catch { return emptyShortlist() }
+}
+
+const defaultSavedSets = () => Array.from({ length: SAVED_SET_COUNT }, (_, i) => ({
+  slot: i + 1, name: `Set ${i + 1}`, payload: null, updated_ts: null,
+}))
+
+function normalizeSavedSets(rows) {
+  const bySlot = new Map((Array.isArray(rows) ? rows : []).map((row) => [row?.slot, row]))
+  return defaultSavedSets().map((fallback) => {
+    const row = bySlot.get(fallback.slot)
+    return row ? {
+      ...fallback, ...row,
+      name: String(row.name || fallback.name).slice(0, 40),
+      payload: row.payload && typeof row.payload === 'object' ? row.payload : null,
+    } : fallback
+  })
+}
+
+const savedSetsStorageKey = (user) => `${SAVED_SETS_KEY}:${user?.id || 'guest'}`
+
+function readLocalSavedSets(user) {
+  try { return normalizeSavedSets(JSON.parse(localStorage.getItem(savedSetsStorageKey(user)))) }
+  catch { return defaultSavedSets() }
+}
+
+function writeLocalSavedSets(user, rows) {
+  try { localStorage.setItem(savedSetsStorageKey(user), JSON.stringify(rows)) }
+  catch { /* private mode */ }
+}
+
+function equipmentSetPayload(shortlist) {
+  const activePages = new Set(Object.values(shortlist.active || {}))
+  return {
+    version: 1,
+    shortlist: {
+      ...emptyShortlist(),
+      items: (shortlist.items || []).filter((item) => activePages.has(item.page_title)),
+      active: { ...(shortlist.active || {}) },
+      set_slots: { ...(shortlist.set_slots || {}) },
+      adorn_slots: { ...(shortlist.adorn_slots || {}) },
+    },
   }
 }
 
@@ -128,7 +182,11 @@ export default function Planner({ user }) {
   const [outlineErr, setOutlineErr] = useState(null)
   const [err, setErr] = useState(null)
   const [shortlist, setShortlist] = useState(loadShortlist)
-  const planCount = shortlist.items.length + shortlist.sets.length + shortlist.targets.length
+  const [savedSets, setSavedSets] = useState(() => readLocalSavedSets(null))
+  const [savedSetSlot, setSavedSetSlot] = useState(1)
+  const [savedSetBusy, setSavedSetBusy] = useState(false)
+  const [savedSetStatus, setSavedSetStatus] = useState('')
+  const planCount = shortlist.items.length + shortlist.sets.length
   const [outlineOpen, setOutlineOpen] = useState(planCount > 0)
   const previousPlanCount = useRef(planCount)
   useEffect(() => {
@@ -146,10 +204,21 @@ export default function Planner({ user }) {
   const clearPlannedGear = useCallback(
     () => setShortlist((s) => ({ ...s, active: {}, set_slots: {}, adorn_slots: {} })), [])
   const [focusSlot, setFocusSlot] = useState(null)
+  const wasSignedIn = useRef(!!user)
+  useEffect(() => {
+    if (wasSignedIn.current && !user) {
+      // Logging out must land on the public catalog, not retain the concrete
+      // slot that happened to be focused in the account's equipment window.
+      setFocusSlot(null)
+      setSlot(null)
+    }
+    wasSignedIn.current = !!user
+  }, [user, setSlot])
   const [characters, setCharacters] = useState(null)
   const [character, setCharacter] = useState(null)
   const [adornmentSets, setAdornmentSets] = useState([])
   const [whiteAdornments, setWhiteAdornments] = useState([])
+  const [epicItems, setEpicItems] = useState([])
   const [charId, setCharId] = useState(() => {
     try { return localStorage.getItem('eq2adv:plan:character') || '' }
     catch { return '' }
@@ -174,6 +243,84 @@ export default function Planner({ user }) {
     try { localStorage.setItem(SHORTLIST_KEY, JSON.stringify(shortlist)) }
     catch { /* private mode — the shortlist just doesn't survive a reload */ }
   }, [shortlist])
+
+  /* Account rows win when present. Empty account slots adopt browser-local
+     builds, including guest saves made immediately before registration. */
+  useEffect(() => {
+    let dead = false
+    if (!user) {
+      setSavedSets(readLocalSavedSets(null))
+      return undefined
+    }
+    const accountLocal = readLocalSavedSets(user)
+    const guestLocal = readLocalSavedSets(null)
+    api.planSavedSets().then(async (response) => {
+      if (dead) return
+      const server = normalizeSavedSets(response.sets)
+      const adopted = server.map((row, i) => {
+        if (row.payload || row.name !== `Set ${row.slot}`) return row
+        const local = (accountLocal[i]?.payload || accountLocal[i]?.name !== `Set ${row.slot}`)
+          ? accountLocal[i] : guestLocal[i]
+        return (local?.payload || local?.name !== `Set ${row.slot}`)
+          ? { ...row, name: local.name, payload: local.payload } : row
+      })
+      setSavedSets(adopted)
+      writeLocalSavedSets(user, adopted)
+      const pending = adopted.filter((row, i) =>
+        !server[i].payload && server[i].name === `Set ${row.slot}`
+        && (row.payload || row.name !== server[i].name))
+      if (pending.length) {
+        const written = await Promise.all(pending.map((row) =>
+          api.putPlanSavedSet(row.slot, row.name, row.payload)))
+        if (dead) return
+        const bySlot = new Map(written.map((result) => [result.set.slot, result.set]))
+        const synced = adopted.map((row) => bySlot.get(row.slot) || row)
+        setSavedSets(synced)
+        writeLocalSavedSets(user, synced)
+      }
+      try { localStorage.removeItem(savedSetsStorageKey(null)) } catch { /* private mode */ }
+    }).catch(() => {
+      if (!dead) {
+        setSavedSets(accountLocal)
+        setSavedSetStatus('Using browser saves')
+      }
+    })
+    return () => { dead = true }
+  }, [user?.id])
+
+  const persistSavedSet = useCallback((slotNumber, capture = false, nextName = null) => {
+    const held = savedSets.find((row) => row.slot === slotNumber)
+    if (!held) return
+    const nextRow = {
+      ...held, name: (nextName ?? held.name).trim() || `Set ${slotNumber}`,
+      payload: capture ? equipmentSetPayload(shortlist) : held.payload,
+      updated_ts: Math.floor(Date.now() / 1000),
+    }
+    const next = savedSets.map((row) => row.slot === slotNumber ? nextRow : row)
+    setSavedSets(next)
+    writeLocalSavedSets(user, next)
+    setSavedSetStatus(user ? 'Saving…' : 'Saved in this browser')
+    if (!user) return
+    setSavedSetBusy(true)
+    api.putPlanSavedSet(slotNumber, nextRow.name, nextRow.payload)
+      .then(({ set }) => {
+        setSavedSets((rows) => {
+          const synced = rows.map((row) => row.slot === slotNumber ? set : row)
+          writeLocalSavedSets(user, synced)
+          return synced
+        })
+        setSavedSetStatus('Saved')
+      })
+      .catch(() => setSavedSetStatus('Saved here; sync failed'))
+      .finally(() => setSavedSetBusy(false))
+  }, [savedSets, shortlist, user?.id])
+
+  const loadSavedSet = useCallback((slotNumber) => {
+    const held = savedSets.find((row) => row.slot === slotNumber)
+    if (!held?.payload?.shortlist) return
+    setShortlist(normalizeShortlist(held.payload.shortlist))
+    setSavedSetStatus(`Loaded ${held.name}`)
+  }, [savedSets])
 
   /* A LOOKED-UP CHARACTER OUTRANKS THE ACCOUNT'S. Whichever was asked for last
      is the one being planned for, and a name somebody typed is the more
@@ -252,6 +399,35 @@ export default function Planner({ user }) {
 
   const planningCharacter = lookedUp || character
   const adornmentClass = planningCharacter?.character?.class?.toLowerCase() || ''
+  useEffect(() => {
+    if (!adornmentClass) { setEpicItems([]); return undefined }
+    let dead = false
+    api.planEpics(adornmentClass)
+      .then((response) => { if (!dead) setEpicItems(response.items || []) })
+      .catch(() => { if (!dead) setEpicItems([]) })
+    return () => { dead = true }
+  }, [adornmentClass])
+
+  const suggestedEpic = useMemo(() => {
+    const fabled = epicItems.find((item) => item.epic_stage === 'fabled')
+    const mythical = epicItems.find((item) => item.epic_stage === 'mythical')
+    const worn = planningCharacter?.gear?.find((item) => item.key === 'primary')
+    const plannedPages = new Set(Object.values(shortlist.active || {}))
+    const savedPages = new Set((savedSets || []).flatMap((row) => (
+      Object.values(row.payload?.shortlist?.active || {}))))
+    const held = (item) => {
+      if (!item) return false
+      if (plannedPages.has(item.page_title) || savedPages.has(item.page_title)) return true
+      if (item.census_id && worn?.item_id === item.census_id) return true
+      // Several class pairs deliberately share a display name; only use the
+      // name fallback when it identifies one stage unambiguously.
+      return epicItems.filter((candidate) => candidate.name === item.name).length === 1
+        && worn?.name === item.name
+    }
+    const hasFabled = held(fabled) || held(mythical)
+    const next = hasFabled ? (mythical || fabled) : (fabled || mythical)
+    return held(next) ? null : next
+  }, [epicItems, planningCharacter, shortlist.active, savedSets])
   /* Socket choices are useful while the item table is open, so they cannot
      depend on visiting the separate Sets mode first. This is the same local
      planner catalog, narrowed to the loaded character's class when known. */
@@ -314,7 +490,6 @@ export default function Planner({ user }) {
     const p = new URLSearchParams({ eras: csv(eras) })
     shortlist.items.forEach((i) => p.append('item', i.page_title))
     shortlist.sets.forEach((s) => p.append('set', s.name))
-    shortlist.targets.forEach((t) => p.append('target', t.page_title))
     return p.toString()
   }, [erasParam, shortlist])
 
@@ -350,8 +525,6 @@ export default function Planner({ user }) {
     () => new Set(shortlist.items.map((i) => i.page_title)), [shortlist])
   const setsInList = useMemo(
     () => new Set(shortlist.sets.map((s) => s.name)), [shortlist])
-  const targetsInList = useMemo(
-    () => new Set(shortlist.targets.map((t) => t.page_title)), [shortlist])
 
   const toggleItem = useCallback((row) => setShortlist((s) => {
     if (s.items.some((i) => i.page_title === row.page_title)) {
@@ -468,19 +641,6 @@ export default function Planner({ user }) {
     }
   }), [])
 
-  const toggleTarget = useCallback((row) => setShortlist((s) => {
-    const page = row.key || row.page_title
-    return s.targets.some((t) => t.page_title === page)
-      ? { ...s, targets: s.targets.filter((t) => t.page_title !== page) }
-      : {
-        ...s,
-        targets: [...s.targets, {
-          page_title: page, name: row.name, kind: row.kind,
-          level: row.level, zone: row.zone, difficulty: row.difficulty,
-        }],
-      }
-  }), [])
-
   const statLabel = useMemo(
     () => Object.fromEntries((meta?.stats || []).map((s) => [s.key, s.label])),
     [meta])
@@ -516,6 +676,17 @@ export default function Planner({ user }) {
     setCarries(null); setProc(null); setQ(''); setTyped('')
   }, [setCls, setSlot, setArmor, setTier, setKind, setLevelMin, setLevelMax,
     setCarries, setProc])
+
+  const useCurrentCharacterFilters = useCallback(() => {
+    const current = planningCharacter?.character
+    if (!current) return
+    const level = Number(current.level)
+    setCls(String(current.class || '').toLowerCase() || null)
+    if (Number.isFinite(level)) {
+      setLevelMin(String(Math.max(1, level - 10)))
+      setLevelMax(String(Math.min(200, level + 10)))
+    }
+  }, [planningCharacter, setCls, setLevelMin, setLevelMax])
 
   /* How many of the listed stats actually RANK. The server drops potency and
      crit whatever the URL says, so this is its count and not the raw order's
@@ -562,10 +733,12 @@ export default function Planner({ user }) {
       if (def.key === 'secondary' && selectedPrimary?.two_handed) return []
       const item = planned[(shortlist.active || {})[def.key]] || current[def.key]
       if (!item) return []
-      const colors = item.adornments
-        ? item.adornments.map((adorn) => adorn.color)
-        : Object.entries(item.adorns || {}).flatMap(([color, count]) =>
-          Array.from({ length: count }, () => color))
+      const colors = item.card?.stats?.adornments?.length
+        ? item.card.stats.adornments
+        : item.adornments
+          ? item.adornments.map((adorn) => adorn.color)
+          : Object.entries(item.adorns || {}).flatMap(([color, count]) =>
+            Array.from({ length: count }, () => color))
       if (!colors.includes('turquoise')) return []
       const overridden = Object.prototype.hasOwnProperty.call(
         shortlist.set_slots || {}, def.key)
@@ -620,7 +793,29 @@ export default function Planner({ user }) {
             onSetAdornment={setSlotAdornment} onWhiteAdornment={setWhiteAdornment}
             onRemoveItem={removeEquipmentItem}
             onReset={clearPlannedGear}
+            savedSets={savedSets} savedSetSlot={savedSetSlot}
+            savedSetBusy={savedSetBusy} savedSetStatus={savedSetStatus}
+            onSavedSetSlot={setSavedSetSlot}
+            onSaveSet={(slotNumber, name) => persistSavedSet(slotNumber, true, name)}
+            onRenameSet={(slotNumber, name) => persistSavedSet(slotNumber, false, name)}
+            onLoadSet={loadSavedSet}
             statLabel={statLabel} statPct={statPct} />
+
+        {suggestedEpic && (
+          <div className="card epicsuggestion">
+            <div>
+              <span className="seclabel">Epic weapon</span>
+              <b className={rarityClass(suggestedEpic.tier)}>{suggestedEpic.name}</b>
+              <small>{suggestedEpic.epic_stage === 'mythical'
+                ? 'Fabled complete — pursue the Mythical upgrade'
+                : 'Start with the Fabled class epic'}</small>
+            </div>
+            <button type="button" className={`chip${inList.has(suggestedEpic.page_title) ? ' on' : ''}`}
+                    onClick={() => toggleItem(suggestedEpic)}>
+              {inList.has(suggestedEpic.page_title) ? 'In loadout' : 'Add to loadout'}
+            </button>
+          </div>
+        )}
 
         <div className="card planbar">
           <div className="plansearchhead">
@@ -694,7 +889,13 @@ export default function Planner({ user }) {
                     alone in the rail, which read as a page-wide setting — and
                     it is the one control most likely to be what emptied a
                     table (`EmptyTable` names it for exactly that reason). */}
-                <span className="planbandlabel">Filter</span>
+                <span className="planbandlabel filterbandlabel">
+                  Filter
+                  <button type="button" className="currentfilter"
+                          disabled={!planningCharacter?.character}
+                          title="Use this character's class and level, plus or minus 10"
+                          onClick={useCurrentCharacterFilters}>Current</button>
+                </span>
                 <div className="planbandrow">
                   <Facet name="Class" value={cls} onChange={setCls}
                          options={meta?.classes}
@@ -706,35 +907,24 @@ export default function Planner({ user }) {
                   <Facet name="Tier" value={tier} onChange={setTier}
                          options={(meta?.tiers || []).map((t) => t.key)}
                          format={(t) => TIER_LABEL(meta, t)} />
+                  <SourceFacet kinds={kinds} available={meta?.kinds}
+                               onToggle={toggleKind} />
                   {/* One control, one label, one dash between two numbers —
                       the pair was a band of its own with its own heading and
                       the word "to", for a thing that is read as "70–80". */}
                   <span className={`planfacet levelfacet${levelMin || levelMax ? ' selected' : ''}`}>
                     <span className="facetlab">Level</span>
                     <span className="levelinputs">
-                      <input type="number" min="1" max="200" value={levelMin}
-                             aria-label="Minimum item level" placeholder="Any"
-                             onChange={(e) => setLevelMin(e.target.value)} />
+                      <Picker value={levelMin || ''} options={LEVEL_OPTIONS}
+                              label="Minimum item level" placeholder="Any"
+                              filterFrom={8} filterHint="Minimum level…"
+                              onChange={setLevelMin} />
                       <i>–</i>
-                      <input type="number" min="1" max="200" value={levelMax}
-                             aria-label="Maximum item level" placeholder="Any"
-                             onChange={(e) => setLevelMax(e.target.value)} />
+                      <Picker value={levelMax || ''} options={LEVEL_OPTIONS}
+                              label="Maximum item level" placeholder="Any"
+                              filterFrom={8} filterHint="Maximum level…"
+                              onChange={setLevelMax} />
                     </span>
-                  </span>
-                </div>
-
-                <span className="planbandlabel">Source</span>
-                <div className="planbandrow">
-                  <span className="sourceboxes">
-                    {KIND_ORDER.filter((k) => (meta?.kinds || []).includes(k))
-                      .map((k) => (
-                        <label key={k}
-                               className={`sourcebox${kinds.includes(k) ? ' on' : ''}`}>
-                          <input type="checkbox" checked={kinds.includes(k)}
-                                 onChange={() => toggleKind(k)} />
-                          <span>{KIND_LABEL[k] || k}</span>
-                        </label>
-                      ))}
                   </span>
                   <button className={`chip${carries ? ' on' : ''}`}
                           title="Only items that ship with a set turquoise"
@@ -845,13 +1035,11 @@ export default function Planner({ user }) {
             <button type="button" className="iconbtn" aria-label="Collapse outline"
                     title="Collapse outline" onClick={() => setOutlineOpen(false)}>›</button>
           </header>
-          <Shortlist list={shortlist} onDropSet={toggleSet}
-                     onDropTarget={toggleTarget} />
+          <Shortlist list={shortlist} onDropSet={toggleSet} />
           {outlineErr && <p className="err">{outlineErr}</p>}
           {!outlineData && !outlineErr && <p className="muted">Building outline…</p>}
           {outlineData && (
-            <PlanOutline data={outlineData} targetsInList={targetsInList}
-                         onToggleTarget={toggleTarget} />
+            <PlanOutline data={outlineData} />
           )}
         </aside>
       )}
@@ -928,6 +1116,27 @@ function Facet({ name, value, onChange, options, format }) {
                 ...(options || []).map((o) => ({
                   value: o, label: format ? format(o) : o,
                 }))]} />
+    </span>
+  )
+}
+
+function SourceFacet({ kinds, available, onToggle }) {
+  const shown = KIND_ORDER.filter((kind) => (available || []).includes(kind))
+  return (
+    <span className={`planfacet sourcemultifacet${kinds.length ? ' selected' : ''}`}>
+      <span className="facetlab">Source</span>
+      <details className="sourcepicker">
+        <summary>{kinds.length ? `${kinds.length} selected` : 'Any'}</summary>
+        <span className="sourcepickermenu">
+          {shown.map((kind) => (
+            <label key={kind} className={`sourcebox${kinds.includes(kind) ? ' on' : ''}`}>
+              <input type="checkbox" checked={kinds.includes(kind)}
+                     onChange={() => onToggle(kind)} />
+              <span>{KIND_LABEL[kind] || kind}</span>
+            </label>
+          ))}
+        </span>
+      </details>
     </span>
   )
 }
@@ -1133,6 +1342,7 @@ function Sources({ row }) {
       <i className={`skind ${first.kind}`}>{KIND_LABEL[first.kind]}</i>
       {first.source}
       {more > 0 && <span className="muted"> +{more}</span>}
+      {first.kind === 'quest' && <QuestLinks page={first.source_page} />}
     </span>
   )
 }
@@ -1199,21 +1409,19 @@ function SetList({ sets, inList, targets, onToggle, onEquipAdornment }) {
   )
 }
 
-/* THREE KINDS of thing, listed separately: items, adornments, and targets. A
-   turquoise is not its host item and a raid target is not a slot, even when
-   both happen to lead to the same source row.
+/* Two kinds of thing, listed separately: items and adornments. A turquoise is
+   not its host item even when both happen to lead to the same source row.
 
    It heads the Outline, which is the page that answers it — "here is what you
    picked, and here is what to do about it" reads in that order. */
-function Shortlist({ list, onDropSet, onDropTarget }) {
-  const empty = !list.items.length && !list.sets.length && !list.targets.length
+function Shortlist({ list, onDropSet }) {
+  const empty = !list.items.length && !list.sets.length
   return (
     <div className="card shortlist">
       <div className="seclabel">Shortlist</div>
       {empty && (
         <p className="muted">
-          Pick gear and it is kept here. It stays in this
-          browser and is never written to an account.
+          Pick gear and it is kept here. Save the active build above when it is ready.
         </p>
       )}
       {!!list.items.length && (
@@ -1231,19 +1439,6 @@ function Shortlist({ list, onDropSet, onDropTarget }) {
               <em>{s.level ? `L${s.level}` : ''}</em>
               <button className="iconbtn" aria-label={`Remove ${s.name}`}
                       onClick={() => onDropSet(s)}>✕</button>
-            </div>
-          ))}
-        </>
-      )}
-      {!!list.targets.length && (
-        <>
-          <div className="shortkind">Targets</div>
-          {list.targets.map((t) => (
-            <div className="shortrow" key={t.page_title}>
-              <span>{t.name}</span>
-              <em>{t.level ? `L${t.level}` : t.kind}</em>
-              <button className="iconbtn" aria-label={`Remove ${t.name}`}
-                      onClick={() => onDropTarget(t)}>✕</button>
             </div>
           ))}
         </>

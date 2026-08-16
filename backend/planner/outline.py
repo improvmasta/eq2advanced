@@ -1,17 +1,12 @@
-"""The Outline: what to actually DO, in an order you can follow.
+"""The Outline: selected-item sources, grouped into a compact route list.
 
-The Gear tab answers "what should I be chasing"; this answers "what should I be
-doing about it". The shortlist is the bridge — you fill it there and consume it
-here — so everything on this page is derived from what the reader kept, plus
-the expansion's standard work, which does not depend on the shortlist at all.
+The Gear tab answers "what should I be chasing"; this answers where those
+selected items come from. It contains only mobs, reward quests, and the hard
+prerequisites of those quests. No prelude and no separately-kept targets.
 
-**A SINGLE ORDERED LIST, AND IT NEVER REORDERS.** Two sections: the prelude
-(layer 3, hand-curated — see `refdata/planner_standard.json`) and the body,
-ordered by prerequisite and then by level. Phase 3's cluster tags will be a
-LENS over this list and will highlight rather than filter, for the same reason
-this list is stable: prerequisite order and travel efficiency disagree
-constantly, and a planner that satisfies both by reordering produces something
-nobody can follow (docs/planner.md).
+The result is prerequisite-ordered before the frontend groups it into zones.
+Travel order and quest order can disagree, so the prerequisite relationship is
+kept intact within the compact list.
 
 **TWO QUESTS IN ONE CHAIN CANNOT BE WORKED AT THE SAME TIME**, which is why
 `plan_quest_edges` exists and why the sort is a topological one rather than a
@@ -23,12 +18,8 @@ of `/plan` keeps, and here the whole answer is a few hundred rows and a heap.
 """
 
 import heapq
-import json
-from pathlib import Path
 
 from planner import wiki
-
-STANDARD_FILE = Path(__file__).resolve().parents[1] / "refdata" / "planner_standard.json"
 
 # How far back a prerequisite chain is walked from something you want. Kunark's
 # longest are a dozen or so steps; the cap is a loop guard rather than an
@@ -41,49 +32,6 @@ MAX_DEPTH = 40
 MAX_ROWS = 400
 # The most shortlist entries a request may carry, for the same reason.
 MAX_INPUT = 120
-
-
-def _standard() -> dict:
-    """Layer 3, read from disk on every call.
-
-    It is a few KB and it is edited by hand while somebody is looking at the
-    page, so re-reading is the feature: `zone_eras.json` is cached because it
-    is consulted per parsed line, and this is consulted once per page load."""
-    try:
-        return json.loads(STANDARD_FILE.read_text())
-    except (OSError, ValueError):
-        # A prelude that fails to parse must not take the outline down with
-        # it. The body is the part derived from the catalog and still works.
-        return {}
-
-
-def prelude(conn, eras: list[str]) -> list[dict]:
-    """The expansion's standard work — the same for everybody, every time.
-
-    It does not depend on the shortlist, which is why an empty shortlist still
-    has a useful Outline: what everybody does first in an expansion is not a
-    function of what you are chasing.
-
-    A `page` that names a quest the catalog knows is marked `known`, so the
-    page can link it; one that does not is still shown. These are claims about
-    the game, and the game does not stop being true because a crawl missed a
-    page."""
-    data = _standard()
-    known = {r["page_title"] for r in conn.execute(
-        "SELECT page_title FROM plan_quests")}
-    out = []
-    for era in eras:
-        for entry in data.get(era, []):
-            page = entry.get("page")
-            out.append({
-                "era": era, "title": entry.get("title") or "",
-                "why": entry.get("why") or "", "detail": entry.get("detail"),
-                "page": page, "zone": entry.get("zone"),
-                "level": entry.get("level"), "kind": entry.get("kind") or "",
-                "known": bool(page) and page in known,
-                "wiki": _wiki_url(page) if page else None,
-            })
-    return out
 
 
 def _wiki_url(page: str) -> str:
@@ -189,9 +137,7 @@ def _order(rows: list[dict], edges: list[tuple[str, str]]) -> list[dict]:
 
     Kahn's, with a heap on (level, name) so that among everything currently
     doable the lowest-level thing comes first — which is the "then level" half
-    of the rule, and is also what interleaves the raid targets (which have no
-    prerequisites at all) into the quest chains instead of stacking them at one
-    end.
+    of the rule and keeps independent quest chains naturally interleaved.
 
     A cycle cannot be ordered and is not dropped: the wiki has a handful of
     pages that name each other, and those rows come out at the end in level
@@ -225,23 +171,15 @@ def _order(rows: list[dict], edges: list[tuple[str, str]]) -> list[dict]:
 
 
 def outline(conn, *, eras: list[str], items: list[str] | None = None,
-            sets: list[str] | None = None,
-            targets: list[str] | None = None) -> dict:
-    """The whole page: the prelude, then the body, then what it could not say.
-
-    `targets` are things wanted for their own sake — a raid mob you are going
-    for whatever it drops, or a quest you just want done. They are the rail's
-    third kind and they enter the body exactly as a shortlisted item's source
-    does, minus the "gets you" line."""
+            sets: list[str] | None = None) -> dict:
+    """Selected items -> source mobs and reward quests + quest prerequisites."""
     keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
     wanted = _wanted(conn, keys, items or [], sets or [])
-    picked = [t for t in (targets or [])[:MAX_INPUT]]
-
     # A source page is a quest page or a monster page and the catalog knows
     # which — the quest table is the authority, and anything not in it is a mob
     # that was crawled as a named monster.
-    quests = _quests(conn, list(wanted) + picked)
-    seeds = {p for p in list(wanted) + picked if p in quests}
+    quests = _quests(conn, list(wanted))
+    seeds = {p for p in wanted if p in quests}
     need, _ = _ancestors(conn, seeds)
     chain = _quests(conn, [p for p in need if p not in quests])
     quests.update(chain)
@@ -268,15 +206,12 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             # something you want": most of a chain is steps that reward nothing
             # and exist only to open the one that does.
             "why": ("reward" if gets else
-                    "target" if page in picked else "prerequisite"),
+                    "prerequisite"),
             "opens": sorted(quests[g]["name"] for g in need.get(page, ())
                             if g in quests and g != page),
         })
 
-    # Named targets must survive on their own after the item that first exposed
-    # them leaves the shortlist. Walk the union, not only `wanted`: a raid mob
-    # kept for its own sake has no `gets` entry by definition.
-    for page in dict.fromkeys([*wanted, *picked]):
+    for page in wanted:
         if page in quests:
             continue
         gets = wanted.get(page, [])
@@ -292,12 +227,11 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             "timeline": None, "jcat": None, "difficulty": src["kind"],
             "diff": src["detail"], "era": src["era"],
             "wiki": _wiki_url(page), "gets": gets,
-            "why": "target" if page in picked else "drop", "opens": [],
+            "why": "drop", "opens": [],
         })
 
     ordered = _order(rows, edges)[:MAX_ROWS]
     return {
-        "prelude": prelude(conn, keys),
         "rows": ordered,
         "total": len(rows),
         "eras": keys,
@@ -309,12 +243,11 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             (set(items or []) -
              {g["page_title"] for r in rows for g in r["gets"]}) |
             (set(sets or []) -
-             {g["via_set"] for r in rows for g in r["gets"] if g["via_set"]}) |
-            (set(targets or []) - {r["key"] for r in rows})
+             {g["via_set"] for r in rows for g in r["gets"] if g["via_set"]})
         ),
         "counts": {
             "quests": sum(1 for r in ordered if r["kind"] == "quest"),
-            "targets": sum(1 for r in ordered if r["kind"] == "target"),
+            "mobs": sum(1 for r in ordered if r["kind"] != "quest"),
             "chain": sum(1 for r in ordered if r["why"] == "prerequisite"),
         },
     }

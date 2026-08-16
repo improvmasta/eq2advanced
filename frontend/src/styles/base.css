@@ -6078,16 +6078,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planneroutlinehead .iconbtn { font-size: 1rem; }
 .planneroutline > .shortlist { padding: 8px; }
 .planneroutline > .planoutline { gap: 10px; margin-top: 10px; }
-.planneroutline .outlineprelude { padding: 10px; }
-.planneroutline .outlinehead { align-items: flex-start; }
-.planneroutline .outlinehead > .muted { display: none; }
-.planneroutline .outlinerow {
-  grid-template-columns: 22px 16px minmax(0, 1fr); gap: 5px; padding: 8px 6px;
-}
-.planneroutline .outlinetitle { flex-wrap: wrap; gap: 4px 6px; }
-.planneroutline .outlinetitle > .outlinemeta {
-  flex-basis: 100%; margin-left: 0; justify-content: flex-start;
-}
 .erafacet { margin-left: auto; }
 .plansearchhead .erafacet { margin: 0 auto 0 24px; }
 .outlineeras { display: flex; margin-top: 12px; }
@@ -6106,6 +6096,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* Character identity anchors the whole loadout instead of reading like a
    panel caption followed by incidental metadata. */
 .loadoutwho { min-width: 0; }
+.loadoutidentityline {
+  display: flex; align-items: flex-start; gap: 48px; margin-top: 5px;
+}
+.loadoutmeta {
+  padding-top: 3px; color: var(--text); font-family: var(--font-data);
+  font-size: 0.72rem; font-weight: 650; line-height: 1.2; text-transform: uppercase;
+  letter-spacing: 0.075em; white-space: nowrap;
+}
 /* A NAME IS NOT A SECTION LABEL. The site's `h2` is a small-caps label by
    design; "BOBBY" is not how anybody writes a character's name, so this one
    heading opts out of the uppercase and reads as typed. */
@@ -6122,6 +6120,41 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    panel and the picker says who it is open on, so neither of them is the
    headline — that is the character's name in the `h2` beside them. */
 .loadoutactions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.plansavedsets {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 4px 7px; padding-left: 12px;
+  border-left: 1px solid var(--row-line);
+}
+.plansavedtabs { min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; }
+.plansavedtabs button {
+  min-width: 46px; max-width: 90px; height: 24px; padding: 0 7px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 3px; background: var(--surface-raised); color: var(--text-muted);
+  font: 700 var(--fs-label) var(--font-data); cursor: pointer;
+}
+.plansavedtabs button.on {
+  border-color: var(--gold); color: var(--gold-bright);
+  background: rgba(var(--gold-rgb), 0.14);
+}
+.plansavedpanel {
+  grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap;
+  gap: 5px; padding: 5px 6px; border: 1px solid var(--border);
+  border-radius: 3px; background: var(--surface-raised);
+}
+.plansavedpanel > input { width: 130px; min-height: 26px; padding: 3px 7px; font-size: var(--fs-label); }
+.plansavedpanel > .chip { min-height: 26px; padding: 3px 8px; font-size: var(--fs-label); }
+.plansavedpanel > .btnlink { font-size: var(--fs-label); }
+.plansavedstatus, .plansavedhint { color: var(--text-muted); font-size: var(--fs-label); }
+.plansavedhint a { color: var(--gold-bright); }
+.guestcharacterlookup {
+  display: flex; align-items: center; gap: 8px; margin-top: 9px;
+}
+.guestcharacterlookup .plancharacterlookup input {
+  width: 18rem; max-width: min(48vw, 18rem); min-height: 31px;
+  border-color: var(--gold-dim); background: var(--surface);
+}
+.guestcharacterlookup .plancharacterlookup .chip { min-height: 31px; }
 .loadoutactions .chip { padding: 2px 9px; cursor: pointer; }
 .loadoutactions .chip:disabled { opacity: 0.42; cursor: default; }
 .plancharacterpick { display: flex; align-items: center; gap: 6px; }
@@ -6144,6 +6177,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: grid; grid-template-columns: minmax(520px, 1fr) minmax(380px, 0.85fr);
   gap: 12px; align-items: start; margin-top: 10px;
 }
+.epicsuggestion {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; padding: 9px 12px; border-color: var(--gold-dim);
+}
+.epicsuggestion > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
+.epicsuggestion .seclabel { flex-basis: 100%; }
+.epicsuggestion small { color: var(--text-muted); }
 .loadoutgear { min-width: 0; display: grid; align-content: start; gap: 8px; }
 .equipmentwindow {
   min-width: 0; display: grid;
@@ -6285,6 +6325,17 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .adornpicker.white.open .pickerbtn {
   border-color: #eef1eb; box-shadow: inset 0 0 0 1px #151815,
     inset 0 0 7px rgba(226, 235, 239, 0.36), 0 0 0 1px rgba(238, 241, 235, 0.2);
+}
+.adornpicker.changed .pickerbtn {
+  overflow: visible; border-color: var(--success);
+  box-shadow: inset 0 0 0 1px #151815, 0 0 0 1px rgba(var(--success-rgb), 0.34);
+}
+.adornpicker.changed .pickerbtn::after {
+  content: '✓'; position: absolute; z-index: 3; right: -4px; top: -5px;
+  width: 12px; height: 12px; display: grid; place-items: center;
+  border: 1px solid #101610; border-radius: 50%;
+  background: var(--success); color: #071007;
+  font: 900 8px/1 var(--font-data);
 }
 .planadorns.compact { gap: 2px; }
 .planadorns.compact .planadornicon,
@@ -6449,6 +6500,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 @media (max-width: 760px) {
   .loadouthead { align-items: flex-start; flex-direction: column; }
+  .loadoutidentityline { flex-direction: column; gap: 7px; }
+  .plansavedsets { padding-left: 0; border-left: 0; }
   .equipmentwindow { grid-template-columns: 1fr 1fr; }
   .planslot { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .planstats { grid-template-columns: minmax(0, 1fr); }
@@ -6552,9 +6605,19 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .planbandrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .planbandlabel {
-  color: var(--gold-bright); font-size: var(--fs-label); font-weight: 700;
+  color: var(--text); font-family: var(--font-data);
+  font-size: var(--fs-label); font-weight: 800;
   text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
 }
+.filterbandlabel { display: inline-flex; align-items: center; gap: 7px; }
+.currentfilter {
+  min-height: 23px; padding: 2px 7px; border: 1px solid var(--gold-dim);
+  border-radius: 3px; background: rgba(var(--gold-rgb), 0.09);
+  color: var(--gold-bright); font: 700 0.58rem/1 var(--font-data);
+  text-transform: none; letter-spacing: 0.02em; cursor: pointer;
+}
+.currentfilter:hover:not(:disabled) { border-color: var(--gold); background: rgba(var(--gold-rgb), 0.18); }
+.currentfilter:disabled { opacity: 0.38; cursor: default; }
 /* A quiet line at the end of the priority row, where the eye already is once
    the three boxes are set. Never a second block of instructions. */
 .bandnote { margin-left: auto; color: var(--text-muted); font-size: var(--fs-label); }
@@ -6579,14 +6642,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .levelinputs > i {
   color: var(--text); opacity: 0.72; font-style: normal; font-size: var(--fs-label);
 }
-.levelfacet input[type="number"] {
-  width: 52px; min-height: 29px; margin: 0; padding: 4px 5px;
-  border: 1px solid var(--border); border-radius: 3px;
-  background: var(--surface); color: var(--text); text-align: center;
-  font-size: var(--fs-label);
-}
-.levelfacet input[type="number"]:focus-visible { border-color: var(--gold); }
-.levelfacet.selected input[type="number"] {
+.levelfacet .pickerbtn { min-width: 52px; width: 52px; }
+.levelfacet.selected .pickerbtn {
   border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
   color: var(--gold-bright); font-weight: 700;
 }
@@ -6608,7 +6665,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .prioritypick .pickerbtn {
   min-width: 118px; min-height: 29px; border-radius: 0 3px 3px 0;
   border-color: var(--border); background: var(--surface);
-  color: var(--text); cursor: pointer;
+  color: var(--text); font-family: var(--font-data); font-weight: 600; cursor: pointer;
 }
 .prioritypick .pickerbtn:hover { border-color: var(--gold); color: var(--gold-bright); }
 .prioritypick.on > i {
@@ -6622,13 +6679,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* The name is OUTSIDE the box and stays put; the box holds the answer. */
 .planfacet { display: inline-flex; align-items: center; gap: 5px; }
 .facetlab {
-  color: var(--text); opacity: 0.78; font-size: var(--fs-label);
+  color: var(--text-muted); font-family: var(--font-data); font-size: var(--fs-label);
+  font-weight: 650;
   white-space: nowrap;
 }
 .planbandrow .pickerbtn,
 .planbandrow .chip {
   min-height: 29px; border-color: var(--border); background: var(--surface);
-  color: var(--text); cursor: pointer;
+  color: var(--text); font-family: var(--font-data); font-weight: 600; cursor: pointer;
 }
 .planbandrow .pickerbtn { min-width: 92px; }
 .planbandrow .pickerbtn:hover,
@@ -6638,10 +6696,32 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
   color: var(--gold-bright); font-weight: 700;
 }
-/* Source is a set of answers, not one of them — "group or raid" is a normal
-   thing to want and was two searches while it was a dropdown. Six short words
-   fit on the band without being opened, which is the other half of the case. */
-.sourceboxes { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+/* Source is one compact multi-select facet. It keeps the normal "group or
+   raid" choice without spending a full line on six checkboxes. */
+.sourcepicker { position: relative; }
+.sourcepicker > summary {
+  min-width: 92px; min-height: 29px; padding: 5px 24px 4px 9px;
+  position: relative; display: flex; align-items: center;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface); color: var(--text);
+  font: 600 var(--fs-label)/1 var(--font-data); cursor: pointer; list-style: none;
+}
+.sourcepicker > summary::-webkit-details-marker { display: none; }
+.sourcepicker > summary::after {
+  content: '▾'; position: absolute; right: 8px; color: var(--text-muted);
+  font-size: 0.58rem;
+}
+.sourcepicker[open] > summary,
+.sourcemultifacet.selected .sourcepicker > summary {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
+  color: var(--gold-bright); font-weight: 700;
+}
+.sourcepickermenu {
+  position: absolute; z-index: 40; left: 0; top: calc(100% + 4px);
+  min-width: 155px; padding: 5px; display: grid; gap: 3px;
+  border: 1px solid var(--gold-dim); border-radius: 4px;
+  background: var(--surface-raised); box-shadow: 0 10px 24px var(--shadow-color);
+}
 .sourcebox {
   display: inline-flex; align-items: center; gap: 4px;
   min-height: 29px; padding: 2px 8px 2px 6px;
@@ -6756,75 +6836,42 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .sethosts { margin-top: 5px; }
 
-/* ---- the outline ----
-   One stable spine: hand-kept prelude first, prerequisite DAG second. Tags are
-   Phase 3 and will highlight this list rather than reorder it. */
-.planoutline { display: grid; gap: 18px; margin-top: 12px; }
-.outlineprelude {
-  padding: 13px 15px;
-  border-color: var(--gold-dim);
-  background: rgba(var(--gold-rgb), 0.055);
+/* ---- the outline ---- */
+.planoutline.zonelist { display: grid; gap: 9px; margin-top: 8px; }
+.outlinezone {
+  overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface);
 }
-.outlinehead {
-  display: flex; justify-content: space-between; align-items: flex-end;
-  gap: 12px; flex-wrap: wrap;
+.outlinezone > h3 {
+  margin: 0; padding: 6px 8px; color: var(--gold-bright);
+  border-bottom: 1px solid var(--row-line); background: var(--surface-raised);
+  font-size: var(--fs-data);
 }
-.outlinehead h2 { margin: 2px 0 0; font-size: var(--fs-h3); }
-.outlinehead > .muted { font-size: var(--fs-label); }
-.preludelist { margin-top: 8px; }
-.preluderow { padding: 9px 0; border-top: 1px solid var(--row-line); }
-.preludeline { font-size: var(--fs-data); line-height: 1.45; }
-.preludeline > a, .preludeline > strong { color: var(--gold-bright); font-weight: 650; }
-.preluderow p {
-  margin: 3px 0 0; color: var(--text-muted); font-size: var(--fs-label);
-  line-height: 1.45;
+.outlinekindlist { display: grid; }
+.outlinekindlist > b {
+  padding: 5px 8px 2px; color: var(--text-muted); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.07em;
 }
-.outlinemeta {
-  display: inline-flex; align-items: baseline; flex-wrap: wrap;
-  color: var(--text-muted); font-size: var(--fs-label);
+.outlineentry {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 6px; align-items: center; padding: 5px 8px;
+  border-top: 1px solid var(--row-line); font-size: var(--fs-label);
 }
-.outlinemeta > span + span::before { content: '·'; margin: 0 6px; }
-.preluderow > .outlinemeta { margin-top: 3px; }
-
-.outlinebody { min-width: 0; }
+.outlineentry.quest { grid-template-columns: 16px minmax(0, 1fr) auto auto; cursor: pointer; }
+.outlineentry > em { color: var(--text-muted); font-style: normal; text-align: right; }
+.outlineentry.quest.done > span { color: var(--text-muted); text-decoration: line-through; }
+.outlineentry input { margin: 0; accent-color: var(--success); }
+.questlinks { display: inline-flex; gap: 3px; opacity: 0; transition: opacity 100ms ease; }
+.outlineentry:hover .questlinks, .outlineentry:focus-within .questlinks,
+.plansource:hover .questlinks, .plansource:focus-within .questlinks { opacity: 1; }
+.questlinks a {
+  min-width: 19px; height: 19px; padding: 0 4px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 3px;
+  color: var(--gold-bright); background: var(--surface-raised);
+  font: 700 10px/1 var(--font-data); text-decoration: none;
+}
+.plansource .questlinks { margin-left: 4px; vertical-align: middle; }
 .outlineempty { margin-top: 8px; padding: 13px 15px; }
-.outlineempty p { margin: 0 0 3px; }
-.outlinelist {
-  list-style: none; margin: 8px 0 0; padding: 0;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  overflow: hidden; background: var(--surface);
-}
-.outlinerow {
-  display: grid; grid-template-columns: 30px 18px minmax(0, 1fr);
-  align-items: start; gap: 8px; padding: 9px 11px;
-  border-bottom: 1px solid var(--row-line);
-}
-.outlinerow:last-child { border-bottom: 0; }
-.outlinerow.target { background: rgba(var(--gold-rgb), 0.045); }
-.outlinenum {
-  color: var(--text-muted); font-family: var(--font-data);
-  font-size: var(--fs-label); text-align: right; font-variant-numeric: tabular-nums;
-}
-.outlinerow > input { margin: 2px 0 0; accent-color: var(--gold); cursor: pointer; }
-.outlinecontent { min-width: 0; display: grid; gap: 4px; }
-.outlinetitle { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.outlinetitle > a { font-family: var(--font-data); font-size: var(--fs-data); }
-.outlinetitle > .skind { flex: 0 0 auto; }
-.outlinetitle > .outlinemeta { margin-left: auto; justify-content: flex-end; }
-.outlinegets, .outlineopens {
-  color: var(--text-muted); font-size: var(--fs-label); line-height: 1.4;
-}
-.outlinegets { color: var(--text); }
-.outlinegets::before { content: '↳'; color: var(--gold); margin-right: 6px; }
-.outlineunplaced { margin: 8px 0 0; font-size: var(--fs-label); }
-
-@media (max-width: 680px) {
-  .outlinerow { grid-template-columns: 24px 18px minmax(0, 1fr); padding: 9px 8px; }
-  .outlinetitle { flex-wrap: wrap; }
-  .outlinetitle > .outlinemeta {
-    flex-basis: 100%; margin-left: 0; justify-content: flex-start;
-  }
-}
 
 /* ---- the priority editor ----
    Rendered into `document.body`: every card here carries `backdrop-filter`,

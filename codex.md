@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
 - 2026-08-16 (codex): Complete equipped item examine cards
 - 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-14 (codex): Add public in-game chat archive and visitor insights
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
 - 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
-- 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)

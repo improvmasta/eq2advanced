@@ -502,7 +502,7 @@ function WhiteAdornmentSocket({ adorn, selection, choices, onChange }) {
   return (
     <span className="adornchoice" title={adornmentSummary(shown)}
           onClick={(e) => e.stopPropagation()}>
-      <Picker className="adornpicker white" value={value}
+      <Picker className={`adornpicker white${selection !== undefined ? ' changed' : ''}`} value={value}
               onChange={(next) => onChange(next === '__equipped__' ? undefined
                 : next === '__empty__' ? null
                   : choices.find((candidate) => candidate.key === next))}
@@ -533,7 +533,7 @@ function SetAdornmentSocket({ adorn, selection, sets, onChange }) {
   }))]
   return (
     <span onClick={(e) => e.stopPropagation()}>
-      <Picker className="adornpicker" value={value}
+      <Picker className={`adornpicker${selection !== undefined ? ' changed' : ''}`} value={value}
               onChange={(next) => onChange(next === '__equipped__' ? undefined
                 : next === '__empty__' ? null : next)}
               label="Choose turquoise adornment" options={options}
@@ -789,6 +789,9 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                                      onCycle, onReset, onSetAdornment, onWhiteAdornment,
                                      onRemoveItem, signedIn,
                                      onLookup, lookupBusy, lookupErr,
+                                     savedSets, savedSetSlot, savedSetBusy, savedSetStatus,
+                                     onSavedSetSlot, onSaveSet,
+                                     onRenameSet, onLoadSet,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
@@ -815,15 +818,22 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             The card already visibly contains gear and stats; only who is in
             the window needs naming. */}
         <div className="loadoutwho">
-          <h2>
-            {character?.character?.name || 'No character loaded'}
-            {character?.character ? (
-              <small>Level {character.character.level ?? '—'}{' '}
-                {character.character.class || ''}</small>
-            ) : (
-              <small>Look one up, or plan against an empty window</small>
-            )}
-          </h2>
+          <h2>{character?.character?.name || 'No character loaded'}</h2>
+          <div className="loadoutidentityline">
+            <span className="loadoutmeta">{character?.character
+              ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}</>
+              : 'Look one up, or plan against an empty window'}</span>
+            <SavedSetControls sets={savedSets} slot={savedSetSlot}
+              signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
+              onSlot={onSavedSetSlot} onSave={onSaveSet}
+              onRename={onRenameSet} onLoad={onLoadSet} />
+          </div>
+          {!signedIn && (
+            <div className="guestcharacterlookup">
+              <span className="seclabel">Character</span>
+              <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
+            </div>
+          )}
         </div>
         {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It sits before the picker
             and stays small: who you are planning for is the answer this row
@@ -836,20 +846,20 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             up is backwards. Signed-in readers keep the picker AND get this,
             because an alt you never added is still an alt. */}
         <div className="loadoutactions">
-          <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
-          {signedIn && characters === null && <span className="muted">Loading…</span>}
-          {characters?.length > 0 && (
-            <label className="plancharacterpick">
-              <span>Planning for</span>
-              <Picker className="characterpicker" value={charId ? String(charId) : ''}
-                      onChange={onCharacter} placeholder="Choose character"
-                      options={charOptions} />
-            </label>
-          )}
-          <button className="chip resetgear" type="button" onClick={onReset}
-                  disabled={!Object.keys(active).length
-                    && !Object.keys(shortlist.set_slots || {}).length
-                    && !Object.keys(shortlist.adorn_slots || {}).length}>Reset all</button>
+            {signedIn && <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />}
+            {signedIn && characters === null && <span className="muted">Loading…</span>}
+            {characters?.length > 0 && (
+              <label className="plancharacterpick">
+                <span>Planning for</span>
+                <Picker className="characterpicker" value={charId ? String(charId) : ''}
+                        onChange={onCharacter} placeholder="Choose character"
+                        options={charOptions} />
+              </label>
+            )}
+            <button className="chip resetgear" type="button" onClick={onReset}
+                    disabled={!Object.keys(active).length
+                      && !Object.keys(shortlist.set_slots || {}).length
+                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset all</button>
         </div>
       </div>
       <div className="loadoutbody">
@@ -868,6 +878,54 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
         <WornSets character={character} shortlist={shortlist} active={active}
                   catalog={adornmentSets} />
       </div>
+    </div>
+  )
+}
+
+function SavedSetControls({ sets, slot, signedIn, busy, status, onSlot,
+                            onSave, onRename, onLoad }) {
+  const selected = sets?.find((row) => row.slot === slot)
+  const [open, setOpen] = useState(null)
+  const [draft, setDraft] = useState(selected?.name || '')
+  useEffect(() => {
+    if (open === slot) setDraft(selected?.name || '')
+  }, [selected?.name, slot, open])
+  const choose = (row) => {
+    onSlot(row.slot)
+    setDraft(row.name)
+    setOpen(row.slot)
+  }
+  const leave = () => {
+    setDraft(selected?.name || '')
+    setOpen(null)
+  }
+  return (
+    <div className="plansavedsets">
+      <span className="seclabel">Gear sets</span>
+      <div className="plansavedtabs" aria-label="Saved equipment sets">
+        {(sets || []).map((row) => (
+          <button type="button" key={row.slot}
+                  className={row.slot === open ? 'on' : ''}
+                  title={`Open ${row.name}`} onClick={() => choose(row)}>{row.name}</button>
+        ))}
+      </div>
+      {open === slot && (
+        <div className="plansavedpanel">
+          <input value={draft} maxLength={40} aria-label={`Name for gear set ${slot}`}
+                 onChange={(event) => setDraft(event.target.value)} />
+          <button type="button" className="chip" disabled={!selected?.payload || busy}
+                  onClick={() => { onLoad(slot); setOpen(null) }}>Load</button>
+          <button type="button" className="chip on" disabled={busy}
+                  onClick={() => onSave(slot, draft)}>Save current</button>
+          <button type="button" className="btnlink" disabled={busy || draft === selected?.name}
+                  onClick={() => onRename(slot, draft)}>Rename</button>
+          <button type="button" className="btnlink" onClick={leave}>Leave without saving</button>
+          <span className="plansavedstatus">{status}</span>
+          {!signedIn && (
+            <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

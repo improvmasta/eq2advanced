@@ -87,6 +87,19 @@ def test_a_pattern_page_is_not_equipment():
                             PAGES["Blackened Chestguard Pattern"]) is None
 
 
+def test_plain_linked_epic_rewards_enter_the_item_crawl():
+    text = """{{QuestInformation|
+ level = 80 |
+ timeline = Warden Epic Weapon |
+}}
+== Reward ==
+* [[Bite of the Wolf (Fabled)]]
+* [[Epic Aspect Choice]]
+"""
+    row = wiki.parse_quest("Lessons of the Fallen", text)
+    assert row["rewards"] == ["Bite of the Wolf (Fabled)"]
+
+
 def test_a_named_monster_carries_the_era_and_the_raid_group_solo_split():
     """The two facts no item page has. `diff` is the split for free."""
     mob = wiki.parse_named("Adkar Vyx", PAGES["Adkar Vyx"])
@@ -264,6 +277,8 @@ def fake_wiki(drops=()):
     `Dropped Items` one per zone — so the fake answers each by name rather than
     letting anything unrecognised fall through to the quest list."""
     def members(cat):
+        if cat == wiki.EPIC_WEAPONS_CATEGORY:
+            return []
         if cat.endswith(wiki.NAMED_SUFFIX):
             return ["Adkar Vyx", "Admiral Tylix"]
         if cat.endswith(wiki.DROPS_SUFFIX):
@@ -448,6 +463,8 @@ def test_a_resync_removes_what_the_wiki_no_longer_says(tmp_path):
 
 def quest_wiki(pages):
     def members(cat):
+        if cat == wiki.EPIC_WEAPONS_CATEGORY:
+            return []
         if cat.endswith((wiki.NAMED_SUFFIX, wiki.DROPS_SUFFIX)):
             return []
         return list(pages)
@@ -523,18 +540,11 @@ def test_prerequisites_beat_level_in_the_outline_order():
     assert keys == ["free", "first", "later"]
 
 
-def test_a_named_target_survives_without_the_item_that_exposed_it(tmp_path):
-    out = outline.outline(
-        loaded(tmp_path), eras=["rok"], targets=["Adkar Vyx"])
-    assert [(r["key"], r["kind"], r["why"]) for r in out["rows"]] == [
-        ("Adkar Vyx", "target", "target")]
-
-
-def test_every_shortlist_kind_is_reported_when_it_cannot_be_placed(tmp_path):
+def test_item_and_set_picks_are_reported_when_they_cannot_be_placed(tmp_path):
     out = outline.outline(
         fresh_db(tmp_path), eras=["rok"], items=["Missing Item"],
-        sets=["Missing Set"], targets=["Missing Target"])
-    assert out["unplaced"] == ["Missing Item", "Missing Set", "Missing Target"]
+        sets=["Missing Set"])
+    assert out["unplaced"] == ["Missing Item", "Missing Set"]
 
 
 # ---------- the read side ----------
@@ -554,6 +564,39 @@ def test_the_era_filter_reads_the_SOURCE_not_the_item(tmp_path):
     assert catalog.search(conn, eras=["rok"])["total"] == 1
     assert catalog.search(conn, eras=["eof"])["total"] == 0
     assert catalog.search(conn, eras=["rok", "eof"])["total"] == 1
+
+
+def test_class_epics_have_a_dedicated_fabled_then_mythical_read(tmp_path):
+    conn = loaded(tmp_path)
+    with conn:
+        conn.execute("UPDATE plan_items SET classes='mystic', slot='Primary', tier='FABLED'")
+        conn.execute("UPDATE plan_sources SET kind='quest', detail='Mystic Epic Weapon'")
+        conn.execute(
+            "INSERT INTO plan_items (page_title, name, era, slot, level, tier, "
+            "classes, stats_json, adorns_json, fetched_ts) VALUES "
+            "('Mystic Mythical', 'The Real Mythical', 'rok', 'Primary', 80, "
+            "'MYTHICAL', 'mystic', '{}', '{}', 0), "
+            "('Enervated Mystic', 'Enervated The Real Mythical', 'rok', "
+            "'Primary', 80, 'MYTHICAL', 'mystic', '{}', '{}', 0)")
+        conn.executemany(
+            "INSERT INTO plan_sources (page_title, source_page, source, kind, detail, era) "
+            "VALUES (?, 'Final Quest', 'Final Quest', 'quest', 'Mystic Epic Weapon', 'rok')",
+            [("Mystic Mythical",), ("Enervated Mystic",)])
+    out = catalog.epics(conn, "mystic")
+    assert [(item["name"], item["epic_stage"]) for item in out["items"]] == [
+        ("Mist Covered Boots", "fabled"), ("The Real Mythical", "mythical")]
+    assert catalog.epics(conn, "necromancer") == {"items": []}
+
+
+def test_the_four_epic_category_omissions_are_explicitly_crawled():
+    assert set(wiki.EPIC_WEAPON_EXTRA_PAGES) == {
+        "Dream Scorcher (Mythical)", "Mirage Star (Mythical)",
+        "Revitalized Vel'Arek", "Sedition, Sword of the Bloodmoon",
+    }
+    assert set(wiki.EPIC_WEAPON_EXTRA_QUESTS) == {
+        "A Bloodmoon Rising!", "Revitalizing Vel'Arek",
+        "The Dream Scorcher, Part Two", "The Mirage Star",
+    }
 
 
 def test_an_unknown_era_falls_back_and_never_widens(tmp_path):

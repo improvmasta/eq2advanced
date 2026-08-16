@@ -416,23 +416,28 @@ segmentation)
   separate `lexicon_items`; `census_items` always wins. Complete rows are
   durable, incomplete summaries retry after 6h, and fallback failure never
   fails the character page.
-- **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
-  `refdata/planner_standard.json`, then prerequisite-before-level body from
-  `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
-  filter or reorder it.
+- **The Outline is only the selected gear's route list** — zones containing
+  mobs and reward quests, plus those quests' hard prerequisites. No prelude or
+  manually kept targets. Quest checks are browser-local completion marks;
+  quest hover exposes `wikq2` first and EQ2 Wiki second.
 - **A comma in `prereq` or `next` is part of the quest title, never a
   separator.** Only linked `prelist` / `nextlist` fields are multi-valued;
   alternatives are stored as OR-groups. Outline shortlist values use repeated
-  `item=` / `set=` / `target=` parameters for the same reason.
-- **The shortlist is browser-local and has THREE kinds** — items, detachable
-  set adornments, and quest/mob targets. It is sent to the read-only Outline
-  endpoint and never written to an account.
+  `item=` / `set=` parameters for the same reason.
+- **Five named equipment-set slots are saved locally for everyone and on the
+  account when signed in** (`planner_saved_sets`, v45). Guest slots are offered
+  to empty account slots after sign-in. The working shortlist remains the
+  browser's scratch state.
 - **Multi-era sync resolves the graph again after all requested eras are
   stored**, so a cross-era prerequisite survives either CLI order. Dangling
   titles are counted and omitted, not invented as quests.
-- **`/plan` is IN the nav as `Gear Planner`** (right of Compare, signed out
-  too — published 2026-08-16) **and needs no account** — it reaches no parse,
-  session or account, and has no POST.
+- **`/plan` is IN the nav as `Gear Planner`** and remains useful signed out.
+  Catalog/character reads are public; only the five saved-set routes require
+  an account.
+- **RoK class epics are catalog items, not prose.** Plain reward links ending
+  `(Fabled)` / `(Mythical)` are accepted only on Epic Weapon timelines. A
+  focused Primary slot offers the class Fabled first and the Mythical once the
+  equipped primary is the Fabled.
 - **PLAYER-NAME LINKS GO TO `/plan?character=<name>`**, not directly to the
   external Lexicon profile — chat names and parse drilldown headings open the
   shareable planner profile; guild and encounter links remain Lexicon links.
@@ -528,9 +533,10 @@ Details per area live in the `docs/` file named beside it.
   stats you are pushing as an ORDER, and read a ranked, era-filtered catalog of
   every drop and quest reward with where it comes from — plus the set
   adornments on their own axis, since the turquoise detaches. Load a Census
-  character and the equipment window projects what a swap would change. The
-  contextual Outline column puts a hand-kept prelude ahead of the
-  prerequisite-ordered quests and targets that serve the browser's shortlist.
+  character and the equipment window projects what a swap would change, keeps
+  five named builds, and leads Primary through the Fabled/Mythical class epic.
+  The contextual Outline groups selected-item mobs and reward quests by zone
+  and includes only those quests' prerequisites.
   **In the nav right of Compare, signed-out**; filled by
   `tools/sync_planner.py` on a monthly cron. Phases 0-2 are complete; spatial
   tags are not.
@@ -570,6 +576,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
 - 2026-08-16 (codex): Complete equipped item examine cards
 - 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
@@ -589,4 +596,3 @@ builds here with `bash build.sh`.
 - 2026-08-14 (codex): Add public in-game chat archive and visitor insights
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
 - 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
-- 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)

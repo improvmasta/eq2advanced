@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 44
+SCHEMA_VERSION = 45
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -811,6 +811,18 @@ CREATE TABLE IF NOT EXISTS user_marks (
   marked INTEGER NOT NULL,                -- 1 yes, 0 no; no row = nothing said
   updated_ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, kind, ability)
+);
+-- v45: five named Planner equipment-set slots per account. The payload is the
+-- reader's chosen loadout, not game reference data; keeping it as versioned
+-- JSON lets the client evolve the working-set shape without a schema change.
+-- Missing rows are the untouched defaults ("Set 1" through "Set 5").
+CREATE TABLE IF NOT EXISTS planner_saved_sets (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 5),
+  name TEXT NOT NULL,
+  payload_json TEXT,
+  updated_ts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, slot)
 );
 -- v36: the public chat box became a RECORD (`pipeline/chatbus.py`). It used to
 -- be a relay with a few hours of memory that a restart emptied; it is now the
@@ -1697,6 +1709,9 @@ def init_db() -> None:
         # adornment ids Census could not resolve. It is intentionally not a
         # column on `census_items`: source precedence must remain explicit and
         # a later Census answer must supersede the fallback without a rewrite.
+        # v45: `planner_saved_sets` gives every account five renameable gear
+        # builds. It is a new table, so an old database receives five implicit
+        # empty defaults and no existing Planner state changes.
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

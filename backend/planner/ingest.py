@@ -96,7 +96,13 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
     mobs = [m for title, text in mob_pages.items()
             if (m := wiki.parse_named(title, text))]
 
-    quest_titles = _titles(members(cats["quests"]))
+    quest_links = list(members(cats["quests"]))
+    if era == "rok":
+        # Four Mythical finales are absent from the expansion quest category,
+        # just as their rewards are absent from the epic item category. Crawl
+        # them explicitly so their hard prerequisites enter the Outline too.
+        quest_links += list(wiki.EPIC_WEAPON_EXTRA_QUESTS)
+    quest_titles = _titles(quest_links)
     quest_pages = _fetch_all(quest_titles, fetch, progress, "quests")
     pages_read += len(quest_pages)
     quests = [q for title, text in quest_pages.items()
@@ -122,6 +128,17 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
                 "detail": quest["timeline"],
                 "era": wiki.era_of_patch(quest["era"]) or era,
             })
+
+    # Epic weapons are the defining RoK class progression, but several final
+    # quest pages omit or inconsistently format their reward. The wiki has a
+    # dedicated equipment category for exactly this corpus. Admit its item
+    # pages here, then attach each parsed class/tier back to the appropriate
+    # terminal quest below so the Outline still receives the real chain.
+    if era == "rok":
+        epic_pages = [*members(wiki.EPIC_WEAPONS_CATEGORY),
+                      *wiki.EPIC_WEAPON_EXTRA_PAGES]
+        for link in _titles(epic_pages):
+            wanted.setdefault(link, []).append({"_class_epic": True, "era": era})
 
     # --- 2b: the world drops the two inversions cannot reach --------------
     #
@@ -196,6 +213,11 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         named_by = wanted.get(origin.get(title, title))
         if not named_by:
             continue                       # a version nothing actually pointed at
+        named_by = [(_epic_source(quests, row) if src.get("_class_epic") else src)
+                    for src in named_by]
+        named_by = [src for src in named_by if src]
+        if not named_by:
+            continue
         # An item above an expansion's level cap cannot be equipped in it, so
         # that SOURCE is dropped rather than the item — a page rewritten for a
         # live revamp is the common cause, and the same item may still have an
@@ -249,6 +271,43 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         # measure of what the two inversions cannot see, so it is reported
         # rather than folded into the item count.
         "zone_drops": zone_drops,
+    }
+
+
+def _epic_source(quests: list[dict], item: dict) -> dict | None:
+    """Attach a category-discovered class epic to its terminal quest."""
+    classes = item.get("classes") or []
+    tier = wiki.tier_bucket(item.get("tier"))
+    if len(classes) != 1 or tier not in {"fabled", "mythical"}:
+        return None
+    timeline = f"{classes[0].title()} Epic Weapon"
+    mine = [q for q in quests if (q.get("timeline") or "").lower() == timeline.lower()]
+    if not mine:
+        return None
+    pages = {q["page_title"] for q in mine}
+
+    def refs(q, field):
+        return {title for group in q.get(field) or [] for title in group}
+
+    if tier == "mythical":
+        candidates = [q for q in mine if q.get("diff_kind") == "raid"]
+        terminal = [q for q in candidates if not (refs(q, "next") & pages)]
+    else:
+        nonraid = [q for q in mine if q.get("diff_kind") != "raid"]
+        raid_prereqs = {title for q in mine if q.get("diff_kind") == "raid"
+                        for title in refs(q, "prereq")}
+        terminal = [q for q in nonraid if q["page_title"] in raid_prereqs]
+        if not terminal:
+            terminal = [q for q in nonraid if not (refs(q, "next") & pages)]
+        candidates = nonraid
+    chosen = sorted(terminal or candidates,
+                    key=lambda q: (q.get("level") or 0, q["name"]))[-1] if (terminal or candidates) else None
+    if not chosen:
+        return None
+    return {
+        "source_page": chosen["page_title"], "source": chosen["name"],
+        "kind": "quest", "zone": chosen.get("zone"),
+        "level": chosen.get("level"), "detail": timeline, "era": "rok",
     }
 
 

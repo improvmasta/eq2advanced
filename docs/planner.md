@@ -1,13 +1,12 @@
-# The Gear Planner — gear targets and a leveling outline
+# The Gear Planner — equipment builds and their source list
 
 A page that answers three questions for one character on one expansion:
 
 - **What should I be chasing?** Given the stats you are pushing, which drops,
   quest rewards and set adornments in this era are worth your time — and where do
   they come from.
-- **What should I be doing?** Given what you picked, an ordered outline of the
-  quests and targets that get you there, with the expansion's standard work
-  hoisted to the front and the trips that overlap painted on top.
+- **What should I be doing?** Given what you picked, which zones, mobs, reward
+  quests, and hard prerequisites get you there.
 - **What would that build change?** Optionally load one of your cached Census
   characters, cycle current and planned items in concrete equipment slots, and
   project additive stat changes before chasing the gear.
@@ -21,9 +20,9 @@ expansion is a re-sync and one entry in `wiki.ERAS`, never a migration.
 was being built, on the plan that adding the tab would be the whole publish
 step. It was: `Gear Planner` now sits in the top nav to the right of Compare
 and, like Compare, it is there **signed out**. That is safe for a stronger
-reason than Compare's — nothing here reaches a parse, a session or an account,
-every row is reference data about the GAME, and there is no POST on the router
-at all.
+reason than Compare's — catalog and character reads remain public. The narrow
+account exception is five named saved equipment-set slots; guests get the same
+five in localStorage and a short account-safety nudge.
 
 **Character names elsewhere on EQ2Advanced link here, not to a bare external
 profile.** Chat speakers and player drilldown headings use
@@ -472,8 +471,8 @@ selected, and can be collapsed back to a compact button in the page head.
 │  └─────────────────────────────────────┴──────────────────────┘│
 │  search: item name                              [clear filters]│
 │  ┌ STAT PRIORITY ──────────┬ FILTER ───────────────────────────┐
-│  │ 1 [Any▾] 2 [Any▾] 3 [Any▾] │ Class▾ Slot▾ Armor▾ Tier▾ Lv–Lv│
-│  │                            │ Source ☐raid ☐group … [chips]  │
+│  │ 1 [Any▾] 2 [Any▾] 3 [Any▾] │ Class▾ Slot▾ Armor▾ Tier▾      │
+│  │                            │ Source▾ Lv▾–Lv▾ [set] [proc]   │
 │  └────────────────────────────┴───────────────────────────────┘│
 │  ┌────────────────────────────────────────────────────────────┐│
 │  │ item table (SortableTable, frozen)                         ││
@@ -496,9 +495,8 @@ Where the rail's four things went, and why:
 - **The shortlist moved into the contextual Outline column**, which is the
   surface that consumes it. The column opens only once there is something to
   act on, so it does not tax the empty gear-search state.
-  It still holds THREE kinds of thing separately: items, adornments, and
-  targets (a mob or a quest you want for its own sake). A turquoise is not its
-  host item and a raid target is not a slot.
+  It holds selected items and detachable set adornments. The route list is
+  derived from those picks; mobs and quests are no longer independently kept.
 
 Two more the same read caught:
 
@@ -508,9 +506,9 @@ Two more the same read caught:
   narrowing.
 - **Item level is ONE facet, not a band.** It had its own heading, its own two
   labelled boxes and the word "to" between them, for a thing that is read as
-  "70–80". It is now a labelled pair of small number boxes in the filter row
-  with a dash between, wearing the same selected state as every facet beside
-  it.
+  "70–80". It is now a labelled pair of small clickable Pickers in the filter
+  row with a dash between, wearing the same selected state as every facet
+  beside it.
 
 ### The equipment and stats workspace
 
@@ -543,6 +541,18 @@ removes it from the shortlist immediately, promotes another candidate when one
 remains, or returns the slot to equipped gear. Finger, Ear, Wrist and Charm
 keep their first/second identities. A
 planned two-hander occupies Primary and removes Secondary from the projection.
+
+The identity line also owns **Gear sets**: five named slots, not numbered action
+buttons at the far edge of the header. Opening a slot offers Load, Save current,
+Rename, and Leave without saving. Guests use the same workflow in browser
+storage with the terse note “Saved by cookie. Create an account to save
+long-term.”; signed-in saves also persist to the account. Signed-out readers get
+the public character-name search directly in this main block.
+
+The class epic suggestion is always visible while its next step is outstanding,
+not only after clicking Primary. It advances from Fabled to Mythical when the
+Fabled is equipped, active in the loadout, or present in a saved set, and
+disappears when the suggested stage is already loaded or saved.
 
 Hovering an item name in search shows its candidate examine window beside the
 currently equipped item for that concrete slot and, when different, the active
@@ -616,7 +626,9 @@ is recorded at **0.3% Ability Doublecast** from the same in-game source.
 
 Both white and turquoise are decisions, not decoration. Hovering a white shows
 its actual additive effect (for example `+3.8% Casting Speed`); clicking it opens
-a searchable picker of adornments legal for that equipment slot. The T6–T8
+a searchable picker of adornments legal for that equipment slot. A changed
+socket gets a small green check on its icon, giving adornment swaps the same
+at-a-glance planned-state signal as changed gear without widening the row. The T6–T8
 names, ordinary values and slot matrix come from the wiki's
 `Adornments/Overview` reference table and are served locally—no page click
 reaches Census or the wiki. Its Crit Bonus row is excluded for this TLE window.
@@ -744,10 +756,13 @@ word "armour" left the screen, so a band of set facets read "Chest, Chain,
 Fabled" with nothing saying which was which. The label is a standing part of the
 row; the box holds the answer, which is "Any" until you give one.
 
-**Source is checkboxes, not a dropdown.** "Group or raid" is a normal thing to
-want and was two searches while it was single-choice; six short words fit on the
-band unopened, which is the other half of the case. `kinds` was already a list
-on the server.
+**Source is a checkbox dropdown between Tier and Level.** "Group or raid" is a
+normal thing to want, so it remains multi-select without spending a full search
+row on six checkboxes. `kinds` was already a list on the server.
+
+Both Level endpoints are `Picker`s: they can be clicked from the list or found
+by typing. **Current**, beside the Filter label, applies the loaded character's
+class and a level window from ten below through ten above.
 
 **A separate "interested in procs" switch**, because that is a different axis
 from any stat order and the reader said so in those words. On, the table's proc
@@ -833,26 +848,14 @@ the adornment to the Outline, never the armor it came in.
 
 ### The Outline
 
-A single ordered list. **It never reorders.**
+A compact list derived only from selected items and set adornments. It groups
+by **zone**, then lists the source **mobs** and reward **quests** there. A reward
+quest brings in its complete hard-prerequisite chain; unrelated expansion
+prelude work and manually kept mob/quest targets are gone.
 
-Two sections:
-
-**The prelude** — layer 3, visually distinct because it is not derived from your
-shortlist. Every row carries its *because* on the same line:
-
-> **Sokokar post network** — do this first; every other line on this list gets
-> shorter. *Adventure 65 or tradeskill 65. Starts in Kylong Plains.*
-
-**The body** — ordered by prerequisite, then level. Each row: what it is (quest
-or target), level, zone, difficulty, what it gets you from your shortlist, and
-in Phase 3, its tag chips.
-
-**The outline answers "what order"; the tags answer "what trip." They are
-different questions and they conflict.** Prerequisite order and travel
-efficiency disagree constantly, and every route planner that tries to satisfy
-both by reordering the list produces something nobody can follow. The list is a
-stable spine and the tags are a lens over it. **Nothing moves when a tag is
-selected.**
+Quest checkboxes mean **done** and persist in this browser. Hovering a quest in
+either the Outline or an item-table source exposes two compact links in this
+order: `wikq2`, then EQ2 Wiki.
 
 ### Tags
 
@@ -904,9 +907,8 @@ progress tracking is a later concern and should not hold up the joint route.
 
 ### States and edges
 
-- **Empty shortlist** — the Outline column stays closed. The expansion prelude
-  appears with the derived path once the reader has selected something to
-  chase; until then the page gives its width to equipment search.
+- **Empty shortlist** — the Outline column stays closed. Selecting an item or
+  set adornment opens its derived source list.
 - **No clusters found** — the tag strip is absent, not empty. An empty legend
   reads as broken.
 - **Unresolved item** — a name, no card. `GET /api/items/{id}/card` answers
@@ -933,9 +935,10 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 
 ## Schema
 
-All planner tables are reference data; none touches a parse, an account or a
-visibility predicate. Phase 2 is schema v42, guarded by table SHAPE like every
-other migration in `db.py`. Later-phase rows below remain design, not schema.
+Catalog tables are reference data and touch no parse or visibility predicate.
+`planner_saved_sets` is the one account-owned Planner table: five bounded JSON
+loadouts per user. Current schema is v45, guarded by table shape like every
+other migration in `db.py`.
 
 | Table | Holds |
 | --- | --- |
@@ -949,6 +952,7 @@ other migration in `db.py`. Later-phase rows below remain design, not schema.
 | `plan_waypoints` *(planned)* | Step → coordinate → map/POI match, with match confidence |
 | `plan_clusters`, `plan_cluster_members` *(planned)* | Computed tags and membership |
 | `plan_nominations` *(planned)* | Layer-2 candidates awaiting a curator, with the quoted sentence |
+| `planner_saved_sets` | Five renameable equipment-set slots per account; missing rows are empty defaults |
 
 `refdata/planner_standard.json` holds layer 3, keyed by era, and is **not** a
 table — it is edited by hand and read like `zone_eras.json`. Adding a third
@@ -1182,7 +1186,9 @@ no tags. Ordered, readable, and honest about what it does not know.
 
 **Phases 1 and 2 are BUILT and both expansions are synced; Phase 0 is now
 MEASURED.** The gear workspace builds a slot-aware loadout and its contextual
-Outline column consumes the same plan as a hand-kept prelude followed by the prerequisite DAG. Phase 3
+Outline column consumes the same plan as a zone-grouped mob/quest list with
+hard prerequisites. Five named gear-set slots and explicit class-epic
+progression are built as well. Phase 3
 cluster tags may now proceed over the matched coordinate corpus. Phase 4 remains
 planned and must not pretend unresolved cross-zone epic coordinates are located.
 
@@ -1193,10 +1199,10 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | Template parsing (`EquipInformation`, `NamedInformation`, `QuestInformation`, `AdornmentSet`), prerequisite OR-groups, class-template expansion, era caps | `backend/planner/wiki.py` |
 | The crawl: invert mobs and quests, follow disambiguations, reconcile quests and edges per era | `backend/planner/ingest.py` |
 | The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
-| The outline read side: layer-3 prelude, prerequisite walk, stable topological order | `backend/planner/outline.py`, `backend/refdata/planner_standard.json` |
-| `GET /api/plan/meta` `/items` `/sets` `/outline` — no account, no POST | `backend/routers/planner_api.py` |
-| `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
-| The page: game-grouped concrete slots, icon-edge candidate cycling, direct planned-item removal, search-hover equipped/planned comparison, projected stats, canonically grouped worn set bonuses under the full loadout row, three numbered priority dropdowns beside labelled facets, checkbox source filter, click-the-row-to-equip, inline socket icons, level/name filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
+| The outline read side: selected-item sources and prerequisite walk | `backend/planner/outline.py` |
+| Public catalog/outline/character GETs plus authenticated saved-set GET/PUT | `backend/routers/planner_api.py` |
+| Reference catalog and graph plus five account saved-set slots (schema v45) | `backend/db.py` |
+| The page: game-grouped concrete slots, named saved sets, Fabled→Mythical epic suggestion, adornment choices, projected stats, gear/set search, and zone-grouped source list | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
 | The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |

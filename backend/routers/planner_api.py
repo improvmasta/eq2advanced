@@ -4,13 +4,13 @@
   GET /api/plan/items?…             -> the item table, ranked against an ORDER
   GET /api/plan/sets?…              -> the set-adornment view
   GET /api/plan/adornments           -> ordinary white socket choices
-  GET /api/plan/outline?…           -> the prelude, then what to do about a shortlist
+  GET /api/plan/outline?…           -> source mobs, quests and hard prerequisites
   GET /api/plan/character?name=…    -> a public character, no account needed
+  GET/PUT /api/plan/saved-sets/…    -> five private account-backed loadouts
 
-**Open to anybody, signed in or not**, for the same reason `/chat` is: none of
-these routes reaches a parse, a session or an account. Every row is reference
-data about the GAME — one row serves every reader forever — and there is no
-POST here at all. The catalog is filled by `tools/sync_planner.py`, run by hand.
+**The catalog is open to anybody, signed in or not**, for the same reason
+`/chat` is. Saved sets are the narrow exception: their two routes require an
+account and reach only that account's five rows. Guests use localStorage.
 
 **`/plan/character` is the ONE route here that can reach the network**, and it
 is the exception the rule was already making elsewhere: it runs on a name a
@@ -32,12 +32,14 @@ reader pressing a filter must not start a crawl.
 
 import ratelimit
 import siteconfig
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from census import client as census_client
 from census import sync as census_sync
 from db import get_db
-from planner import adornments, catalog, outline, wiki
+from planner import adornments, catalog, outline, saved_sets, wiki
+from security import require_user
 
 router = APIRouter(tags=["planner"])
 
@@ -45,6 +47,11 @@ router = APIRouter(tags=["planner"])
 # answer. The table is paged by score, and 400 rows is well past what anybody
 # reads — the filters are the way to a shorter list.
 MAX_LIMIT = 400
+
+
+class SavedSetIn(BaseModel):
+    name: str = Field(min_length=0, max_length=saved_sets.MAX_NAME)
+    payload: dict | None = None
 
 
 def _list(value: str | None) -> list[str]:
@@ -110,6 +117,28 @@ def plan_adornments(color: str = Query("white", pattern="^white$")):
     return {"adornments": adornments.white_catalog()}
 
 
+@router.get("/plan/epics")
+def plan_epics(class_name: str = Query(..., alias="class", min_length=2,
+                                      max_length=30)):
+    return catalog.epics(get_db(), class_name)
+
+
+@router.get("/plan/saved-sets")
+def plan_saved_sets(user=Depends(require_user)):
+    return {"sets": saved_sets.read(get_db(), user["id"])}
+
+
+@router.put("/plan/saved-sets/{slot}")
+def put_plan_saved_set(slot: int, body: SavedSetIn,
+                       user=Depends(require_user)):
+    try:
+        row = saved_sets.write(get_db(), user["id"], slot, body.name,
+                               body.payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"set": row}
+
+
 @router.get("/plan/outline")
 def plan_outline(
     eras: str | None = Query(None),
@@ -122,14 +151,12 @@ def plan_outline(
     item: list[str] | None = Query(None, description="shortlisted item pages"),
     set_: list[str] | None = Query(None, alias="set",
                                    description="shortlisted adornment sets"),
-    target: list[str] | None = Query(None,
-                                     description="quest or monster pages wanted for their own sake"),
 ):
     """The Outline. The shortlist lives in the reader's browser, so it arrives
     with the request rather than being stored — nothing here is anybody's
     account, and the page is still a GET that a link can carry."""
     return outline.outline(get_db(), eras=_eras(eras), items=item or [],
-                           sets=set_ or [], targets=target or [])
+                           sets=set_ or [])
 
 
 # A typed name is not a credential, but a FORCED refresh is a way to make this

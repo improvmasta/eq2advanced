@@ -532,6 +532,47 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
     return {"sets": out, "scored": bool(w)}
 
 
+def epics(conn, class_name: str) -> dict:
+    """The RoK Fabled/Mythical weapon pair for one subclass.
+
+    Epic rewards are ordinary catalog items, but this read keeps the defining
+    RoK progression reachable even when stat priorities or a result limit
+    would bury it. Source detail is the quest timeline and is the conservative
+    test: rarity alone does not make a weapon a class epic.
+    """
+    wanted = (class_name or "").strip().lower()
+    if wanted not in wiki.SUBCLASSES:
+        return {"items": []}
+    rows = _rows(conn, ["rok"])
+    sources = _sources(conn, [row["page_title"] for row in rows])
+    out = []
+    for row in rows:
+        if wanted not in row["classes"]:
+            continue
+        # Enervated weapons are later conversion copies of the original RoK
+        # Mythicals. They remain searchable in the ordinary item catalog, but
+        # must not replace the original raid reward in this progression pair.
+        if "enervated" in row["name"].lower():
+            continue
+        if row["slot"] not in {"Primary", "Secondary", "Ranged"}:
+            continue
+        mine = sources.get(row["page_title"], [])
+        if not any(source["kind"] == "quest" and
+                   "epic weapon" in (source.get("detail") or "").lower()
+                   for source in mine):
+            continue
+        stage = wiki.tier_bucket(row["tier"])
+        if stage not in {"fabled", "mythical"}:
+            continue
+        row["sources"] = mine
+        item = _item_out(row)
+        item["epic_stage"] = stage
+        out.append(item)
+    out.sort(key=lambda item: ({"fabled": 0, "mythical": 1}[item["epic_stage"]],
+                               item["name"]))
+    return {"items": out}
+
+
 def _piece_out(row: dict) -> dict:
     # Set discovery is still gear discovery. Returning the ordinary item shape
     # gives every carrier/host the same examine card and equip action as the

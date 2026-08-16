@@ -66,6 +66,23 @@ CATEGORIES = {
     }
     for key, name in ERAS.items()
 }
+EPIC_WEAPONS_CATEGORY = "Category:Epic Weapons"
+# The category omits four original Mythical reward pages. They are not
+# speculative aliases: each is a real level-80 class weapon page, and keeping
+# the exception beside the category makes the crawl complete without admitting
+# later conversion weapons as the class progression suggestion.
+EPIC_WEAPON_EXTRA_PAGES = (
+    "Dream Scorcher (Mythical)",
+    "Mirage Star (Mythical)",
+    "Revitalized Vel'Arek",
+    "Sedition, Sword of the Bloodmoon",
+)
+EPIC_WEAPON_EXTRA_QUESTS = (
+    "A Bloodmoon Rising!",
+    "Revitalizing Vel'Arek",
+    "The Dream Scorcher, Part Two",
+    "The Mirage Star",
+)
 
 # ---------- the expansion category is NOT the whole expansion ----------
 #
@@ -700,9 +717,24 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
     if not re.search(r"\{\{\s*QuestInformation\b", text, re.I):
         return None
     rewards: list[str] = []
+    timeline = _field(text, "timeline")
     m = _REWARDS.search(text)
     if m:
-        rewards = [r.strip() for r in _EQUIP_TPL.findall(m.group(1))]
+        block = m.group(1)
+        # Most ordinary rewards use {{Equip|...}}, but the class epic pages
+        # use plain item links (for example [[Bite of the Wolf (Fabled)]]).
+        # Follow both and let parse_equip reject coins, spells and other linked
+        # non-equipment later. Reading only the template silently removed the
+        # defining rewards of Rise of Kunark from the item catalog.
+        templated = [r.strip() for r in _EQUIP_TPL.findall(block)]
+        # The plain-link exception is deliberately narrow. Reward prose links
+        # many pieces of real equipment that are context, not rewards; only
+        # class Epic Weapon timelines use the explicit item-version suffix as
+        # their reward contract.
+        linked_epics = ([r.strip() for r in _LINKS.findall(block)
+                         if re.search(r"\((?:Fabled|Mythical)\)$", r.strip(), re.I)]
+                        if "epic weapon" in timeline.lower() else [])
+        rewards = [*templated, *linked_epics]
     diff = _field(text, "diff")
     level_text = _field(text, "level")
     return {
@@ -712,7 +744,7 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
         "level": _int(level_text),
         "level_text": level_text or None,
         "zone": _field(text, "szone") or None,
-        "timeline": _field(text, "timeline") or None,
+        "timeline": timeline or None,
         "jcat": _field(text, "jcat") or None,
         "diff": diff or None,
         "kind": "quest",
