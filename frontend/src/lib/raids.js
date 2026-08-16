@@ -38,8 +38,12 @@ export const runLabel = (r, fallback = 'Unknown zone') => {
    origin (see App.jsx), so every one of these opens in a new tab. */
 export const LEXICON = 'https://wuoshi.eq2lexicon.com'
 
-export const lexiconCharacter = (name) => name
-  ? `${LEXICON}/character/${encodeURIComponent(name)}`
+/* Character names belong to the planner now: it can load Census, fall back to
+   Lexicon, and immediately put the toon beside candidate gear. Keep this
+   helper beside the remaining EQ2 links so every player-name surface builds
+   the same shareable internal destination. */
+export const plannerCharacter = (name) => name
+  ? `/plan?character=${encodeURIComponent(name)}`
   : null
 
 export const lexiconGuild = (name) => name

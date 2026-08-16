@@ -94,23 +94,62 @@ function socketColors(item) {
     Array.from({ length: count }, () => color))
 }
 
+function itemSockets(item) {
+  if (!item) return []
+  const installed = [...(item.adornments || [])]
+  const colors = item.card?.stats?.adornments?.length
+    ? item.card.stats.adornments
+    : socketColors(item)
+  /* Right-aligned strip, stable from the right edge. Yellow is deliberately
+     first (leftmost): when it arrives on occasional later gear, adding it
+     grows the strip leftward and white/turquoise do not change columns. */
+  const order = ['yellow', 'black', 'green', 'orange', 'red', 'blue', 'purple',
+    'cyan', 'grey', 'white', 'turquoise']
+  const rank = (color) => {
+    const at = order.indexOf(color)
+    return at < 0 ? order.length : at
+  }
+  return [...colors].sort((a, b) => rank(a) - rank(b)).map((color) => {
+    const at = installed.findIndex((adorn) => adorn.color === color)
+    const adorn = at >= 0 ? installed.splice(at, 1)[0] : { color }
+    return { color, adorn }
+  })
+}
+
 function allSets(shortlist, catalog) {
   return [...new Map([...(catalog || []), ...(shortlist.sets || [])]
     .map((set) => [set.name, set])).values()]
 }
 
-function activeSets(character, shortlist, active, catalog) {
+function currentSetCounts(character) {
+  const counts = {}
+  ;(character?.gear || []).forEach((item) => (item.adornments || []).forEach((adorn) => {
+    if (adorn.color !== 'turquoise' || !adorn.name) return
+    const name = adorn.set_name || adorn.name
+    counts[name] = (counts[name] || 0) + 1
+  }))
+  return counts
+}
+
+function plannedSetCounts(character, shortlist, active, catalog) {
   const byName = Object.fromEntries(allSets(shortlist, catalog)
     .map((set) => [set.name, set]))
   const counts = {}
-  Object.entries(shortlist.set_slots || {}).forEach(([slot, name]) => {
-    const item = equippedChoice(slot, character, shortlist, active)
-    const set = byName[name]
-    if (!set || !socketColors(item).includes('turquoise')) return
-    if (set.level && item?.level && item.level < set.level) return
-    counts[name] = (counts[name] || 0) + 1
+  PLAN_SLOTS.forEach((def) => {
+    const item = equippedChoice(def.key, character, shortlist, active)
+    if (!item || !socketColors(item).includes('turquoise')) return
+    const hasChoice = Object.prototype.hasOwnProperty.call(
+      shortlist.set_slots || {}, def.key)
+    const installed = hasChoice
+      ? (shortlist.set_slots || {})[def.key]
+      : item.set_name || (item.adornments || []).find(
+        (adorn) => adorn.color === 'turquoise')?.set_name
+        || (item.adornments || []).find((adorn) => adorn.color === 'turquoise')?.name
+    const set = byName[installed]
+    if (!set || (set.level && item.level && item.level < set.level)) return
+    counts[installed] = (counts[installed] || 0) + 1
   })
-  return Object.values(byName).map((set) => ({ ...set, count: counts[set.name] || 0 }))
+  return counts
 }
 
 /* WHAT THE CHARACTER IS ACTUALLY WEARING RIGHT NOW, counted off the window
@@ -185,22 +224,36 @@ function wornSets(character, shortlist, active, catalog) {
 }
 
 function TierDetails({ lines }) {
-  const [expanded, setExpanded] = useState(false)
   if (!lines.length) return null
-  const collapsible = lines.length > 2 || lines.join(' ').length > 110
   return (
-    <div className={`wornsetdetails${collapsible ? ' collapsible' : ''}`
-      + `${expanded || !collapsible ? ' expanded' : ''}`}>
+    <div className="wornsetdetails">
       <div className="wornsetdetailtext">
         {lines.map((line, i) => <span key={i}>• {line}</span>)}
       </div>
-      {collapsible && (
-        <button type="button" className="btnlink"
-                aria-label={expanded ? 'Collapse bonus details' : 'Expand bonus details'}
-                onClick={() => setExpanded((value) => !value)}>
-          {expanded ? 'less' : '…'}
-        </button>
+    </div>
+  )
+}
+
+function WornSetCard({ set, full = false }) {
+  return (
+    <div className={`wornset${full ? ' full' : ' preview'}`} tabIndex={full ? undefined : 0}>
+      <div className="wornsethead">
+        <b>{set.name}</b>
+        <em>{set.count} piece{set.count === 1 ? '' : 's'}</em>
+      </div>
+      {!set.bonuses.length && (
+        <p className="muted">No tier text recorded for this set.</p>
       )}
+      {set.bonuses.map((bonus, i) => (
+        <div className={`wornsettier${set.count >= bonus.pieces ? ' on' : ''}`} key={i}>
+          <div className="wornsettierhead">
+            <i aria-hidden="true">{set.count >= bonus.pieces ? '◆' : '◇'}</i>
+            <b>({bonus.pieces})</b>
+            <span>{bonus.summary}</span>
+          </div>
+          <TierDetails lines={bonus.details} />
+        </div>
+      ))}
     </div>
   )
 }
@@ -227,25 +280,10 @@ function WornSets({ character, shortlist, active, catalog }) {
       ) : expanded && (
         <div className="wornsetgrid">
           {sets.map((set) => (
-            <div className="wornset" key={set.name}>
-              <div className="wornsethead">
-                <b>{set.name}</b>
-                <em>{set.count} piece{set.count === 1 ? '' : 's'}</em>
-              </div>
-              {!set.bonuses.length && (
-                <p className="muted">No tier text recorded for this set.</p>
-              )}
-              {set.bonuses.map((bonus, i) => (
-                <div className={`wornsettier${set.count >= bonus.pieces ? ' on' : ''}`} key={i}>
-                  <div className="wornsettierhead">
-                    <i aria-hidden="true">{set.count >= bonus.pieces ? '◆' : '◇'}</i>
-                    <b>({bonus.pieces})</b>
-                    <span>{bonus.summary}</span>
-                  </div>
-                  <TierDetails lines={bonus.details} />
-                </div>
-              ))}
-            </div>
+            <Hover className="wornsetpopup" width={390} block
+                   card={<WornSetCard set={set} full />} key={set.name}>
+              <WornSetCard set={set} />
+            </Hover>
           ))}
         </div>
       )}
@@ -267,15 +305,44 @@ function projection(character, shortlist, active, catalog) {
   Object.entries(selected).forEach(([slot, item]) => {
     addStats(totals, current[slot]?.planner_stats, -1)
     addStats(totals, item.stats, 1)
+    ;(current[slot]?.adornments || []).forEach((adorn) => {
+      if (adorn.color === 'white') addStats(totals, adorn.planner_stats, -1)
+    })
   })
   // A planned two-hander replaces both currently equipped hands. Secondary is
   // not processed as another choice while it is occupied by that weapon.
   if (twoHanded) {
     addStats(totals, current.secondary?.planner_stats, -1)
+    ;(current.secondary?.adornments || []).forEach((adorn) => {
+      if (adorn.color === 'white') addStats(totals, adorn.planner_stats, -1)
+    })
   }
-  const sets = activeSets(character, shortlist, active, catalog)
+  Object.entries(shortlist.adorn_slots || {}).forEach(([slot, choices]) => {
+    if (twoHanded && slot === 'secondary') return
+    const item = equippedChoice(slot, character, shortlist, active)
+    const currentItem = current[slot]
+    const sockets = itemSockets(item)
+    Object.entries(choices || {}).forEach(([socket, choice]) => {
+      const row = sockets[Number(socket)]
+      if (!row || row.color !== 'white') return
+      /* An installed white is already inside Census's character total, but a
+         planned item's empty socket is not. Only subtract from the real worn
+         host, then add the selected alternative's additive stats. */
+      if (item === currentItem) addStats(totals, row.adorn?.planner_stats, -1)
+      if (choice) addStats(totals, choice.stats, 1)
+    })
+  })
+  /* Census totals already include the thresholds the character is wearing.
+     Project the DELTA between that complete current set and the complete
+     planned set: removing the second piece must remove its +Crit, while
+     changing a fourth slot must still count the three untouched pieces. */
+  const currentCounts = currentSetCounts(character)
+  const plannedCounts = plannedSetCounts(character, shortlist, active, catalog)
+  const sets = allSets(shortlist, catalog)
   sets.forEach((set) => (set.bonuses || []).forEach((bonus) => {
-    if (set.count >= bonus.pieces) addStats(totals, bonus.stats, 1)
+    const before = (currentCounts[set.name] || 0) >= bonus.pieces
+    const after = (plannedCounts[set.name] || 0) >= bonus.pieces
+    if (before !== after) addStats(totals, bonus.stats, after ? 1 : -1)
   }))
 
   // On this TLE ruleset, each Stamina point grants 8 base Health and each point
@@ -309,7 +376,36 @@ function projection(character, shortlist, active, catalog) {
     totals.power += (totals[powerStat] - baseStats[powerStat])
       * VITALS_PER_ATTRIBUTE
   }
-  return { totals, selected, current, sets }
+
+  /* Explain the projected total using the loadout that is actually visible.
+     Census gives us the character total, not a naked/base value, so the
+     residual is deliberately named "Character snapshot": logout buffs, racial
+     effects and derived Health/Power arithmetic live there. The three
+     inspectable equipment sources are computed explicitly and the residual
+     makes every breakdown add back to the exact projected number. */
+  const breakdown = { gear: {}, adornments: {}, sets: {} }
+  PLAN_SLOTS.forEach((def) => {
+    if (def.key === 'secondary' && twoHanded) return
+    const item = equippedChoice(def.key, character, shortlist, active)
+    if (!item) return
+    addStats(breakdown.gear, item.planner_stats || item.stats, 1)
+    const choices = (shortlist.adorn_slots || {})[def.key] || {}
+    itemSockets(item).forEach((socket, index) => {
+      if (socket.color !== 'white') return
+      const overridden = Object.prototype.hasOwnProperty.call(choices, index)
+      if (overridden) {
+        if (choices[index]) addStats(breakdown.adornments, choices[index].stats, 1)
+      } else if (item === current[def.key]) {
+        addStats(breakdown.adornments, socket.adorn?.planner_stats, 1)
+      }
+    })
+  })
+  sets.forEach((set) => (set.bonuses || []).forEach((bonus) => {
+    if ((plannedCounts[set.name] || 0) >= bonus.pieces) {
+      addStats(breakdown.sets, bonus.stats, 1)
+    }
+  }))
+  return { totals, selected, current, sets, breakdown }
 }
 
 function iconSrc(item, current = false) {
@@ -340,35 +436,38 @@ function SocketTile({ adorn, color, empty = false }) {
   )
 }
 
-function adornmentCard(adorn, set) {
-  const syntheticStats = set ? {
-    stats: [], effects: [], flags: [], adornments: [],
-    adornment: {
-      color: 'turquoise', slots: [], requires_equip: true,
-      predicate: 'In Rise of Kunark or previous expansion zones',
-      set_bonuses: (set.bonuses || []).map((bonus) => ({
-        required: bonus.pieces, effect: (bonus.stat_lines || []).join(', ') || null,
-        descriptions: [bonus.text, ...(bonus.detail || [])]
-          .filter(Boolean).map((line) => line.replace(/\|$/, '')),
-      })),
-    },
-  } : null
-  if (!adorn?.name && !set) return null
-  return {
-    name: adorn?.name || set.name,
-    rarity: adorn?.tier ? adorn.tier[0] + adorn.tier.slice(1).toLowerCase() : null,
-    icon: adorn?.icon, type: adorn?.type || 'Turquoise Adornment',
-    level: adorn?.level ?? set?.level,
-    stats: adorn?.stats || syntheticStats, effects: null,
+function adornmentSummary(adorn) {
+  if (!adorn) return 'Empty socket'
+  if (adorn.summary) return adorn.summary
+  const rows = [...(adorn.stats?.stats || []), ...(adorn.stats?.effects || [])]
+  if (!rows.length) return adorn.name || 'Equipped adornment'
+  return rows.map((row) => `${Number(row.value).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  })}${row.pct ? '%' : ''} ${row.name}`).join(' · ')
+}
+
+function compactWhiteName(adorn) {
+  if (adorn?.prefix && adorn?.grade && adorn?.family) {
+    return `${adorn.prefix} · ${adorn.grade} · ${adorn.family}`
   }
+  const match = String(adorn?.name || '').match(
+    /^(\S+) Adornment of (.+?) \(([^)]+)\)$/i,
+  )
+  return match ? `${match[1]} · ${match[3]} · ${match[2]}`
+    : (adorn?.name || 'Current socket')
 }
 
 function StaticAdornmentSocket({ adorn }) {
-  const card = adornmentCard(adorn, null)
+  const card = adorn?.name ? {
+    name: adorn.name,
+    rarity: adorn.tier ? String(adorn.tier).toLowerCase().replace(/^./, (c) => c.toUpperCase()) : null,
+    icon: adorn.icon, type: adorn.type || `${adorn.color || ''} Adornment`,
+    level: adorn.level, stats: adorn.stats, effects: null,
+  } : null
   const button = (
     <button type="button" className={`planadornicon ${adorn.color || 'unknown'}`}
-            aria-disabled="true" title={`${adorn.name || 'Empty'} ${adorn.color || 'adornment'} socket`}>
-      <SocketTile adorn={adorn} color={adorn.color} empty={!adorn.id && !adorn.name} />
+            aria-disabled="true" title={adornmentSummary(adorn)}>
+      <SocketTile adorn={adorn} color={adorn.color} empty={!adorn.name} />
     </button>
   )
   return card ? (
@@ -376,6 +475,41 @@ function StaticAdornmentSocket({ adorn }) {
       {button}
     </Hover>
   ) : button
+}
+
+function WhiteAdornmentSocket({ adorn, selection, choices, onChange }) {
+  const shown = selection === undefined ? adorn : selection
+  const value = selection === undefined ? '__equipped__'
+    : selection === null ? '__empty__' : selection.key
+  const options = [{
+    value: '__equipped__', label: adorn?.name ? adornmentSummary(adorn) : 'Empty socket',
+    menuLabel: <strong className="adornstat">{adorn?.name
+      ? adornmentSummary(adorn) : 'Empty socket'}</strong>,
+    hint: adorn?.name ? compactWhiteName(adorn) : 'Equipped',
+    group: 'Current', title: adorn?.name,
+    icon: <SocketTile adorn={adorn} color="white" empty={!adorn?.name} />,
+  }, {
+    value: '__empty__', label: 'Empty socket', hint: 'Remove planned adornment',
+    icon: <SocketTile color="white" empty />,
+  }, ...(choices || []).map((candidate) => ({
+    value: candidate.key, label: candidate.summary,
+    menuLabel: <strong className="adornstat">{candidate.summary}</strong>,
+    hint: compactWhiteName(candidate), group: `Level ${candidate.level}`,
+    title: `${candidate.name} · ${candidate.summary} · ${candidate.slots.join(', ')}`,
+    icon: <SocketTile color="white" />,
+  }))]
+  return (
+    <span className="adornchoice" title={adornmentSummary(shown)}
+          onClick={(e) => e.stopPropagation()}>
+      <Picker className="adornpicker white" value={value}
+              onChange={(next) => onChange(next === '__equipped__' ? undefined
+                : next === '__empty__' ? null
+                  : choices.find((candidate) => candidate.key === next))}
+              label="Choose white adornment" options={options}
+              filterFrom={1} filterHint="Stat, tier, grade, or name…"
+              maxMenuWidth={285} menuClassName="whiteadornmenu" />
+    </span>
+  )
 }
 
 function SetAdornmentSocket({ adorn, selection, sets, onChange }) {
@@ -408,7 +542,8 @@ function SetAdornmentSocket({ adorn, selection, sets, onChange }) {
 }
 
 function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
-                         adornmentSets, onFocus, onCycle, onSetAdornment, onRemoveItem }) {
+                         adornmentSets, whiteAdornments, onFocus, onCycle,
+                         onSetAdornment, onWhiteAdornment, onRemoveItem }) {
   const current = character?.gear?.find((g) => g.key === def.key) || null
   const planned = shortlist.items.filter((i) => i.equip_slot === def.key)
   const options = [{ key: null, item: current, current: true },
@@ -453,7 +588,10 @@ function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
         <AdornmentIcons item={shown} current={isCurrent}
           sets={allSets(shortlist, adornmentSets)} slot={def.catalog}
           installed={(shortlist.set_slots || {})[def.key]} compact
-          onChange={(name) => onSetAdornment(def.key, name)} />
+          whiteAdornments={whiteAdornments}
+          whiteInstalled={(shortlist.adorn_slots || {})[def.key]}
+          onChange={(name) => onSetAdornment(def.key, name)}
+          onWhiteChange={(socket, choice) => onWhiteAdornment(def.key, socket, choice)} />
       )}
       {!isCurrent && shown && !occupied && (
         <button type="button" className="planslotremove"
@@ -483,7 +621,7 @@ function setPieceForSlot(set, slot) {
 
 function compatibleSets(sets, item, slot) {
   const level = Number(item?.level) || null
-  const floor = level ? Math.max(1, Math.floor(level / 10) * 10 - 10) : null
+  const floor = level ? Math.max(1, Math.floor(level / 10) * 10 - 20) : null
   return (sets || []).map((set) => ({ ...set, piece: setPieceForSlot(set, slot) }))
     .filter((set) => set.piece
       && (!level || !set.level || (set.level <= level && set.level >= floor)))
@@ -493,13 +631,22 @@ function compatibleSets(sets, item, slot) {
     }))
 }
 
-function AdornmentIcons({ item, current, sets, slot, installed, onChange, compact = false }) {
-  const adornments = current
-    ? (item?.adornments || [])
-    : Object.entries(item?.adorns || {}).flatMap(([color, count]) =>
-      Array.from({ length: count }, () => ({
-        color, name: color === 'turquoise' ? item.set_name : null,
-      })))
+const ADORN_SLOT = {
+  Ear: 'Earring', Finger: 'Ring', Shoulders: 'Shoulders',
+}
+
+function compatibleWhite(adornments, item, slot) {
+  const level = Number(item?.level) || null
+  const floor = level ? Math.max(1, Math.floor(level / 10) * 10 - 20) : null
+  const wanted = ADORN_SLOT[slot] || slot
+  return (adornments || []).filter((adorn) => adorn.slots.includes(wanted)
+      && (!level || (adorn.level <= level && adorn.level >= floor)))
+    .sort((a, b) => b.tier - a.tier || a.name.localeCompare(b.name))
+}
+
+function AdornmentIcons({ item, current, sets, whiteAdornments, slot, installed,
+                          whiteInstalled, onChange, onWhiteChange, compact = false }) {
+  const adornments = itemSockets(item).map((socket) => socket.adorn)
   if (!adornments.length) return <span className="muted">No adornment sockets</span>
   const legal = compatibleSets(sets, item, slot)
   const hasTurquoise = adornments.some((adorn) => adorn.color === 'turquoise')
@@ -511,6 +658,11 @@ function AdornmentIcons({ item, current, sets, slot, installed, onChange, compac
         adorn.color === 'turquoise' ? (
           <SetAdornmentSocket key={`${adorn.color}-${i}`} adorn={adorn}
             selection={installed} sets={legal} onChange={onChange} />
+        ) : adorn.color === 'white' ? (
+          <WhiteAdornmentSocket key={`${adorn.color}-${i}`} adorn={adorn}
+            selection={whiteInstalled?.[i]}
+            choices={compatibleWhite(whiteAdornments, item, slot)}
+            onChange={(choice) => onWhiteChange(i, choice)} />
         ) : <StaticAdornmentSocket key={`${adorn.color}-${i}`} adorn={adorn} />
       ))}
       {!compact && (
@@ -533,11 +685,12 @@ function ProjectedStats({ character, shortlist, active, catalog, statLabel, stat
   const precise = (value) => Number(value).toLocaleString(undefined, {
     maximumFractionDigits: 2,
   })
+  const signed = (value, pct) => `${value > 0 ? '+' : ''}${precise(value)}${pct ? '%' : ''}`
   if (!character?.synced) {
     return (
       <div className="planstats empty">
         <div className="planstathead"><b>Projected Stats</b></div>
-        <p>Load a Census character to compare planned gear against current totals.</p>
+        <p>Load a character to compare planned gear against current totals.</p>
       </div>
     )
   }
@@ -546,14 +699,32 @@ function ProjectedStats({ character, shortlist, active, catalog, statLabel, stat
     const delta = value - base[key]
     const pct = statPct[key] && !RATING_STATS.has(key)
     const state = statState(delta)
-    return (
-      <div className="planstatrow" key={key}>
-        <span>{statLabel[key] || FALLBACK_LABEL[key] || key}</span>
-        <b className={state}>{precise(value)}{pct ? '%' : ''}</b>
-        <em className={state}>
-          {delta ? `${delta > 0 ? '+' : ''}${precise(delta)}${pct ? '%' : ''}` : '—'}
-        </em>
+    const gear = out.breakdown.gear[key] || 0
+    const adornments = out.breakdown.adornments[key] || 0
+    const sets = out.breakdown.sets[key] || 0
+    const other = value - gear - adornments - sets
+    const label = statLabel[key] || FALLBACK_LABEL[key] || key
+    const card = (
+      <div className="statbreakdowncard">
+        <div className="statbreakdownhead">
+          <b>{label}</b><strong>{precise(value)}{pct ? '%' : ''}</strong>
+        </div>
+        <div><span>Character snapshot</span><em>{signed(other, pct)}</em></div>
+        <div><span>Gear</span><em>{signed(gear, pct)}</em></div>
+        <div><span>White adornments</span><em>{signed(adornments, pct)}</em></div>
+        <div><span>Set bonuses</span><em>{signed(sets, pct)}</em></div>
       </div>
+    )
+    return (
+      <Hover className="statbreakdown" width={280} card={card} block key={key}>
+        <div className="planstatrow" tabIndex="0">
+          <span>{label}</span>
+          <b className={state}>{precise(value)}{pct ? '%' : ''}</b>
+          <em className={state}>
+            {delta ? signed(delta, pct) : '—'}
+          </em>
+        </div>
+      </Hover>
     )
   }
   return (
@@ -582,15 +753,18 @@ function ProjectedStats({ character, shortlist, active, catalog, statLabel, stat
           What stays here is only their arithmetic contribution, which is a
           stat like any other. */}
       <p className="planstatnote">
-        Estimate: current Census total − equipped item stats + active planned item stats.
-        Procs, named set effects, moved adornments and caps are not simulated.
+        Estimate: current {character?.character?.source === 'lexicon' ? 'EQ2 Lexicon' : 'Census'} total
+        {' '}− equipped item stats + active planned item stats.
+        Additive white adornments and set thresholds are included; procs,
+        named effects and caps are not simulated.
       </p>
     </div>
   )
 }
 
 /* Look a toon up by name. A submit, never a keystroke: this is the one control
-   on the page that can reach Census, so it runs when somebody asks it to. */
+   on the page that can reach a public character service, so it runs when
+   somebody asks it to. */
 function CharacterLookup({ onLoad, busy, err }) {
   const [name, setName] = useState('')
   return (
@@ -608,8 +782,9 @@ function CharacterLookup({ onLoad, busy, err }) {
 }
 
 export default function PlanLoadout({ characters, character, charId, onCharacter,
-                                     shortlist, adornmentSets, active, focusSlot, onFocusSlot,
-                                     onCycle, onReset, onSetAdornment,
+                                     shortlist, adornmentSets, whiteAdornments,
+                                     active, focusSlot, onFocusSlot,
+                                     onCycle, onReset, onSetAdornment, onWhiteAdornment,
                                      onRemoveItem, signedIn,
                                      onLookup, lookupBusy, lookupErr,
                                      statLabel, statPct }) {
@@ -624,21 +799,19 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
     <EquipmentSlot key={def.key} def={def} character={character} shortlist={shortlist}
       active={active} focused={focusSlot === def.key}
       occupied={def.key === 'secondary' && twoHanded}
-      adornmentSets={adornmentSets}
+      adornmentSets={adornmentSets} whiteAdornments={whiteAdornments}
       onFocus={onFocusSlot} onCycle={onCycle} onSetAdornment={onSetAdornment}
+      onWhiteAdornment={onWhiteAdornment}
       onRemoveItem={onRemoveItem} />
   ))
   return (
     <div className="card planloadout">
       <div className="loadouthead">
-        {/* THE CHARACTER IS THE HEADLINE. It was the other way round —
-            "EQUIPMENT & STATS" in gold display caps with the toon's name in
-            small muted type after it — so the loudest words on the page named
-            the panel instead of the person, and the one fact that changes
-            (who this is) was the one set in the quietest type. The panel's
-            name is a label; the character is the subject. */}
+        {/* THE CHARACTER IS THE ONLY HEADLINE. "EQUIPMENT & STATS" first
+            outweighed the toon's name, then survived as a redundant eyebrow.
+            The card already visibly contains gear and stats; only who is in
+            the window needs naming. */}
         <div className="loadoutwho">
-          <span className="seclabel">Equipment &amp; Stats</span>
           <h2>
             {character?.character?.name || 'No character loaded'}
             {character?.character ? (
@@ -654,7 +827,7 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             exists to show, and a full-width search box beside it read as the
             more important of the two.
 
-            A CENSUS CHARACTER IS PUBLIC, so looking one up needs no account.
+            CHARACTER RECORDS ARE PUBLIC, so looking one up needs no account.
             Trying gear on your own toon is the whole point of this panel, and
             making that the one part of a signed-out page that demands signing
             up is backwards. Signed-in readers keep the picker AND get this,
@@ -672,7 +845,8 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
           )}
           <button className="chip resetgear" type="button" onClick={onReset}
                   disabled={!Object.keys(active).length
-                    && !Object.keys(shortlist.set_slots || {}).length}>Reset all</button>
+                    && !Object.keys(shortlist.set_slots || {}).length
+                    && !Object.keys(shortlist.adorn_slots || {}).length}>Reset all</button>
         </div>
       </div>
       <div className="loadoutbody">

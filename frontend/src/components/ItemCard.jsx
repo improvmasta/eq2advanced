@@ -105,7 +105,7 @@ function keyed(el) {
   try { return el.matches(':focus-visible') } catch { return true }
 }
 
-function Hover({ className, width, card, onOpen, children }) {
+function Hover({ className, width, card, onOpen, children, block = false }) {
   const [open, setOpen] = useState(false)
   const [at, setAt] = useState(null)
   const box = useRef(null)
@@ -183,11 +183,12 @@ function Hover({ className, width, card, onOpen, children }) {
     // position would re-place forever.
   }, [open])
 
+  const Anchor = block ? 'div' : 'span'
   return (
     <>
       {/* `hoverbox` is what `settle` looks for; the pointer never touches the
           card itself unless the card is one that scrolls. */}
-      <span ref={box} className="hoverbox"
+      <Anchor ref={box} className="hoverbox"
             onFocus={(e) => {
               if (!keyed(e.target)) return
               byKey.current = true
@@ -201,7 +202,7 @@ function Hover({ className, width, card, onOpen, children }) {
               if (hovered !== box.current) close()
             }}>
         {children}
-      </span>
+      </Anchor>
       {open && createPortal(
         // Hidden for the one frame between rendering (so it can be measured)
         // and being placed — otherwise a tall card flashes at the wrong spot.

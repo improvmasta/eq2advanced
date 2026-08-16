@@ -397,22 +397,25 @@ segmentation)
 - **`GET /api/plan/character?name=` is the ONE `/plan` route that may reach the
   network** — a name somebody TYPED, cache-first, stale-on-failure, no account,
   `plan_characters` (v43) is a cache of a PUBLIC record and never account
-  state. Nothing on a page load fetches anything. **A signed-in reader's OWN
-  characters come from `census_snapshots` — a stored local row, no network at
-  all — which is why they keep working while Census is down and a first-time
-  name lookup does not.** The cache is kept current by
+  state. A character link may put that same deliberate lookup in
+  `/plan?character=<name>`; ordinary planner page loads still fetch no
+  character. **A signed-in reader's OWN characters come from
+  `census_snapshots` — a stored local row, no network at all — which is why
+  they keep working while Census is down.** The cache is kept current by
   `tools/refresh_plan_characters.py` off the 30-min census probe: bounded rows
   per run, oldest first, asked by `name_lower` (never the displayname), and it
   STOPS when a row's stamp does not move — `lookup_by_name` swallows an
   unreachable Census on purpose, so a raised error is not the only way a run
   can be failing.
-- **LEXICON IS THE WORN-ITEM FALLBACK, NOT THE EQUIPMENT AUTHORITY**
-  (`census/lexicon.py`, schema v44) — Census/local snapshots decide which ids
-  are equipped. When those ids lack item records, one bounded Lexicon character
-  lookup and item batch enriches only that allow-list into separate
-  `lexicon_items`; `census_items` always wins. Complete rows are durable,
-  incomplete summaries retry after 6h, and fallback failure never fails the
-  character page.
+- **LEXICON IS THE LAST CHARACTER FALLBACK AND THE WORN-ITEM FALLBACK**
+  (`census/lexicon.py`, schema v44) — Census/local snapshots win; only a
+  first-ever lookup with neither may use Lexicon's public character cache for
+  equipment and totals, labeled `source: lexicon` and replaced by the next
+  Census refresh. When Census did supply the equipped ids but not their item
+  records, one bounded Lexicon lookup enriches only that allow-list into
+  separate `lexicon_items`; `census_items` always wins. Complete rows are
+  durable, incomplete summaries retry after 6h, and fallback failure never
+  fails the character page.
 - **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
   `refdata/planner_standard.json`, then prerequisite-before-level body from
   `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
@@ -430,6 +433,9 @@ segmentation)
 - **`/plan` is IN the nav as `Gear Planner`** (right of Compare, signed out
   too — published 2026-08-16) **and needs no account** — it reaches no parse,
   session or account, and has no POST.
+- **PLAYER-NAME LINKS GO TO `/plan?character=<name>`**, not directly to the
+  external Lexicon profile — chat names and parse drilldown headings open the
+  shareable planner profile; guild and encounter links remain Lexicon links.
 - **Phase 0 is measured, not guessed** — 899 RoK quests / 3,452 coordinates;
   2,584 POI matches (74.86% overall, 83.46% of zone-labeled), with the main RoK
   zones at 90.0-94.5% and median confidence 0.98. Phase 3 may use MATCHED rows;
@@ -564,6 +570,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
 - 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
@@ -583,4 +590,3 @@ builds here with `bash build.sh`.
 - 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
 - 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
 - 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page
-- 2026-08-09 (claude): Publish ACT plugin 0.2.1 (never skips unsent log on a failed send)

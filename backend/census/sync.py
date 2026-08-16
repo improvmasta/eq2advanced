@@ -22,6 +22,7 @@ from db import json_dumps
 # What a snapshot keeps from the character doc. Everything the Character page
 # and future gear/spell diffs need; nothing that bloats the row.
 TRIM_KEYS = (
+    "_source",
     "id", "name", "displayname", "type", "guild", "locationdata", "playedtime",
     "stats", "resists", "spell_list", "equipmentslot_list",
     "alternateadvancements", "last_update", "crc",
@@ -649,7 +650,7 @@ def _known_snapshot_by_name(conn, name_lower: str, world_id: int) -> dict | None
 
 
 def lookup_by_name(conn, client, name: str, world_id: int = 618,
-                   refresh: bool = False) -> dict | None:
+                   refresh: bool = False, lexicon_client=None) -> dict | None:
     """A public character by NAME -> the same summary an owned one produces.
 
     **Cache first, and cache the MISS too.** Census intermittency is normal and
@@ -676,8 +677,39 @@ def lookup_by_name(conn, client, name: str, world_id: int = 618,
     except Exception:                      # noqa: BLE001 — one failure mode
         # Census is unreachable. Stale is better than nothing and much better
         # than an error page on a tab that needs no account.
-        return (_lookup_out(conn, row) if row else
-                _known_snapshot_by_name(conn, lower, world_id))
+        cached = (_lookup_out(conn, row) if row else
+                  _known_snapshot_by_name(conn, lower, world_id))
+        if cached is not None:
+            return cached
+        # A first-ever lookup has no local answer. Lexicon maintains its own
+        # public character cache, so it can still supply the planner's narrow
+        # display payload while Census is unavailable. Provenance stays on the
+        # document and a later successful Census refresh replaces this row.
+        try:
+            from census import lexicon
+            lclient = lexicon_client or lexicon.shared_client()
+            ldoc = lclient.character(key)
+            if str(ldoc.get("name") or "").lower() != lower:
+                return None
+            doc = lexicon.as_census_character(ldoc)
+            # Fill the separate Lexicon item cache from the same client before
+            # rendering. `_summary_of` will then remain a local read even
+            # though this is the first time the name has been seen.
+            lexicon.maybe_enrich_equipment(conn, key, doc, lclient)
+        except Exception:                  # noqa: BLE001 — fallback stays optional
+            return None
+        now = int(time.time())
+        with conn:
+            conn.execute(
+                "INSERT INTO plan_characters (name_lower, world_id, name, doc_json, "
+                "fetched_ts) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(name_lower, world_id) DO UPDATE SET name=excluded.name, "
+                "doc_json=excluded.doc_json, fetched_ts=excluded.fetched_ts",
+                (lower, world_id, doc.get("displayname") or key,
+                 json.dumps(doc, separators=(",", ":")), now))
+        return _lookup_out(conn, conn.execute(
+            "SELECT * FROM plan_characters WHERE name_lower=? AND world_id=?",
+            (lower, world_id)).fetchone())
     if not doc and row is None:
         known = _known_snapshot_by_name(conn, lower, world_id)
         if known is not None:
@@ -784,12 +816,15 @@ def _lookup_out(conn, row) -> dict | None:
     doc = json.loads(row["doc_json"])
     ctype = doc.get("type") or {}
     cls = ctype.get("class")
+    source = doc.get("_source") or "census"
     # `public: True` is how the page knows this is a looked-up record rather
     # than one of yours: no snapshot history, no refresh button, nothing to own.
     base = {"character": {
         "id": None, "name": row["name"], "class": cls,
         "level": ctype.get("level"), "world": "Wuoshi",
-        "last_census_ts": row["fetched_ts"], "census_id": doc.get("id"),
+        "last_census_ts": row["fetched_ts"] if source == "census" else None,
+        "source_ts": doc.get("last_update") or row["fetched_ts"],
+        "source": source, "census_id": doc.get("id") if source == "census" else None,
         "public": True}}
     return _summary_of(conn, doc, base, None, cls)
 

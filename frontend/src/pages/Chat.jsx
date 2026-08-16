@@ -17,8 +17,9 @@
    is one variable in base.css (`--eq2-chat`) and not three. */
 
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
-import { lexiconCharacter, lexiconGuild } from '../lib/raids.js'
+import { lexiconGuild, plannerCharacter } from '../lib/raids.js'
 import ChatAlerts from '../components/ChatAlerts.jsx'
 import { Examine, Hover } from '../components/ItemCard.jsx'
 
@@ -140,10 +141,10 @@ function Piece({ p, trade }) {
 
 function PlayerLink({ name, className }) {
   return (
-    <a className={className} href={lexiconCharacter(name)} target="_blank"
-       rel="noreferrer noopener" title={`View ${name} on EQ2 Lexicon`}>
+    <Link className={className} to={plannerCharacter(name)}
+          title={`Plan gear for ${name}`}>
       {name}
-    </a>
+    </Link>
   )
 }
 

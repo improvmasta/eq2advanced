@@ -25,6 +25,13 @@ reason than Compare's — nothing here reaches a parse, a session or an account,
 every row is reference data about the GAME, and there is no POST on the router
 at all.
 
+**Character names elsewhere on EQ2Advanced link here, not to a bare external
+profile.** Chat speakers and player drilldown headings use
+`/plan?character=<name>`; the URL loads that public character automatically,
+survives sharing and browser navigation, and puts the useful next action — gear
+comparison — around the profile. Guild and encounter links still go to EQ2
+Lexicon because the planner has no equivalent view for them.
+
 ---
 
 ## Table of contents
@@ -121,8 +128,11 @@ searchability; Census gives the authoritative record; the log's `\aITEM` link
 lands on the same key `items.py` already uses.
 
 **Census intermittency is normal and is not an outage.** It comes and goes by
-time of day. Every Census read here is cached and every Census-derived field has
-a wiki fallback. Nothing on this page may block on a live Census call.
+time of day. Every character lookup is cached; a stale Census snapshot wins
+during an outage, and a first-ever uncached lookup falls back to EQ2 Lexicon's
+public character cache. The response labels that provenance, and a later Census
+refresh replaces it. Missing equipped-item details retain the separate Lexicon
+item fallback. Nothing else on this page blocks on a live Census call.
 
 **Source attribution is built by INVERTING mob and quest pages, not by reading
 items.** The `obtain` field on item pages is usually blank. `NamedInformation`
@@ -455,7 +465,7 @@ selected, and can be collapsed back to a compact button in the page head.
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  Gear Planner                                  [Outline 3 ›]    │
-│  EQUIPMENT & STATS / Bobby · Level 70 Necromancer   [lookup][▾]│
+│  Bobby · Level 70 Necromancer                       [lookup][▾]│
 │  ┌ armour + weapons ┬ charms + jewelry ┬ projected stats ─────┐│
 │  │ items + sockets + per-slot reset    │ (two columns, no     ││
 │  │ worn set bonuses under the window   │  inner scrollbar)    ││
@@ -565,9 +575,15 @@ resulting difference to Census's exact current total. Until another TLE
 measurement contradicts it, the planner applies that empirical rule at every
 level rather than suppressing vital projections away from level 70.
 
-Only additive numbers enter it. Procs, named focus effects, cap behavior and
-moved adornments are not guessed. The panel labels itself an estimate and says
-what is excluded.
+Only additive numbers enter it. Replacing a host removes its equipped white
+adornment numbers; an explicit white choice adds the selected alternative.
+Set thresholds are likewise applied as a current-versus-planned delta. Procs,
+named focus effects and cap behavior are not guessed. The panel labels itself
+an estimate and says what is excluded. Hovering or keyboard-focusing any
+projected stat opens an arithmetic breakdown of the visible loadout: gear,
+white adornments, active set thresholds, and a quiet `Character snapshot`
+remainder for everything already present in Census/Lexicon. Those rows always
+add back to the displayed projected total.
 
 ### Adornment sockets and set bonuses
 
@@ -575,26 +591,51 @@ Adornments are **in-game-style framed socket tiles on every equipment row**,
 beside the item they belong to rather than in a detail strip below the window.
 An installed adornment uses its actual cached icon; an open socket keeps the
 dark framed recess, so the row reads like the in-game strip rather than three
-colored status badges. White and orange sockets currently show the equipped
-state and retain their examine hover. Clicking turquoise opens a searchable
-picker instead of blindly cycling.
+colored status badges. Socket order is fixed and right-anchored: the occasional
+yellow, black, green and orange slots grow the strip to the left, while the
+ordinary white and set-turquoise columns do not jump between equipment rows.
+
+Both white and turquoise are decisions, not decoration. Hovering a white shows
+its actual additive effect (for example `+3.8% Casting Speed`); clicking it opens
+a searchable picker of adornments legal for that equipment slot. The T6–T8
+names, ordinary values and slot matrix come from the wiki's
+`Adornments/Overview` reference table and are served locally—no page click
+reaches Census or the wiki. Its Crit Bonus row is excluded for this TLE window.
+Its Crit Chance values are live-era scaling (over 2% where Wuoshi is observed
+around 0.6%), so those choices are also withheld until the exact TLE
+tier-and-quality table is available rather than applying invented projection
+math. Equipped metadata remains authoritative when Census/Lexicon supplied it.
+The compact picker leads with the stat, then retains the useful family words
+(`Scintillating`, `Lambent`, `Superior`, `Greater`, `Swift Casting`) for visual
+scanning and filtering without printing the full ceremonial item name. The
+stat is never allowed to truncate; the secondary name tags yield the space and
+the row tooltip carries the complete name. Level group headings use white text
+so the tiers remain legible in the compact list. Pointer scrolling and held
+scrollbar drags do not trigger option auto-scrolling; only keyboard navigation
+keeps the highlighted row in view.
 
 The retired Census image URL is not used. Icon ids admitted by the equipped
 Census document are resolved through EQ2i in the same bounded fallback pass,
 cached under `data/icons/`, and served from `/api/items/icon/{iconid}.png`;
 until a picture resolves, the tile falls back to the socket-colour gem.
 
-The turquoise picker is built from the selected-era set catalog whether or not
-the reader visited Sets mode. It filters to a set piece matching the concrete
-equipment slot and to adornments no newer than the host item and no more than
-**one equipment tier back** (for a level-70 host: levels 60–70), with the loaded
-character's class applied when known. Results are grouped by tier, carry their
-level and threshold ladder, and include explicit `Equipped` and `Empty` rows.
+The turquoise picker is built from the selected era **and its preceding
+expansion** whether or not the reader visited Sets mode. Search toggles govern
+the catalog table, not what physically fits in the gear window. Both turquoise
+and white filter to the concrete equipment slot, never newer than the host,
+and no more than two equipment tiers below it (for a level-70 host, the floor
+is level 50). Results are grouped by tier, carry their level/effect or threshold
+ladder, and include explicit `Equipped` and `Empty` rows.
 Picking an unshortlisted set is allowed—the picker is an equipment decision;
 the shortlist remains a separate acquisition/outline decision.
 
 Every change recomputes installed pieces and the set threshold ledger
-immediately. Named effects remain prose and visibly activate at their threshold.
+immediately. Projection is a current-versus-planned threshold delta: pulling
+the second piece from a `2 pieces: +2 Crit Chance` set subtracts that Crit,
+while the unchanged pieces elsewhere in the window continue to count. Legacy
+wiki `All` modifier lines are displayed and typed as the in-game `Ability Mod`
+label (`Haunted Visions` therefore reads `+35 Ability Mod` at three pieces).
+Named effects remain prose and visibly activate at their threshold.
 Simple additive bonuses (Ability Mod, Potency, Crit Chance, Casting Speed,
 Flurry, attributes, Health and Power) are conservatively typed by the server and
 also feed projected stats. Any sentence that is not exactly a known
@@ -621,9 +662,9 @@ headline, with proc and condition sentences as indented lines beneath it.
 Set cards span the full width beneath both equipment and projected stats, then
 flow across the loadout in responsive columns rather than consuming
 one full-width row apiece. The entire area can collapse to a one-line set count;
-within an open card, thresholds and stat headlines stay visible while verbose
-proc/condition details clamp to two lines and expand through an explicit
-ellipsis control.
+every open card uses the same preview height and crop point. Hovering or
+keyboard-focusing any preview opens its complete threshold and proc text in a
+popup, so a long set never stretches its grid row or needs an expansion button.
 
 **A SET TIER IS A BLOCK, NOT A LINE** (`wiki._BONUS_TIER`, corrected
 2026-08-16). The page writes the proc on the `*(N)` line, its explanation in
@@ -757,11 +798,19 @@ name at `--fzleft`, matching every other checkable table in the app.
 
 ### The set-adornment view
 
-A filter mode within Gear, not a third tab: **rank the set bonuses themselves**,
-each row showing the tiers, which items carry which piece, and — separately —
-which items in the reader's era can *host* it (`turquoiseslot ≥ 1`,
-`level ≥ source level`). Shortlisting from here adds the adornment, never the
-armor it came in.
+A compact, labelled **Search for: Equipment / Set adornments** control switches
+catalog tasks without masquerading as a page-wide pair of feature cards or a
+tiny unrelated filter. The set view ranks the bonuses themselves and searches
+only set names and bonus text. Results are automatically restricted to the
+loaded character's class; the equipment-search Class facet does not leak into
+this character-specific choice.
+
+Each result shows the threshold ladder and acts on the adornment directly.
+**Equip adornment…** lists the character window's eligible turquoise positions,
+can install another copy, and can remove one already planned copy. It does not
+dump carrier armor or every item that could host the set—those inventories made
+the important action harder to find. Shortlisting remains separate and adds
+the adornment to the Outline, never the armor it came in.
 
 ### The Outline
 
@@ -1046,7 +1095,10 @@ thresholds. It remains useful with no outline and with no account.
   and the old panel could see only the first. **Same-named adornments are the
   same set**: that is what a set adornment is in EoF/RoK and it is the only
   join either source offers. Earned tiers are full-strength with a filled
-  diamond, unreached ones dimmed. Their arithmetic contribution stays in
+  diamond, unreached ones dimmed. Every set uses the same fixed-height preview,
+  so one long proc description cannot make its card taller than its neighbors;
+  hovering or keyboard-focusing the card opens the complete uncropped ladder
+  in a popup. Their arithmetic contribution stays in
   `projection()`, because that is a stat like any other.
 - **Changing who you are planning for empties the window.** A planned choice
   only means anything against one character's current equipment — a ring worth
@@ -1054,18 +1106,23 @@ thresholds. It remains useful with no outline and with no account.
   projection populated across a switch showed an "upgrade" measured against
   somebody else's gear. Both routes in (the account picker and the typed
   lookup) clear it. The shortlist survives.
-- **THE CHARACTER IS THE HEADLINE OF THE GEAR CARD.** It was the other way
-  round — "EQUIPMENT & STATS" in the site's gold display caps, with the toon's
-  name in small muted type trailing after it — so the loudest words on the page
-  named the panel and the one fact that changes, who this is, was set in the
-  quietest type on it. Now the panel's name is the eyebrow label and the
-  character's name is the `h2`. **That heading opts out of the site's
-  small-caps `h2`**: `BOBBY` is not how anybody writes a name.
+- **THE CHARACTER IS THE ONLY HEADLINE OF THE GEAR CARD.** It began the other
+  way round — "EQUIPMENT & STATS" in the site's gold display caps, with the
+  toon's name in small muted type trailing after it — and briefly retained the
+  panel name as an eyebrow. That label is redundant: the card visibly contains
+  equipment and stats, while who is in it is the fact that changes. The
+  character's name alone is the `h2`. **That heading opts out of the site's
+  small-caps `h2`**: `BOBBY` is not how anybody writes a name. It is materially
+  larger, while level and class form a substantial uppercase identity line
+  below instead of a tiny muted suffix.
 - **The lookup is a way IN, not the headline.** It sits to the LEFT of the
   picker and stays small: who you are planning for is what the row exists to
   say, and that is the picker plus the name in the heading. A 15rem search box
   beside a 220px gold picker read as the more important of the two and made the
   head the loudest thing on the page.
+- **Item-name search is scratch state.** It is not written to the URL and begins
+  empty after refresh, browser return, or a fresh visit. Era, class, priority
+  and facets remain shareable plan state; an old typed fragment is not a plan.
 
 **Phase 2 — the outline.** Prelude from layer 3, body from the prerequisite DAG,
 no tags. Ordered, readable, and honest about what it does not know.

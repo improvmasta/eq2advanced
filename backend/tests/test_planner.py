@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
-from planner import catalog, ingest, outline, wiki
+from planner import adornments, catalog, ingest, outline, wiki
 
 PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
@@ -753,6 +753,32 @@ def test_item_level_range_filters_both_edges(tmp_path):
     assert catalog.search(conn, eras=["rok"], level_min=80, level_max=80)["total"] == 1
     assert catalog.search(conn, eras=["rok"], level_min=81)["total"] == 0
     assert catalog.search(conn, eras=["rok"], level_max=79)["total"] == 0
+
+
+def test_white_adornment_catalog_has_real_tier_values_and_slot_rules():
+    rows = adornments.white_catalog()
+    casting = next(row for row in rows
+                   if row["name"] == "Scintillating Adornment of Swift Casting (Superior)")
+    assert casting["level"] == 60 and casting["tier"] == 7
+    assert casting["summary"] == "+3.8% Casting Speed"
+    assert casting["stats"] == {"acspeed": 3.8}
+    assert casting["prefix"] == "Scintillating"
+    assert casting["family"] == "Swift Casting"
+    assert "Wrist" in casting["slots"] and "Head" not in casting["slots"]
+    assert not any(row["effect"] in {"Crit Chance", "Crit Bonus"} for row in rows)
+
+
+def test_legacy_all_set_bonus_is_ability_mod_in_display_and_math(tmp_path):
+    conn = loaded(tmp_path)
+    conn.execute(
+        "INSERT INTO plan_sets VALUES (?,?,?,?,?,?,?)",
+        ("Haunted Visions", "Haunted Visions (Adornment Set)", "rok", 70,
+         "[]", json.dumps([{"pieces": 3, "text": "+35 All"}]), 1))
+    conn.execute("UPDATE plan_items SET set_name='Haunted Visions'")
+    conn.commit()
+    bonus = catalog.sets(conn, eras=["rok"])["sets"][0]["bonuses"][0]
+    assert bonus["text"] == "+35 Ability Mod"
+    assert bonus["stats"] == {"abmod": 35.0}
 
 
 def test_the_card_is_items_display_shape_so_ItemCard_is_reused(tmp_path):

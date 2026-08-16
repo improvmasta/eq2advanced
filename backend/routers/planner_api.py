@@ -3,8 +3,9 @@
   GET /api/plan/meta?eras=rok,eof   -> the expansions on offer + the facets in them
   GET /api/plan/items?…             -> the item table, ranked against an ORDER
   GET /api/plan/sets?…              -> the set-adornment view
+  GET /api/plan/adornments           -> ordinary white socket choices
   GET /api/plan/outline?…           -> the prelude, then what to do about a shortlist
-  GET /api/plan/character?name=…    -> a public Census character, no account needed
+  GET /api/plan/character?name=…    -> a public character, no account needed
 
 **Open to anybody, signed in or not**, for the same reason `/chat` is: none of
 these routes reaches a parse, a session or an account. Every row is reference
@@ -15,12 +16,13 @@ POST here at all. The catalog is filled by `tools/sync_planner.py`, run by hand.
 is the exception the rule was already making elsewhere: it runs on a name a
 reader TYPED and pressed, never on a page load, which is the same shape as
 `POST /characters/{id}/census/refresh`. It answers from cache first, falls back
-to a stale answer when Census is unavailable, and writes nothing anybody owns —
-a Census character record is public, and trying gear on your own toon should
-not be the one part of this page that needs an account.
+to a stale answer when Census is unavailable, then asks EQ2 Lexicon only for a
+first-ever uncached lookup. It writes nothing anybody owns — these character
+records are public, and trying gear on your own toon should not be the one part
+of this page that needs an account.
 
 **WHICH EXPANSIONS COUNT IS THE READER'S**, which is why `eras` is a parameter
-on all three and never a constant: EoF, RoK, or both. An era nobody has synced
+on catalog/outline reads and never a constant: EoF, RoK, or both. An era nobody has synced
 answers with `items: 0` rather than an empty table, so the page can say so.
 
 Nothing here fetches. `items.ensure` is network-bound and never runs in a
@@ -35,7 +37,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from census import client as census_client
 from census import sync as census_sync
 from db import get_db
-from planner import catalog, outline, wiki
+from planner import adornments, catalog, outline, wiki
 
 router = APIRouter(tags=["planner"])
 
@@ -97,6 +99,17 @@ def plan_sets(eras: str | None = Query(None), order: str | None = Query(None),
                         classes=_list(classes))
 
 
+@router.get("/plan/adornments")
+def plan_adornments(color: str = Query("white", pattern="^white$")):
+    """Static ordinary-adornment choices for the equipment socket picker.
+
+    This is deliberately independent of the item-search expansion toggles.
+    Whether an adornment fits is a property of its own predicate, level and
+    legal host slots, not of which catalog the reader happens to be browsing.
+    """
+    return {"adornments": adornments.white_catalog()}
+
+
 @router.get("/plan/outline")
 def plan_outline(
     eras: str | None = Query(None),
@@ -132,7 +145,7 @@ LOOKUP_SCOPE = "plan_character"
 def plan_character(request: Request,
                    name: str = Query(..., min_length=2, max_length=40),
                    refresh: bool = Query(False)):
-    """One public Census character, by the name a reader typed.
+    """One public character, by the name a reader typed.
 
     404 when Census does not know the name AND nothing was cached for it — the
     two are one answer here, because "we cannot tell you" and "there is no such
@@ -151,5 +164,5 @@ def plan_character(request: Request,
     out = census_sync.lookup_by_name(
         conn, census_client.shared_client(), name, refresh=refresh)
     if out is None:
-        raise HTTPException(404, f"no Census record for {name!r}")
+        raise HTTPException(404, f"no character record for {name!r}")
     return out

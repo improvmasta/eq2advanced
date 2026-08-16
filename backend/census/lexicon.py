@@ -1,8 +1,10 @@
-"""EQ2 Lexicon as a bounded fallback for equipped Census item ids.
+"""EQ2 Lexicon as a bounded fallback for character and equipped-item data.
 
-Census remains authoritative for WHAT a character wears.  Lexicon is asked
-only when that Census character document contains an equipped item/adornment
-id whose item record is absent, and the result lives in its own cache table so
+Census remains authoritative when it answers. Lexicon is asked for a character
+only when a typed planner lookup has no cached Census snapshot and Census is
+unreachable. It is also asked when a Census character document contains an
+equipped item/adornment id whose item record is absent. Item results live in
+their own cache table, and character documents carry explicit provenance, so
 the two sources can never silently overwrite one another.
 """
 
@@ -21,6 +23,13 @@ from db import json_dumps
 BASE = os.environ.get("EQ2LEXICON_URL", "https://wuoshi.eq2lexicon.com").rstrip("/")
 MAX_EQUIPPED_IDS = 64
 INCOMPLETE_TTL_S = 6 * 3600
+
+_REPEATED_SLOTS = {
+    "Charm": ("activate1", "activate2"),
+    "Ear": ("ears", "ears2"),
+    "Finger": ("left_ring", "right_ring"),
+    "Wrist": ("left_wrist", "right_wrist"),
+}
 
 
 class LexiconError(Exception):
@@ -125,6 +134,83 @@ def _equipped_ids(census_doc: dict) -> list[int]:
         wanted.extend(int(a["id"]) for a in item.get("adornment_list") or []
                       if a.get("id"))
     return list(dict.fromkeys(wanted))[:MAX_EQUIPPED_IDS]
+
+
+def as_census_character(record: dict) -> dict:
+    """Translate Lexicon's public character payload into our display shape.
+
+    This is intentionally the narrow shape consumed by the planner, not a
+    claim that a Lexicon record is a Census record. ``_source`` survives in
+    the cached document and is echoed to the UI as provenance.
+    """
+    stats = record.get("stats") or {}
+    nested_stats = {
+        "health": {"max": stats.get("health_max")},
+        "power": {"max": stats.get("power_max")},
+        "str": {"effective": stats.get("str_eff")},
+        "sta": {"effective": stats.get("sta_eff")},
+        "agi": {"effective": stats.get("agi_eff")},
+        "wis": {"effective": stats.get("wis_eff")},
+        "int": {"effective": stats.get("int_eff")},
+        "defense": {"armor": stats.get("armor")},
+        "combat": {
+            "abilitymod": stats.get("ability_mod"),
+            "basemodifier": stats.get("potency"),
+            "critchance": stats.get("crit_chance"),
+            "doubleattackchance": stats.get("double_attack"),
+            "dps": stats.get("dps"),
+            "attackspeed": stats.get("attack_speed"),
+            "flurry": stats.get("flurry"),
+            "aeautoattackchance": stats.get("ae_autoattack"),
+            "hategainmod": stats.get("hate_gain"),
+            "strikethrough": stats.get("strikethrough"),
+            "blockchance": stats.get("block_chance"),
+            "accuracy": stats.get("accuracy"),
+        },
+        "ability": {
+            "spelltimecastpct": stats.get("casting_speed"),
+            "spelltimereusepct": stats.get("reuse_speed"),
+            "spelltimerecoverypct": stats.get("recovery_speed"),
+        },
+    }
+
+    seen: dict[str, int] = {}
+    equipment = []
+    for position, worn in enumerate(record.get("equipment") or []):
+        display = worn.get("slot") or "Unknown"
+        repeated = _REPEATED_SLOTS.get(display)
+        if repeated:
+            occurrence = seen.get(display, 0)
+            key = repeated[min(occurrence, len(repeated) - 1)]
+            seen[display] = occurrence + 1
+        else:
+            key = display.lower().replace(" ", "_")
+        item_id = _int(worn.get("item_id"))
+        adornments = [{"id": _int(adorn.get("adorn_id")),
+                       "color": str(adorn.get("color") or "").lower() or None}
+                      for adorn in worn.get("adorn_slots") or []]
+        equipment.append({
+            "id": position, "name": key, "displayname": display,
+            "item": {"id": item_id, "adornment_list": adornments},
+        })
+
+    return {
+        "_source": "lexicon",
+        "id": _int(record.get("id")),
+        "name": {"first": record.get("name")},
+        "displayname": record.get("name"),
+        "type": {"class": record.get("cls"), "level": _int(record.get("level")),
+                 "ts_class": record.get("ts_class"),
+                 "ts_level": _int(record.get("ts_level"))},
+        "guild": {"name": record.get("guild_name")},
+        "stats": nested_stats,
+        "resists": {},
+        "spell_list": [_int(value) for value in record.get("spell_ids") or []
+                       if _int(value) is not None],
+        "equipmentslot_list": equipment,
+        "alternateadvancements": {"spentpoints": _int(record.get("aa_count"))},
+        "last_update": _int(record.get("fetched_at")),
+    }
 
 
 def enrich_equipment(conn, name: str, census_doc: dict,

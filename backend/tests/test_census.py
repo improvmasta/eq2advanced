@@ -505,6 +505,58 @@ def test_a_lookup_falls_back_to_the_cache_when_census_is_unreachable(client, fak
     assert out is not None and out["gear"]
 
 
+def test_a_first_lookup_uses_lexicon_when_census_is_unreachable(client):
+    """Lexicon covers the one hole neither planner cache can cover: a name
+    searched for the first time while Census is unavailable. The answer keeps
+    its provenance and still has concrete slots, totals, and item details."""
+    from census import sync as census_sync
+    conn = dbmod.get_db()
+
+    class Dead:
+        def character_by_name(self, name, world_id=618):
+            raise RuntimeError("census down")
+
+    class Lexicon:
+        record = {
+            "id": "99", "name": "Lexie", "world": "Wuoshi",
+            "cls": "Illusionist", "level": 70, "aa_count": 100,
+            "fetched_at": 1234, "spell_ids": [111, 222],
+            "stats": {"health_max": 9000, "power_max": 8000,
+                      "int_eff": 777, "potency": 44.5,
+                      "ability_mod": 321, "casting_speed": 25},
+            "equipment": [
+                {"slot": "Finger", "name": "First Ring", "item_id": "7001",
+                 "tier": "FABLED", "icon_id": "10", "adorn_slots": []},
+                {"slot": "Finger", "name": "Second Ring", "item_id": "7002",
+                 "tier": "LEGENDARY", "icon_id": "11", "adorn_slots": []},
+            ],
+        }
+
+        def character(self, name):
+            return copy.deepcopy(self.record)
+
+        def items_by_ids(self, ids):
+            return [{"id": str(item_id), "name": f"Ring {item_id}",
+                     "quality": "fabled", "icon_id": 10,
+                     "slot_type": "Finger", "stats": [], "effects": [],
+                     "adornment_slots": [], "flags": [], "set_bonuses": []}
+                    for item_id in ids]
+
+    with conn:
+        conn.execute("DELETE FROM plan_characters WHERE name_lower='lexie'")
+        conn.execute("DELETE FROM lexicon_items WHERE item_id IN (7001,7002)")
+    out = census_sync.lookup_by_name(
+        conn, Dead(), "Lexie", refresh=True, lexicon_client=Lexicon())
+
+    assert out is not None and out["synced"] is True
+    assert out["character"]["source"] == "lexicon"
+    assert out["character"]["last_census_ts"] is None
+    assert out["character"]["class"] == "Illusionist"
+    assert out["planner_stats"]["potency"] == 44.5
+    assert [row["key"] for row in out["gear"]] == ["left_ring", "right_ring"]
+    assert [row["item_id"] for row in out["gear"]] == [7001, 7002]
+
+
 def test_a_lookup_uses_an_owned_snapshot_when_public_cache_is_empty(client, fake):
     """A known Census snapshot remains usable while both the public lookup
     cache and live Census are unavailable. Lexicon may fill its item details,

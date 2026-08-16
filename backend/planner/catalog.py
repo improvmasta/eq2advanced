@@ -38,12 +38,33 @@ DECAY = 0.6
 # arithmetic would be the false precision the planner otherwise avoids.
 _SET_STAT_LABELS = {
     "potency": "potency", "crit chance": "crit",
-    "ability modifier": "abmod", "ability mod": "abmod",
+    "ability modifier": "abmod", "ability mod": "abmod", "all": "abmod",
     "casting speed": "acspeed", "flurry": "flurry",
     "wis": "wis", "sta": "sta",
     "in-combat health regeneration": "hregen",
     "health": "health", "power": "power",
 }
+
+
+def normalize_set_bonus_line(text: str) -> str:
+    """Use the in-game label for the wiki's legacy ``All`` modifier."""
+    import re
+    return re.sub(r"(?i)([+-]?\d+(?:\.\d+)?)\s+All\s*$",
+                  r"\1 Ability Mod", text or "")
+
+
+def normalize_set_bonuses(bonuses: list[dict], *, typed: bool = False) -> list[dict]:
+    """Copy set tiers with their legacy labels normalized for every surface."""
+    out = []
+    for source in bonuses:
+        bonus = dict(source)
+        bonus["text"] = normalize_set_bonus_line(bonus.get("text") or "")
+        bonus["stat_lines"] = [normalize_set_bonus_line(line)
+                                for line in bonus.get("stat_lines") or []]
+        if typed:
+            bonus["stats"] = bonus_stats(bonus)
+        out.append(bonus)
+    return out
 
 
 def set_bonus_stats(text: str) -> dict[str, float]:
@@ -305,7 +326,8 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
         for set_row in conn.execute(
                 "SELECT name, bonuses_json FROM plan_sets WHERE name IN "
                 f"({','.join('?' * len(set_names))})", set_names):
-            set_hover[set_row["name"]] = json.loads(set_row["bonuses_json"] or "[]")
+            set_hover[set_row["name"]] = normalize_set_bonuses(
+                json.loads(set_row["bonuses_json"] or "[]"))
     for row in kept:
         row["_set_bonuses"] = set_hover.get(row.get("set_name"), [])
     return {
@@ -490,9 +512,8 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
         can_host = sorted(
             (h for h in hosts if (h["level"] or 0) >= level),
             key=lambda x: (-x["score"], x["name"]))
-        bonuses = json.loads(r["bonuses_json"] or "[]")
-        for bonus in bonuses:
-            bonus["stats"] = bonus_stats(bonus)
+        bonuses = normalize_set_bonuses(
+            json.loads(r["bonuses_json"] or "[]"), typed=True)
         out.append({
             "name": r["name"], "page_title": r["page_title"], "era": r["era"],
             "level": r["level"],
@@ -512,12 +533,10 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
 
 
 def _piece_out(row: dict) -> dict:
-    return {
-        "page_title": row["page_title"], "name": row["name"],
-        "census_id": row["census_id"], "slot": row["slot_label"],
-        "level": row["level"], "tier": row["tier"], "score": row["score"],
-        "classes": row["classes"],
-    }
+    # Set discovery is still gear discovery. Returning the ordinary item shape
+    # gives every carrier/host the same examine card and equip action as the
+    # main table instead of rendering inert names the reader cannot inspect.
+    return _item_out(row)
 
 
 def meta(conn, eras: list[str] | None = None) -> dict:

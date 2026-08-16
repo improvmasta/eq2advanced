@@ -2482,6 +2482,13 @@ table.data td.rank-low { color: var(--danger); }
 .pickeropt .ph { margin-left: auto; padding-left: 10px; color: var(--text-muted);
   font-size: var(--fs-label); }
 .pickeropt.active .ph { color: var(--text); }
+.pickeropt .adornstat { color: var(--text); font-weight: 700; }
+.pickeropt.active .adornstat, .pickeropt.on .adornstat { color: var(--gold-bright); }
+.whiteadornmenu .pickergroup { color: #f4f4f1; }
+.whiteadornmenu .pickeropt .pv { flex: none; overflow: visible; }
+.whiteadornmenu .pickeropt .ph {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 /* The class dot from the chips, on its own: decorative, and never the only
    thing saying which class a row is — the word is right there in the hint. */
 .cdot {
@@ -6096,20 +6103,20 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--row-line);
 }
-/* The NAME carries the heading weight; the panel's own name is the eyebrow
-   above it and the level/class is the quiet half after it. */
+/* Character identity anchors the whole loadout instead of reading like a
+   panel caption followed by incidental metadata. */
 .loadoutwho { min-width: 0; }
 /* A NAME IS NOT A SECTION LABEL. The site's `h2` is a small-caps label by
    design; "BOBBY" is not how anybody writes a character's name, so this one
    heading opts out of the uppercase and reads as typed. */
 .loadouthead h2 {
-  margin: 1px 0 0; color: var(--gold-bright); font-size: 1.2rem;
-  font-weight: 700; text-transform: none; letter-spacing: 0.01em;
+  margin: 0; color: var(--gold-bright); font-size: clamp(1.42rem, 2vw, 1.72rem);
+  font-weight: 760; line-height: 1.05; text-transform: none; letter-spacing: 0;
 }
 .loadouthead h2 small {
-  margin-left: 9px; color: var(--text-muted); font-family: var(--font-data);
-  font-size: var(--fs-label); font-weight: 400; text-transform: none;
-  letter-spacing: 0.02em;
+  display: block; margin: 5px 0 0; color: var(--text); font-family: var(--font-data);
+  font-size: 0.72rem; font-weight: 650; line-height: 1.2; text-transform: uppercase;
+  letter-spacing: 0.075em;
 }
 /* The head's controls are a QUIET row, all one height. The lookup opens the
    panel and the picker says who it is open on, so neither of them is the
@@ -6225,7 +6232,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planslotremove:hover, .planslotremove:focus-visible {
   border-color: var(--danger); color: var(--danger);
 }
-.planadorns { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.planadorns {
+  min-width: 0; display: flex; align-items: center; justify-content: flex-end;
+  gap: 5px;
+}
 .planadornicon, .adornpicker .pickerbtn {
   position: relative; width: 34px; min-width: 34px; height: 34px; min-height: 34px;
   padding: 2px; flex: none; overflow: hidden;
@@ -6238,6 +6248,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planadornicon:disabled,
 .planadornicon[aria-disabled="true"] { opacity: 1; cursor: default; }
 .planadornicon.turquoise, .adornpicker .pickerbtn { border-color: #8db8ba; }
+.adornpicker.white .pickerbtn { border-color: #c9cbc4; }
 .plansocketart {
   width: 28px; height: 28px; display: grid; place-items: center;
   border: 1px solid rgba(215, 219, 211, 0.42); border-radius: 1px;
@@ -6262,6 +6273,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .adornpicker.open .pickerbtn {
   border-color: #56d6df; box-shadow: inset 0 0 0 1px #151815,
     inset 0 0 7px rgba(37, 224, 229, 0.4), 0 0 0 1px rgba(86, 214, 223, 0.25);
+}
+.adornpicker.white .pickerbtn:hover,
+.adornpicker.white .pickerbtn:focus-visible,
+.adornpicker.white.open .pickerbtn {
+  border-color: #eef1eb; box-shadow: inset 0 0 0 1px #151815,
+    inset 0 0 7px rgba(226, 235, 239, 0.36), 0 0 0 1px rgba(238, 241, 235, 0.2);
 }
 .planadorns.compact { gap: 2px; }
 .planadorns.compact .planadornicon,
@@ -6303,6 +6320,31 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: grid; grid-template-columns: minmax(0, 1fr) 64px 45px; gap: 5px;
   align-items: baseline; padding: 1px 5px; font-size: var(--fs-data);
 }
+.planstats section > .hoverbox { display: block; min-width: 0; }
+.planstatrow { cursor: help; border-radius: 2px; }
+.planstatrow:hover, .planstatrow:focus-visible {
+  background: var(--row-hover); outline: none;
+}
+.statbreakdown {
+  position: fixed; z-index: 58; pointer-events: none; width: 280px;
+  max-width: calc(100vw - 16px); padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised); box-shadow: 0 8px 24px var(--shadow-color);
+  font-family: var(--font-data); font-size: var(--fs-data);
+}
+.statbreakdowncard { display: grid; gap: 3px; }
+.statbreakdowncard > div {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+}
+.statbreakdownhead {
+  margin-bottom: 3px; padding-bottom: 5px; border-bottom: 1px solid var(--row-line);
+}
+.statbreakdownhead b { color: var(--gold-bright); }
+.statbreakdownhead strong { color: var(--text); }
+.statbreakdowncard span { color: var(--text-muted); }
+.statbreakdowncard em {
+  color: var(--text); font-style: normal; font-variant-numeric: tabular-nums;
+}
 .planstatrow > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planstatrow b, .planstatrow em {
   font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right;
@@ -6341,11 +6383,25 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
   gap: 7px; margin-top: 7px;
 }
+.wornsetgrid > .hoverbox { display: block; min-width: 0; }
 .wornset {
   min-width: 0; padding: 7px 8px;
   border: 1px solid var(--row-line); border-radius: 3px;
   background: var(--surface);
 }
+.wornset.preview {
+  height: 136px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 82%, transparent 100%);
+}
+.wornset.preview:focus-visible { outline: 1px solid #44bfd0; outline-offset: 1px; }
+.wornsetpopup {
+  position: fixed; z-index: 58; pointer-events: none; width: 390px;
+  max-width: calc(100vw - 16px); padding: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-raised); box-shadow: 0 8px 24px var(--shadow-color);
+}
+.wornsetpopup .wornset { background: var(--surface); }
 .wornsethead { display: flex; align-items: baseline; gap: 7px; }
 .wornsethead b {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -6366,20 +6422,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .wornsettierhead b { color: inherit; font-family: var(--font-data); }
 .wornsettierhead span { color: inherit; font-weight: 600; }
 .wornsetdetails { position: relative; margin: 3px 0 0 34px; }
-.wornsetdetails.collapsible { padding-right: 22px; }
-.wornsetdetailtext {
-  max-height: 2.84em; overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
-}
 .wornsetdetailtext span { display: block; margin-top: 2px; }
-.wornsetdetails.expanded .wornsetdetailtext {
-  max-height: none; -webkit-mask-image: none; mask-image: none;
-}
-.wornsetdetails .btnlink {
-  position: absolute; right: 0; bottom: 0; min-width: 20px; padding: 0;
-  color: var(--gold-bright); font-size: var(--fs-data); text-align: right;
-}
 .wornsettier.on {
   border-left-color: rgba(68, 191, 208, 0.72);
   color: var(--text); opacity: 1;
@@ -6460,14 +6503,32 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: var(--gold-bright); font-family: var(--font-body);
   font-size: 0.9rem; letter-spacing: 0.01em;
 }
-.planmodes { margin-left: auto; display: flex; gap: 5px; }
-.planmodes .chip {
-  cursor: pointer; min-height: 29px; padding: 4px 12px;
-  color: var(--text); border-color: var(--border);
+.planmodes {
+  display: flex; align-items: center; gap: 3px; padding: 6px 11px;
+  border-bottom: 1px solid var(--border); background: rgba(0, 0, 0, 0.08);
 }
-.planmodes .chip.on {
-  color: var(--bg); border-color: var(--gold); background: var(--gold);
-  font-weight: 700;
+.planmodes > span {
+  margin-right: 5px; color: var(--text-muted); font-size: var(--fs-label);
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.planmodes > button {
+  min-width: 0; padding: 4px 10px; border: 1px solid var(--border);
+  border-radius: 3px; background: var(--surface); color: var(--text-muted);
+  font-size: var(--fs-label); font-weight: 700; cursor: pointer;
+}
+.planmodes > button:hover { color: var(--text); background: rgba(var(--gold-rgb), 0.05); }
+.planmodes > button.on {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.16);
+  color: var(--gold-bright);
+}
+.plansetsearch {
+  padding: 10px 12px; display: flex; align-items: flex-end;
+  justify-content: space-between; gap: 12px; background: rgba(0, 0, 0, 0.08);
+}
+.plansetsearch label { display: grid; gap: 5px; }
+.plansetsearch p {
+  max-width: 68ch; margin: 0; color: var(--text-muted);
+  font-size: var(--fs-label); line-height: 1.4;
 }
 
 /* LABELLED ROWS IN A TWO-COLUMN GRID — a form, which is what this is. Every
@@ -6611,6 +6672,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .planbandrow { margin-bottom: 6px; }
   .bandnote { margin-left: 0; flex-basis: 100%; }
   .prioritypick .pickerbtn { min-width: 96px; }
+  .planmodes > button { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .plansetsearch { align-items: stretch; flex-direction: column; }
+  .plansetsearch .planq { max-width: 100%; width: 100%; }
 }
 
 /* The score, and how many of the reader's stats the row actually carries. The
@@ -6657,8 +6721,16 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px; flex-wrap: wrap;
 }
-.setpick { display: inline-flex; align-items: baseline; gap: 8px; cursor: pointer; }
-.setpick input { accent-color: var(--gold); cursor: pointer; }
+.setpick { display: inline-flex; align-items: center; gap: 9px; }
+.setpick .chip { min-height: 27px; padding: 3px 9px; cursor: pointer; }
+.setpick .chip.on {
+  border-color: var(--success); color: var(--success);
+  background: rgba(var(--success-rgb), 0.08);
+}
+.setequip { display: flex; align-items: center; gap: 7px; }
+.setequip > span { color: var(--success); font-size: var(--fs-label); }
+.setequip .pickerbtn { min-width: 145px; min-height: 28px; cursor: pointer; }
+.setequip .btnlink { color: var(--danger); font-size: var(--fs-label); }
 .setbonuses {
   margin: 7px 0 0; padding-left: 18px; font-size: var(--fs-data);
   display: grid; gap: 3px;
@@ -6670,9 +6742,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .setcarriers .seclabel { flex-basis: 100%; }
 .setpiece { display: inline-flex; align-items: baseline; gap: 5px; font-size: var(--fs-data); }
+.setpiece .hoverbox { min-width: 0; }
+.setpiece .btnlink { font-size: var(--fs-label); }
+.setpiece .btnlink.on { color: var(--danger); }
 .setpiece em {
   font-style: normal; color: var(--text-muted); font-size: var(--fs-label);
 }
+.sethosts { margin-top: 5px; }
 
 /* ---- the outline ----
    One stable spine: hand-kept prelude first, prerequisite DAG second. Tags are

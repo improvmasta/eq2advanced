@@ -7,7 +7,7 @@ import { ActorFacts } from './Identity.jsx'
 import SelectionBar from './SelectionBar.jsx'
 import Tabs from './Tabs.jsx'
 import { fmt } from '../lib/api.js'
-import { lexiconCharacter } from '../lib/raids.js'
+import { plannerCharacter } from '../lib/raids.js'
 
 /* Individual parse in the right-hand column: the selected combatant's ability
    breakdown next to (not under) the raid table. The table itself is the shared
@@ -81,8 +81,9 @@ export default function ActorPanel({
       <div className="drillhead">
         <h2 className="panelname">
           {actor?.kind === 'player'
-            ? <a href={lexiconCharacter(name)} target="_blank" rel="noreferrer noopener"
-                 title={`View ${name} on EQ2 Lexicon — opens in a new tab`}>{name}</a>
+            ? <Link to={plannerCharacter(name)} title={`Plan gear for ${name}`}>
+                {name}
+              </Link>
             : name}
         </h2>
         <ActorFacts actor={actor} />

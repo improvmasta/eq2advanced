@@ -45,7 +45,8 @@ import { createPortal } from 'react-dom'
    page, so it re-measures on scroll and resize. */
 export default function Picker({
   value, onChange, options, label, placeholder = 'Choose…', disabled = false,
-  className = '', filterFrom = 10, filterHint = 'Filter…',
+  className = '', filterFrom = 10, filterHint = 'Filter…', maxMenuWidth = 340,
+  menuClassName = '',
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -53,6 +54,7 @@ export default function Picker({
   const [at, setAt] = useState(null)
   const box = useRef(null)
   const menu = useRef(null)
+  const keyboardScroll = useRef(false)
 
   const current = options.find((o) => o.value === value) || null
   const ql = q.trim().toLowerCase()
@@ -65,7 +67,11 @@ export default function Picker({
      the right edge — a facet at the end of the search band is a real case. */
   useLayoutEffect(() => {
     if (!open) { setAt(null); return undefined }
-    const place = () => {
+    const place = (ev) => {
+      // Internal list scrolling does not move the anchor. Repositioning and
+      // rerendering the whole portal while somebody holds its scrollbar made
+      // the thumb feel as though the menu were fighting the drag.
+      if (ev?.type === 'scroll' && menu.current?.contains(ev.target)) return
       const r = box.current?.getBoundingClientRect()
       if (!r) return
       const below = window.innerHeight - r.bottom
@@ -108,23 +114,29 @@ export default function Picker({
   // opening starts on what is already chosen, not at the top: the list is
   // usually opened to move ONE step from where you are
   useEffect(() => {
-    if (!open) { setQ(''); return }
+    if (!open) { setQ(''); keyboardScroll.current = false; return }
     setActive(Math.max(0, options.findIndex((o) => o.value === value)))
   }, [open])
 
   const pick = (v) => { onChange(v); setOpen(false) }
-  const move = (d) => setActive((i) => {
+  const move = (d) => {
+    keyboardScroll.current = true
+    setActive((i) => {
     if (!shown.length) return 0
     return (i + d + shown.length) % shown.length
-  })
+    })
+  }
   const onKey = (ev) => {
     // Home/End belong to the CARET while the filter box has focus — a menu
     // does not get to take a text field's own keys away from it
     const typing = ev.target.tagName === 'INPUT'
     if (ev.key === 'ArrowDown') { ev.preventDefault(); open ? move(1) : setOpen(true) }
     else if (ev.key === 'ArrowUp') { ev.preventDefault(); open ? move(-1) : setOpen(true) }
-    else if (ev.key === 'Home' && !typing) { ev.preventDefault(); setActive(0) }
-    else if (ev.key === 'End' && !typing) { ev.preventDefault(); setActive(shown.length - 1) }
+    else if (ev.key === 'Home' && !typing) {
+      ev.preventDefault(); keyboardScroll.current = true; setActive(0)
+    } else if (ev.key === 'End' && !typing) {
+      ev.preventDefault(); keyboardScroll.current = true; setActive(shown.length - 1)
+    }
     else if (ev.key === 'Enter' && open) {
       ev.preventDefault()
       if (shown[active]) pick(shown[active].value)
@@ -153,7 +165,7 @@ export default function Picker({
       </button>
       {open && at && createPortal((
         <div
-          className="pickermenu"
+          className={`pickermenu${menuClassName ? ` ${menuClassName}` : ''}`}
           role="listbox"
           aria-label={label}
           ref={menu}
@@ -162,7 +174,7 @@ export default function Picker({
             top: at.top,
             bottom: at.bottom,
             minWidth: at.width,
-            maxWidth: Math.min(340, at.room),
+            maxWidth: Math.min(maxMenuWidth, at.room),
             '--picker-cap': `${Math.max(140, at.cap)}px`,
           }}
         >
@@ -174,7 +186,9 @@ export default function Picker({
               value={q}
               placeholder={filterHint}
               aria-label={`${label} — filter`}
-              onChange={(ev) => { setQ(ev.target.value); setActive(0) }}
+              onChange={(ev) => {
+                keyboardScroll.current = false; setQ(ev.target.value); setActive(0)
+              }}
               onKeyDown={onKey}
             />
           )}
@@ -192,8 +206,11 @@ export default function Picker({
                     className={`pickeropt${o.value === value ? ' on' : ''}`
                       + `${i === active ? ' active' : ''}`}
                     title={o.title || undefined}
-                    ref={i === active ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
-                    onMouseEnter={() => setActive(i)}
+                    ref={i === active && keyboardScroll.current ? (el) => {
+                      el?.scrollIntoView({ block: 'nearest' })
+                      keyboardScroll.current = false
+                    } : undefined}
+                    onMouseEnter={() => { keyboardScroll.current = false; setActive(i) }}
                     onClick={() => pick(o.value)}
                   >
                     {o.icon}
