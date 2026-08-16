@@ -6252,7 +6252,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: rgba(var(--bg-rgb), 0.28);
 }
-.planstathead, .planstatgeneral, .planstatnote { grid-column: 1 / -1; }
+.planstathead, .planstatnote { grid-column: 1 / -1; }
 .planstats.empty { grid-template-columns: minmax(0, 1fr); }
 .planstats.empty p { color: var(--text-muted); font-size: var(--fs-data); line-height: 1.45; }
 .planstathead { display: flex; justify-content: space-between; gap: 7px; align-items: baseline; }
@@ -6260,16 +6260,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstathead > span { color: var(--text-muted); font-size: var(--fs-label); }
 .planstatlegend { display: flex; gap: 8px; }
 .planstatlegend i { font-style: normal; }
-.planstatgeneral {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 8px 0;
-}
-.planstatgeneral > span {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px;
-  padding: 5px 6px; color: var(--text-muted); font-size: var(--fs-label);
-  border: 1px solid var(--row-line); background: rgba(var(--gold-rgb), 0.035);
-}
-.planstatgeneral b { margin-left: auto; font-family: var(--font-data); }
-.planstatgeneral em { flex-basis: 100%; text-align: right; font-style: normal; }
 .planstats section { margin-top: 7px; }
 .planstats section h3 {
   margin: 0 0 2px; padding: 2px 5px; color: var(--text);
@@ -6331,7 +6321,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .planslot { grid-template-columns: 30px minmax(0, 1fr) auto auto; }
   .planslotcycle { grid-column: 2 / -1; justify-content: center; }
   .planstats { grid-template-columns: minmax(0, 1fr); }
-  .planstathead, .planstatgeneral, .planstatnote { grid-column: 1; }
+  .planstathead, .planstatnote { grid-column: 1; }
 }
 
 /* THE EXPANSION CHOICE IS THE FIRST CONTROL ON THE PAGE, so it is a row of

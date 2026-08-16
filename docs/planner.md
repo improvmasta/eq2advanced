@@ -511,9 +511,11 @@ the page's most valuable vertical space without helping a gear decision. Rows
 and icons are compact enough to keep search and results prominent, while the
 stat ledger remains clean site UI.
 
-Projected stats follow the in-game grouping more closely: Attributes, Defense,
-Offense, and Autoattack. Casting Speed and Reuse Speed sit in Offense directly
-after Ability Mod, in that order. A current equipped value is green; a planned
+Projected stats follow the in-game grouping more closely: unheaded Health and
+Power rows lead directly into Attributes, followed by Defense, Offense, and
+Autoattack. Every value uses the same aligned value-and-delta ledger row.
+Casting Speed and Reuse Speed sit in Offense directly after Ability Mod, in that
+order. A current equipped value is green; a planned
 increase is cyan and a planned decrease is red. The signed delta repeats the
 direction so color is never the only signal. DPS, Haste, and Multi Attack are
 displayed as ratings without percent signs, matching the in-game stat window.
@@ -531,6 +533,27 @@ planned two-hander occupies Primary and removes Secondary from the projection.
 The projection is explicit arithmetic over cached data:
 
 `current Census total − current item stats + active planned item stats`
+
+Under the planner's empirical TLE model, projected attribute deltas also flow
+into the two vitals at every character level: each Stamina point adds 8 base
+Health, while each archetype's primary stat adds 8 Power (Fighter Strength,
+Priest Wisdom, Mage Intelligence, Scout Agility).
+The current Census totals already contain the equipped attributes, so only the
+difference produced by planned gear and active additive set bonuses is applied.
+
+Max Health percentages add together and multiply the underlying Health pool,
+not the already-modified displayed total. The estimated TLE pool is `2,476 +
+STA × 8`. This is measured in game on Bobby: naked effective Stamina 25 produces a
+2,676 pool; his 2% racial displays 2,729 Health; adding an otherwise-statless
+2.2% Max Health item displays 2,788. With gear and buffs, removing that same
+item moves 12,653 to 12,412, a 241-point difference and therefore an underlying
+pool of about 10,955. The projection infers the character's existing combined
+racial, buff, and equipped multiplier from the Census total, then applies gear's
+signed Max Health difference to the projected pool. It follows the game's
+one-decimal modifier precision and whole-Health floor, while anchoring the
+resulting difference to Census's exact current total. Until another TLE
+measurement contradicts it, the planner applies that empirical rule at every
+level rather than suppressing vital projections away from level 70.
 
 Only additive numbers enter it. Procs, named focus effects, cap behavior and
 moved adornments are not guessed. The panel labels itself an estimate and says

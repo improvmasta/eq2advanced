@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Picker from './Picker.jsx'
 import { Examine, Hover, rarityClass } from './ItemCard.jsx'
 import { fmt } from '../lib/api.js'
+import { CLASS_FAMILY } from '../lib/classes.js'
 
 /* Concrete equipment positions, rather than the catalog's broad slot names.
    Finger, Ear, Wrist and Charm each occur twice; keeping those identities is
@@ -56,6 +57,7 @@ const STAT_GROUPS = [
 ]
 
 const FALLBACK_LABEL = {
+  health: 'Health', power: 'Power',
   str: 'Strength', agi: 'Agility', sta: 'Stamina', int: 'Intelligence', wis: 'Wisdom',
   mit: 'Mitigation', vselemental: 'Elemental', vsnoxious: 'Noxious', vsarcane: 'Arcane',
   bchance: 'Block Chance', crit: 'Crit Chance', potency: 'Potency', abmod: 'Ability Mod',
@@ -68,12 +70,17 @@ const FALLBACK_LABEL = {
    groups several modifier fields under one percent flag, so the display needs
    the game's narrower rule. */
 const RATING_STATS = new Set(['dps', 'aspeed', 'multi'])
+const POWER_STAT = { fighter: 'str', priest: 'wis', mage: 'int', scout: 'agi' }
+const VITALS_PER_ATTRIBUTE = 8
+const TLE_HEALTH_BASE = 2476
 
 function addStats(to, stats, sign) {
   Object.entries(stats || {}).forEach(([key, value]) => {
     if (typeof value === 'number') to[key] = (to[key] || 0) + sign * value
   })
 }
+
+const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value)
 
 function equippedChoice(slot, character, shortlist, active) {
   const planned = shortlist.items.find((i) => i.equip_slot === slot
@@ -214,6 +221,38 @@ function projection(character, shortlist, active) {
   sets.forEach((set) => (set.bonuses || []).forEach((bonus) => {
     if (set.count >= bonus.pieces) addStats(totals, bonus.stats, 1)
   }))
+
+  // On this TLE ruleset, each Stamina point grants 8 base Health and each point
+  // of the archetype's primary stat grants 8 Power. Max Health modifiers are
+  // additive percentages of the underlying health pool, not the displayed total.
+  // Bobby's measured naked values pin that pool to 2,476 + STA*8:
+  // 2,476 + 25*8 = 2,676; +2% racial => 2,729; +2.2% item => 2,788.
+  const family = CLASS_FAMILY[(character?.character?.class || '').toLowerCase()]
+  const powerStat = POWER_STAT[family]
+  const baseStats = character?.planner_stats || {}
+  if (isFiniteNumber(totals.health) && isFiniteNumber(totals.sta)
+      && isFiniteNumber(baseStats.health) && isFiniteNumber(baseStats.sta)) {
+    const currentPool = TLE_HEALTH_BASE + baseStats.sta * VITALS_PER_ATTRIBUTE
+    const poolDelta = (totals.sta - baseStats.sta) * VITALS_PER_ATTRIBUTE
+      + (totals.health - baseStats.health)
+    const projectedPool = currentPool + poolDelta
+    // The game exposes these modifiers to one decimal place and floors the
+    // resulting whole Health. Infer the already-active modifier from Census,
+    // then anchor the projected difference back to its exact reported total so
+    // a harmless rounding discrepancy can never change the current baseline.
+    const currentMaxHealth = Math.round((baseStats.health / currentPool - 1) * 1000) / 10
+    const maxHealthDelta = isFiniteNumber(totals.maxhealth) ? totals.maxhealth : 0
+    const currentCalculated = Math.floor(currentPool * (1 + currentMaxHealth / 100))
+    const projectedCalculated = Math.floor(
+      projectedPool * (1 + (currentMaxHealth + maxHealthDelta) / 100),
+    )
+    totals.health = baseStats.health + projectedCalculated - currentCalculated
+  }
+  if (powerStat && isFiniteNumber(totals.power)
+      && isFiniteNumber(totals[powerStat]) && isFiniteNumber(baseStats[powerStat])) {
+    totals.power += (totals[powerStat] - baseStats[powerStat])
+      * VITALS_PER_ATTRIBUTE
+  }
   return { totals, selected, current, sets }
 }
 
@@ -384,6 +423,21 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
       </div>
     )
   }
+  const statRow = (key) => {
+    const value = out.totals[key] ?? base[key]
+    const delta = value - base[key]
+    const pct = statPct[key] && !RATING_STATS.has(key)
+    const state = statState(delta)
+    return (
+      <div className="planstatrow" key={key}>
+        <span>{statLabel[key] || FALLBACK_LABEL[key] || key}</span>
+        <b className={state}>{fmt.num(Math.round(value * 10) / 10)}{pct ? '%' : ''}</b>
+        <em className={state}>
+          {delta ? `${delta > 0 ? '+' : ''}${Math.round(delta * 10) / 10}${pct ? '%' : ''}` : '—'}
+        </em>
+      </div>
+    )
+  }
   return (
     <div className="planstats">
       <div className="planstathead">
@@ -394,38 +448,14 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
           <i className="downgrade">Downgrade</i>
         </span>
       </div>
-      <div className="planstatgeneral">
-        {['health', 'power'].map((key) => {
-          const value = out.totals[key] ?? base[key]
-          const delta = value - base[key]
-          const state = statState(delta)
-          return <span key={key}>{key === 'health' ? 'Health' : 'Power'} <b className={state}>{fmt.num(value)}</b>
-            {delta !== 0 && <em className={state}>
-              {delta > 0 ? '+' : ''}{fmt.num(delta)}
-            </em>}</span>
-        })}
-      </div>
       {STAT_GROUPS.map(([title, keys]) => {
         const rows = keys.filter((key) => base[key] != null)
         if (!rows.length) return null
         return (
           <section key={title}>
+            {title === 'Attributes' && ['health', 'power'].map(statRow)}
             <h3>{title}</h3>
-            {rows.map((key) => {
-              const value = out.totals[key] ?? base[key]
-              const delta = value - base[key]
-              const pct = statPct[key] && !RATING_STATS.has(key)
-              const state = statState(delta)
-              return (
-                <div className="planstatrow" key={key}>
-                  <span>{statLabel[key] || FALLBACK_LABEL[key] || key}</span>
-                  <b className={state}>{fmt.num(Math.round(value * 10) / 10)}{pct ? '%' : ''}</b>
-                  <em className={state}>
-                    {delta ? `${delta > 0 ? '+' : ''}${Math.round(delta * 10) / 10}${pct ? '%' : ''}` : '—'}
-                  </em>
-                </div>
-              )
-            })}
+            {rows.map(statRow)}
           </section>
         )
       })}
