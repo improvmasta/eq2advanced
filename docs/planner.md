@@ -1,4 +1,4 @@
-# The Planner — gear targets and a leveling outline
+# The Gear Planner — gear targets and a leveling outline
 
 A page that answers three questions for one character on one expansion:
 
@@ -12,13 +12,18 @@ A page that answers three questions for one character on one expansion:
   characters, cycle current and planned items in concrete equipment slots, and
   project additive stat changes before chasing the gear.
 
-**Which expansions count is the READER's choice** — a set of toggles at the top
-of the rail, not a build-time constant. EoF and RoK are what exist today,
-either or both; RoK is the priority and the default. A third expansion is a
-re-sync and one entry in `wiki.ERAS`, never a migration.
+**Which expansions count is the READER's choice** — a set of toggles in the
+page head, beside the tabs, not a build-time constant. EoF and RoK are what
+exist today, either or both; RoK is the priority and the default. A third
+expansion is a re-sync and one entry in `wiki.ERAS`, never a migration.
 
-**It is a route (`/plan`) with no nav entry**, like `/characters`. Adding the tab
-is the whole publish step; nothing else changes.
+**PUBLISHED 2026-08-16.** It was a route (`/plan`) with no nav entry while it
+was being built, on the plan that adding the tab would be the whole publish
+step. It was: `Gear Planner` now sits in the top nav to the right of Compare
+and, like Compare, it is there **signed out**. That is safe for a stronger
+reason than Compare's — nothing here reaches a parse, a session or an account,
+every row is reference data about the GAME, and there is no POST on the router
+at all.
 
 ---
 
@@ -196,8 +201,8 @@ section. You cannot optimize a set whose most valuable component detaches and
 moves to a different set.
 
 **Sliders are rejected for the same reason.** A slider invites tuning and implies
-the third decimal place means something. The priority editor is a drag-to-reorder
-list.
+the third decimal place means something. The priority control is three ordinary
+dropdowns, numbered 1–3 and defaulting to Any.
 
 ### What can be prioritized, and what cannot
 
@@ -261,8 +266,27 @@ order as a whole and says nothing about which of them a row has.
 ### Hard filters
 
 Separate from ranking and behaving as filters: class, **armour weight**, slot,
-level range, tier (`icat`), era, and source kind (raid / group / solo / quest /
-**world drop**).
+level range, **rarity**, era, and source kind (raid / group / solo / quest /
+**world drop**, any combination).
+
+**A RARITY IS ASKED FOR BY THE WORD A PLAYER USES, not by the word the wiki
+stores** (`wiki.TIER_BUCKETS`, 2026-08-16). `icat` holds eleven distinct
+spellings across the real catalog — `MASTERCRAFTED LEGENDARY`,
+`MASTERCRAFTED FABLED`, `FABLED, GREATER RELIC`, `UNCOMMON`, `-` — and offering
+all eleven asked the reader to know the wiki's vocabulary instead of the game's.
+Five buckets, ascending: Handcrafted, Treasured, Legendary, Fabled, Mythical+.
+
+**How a piece was MADE is not a rarity**: mastercrafted armour is Legendary
+quality and a mastercrafted fabled piece is Fabled, so both fold into the tier
+they actually are rather than becoming a sixth facet row. The top three fold
+together because on a TLE server they are one answer — "past fabled" — and
+splitting seven Mythical rows off would be three near-empty rows. Matched on
+WORDS PRESENT, checked from the top down, so `MASTERCRAFTED LEGENDARY` reaches
+Legendary and not Mastercrafted-something. **A value nothing recognizes stays
+bucketless** and is simply unreachable by the filter: inventing a rarity for it
+would be a claim about the item the wiki never made. `plan_items.tier` is
+untouched — the card and the rarity colour still read the crawled string — and
+the raw spelling is still accepted as a filter value so older links work.
 
 **A two-hander says so in the slot: `Primary/2H`.** The wiki files a greatsword
 and a dagger under the same `slot = Primary`, which invites comparing them as
@@ -417,35 +441,62 @@ temples" is a trip. "Cluster 7" is a database row.
 
 ### The shape of the page
 
-Two regions, permanently: a compact **plan rail** on the left and a **tabbed main
-area**. This is `ZoneRun`'s rail-plus-main geometry and reuses its layout CSS
-and its `.workspace` row rules. The Gear tab opens on the compact
-equipment-and-stats workspace, followed by search controls and the results.
+**ONE FULL-WIDTH COLUMN. THE RAIL IS GONE** (Lindsay, 2026-08-16). The first
+build used `ZoneRun`'s rail-plus-main geometry, with a 292px left column
+holding the title, the expansion chips, the class picker and the shortlist.
+Lindsay's read of it: that block is obsolete. It was true — three controls and
+a list were costing a fifth of the screen, and the page paid for it twice, with
+an item table that scrolled sideways and a projected-stats panel that scrolled
+vertically for room the rail was holding. Everything in it had a better home.
 
 ```
-┌──────────────┬────────────────────────────────────────────────┐
-│  PLAN        │  [ Gear ]  [ Outline ]                          │
-│              │                                                 │
-│  Necromancer │  ┌ armour + weapons ┬ charms + jewelry ┬ stats┐│
-│  RoK · 80    │  └ items + inline sockets ─────────────┴──────┘│
-│              │  search: item name                 level 70–80 │
-│  Gear: 4     │  filter: slot ▾ armour ▾ tier ▾ source ▾       │
-│              │  [1 ability][2 casting][3 reuse] haste dps…    │
-│  Adorns      │                                                 │
-│    Mist Cov… │  ┌───────────────────────────────────────────┐ │
-│  Targets     │  │ item table (SortableTable, frozen)        │ │
-│    Chardok   │  └───────────────────────────────────────────┘ │
-└──────────────┴────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  Gear Planner   [ Gear ] [ Outline ]      Expansions [EoF][RoK]│
+│  EQUIPMENT & STATS / Bobby · Level 70 Necromancer   [lookup][▾]│
+│  ┌ armour + weapons ┬ charms + jewelry ┬ projected stats ─────┐│
+│  │ items + sockets + per-slot reset    │ (two columns, no     ││
+│  │ worn set bonuses under the window   │  inner scrollbar)    ││
+│  └─────────────────────────────────────┴──────────────────────┘│
+│  search: item name                              [clear filters]│
+│  ┌ STAT PRIORITY ──────────┬ FILTER ───────────────────────────┐
+│  │ 1 [Any▾] 2 [Any▾] 3 [Any▾] │ Class▾ Slot▾ Armor▾ Tier▾ Lv–Lv│
+│  │                            │ Source ☐raid ☐group … [chips]  │
+│  └────────────────────────────┴───────────────────────────────┘│
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │ item table (SortableTable, frozen)                         ││
+│  └────────────────────────────────────────────────────────────┘│
+└────────────────────────────────────────────────────────────────┘
 ```
 
-**The rail is the bridge between the tabs.** Gear choices live in their actual
-slots rather than being repeated as a flat shortlist; the rail says how many
-choices exist and keeps adornment sets and independent targets visible. The
-Outline consumes the same browser-local plan.
+Where the rail's four things went, and why:
 
-The plan still holds THREE kinds of thing separately: items, adornments, and
-targets (a mob or a quest you want for its own sake). A turquoise is not its
-host item and a raid target is not a slot.
+- **The title** is a head line with the tabs beside it.
+- **The expansions stay OUT of the filters**, in that head line. Lindsay
+  offered them to the filter band; they govern more than the item table —
+  which items exist, what a score is measured against, which sets are offered,
+  which quests the Outline knows — and **the Outline tab has no filter band**.
+  A control both tabs obey lives where both tabs can see it.
+- **Class joined the facets**, which is what it is. Alone in the rail it read
+  as a page-wide setting, and it is the single control most likely to be what
+  emptied a table — `EmptyTable` names it by name for that reason.
+- **The shortlist moved to the Outline tab**, which is the page that consumes
+  it. On the Gear tab it repeated what the equipment window and the worn-set
+  panel already showed, and a target can only be added from the Outline anyway.
+  It still holds THREE kinds of thing separately: items, adornments, and
+  targets (a mob or a quest you want for its own sake). A turquoise is not its
+  host item and a raid target is not a slot.
+
+Two more the same read caught:
+
+- **A name search is the size of a name.** The box was `minmax(260px, 1fr)` in
+  a grid, so it took every pixel the band had left — making the page's least
+  used control its largest thing, when the facets under it do most of the
+  narrowing.
+- **Item level is ONE facet, not a band.** It had its own heading, its own two
+  labelled boxes and the word "to" between them, for a thing that is read as
+  "70–80". It is now a labelled pair of small number boxes in the filter row
+  with a dash between, wearing the same selected state as every facet beside
+  it.
 
 ### The equipment and stats workspace
 
@@ -499,33 +550,63 @@ outright** whenever its own line was empty. The card now shows the stats as the
 tier line and the proc plus its explanation as the bullets beneath, which is
 the examine window's own arrangement.
 
-### The priority editor
+### The priority control
 
 The most novel control on the page, and the easiest to get wrong.
 
-**One draggable line, no weights and no sliders.** Every rankable stat stays on
-one horizontal track. The reader chooses whether the leftmost one, two or three
-positions score; those positions are numbered and gold-filled, while every stat
-to the right stays readable on a recessed surface. Dragging (or Left/Right on
-the keyboard) moves a stat across that boundary. The complete track fits the
-working column without a horizontal scroller.
+**Three dropdowns, numbered 1–3, each defaulting to Any** (Lindsay, 2026-08-16).
+The list is still an ORDER and still shows no weight — what changed is only how
+you say it. The first build was a draggable track carrying all thirteen
+rankable stats, with a "Score top 1/2/3" control setting the boundary between
+the ranked left edge and the rest. It made a reader arrange every stat in the
+game in order to name two, and it needed a second control to say where the
+ranking stopped. **Three boxes say the same thing and the number of boxes IS
+the boundary**, so "Score top" is gone with the track that needed it.
 
-**A stat can be marked *required*, which moves it from ranking to filtering.**
-The Requirements panel controls this separately from ordering; the stat receives
-a quiet amber underline on the main rail, rather than another button crammed
-inside its label. This covers "I will not look at anything without ability mod"
-without pretending a weight can express a hard requirement.
+Their options are grouped by `wiki.STAT_GROUPS` — Abilities, Melee, Tanking —
+as headers in the panel, which is how a raider already sorts them. An empty box
+is a hole that closes: naming a stat in box 3 while 1 and 2 say Any makes it the
+first priority, because a gap in an ordering is not a thing.
 
-Search itself is one framed control window with four bands: name and item level,
-facets, stat priority, and the attached result count/scoring summary. Selected
-facets use a strong gold state; inactive controls remain readable instead of
-looking disabled.
+**The rows carrying ALL your stats lead the table**, then the partial ones in
+score order under them (`catalog.search`, and the `matched`-first sort key on
+the Score column so a client re-sort agrees). Naming a third stat is asking for
+the items that have all three; in four-stat expansions that is a handful or
+none, and a two-stat item with large numbers outscores a three-stat item with
+modest ones — so a pure score sort buried exactly the rows the third choice was
+made to find. This is a TIER, not a filter: nothing is hidden for being one stat
+short, and the four-stat floor below is unchanged and still applies. It is done
+on the server because the sort decides which rows survive `limit`.
+
+**`required` (a stat moved from ranking to filtering) is still a server
+parameter and no longer has a control.** It lived in a modal hung off the drag
+track; with the track gone it had no home, and the tiering covers most of what
+it was for. `components/PriorityEditor.jsx` was deleted with it. Reopening it
+means a "must have" toggle beside each of the three boxes, not the modal.
+
+Search itself is one framed control window with four bands: name and item level;
+**stat priority beside the facets** in one band, split by a rule — they are two
+halves of one question, and a reader who has just said "ability mod first" is
+about to say "chest only"; then the attached result count and scoring summary.
+Selected facets use a strong gold state; inactive controls remain readable
+instead of looking disabled.
+
+**A facet's NAME is outside its box.** Folding it in ("Any armour") made the
+control say what it was only while it was doing nothing — pick Chain and the
+word "armour" left the screen, so a band of set facets read "Chest, Chain,
+Fabled" with nothing saying which was which. The label is a standing part of the
+row; the box holds the answer, which is "Any" until you give one.
+
+**Source is checkboxes, not a dropdown.** "Group or raid" is a normal thing to
+want and was two searches while it was single-choice; six short words fit on the
+band unopened, which is the other half of the case. `kinds` was already a list
+on the server.
 
 **A separate "interested in procs" switch**, because that is a different axis
 from any stat order and the reader said so in those words. On, the table's proc
 badge column sorts to relevance; off, it is decoration.
 
-The editor is a `Picker`-style panel rendered into `document.body`. **Never
+Every dropdown is a `Picker` rendered into `document.body`. **Never
 `<select>`** — house rule, and the backdrop-filter stacking trap applies here as
 everywhere.
 
@@ -534,6 +615,13 @@ everywhere.
 One `SortableTable`, frozen, with the house column-preference behavior
 (`eq2adv:cols:planner`). Columns: name, tier, level, score, the reader's
 priority stats as their own columns, source, and two badge columns.
+
+**CLICKING THE ROW PUTS THE ITEM IN THE WINDOW** (2026-08-16). The checkbox is
+where the state lives and it still works, but nobody arrives at a table of gear
+hunting for a checkbox — they click the thing they want, and "tick the box" was
+not a gesture the page had taught anybody. The row shows it is in with a green
+edge, since a click anywhere deserves a bigger answer than a 12px mark. **The
+name cell stops the click**: it is a link to the wiki and still goes there.
 
 The name, slot, armour, tier, source and **minimum/maximum item level** filters
 are independent of scoring. The name hover uses the full examine shape: item
@@ -641,7 +729,8 @@ a pulse, and it is degraded rather than removed.
 
 ### Multi-class mode
 
-A class multi-select in the rail header. With one class the page is personal;
+A class multi-select where the single-class facet is now. With one class the
+page is personal;
 with several it becomes a group plan, and the framing shifts to epics — because
 that is the case where different quests genuinely share zones and mobs, and
 where coordinating is the actual pain.
@@ -673,9 +762,10 @@ progress tracking is a later concern and should not hold up the joint route.
   the next successful character refresh fills names/icons/stats. The reader's
   last cached gear/stats remain available and signed-out readers keep the
   complete catalog. Intermittency is normal, not a fault.
-- **Narrow viewport** — the rail collapses to a summary bar above the main area
-  at the same breakpoint the top nav wraps (900px). The outline stays a single
-  column at every width; the item table scrolls sideways inside its wrapper.
+- **Narrow viewport** — the head's three parts stack at the breakpoint the top
+  nav wraps (900px), and the priority half of the choice band moves above the
+  filter half at 1100px. The outline stays a single column at every width; the
+  item table scrolls sideways inside its wrapper.
 
 ### Theming
 
@@ -834,11 +924,51 @@ unzoned coordinates; improving those cross-zone pages is a wikq2 concern and
 still constrains Phase 4's epic group view.
 
 **Phase 1 — the catalog, search and loadout. COMPLETE (2026-08-15).**
-`plan_items`, `plan_sources`, the priority editor, item table, `ItemCard` reuse,
-set-adornment view, concrete equipment slots, optional Census current gear and
-candidate cycling, inline installed-adorn sockets and hover data, additive stat
-projection, socket assignment, level-range search and live set thresholds. It
-remains useful with no outline and with no account.
+`plan_items`, `plan_sources`, the priority control, item table, `ItemCard`
+reuse, set-adornment view, concrete equipment slots, optional Census current
+gear and candidate cycling, inline installed-adorn sockets and hover data,
+additive stat projection, socket assignment, level-range search and live set
+thresholds. It remains useful with no outline and with no account.
+
+**The gear window's own rules** (Lindsay's read of the built page, 2026-08-16):
+
+- **Every changed slot carries its own reset.** Cycling could already reach the
+  equipped item, but only by walking past every candidate on the list — and
+  undoing one change is a far commoner move than comparing five rings. The
+  button appears ONLY on a slot that has been changed; a reset beside twenty
+  untouched slots is twenty buttons that do nothing. It clears that slot's
+  `active` entry and its installed set adornment, and leaves the shortlist
+  alone: those are candidates you found, and finding them again is the work.
+- **WORN SET BONUSES LIVE UNDER THE EQUIPPED GEAR** (`PlanLoadout.WornSets`,
+  the way eq2lexicon does it), not in the projected-stats panel where they
+  started. The count changes with every adornment click, so the fourth piece
+  lighting up has to be visible in the same glance as the click that made it
+  the fourth. It counts what is IN THE WINDOW from two sources — a set the
+  reader installed (`set_slots`) and a turquoise the character already wears,
+  whose tiers come from Census's own `setbonus_list` (`items._adornment`) —
+  and the old panel could see only the first. **Same-named adornments are the
+  same set**: that is what a set adornment is in EoF/RoK and it is the only
+  join either source offers. Earned tiers are full-strength with a filled
+  diamond, unreached ones dimmed. Their arithmetic contribution stays in
+  `projection()`, because that is a stat like any other.
+- **Changing who you are planning for empties the window.** A planned choice
+  only means anything against one character's current equipment — a ring worth
+  +40 Ability Mod on the fury is a downgrade on the guardian — and leaving the
+  projection populated across a switch showed an "upgrade" measured against
+  somebody else's gear. Both routes in (the account picker and the typed
+  lookup) clear it. The shortlist survives.
+- **THE CHARACTER IS THE HEADLINE OF THE GEAR CARD.** It was the other way
+  round — "EQUIPMENT & STATS" in the site's gold display caps, with the toon's
+  name in small muted type trailing after it — so the loudest words on the page
+  named the panel and the one fact that changes, who this is, was set in the
+  quietest type on it. Now the panel's name is the eyebrow label and the
+  character's name is the `h2`. **That heading opts out of the site's
+  small-caps `h2`**: `BOBBY` is not how anybody writes a name.
+- **The lookup is a way IN, not the headline.** It sits to the LEFT of the
+  picker and stays small: who you are planning for is what the row exists to
+  say, and that is the picker plus the name in the heading. A 15rem search box
+  beside a 220px gold picker read as the more important of the two and made the
+  head the loudest thing on the page.
 
 **Phase 2 — the outline.** Prelude from layer 3, body from the prerequisite DAG,
 no tags. Ordered, readable, and honest about what it does not know.
@@ -893,7 +1023,7 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The outline read side: layer-3 prelude, prerequisite walk, stable topological order | `backend/planner/outline.py`, `backend/refdata/planner_standard.json` |
 | `GET /api/plan/meta` `/items` `/sets` `/outline` — no account, no POST | `backend/routers/planner_api.py` |
 | `plan_items`, `plan_sources`, `plan_sets`, `plan_quests`, `plan_quest_edges`, `plan_syncs` (schema v42) | `backend/db.py` |
-| The page: game-grouped concrete slots, candidate cycling, projected stats, one-line draggable priority boundary, inline socket icons/live set tiers, level/name/facet filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx`, `components/PriorityEditor.jsx` |
+| The page: game-grouped concrete slots, candidate cycling, per-slot reset, projected stats, worn set bonuses under the window, three numbered priority dropdowns beside labelled facets, checkbox source filter, click-the-row-to-equip, inline socket icons, level/name filters, richer item/adorn hovers, item/set views and ordered outline | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | The hand-run sync | `backend/tools/sync_planner.py` |
 | The resumable Phase 0 audit | `backend/tools/planner_phase0.py`, `backend/planner/waypoint_audit.py` |
 | Planner tests including recorded wiki pages, set-bonus typing, isolated graph shapes, and audit resume/coverage; no network | `backend/tests/test_planner.py`, `backend/tests/test_planner_waypoint_audit.py` |
@@ -1064,7 +1194,11 @@ in the sections above.
 
 - **No set optimizer and no cap math.** Twice stated. The tool presents options;
   the reader chooses.
-- **Stat priority is an order, not numbers.** No sliders.
+- **Stat priority is an order, not numbers.** No sliders. Three dropdowns
+  numbered 1–3, defaulting to Any; the number of boxes IS the boundary, so
+  there is no "score top" control.
+- **Rows carrying ALL your stats lead the table, then the partial ones.** A
+  tier, not a filter — the four-stat floor is unchanged and still applies.
 - **The outline never reorders. Tags highlight, never filter.**
 - **Tags do not use the class palette**, and only the top eight get a color.
 - **The extractors stay in TypeScript and run offline.** The wiki parser is not

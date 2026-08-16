@@ -608,6 +608,79 @@ def lookup_by_name(conn, client, name: str, world_id: int = 618,
         (lower, world_id)).fetchone())
 
 
+# A cached MISS is re-asked far less often than a hit. "Census has no such
+# character" is usually a typo and stays true forever; occasionally it is a
+# name that did not exist yet. A week is the compromise — it costs one request
+# per dead name per week and it means a new alt is not invisible for good.
+MISS_RECHECK_S = 7 * 86400
+
+
+def refresh_cached_lookups(conn, client, world_id: int = 618, *,
+                           limit: int = 40, older_than_s: int = 12 * 3600,
+                           now: float | None = None) -> dict:
+    """Re-ask Census about the by-name lookups people have already searched.
+
+    **A LOOKUP CACHE THAT IS NEVER REFRESHED IS A CACHE THAT GOES STALE IN ONE
+    DIRECTION.** `lookup_by_name` fills a row when somebody types a name and
+    serves it for `LOOKUP_TTL_S` after that — so a character nobody re-types
+    keeps whatever gear they had the first time anyone looked, and a name typed
+    for the first time during a Census outage answers nothing at all because
+    there is no row to fall back to. This is the other half: on the schedule
+    that already probes Census (`scripts/scheduled-sync.sh census`), refresh
+    the stalest rows so the cache is CURRENT for the next reader, signed in or
+    not.
+
+    Bounded on purpose. `limit` rows per run, oldest first, and only rows past
+    `older_than_s` — the point is a trickle that keeps up with a table people
+    are adding to, not a full re-read every half hour of somebody else's
+    service. A row is refreshed through `lookup_by_name`, so refreshing also
+    caches the character's ITEM records, which is what makes the gear window
+    and its icons work for the next reader.
+
+    Stops at the first `CensusError`: Census going down mid-run is normal, the
+    probe will find it up again, and hammering it while it is unhappy is how
+    you get rate limited."""
+    from census.client import CensusError
+
+    at = int(time.time() if now is None else now)
+    # ASK BY `name_lower`, NEVER BY `name`. `name` is Census's own displayname
+    # ("Bobby (Wuoshi)") and asking for that finds nobody; `name_lower` is the
+    # key the original lookup was made on and is what Census answers to.
+    rows = conn.execute(
+        "SELECT name_lower, fetched_ts FROM plan_characters "
+        "WHERE world_id = ? AND fetched_ts < ? "
+        "AND (doc_json IS NOT NULL OR fetched_ts < ?) "
+        "ORDER BY fetched_ts LIMIT ?",
+        (world_id, at - older_than_s, at - MISS_RECHECK_S, limit)).fetchall()
+
+    out = {"checked": 0, "found": 0, "still_missing": 0, "stopped": False}
+    for row in rows:
+        try:
+            got = lookup_by_name(conn, client, row["name_lower"], world_id,
+                                 refresh=True)
+        except CensusError:
+            out["stopped"] = True
+            break
+        # `lookup_by_name` SWALLOWS an unreachable Census on purpose — the page
+        # needs a stale answer more than it needs an error — so a raised
+        # `CensusError` is not the only way this run can be failing. The row's
+        # stamp is: a fetch that did not happen did not move it. Stopping on
+        # that is the difference between one wasted request and forty of them
+        # against a service that is already unhappy.
+        stamped = conn.execute(
+            "SELECT fetched_ts FROM plan_characters WHERE name_lower = ? "
+            "AND world_id = ?", (row["name_lower"], world_id)).fetchone()
+        if stamped and stamped["fetched_ts"] == row["fetched_ts"]:
+            out["stopped"] = True
+            break
+        out["checked"] += 1
+        out["found" if got else "still_missing"] += 1
+    out["queued"] = conn.execute(
+        "SELECT COUNT(*) FROM plan_characters WHERE world_id = ? AND fetched_ts < ?",
+        (world_id, at - older_than_s)).fetchone()[0]
+    return out
+
+
 def _lookup_out(conn, row) -> dict | None:
     if row is None or not row["doc_json"]:
         return None

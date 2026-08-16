@@ -783,3 +783,75 @@ def test_meta_reports_an_era_with_no_catalog_rather_than_hiding_it(tmp_path):
     assert by_key["rok"]["items"] == 1 and by_key["rok"]["label"] == "RoK"
     assert by_key["eof"]["items"] == 0 and by_key["eof"]["synced_ts"] is None
     assert m["slots"] == ["Feet"] and m["kinds"] == ["raid"]
+
+
+def _extra_item(conn, title, stats, tier="FABLED"):
+    """A second catalog row, so ordering has something to order."""
+    conn.execute(
+        "INSERT INTO plan_items (page_title, name, era, slot, level, tier, "
+        "stats_json, adorns_json, fetched_ts) VALUES (?,?,?,?,?,?,?,?,0)",
+        (title, title, "rok", "Feet", 80, tier, json.dumps(stats), "{}"))
+    conn.execute(
+        "INSERT INTO plan_sources (page_title, source_page, source, kind, era) "
+        "VALUES (?,?,?,?,?)", (title, f"{title} source", "A named", "raid", "rok"))
+    conn.commit()
+
+
+def test_the_rows_carrying_all_your_stats_lead_the_table(tmp_path):
+    """NAMING A THIRD STAT IS ASKING FOR THE ITEMS THAT HAVE ALL THREE, and in
+    four-stat expansions there are a handful of them or none. Sorted on score
+    alone a two-stat item with large numbers outranks a three-stat item with
+    modest ones, so the rows the third choice was made to find were buried
+    under the rows it was made to demote.
+
+    So the count of priorities a row carries orders the table before its score
+    does — a tier, not a filter: nothing is hidden for being one stat short, it
+    just follows. Because the sort decides which rows survive `limit`, this
+    cannot be left to the browser."""
+    conn = loaded(tmp_path)
+    _extra_item(conn, "Big Two", {"abmod": 200, "acspeed": 9})
+    _extra_item(conn, "Small Three", {"abmod": 3, "acspeed": 0.2, "arspeed": 0.2})
+    out = catalog.search(conn, eras=["rok"], order=["abmod", "acspeed", "arspeed"])
+    assert [i["name"] for i in out["items"]][0] == "Small Three"
+    assert [i["matched"] for i in out["items"]] == [3, 2, 2]
+    # and the complete match is genuinely the WORSE score, which is the case
+    # that made this necessary
+    scores = {i["name"]: i["score"] for i in out["items"]}
+    assert scores["Small Three"] < scores["Big Two"]
+
+
+def test_a_rarity_is_asked_for_by_the_word_a_player_uses(tmp_path):
+    """The wiki's `icat` holds eleven spellings across the real catalog and a
+    player has five words. How a piece was MADE is not a rarity: mastercrafted
+    armour is Legendary and a mastercrafted fabled piece is Fabled, so both
+    fold into the tier they actually are. A value nothing recognizes stays
+    bucketless rather than being assigned a rarity the wiki never claimed."""
+    assert wiki.tier_bucket("MASTERCRAFTED LEGENDARY") == "legendary"
+    assert wiki.tier_bucket("MASTERCRAFTED FABLED") == "fabled"
+    assert wiki.tier_bucket("FABLED, GREATER RELIC") == "fabled"
+    assert wiki.tier_bucket("MYTHICAL") == "mythical"
+    assert wiki.tier_bucket("UNCOMMON") is None
+    assert wiki.tier_bucket(None) is None
+
+    conn = loaded(tmp_path)
+    _extra_item(conn, "Made By Hand", {"abmod": 5}, tier="MASTERCRAFTED FABLED")
+    assert catalog.search(conn, eras=["rok"], tiers=["fabled"])["total"] == 2
+    assert catalog.search(conn, eras=["rok"], tiers=["legendary"])["total"] == 0
+    # the raw crawled spelling still answers, so an older link keeps working
+    assert catalog.search(conn, eras=["rok"], tiers=["FABLED"])["total"] == 2
+    # and the facet offers the buckets, ascending, with their labels
+    assert catalog.meta(conn, ["rok"])["tiers"] == [
+        {"key": "fabled", "label": "Fabled", "items": 2}]
+
+
+def test_several_sources_can_be_asked_for_at_once(tmp_path):
+    """"Group or raid" is a normal thing to want and was two searches while the
+    facet was a dropdown."""
+    conn = loaded(tmp_path)
+    _extra_item(conn, "Off A Quest", {"abmod": 5})
+    conn.execute("UPDATE plan_sources SET kind='quest' WHERE page_title=?",
+                 ("Off A Quest",))
+    conn.commit()
+    assert catalog.search(conn, eras=["rok"], kinds=["quest"])["total"] == 1
+    assert catalog.search(conn, eras=["rok"], kinds=["raid"])["total"] == 1
+    assert catalog.search(conn, eras=["rok"], kinds=["raid", "quest"])["total"] == 2

@@ -6039,11 +6039,23 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 /* ---------- the Planner (/plan) ---------- */
 
-/* Rail plus main, which is `ZoneRun`'s geometry — this page reuses
-   `.workspace` unchanged and only adds what is its own. */
-.planner .plannerrail { max-height: calc(100vh - 24px); overflow-y: auto; }
-.planner .railhead h1 { margin: 0; font-size: var(--fs-h2); }
-.planner .railhead .sub { color: var(--text-muted); font-size: var(--fs-label); }
+/* FULL WIDTH, NO RAIL. This page is a wide table and a wide equipment window;
+   a fixed left column was spending a fifth of the screen on three controls and
+   a list, and paying for it twice over — the item table scrolled sideways and
+   the projected stats scrolled vertically for room the rail was holding. The
+   controls moved into the bands that already existed.
+
+   One head line: what the page is, which tab, and the expansion choice. The
+   eras stay here rather than joining the filters because everything on both
+   tabs follows from them and the Outline has no filter band. */
+/* The head is `.pagehead` unchanged — h1, subtitle, right-aligned actions — so
+   this page opens the way every other page does. */
+.erafacet { margin-left: auto; }
+.plansearchhead .erafacet { margin: 0 auto 0 24px; }
+.outlineeras { display: flex; margin-top: 12px; }
+.outlineeras .erafacet { margin-left: 0; }
+/* The item name column is text, not a figure — see `itemColumns`. */
+.plantable td.l, .plantable th.l { text-align: left; }
 
 /* The loadout keeps the game's useful visual grammar — armour and weapons on
    the left, charms and jewelry on the right — without spending a third column
@@ -6053,35 +6065,48 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--row-line);
 }
-.loadouthead h2 { margin: 2px 0 0; font-size: var(--fs-h3); }
+/* The NAME carries the heading weight; the panel's own name is the eyebrow
+   above it and the level/class is the quiet half after it. */
+.loadoutwho { min-width: 0; }
+/* A NAME IS NOT A SECTION LABEL. The site's `h2` is a small-caps label by
+   design; "BOBBY" is not how anybody writes a character's name, so this one
+   heading opts out of the uppercase and reads as typed. */
+.loadouthead h2 {
+  margin: 1px 0 0; color: var(--gold-bright); font-size: 1.2rem;
+  font-weight: 700; text-transform: none; letter-spacing: 0.01em;
+}
 .loadouthead h2 small {
   margin-left: 9px; color: var(--text-muted); font-family: var(--font-data);
-  font-size: var(--fs-label); font-weight: 400;
+  font-size: var(--fs-label); font-weight: 400; text-transform: none;
+  letter-spacing: 0.02em;
 }
+/* The head's controls are a QUIET row, all one height. The lookup opens the
+   panel and the picker says who it is open on, so neither of them is the
+   headline — that is the character's name in the `h2` beside them. */
 .loadoutactions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .loadoutactions .chip { padding: 2px 9px; cursor: pointer; }
 .loadoutactions .chip:disabled { opacity: 0.42; cursor: default; }
-.plancharacterpick { display: grid; gap: 2px; }
+.plancharacterpick { display: flex; align-items: center; gap: 6px; }
 .plancharacterpick > span {
   color: var(--gold-dim); font-size: 0.6rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.09em;
 }
 .characterpicker .pickerbtn {
-  min-width: 220px; min-height: 34px; padding: 5px 9px;
-  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.13);
-  color: var(--gold-bright); font-size: var(--fs-data);
-  box-shadow: inset 0 0 0 1px rgba(var(--gold-rgb), 0.1);
+  min-width: 130px; min-height: 28px; padding: 3px 8px;
+  border-color: var(--gold-dim); background: rgba(var(--gold-rgb), 0.09);
+  color: var(--gold-bright); font-size: var(--fs-label);
 }
 .characterpicker .pickerbtn .ph { color: var(--text); }
 .loadoutactions .resetgear {
-  align-self: end; min-height: 34px; padding: 4px 10px;
+  min-height: 28px; padding: 3px 9px; font-size: var(--fs-label);
   border-color: var(--gold-dim); color: var(--text);
   background: var(--surface-raised);
 }
 .loadoutbody {
-  display: grid; grid-template-columns: minmax(520px, 1fr) 270px;
-  gap: 12px; align-items: stretch; margin-top: 10px;
+  display: grid; grid-template-columns: minmax(520px, 1fr) minmax(380px, 0.85fr);
+  gap: 12px; align-items: start; margin-top: 10px;
 }
+.loadoutgear { min-width: 0; display: grid; align-content: start; gap: 8px; }
 .equipmentwindow {
   min-width: 0; display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -6095,7 +6120,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planslots { min-width: 0; display: grid; align-content: start; gap: 2px; }
 .planslot {
   position: relative; min-width: 0; min-height: 34px;
-  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
   gap: 6px; align-items: center; padding: 2px 4px;
   border: 1px solid var(--row-line); border-radius: 3px;
   background: rgba(var(--bg-rgb), 0.28); cursor: pointer;
@@ -6147,6 +6172,18 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-family: var(--font-data); font-size: 8px; font-style: normal;
   text-transform: uppercase; letter-spacing: 0.05em;
 }
+/* Only on a slot that HAS been changed — a reset beside twenty untouched
+   slots is twenty buttons that do nothing. */
+.planslotreset {
+  width: 20px; height: 20px; flex: none; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface-raised); color: var(--text-muted);
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.planslotreset:hover, .planslotreset:focus-visible {
+  border-color: var(--gold); color: var(--gold-bright);
+}
 .planadorns { min-width: 0; display: flex; align-items: center; gap: 5px; }
 .planadornicon {
   position: relative; width: 34px; height: 34px; padding: 2px; flex: none;
@@ -6173,12 +6210,19 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   color: var(--text-muted); font-size: var(--fs-label);
 }
 
+/* NO INNER SCROLLER. It had one because the rail left the column 270px wide
+   and the stat list is forty rows; with the page full width the panel is two
+   columns of rows and simply fits, and a box that scrolls inside a page that
+   also scrolls is two scrollbars for one list. */
 .planstats {
-  min-width: 0; max-height: 425px; overflow-y: auto; padding: 9px;
+  min-width: 0; padding: 9px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start; gap: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: rgba(var(--bg-rgb), 0.28);
 }
-.planstats.empty { display: grid; align-content: start; }
+.planstathead, .planstatgeneral, .planstatnote { grid-column: 1 / -1; }
+.planstats.empty { grid-template-columns: minmax(0, 1fr); }
 .planstats.empty p { color: var(--text-muted); font-size: var(--fs-data); line-height: 1.45; }
 .planstathead { display: flex; justify-content: space-between; gap: 7px; align-items: baseline; }
 .planstathead > b { color: var(--gold-bright); font-family: var(--font-heading); }
@@ -6209,15 +6253,32 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstatrow em { color: var(--text-muted); font-size: var(--fs-label); font-style: normal; }
 .planstats .up { color: var(--success); }
 .planstats .down { color: var(--danger); }
-.plansetstatus { border-top: 1px solid var(--border); padding-top: 7px; }
-.plansetrow { padding: 5px; border-bottom: 1px solid var(--row-line); }
-.plansetrow > div { display: flex; align-items: baseline; gap: 6px; }
-.plansetrow > div b { font-size: var(--fs-data); }
-.plansetrow > div em { color: var(--text-muted); font-size: var(--fs-label); font-style: normal; }
-.plansetrow p { margin: 2px 0 0; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35; }
-.plansetrow p i { margin-right: 5px; color: var(--text-muted); font-style: normal; }
-.plansetrow p.active { color: var(--text); }
-.plansetrow p.active i { color: #44bfd0; }
+/* WORN SET BONUSES, UNDER THE GEAR THEY COME OFF. Directly below the window
+   because that is where the adornment clicks are: the fourth piece lighting up
+   has to be visible in the same glance as the click that made it the fourth.
+   A tier that is EARNED is in full colour with a filled diamond; one still out
+   of reach is dimmed, so the panel reads as a ladder you are climbing. */
+.wornsets {
+  min-width: 0; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(var(--bg-rgb), 0.28);
+}
+.wornsets > p { margin: 3px 0 0; font-size: var(--fs-label); line-height: 1.45; }
+.wornset { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--row-line); }
+.wornset:first-of-type { border-top: 0; }
+.wornsethead { display: flex; align-items: baseline; gap: 7px; }
+.wornsethead b { color: #44bfd0; font-size: var(--fs-data); }
+.wornsethead em {
+  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
+}
+.wornset p {
+  margin: 2px 0 0; color: var(--text-muted); opacity: 0.72;
+  font-size: var(--fs-label); line-height: 1.35;
+}
+.wornset p i { margin-right: 5px; color: var(--text-muted); font-style: normal; }
+.wornset p b { color: inherit; font-family: var(--font-data); }
+.wornset p.on { color: var(--text); opacity: 1; }
+.wornset p.on i { color: #44bfd0; }
 .planstatnote {
   margin: 9px 2px 0; color: var(--text-muted); font-size: 0.62rem; line-height: 1.4;
 }
@@ -6226,17 +6287,15 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 @media (max-width: 1140px) {
   .loadoutbody { grid-template-columns: minmax(0, 1fr); }
-  .planstats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
-  .planstathead, .planstatgeneral, .planstatnote, .plansetstatus { grid-column: 1 / -1; }
 }
 
 @media (max-width: 760px) {
   .loadouthead { align-items: flex-start; flex-direction: column; }
   .equipmentwindow { grid-template-columns: 1fr 1fr; }
-  .planslot { grid-template-columns: 30px minmax(0, 1fr) auto; }
+  .planslot { grid-template-columns: 30px minmax(0, 1fr) auto auto; }
   .planslotcycle { grid-column: 2 / -1; justify-content: center; }
   .planstats { grid-template-columns: minmax(0, 1fr); }
-  .planstathead, .planstatgeneral, .planstatnote, .plansetstatus { grid-column: 1; }
+  .planstathead, .planstatgeneral, .planstatnote { grid-column: 1; }
 }
 
 /* THE EXPANSION CHOICE IS THE FIRST CONTROL ON THE PAGE, so it is a row of
@@ -6244,7 +6303,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    which items exist, what a score is measured against, which sets are on offer
    — follows from it. The count rides on the chip because "RoK 2881" answers
    "is this synced?" without a second line to read. */
-.erachips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.erachips { display: flex; flex-wrap: wrap; gap: 6px; }
 .erachips .chip {
   display: inline-flex; align-items: baseline; gap: 6px;
   padding: 2px 8px; cursor: pointer;
@@ -6258,7 +6317,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   background: rgba(var(--gold-rgb), 0.12);
 }
 
-.planner .shortlist { gap: 5px; }
+.planner .shortlist { padding: 9px 12px; }
 .shortkind {
   color: var(--text-muted); font-size: var(--fs-label);
   text-transform: uppercase; letter-spacing: 0.09em; margin-top: 5px;
@@ -6303,122 +6362,123 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-weight: 700;
 }
 
-.plansearchband {
-  display: grid; grid-template-columns: minmax(260px, 1fr) auto auto;
-  align-items: end; gap: 10px; padding: 10px 11px;
+/* LABELLED ROWS IN A TWO-COLUMN GRID — a form, which is what this is. Every
+   row names itself in the same gutter, so every control in the block starts on
+   one line down the left and nothing has to be hunted for.
+
+   The first pass put the priorities in a column BESIDE the filters. It left a
+   dead quarter under the three dropdowns whenever the filters wrapped, which
+   is most widths, and side-by-side columns of unrelated heights is what made
+   the block read as scattered. Rows cannot do that. */
+.planbands {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center; gap: 7px 12px; padding: 10px 12px;
   background: rgba(0, 0, 0, 0.08);
 }
-.planquicksearch,
-.planlevelrange { display: flex; flex-direction: column; gap: 4px; }
-.planquicksearch > span,
-.planlevelrange > span:first-child,
+.planbandrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.planbandlabel {
+  color: var(--gold-bright); font-size: var(--fs-label); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
+}
+/* A quiet line at the end of the priority row, where the eye already is once
+   the three boxes are set. Never a second block of instructions. */
+.bandnote { margin-left: auto; color: var(--text-muted); font-size: var(--fs-label); }
+/* A NAME SEARCH IS A NAME. Stretching the box across the band made the least
+   used control on the page its largest thing. */
+.planq {
+  width: 20rem; max-width: 60vw; min-height: 29px; margin: 0; padding: 5px 9px;
+  border: 1px solid var(--gold-dim); border-radius: 3px;
+  background: var(--surface-raised); color: var(--text); font-size: var(--fs-label);
+}
+.planq::placeholder { color: var(--text-muted); opacity: 0.9; }
+.planq:focus {
+  border-color: var(--gold); box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.22);
+  outline: none;
+}
 .planfilterlabel {
   color: var(--text); font-size: var(--fs-label); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.08em;
 }
-.planquicksearch input[type="search"] {
-  width: 100%; min-height: 34px; margin: 0; padding: 6px 9px;
-  border-color: var(--gold-dim); background: var(--surface-raised); color: var(--text);
+/* One control, one label, a dash between two numbers — read as "70–80". */
+.levelinputs { display: flex; align-items: center; gap: 4px; }
+.levelinputs > i {
+  color: var(--text); opacity: 0.72; font-style: normal; font-size: var(--fs-label);
 }
-.planquicksearch input[type="search"]::placeholder { color: var(--text-muted); opacity: 0.9; }
-.planquicksearch input[type="search"]:focus {
-  border-color: var(--gold); box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.22);
+.levelfacet input[type="number"] {
+  width: 52px; min-height: 29px; margin: 0; padding: 4px 5px;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface); color: var(--text); text-align: center;
+  font-size: var(--fs-label);
 }
-.levelinputs { display: flex; align-items: center; gap: 6px; }
-.levelinputs > i { color: var(--text); opacity: 0.72; font-style: normal; font-size: var(--fs-label); }
-.planlevelrange input[type="number"] {
-  width: 66px; min-height: 34px; margin: 0; padding: 6px 7px;
-  border-color: var(--border); background: var(--surface-raised);
-  color: var(--text); text-align: center;
+.levelfacet input[type="number"]:focus-visible { border-color: var(--gold); }
+.levelfacet.selected input[type="number"] {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
+  color: var(--gold-bright); font-weight: 700;
 }
 .clearplanfilters {
-  min-height: 34px; padding: 5px 11px; color: var(--text); font-size: var(--fs-label);
+  min-height: 30px; padding: 4px 11px; color: var(--text); font-size: var(--fs-label);
 }
 .clearplanfilters:disabled { color: var(--text-muted); opacity: 0.48; }
 
-.planfilterband {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  padding: 8px 11px; border-top: 1px solid var(--row-line);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-raised);
+/* The number is the whole explanation the control needs: 1 outranks 2
+   outranks 3, and an untouched box says Any. */
+.prioritypick { display: inline-flex; align-items: stretch; }
+.prioritypick > i {
+  width: 19px; flex: none; display: grid; place-items: center;
+  border: 1px solid var(--border); border-right: 0;
+  border-radius: 3px 0 0 3px; background: var(--surface);
+  color: var(--text-muted); font-family: var(--font-data);
+  font-size: 0.6rem; font-style: normal; font-weight: 800;
 }
-.planfilterlabel { margin-right: 3px; color: var(--gold-bright); }
-.planfilterband .pickerbtn,
-.planfilterband .chip {
-  min-height: 29px; border-color: var(--border); background: var(--surface);
+.prioritypick .pickerbtn {
+  min-width: 118px; min-height: 29px; border-radius: 0 3px 3px 0;
+  border-color: var(--border); background: var(--surface);
   color: var(--text); cursor: pointer;
 }
-.planfilterband .pickerbtn:hover,
-.planfilterband .chip:hover { border-color: var(--gold); color: var(--gold-bright); }
-.planfilterband .chip.on,
-.planfacet.selected .pickerbtn {
+.prioritypick .pickerbtn:hover { border-color: var(--gold); color: var(--gold-bright); }
+.prioritypick.on > i {
+  border-color: var(--gold); background: var(--gold); color: var(--bg);
+}
+.prioritypick.on .pickerbtn {
   border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
   color: var(--gold-bright); font-weight: 700;
 }
 
-.prioritytrackbox { padding: 10px 11px 11px; background: rgba(0, 0, 0, 0.12); }
-.prioritytrackhead {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 8px 14px; margin-bottom: 9px;
+/* The name is OUTSIDE the box and stays put; the box holds the answer. */
+.planfacet { display: inline-flex; align-items: center; gap: 5px; }
+.facetlab {
+  color: var(--text); opacity: 0.78; font-size: var(--fs-label);
+  white-space: nowrap;
 }
-.priorityintro { display: flex; align-items: baseline; gap: 8px; }
-.priorityintro b { color: var(--gold-bright); font-size: var(--fs-data); }
-.priorityintro span { color: var(--text); opacity: 0.72; font-size: var(--fs-label); }
-.prioritytools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.prioritycount { display: inline-flex; align-items: center; gap: 2px; }
-.prioritycount > span { margin-right: 4px; color: var(--text); font-size: var(--fs-label); }
-.prioritycount button {
-  width: 27px; height: 27px; padding: 0; border-color: var(--border);
-  background: var(--surface-raised); color: var(--text);
+.planbandrow .pickerbtn,
+.planbandrow .chip {
+  min-height: 29px; border-color: var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer;
 }
-.prioritycount button.on {
-  border-color: var(--gold); background: var(--gold); color: var(--bg); font-weight: 800;
+.planbandrow .pickerbtn { min-width: 92px; }
+.planbandrow .pickerbtn:hover,
+.planbandrow .chip:hover { border-color: var(--gold); color: var(--gold-bright); }
+.planbandrow .chip.on,
+.planfacet.selected .pickerbtn {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
+  color: var(--gold-bright); font-weight: 700;
 }
-.prioritytrackhead .requirements { min-height: 27px; padding: 3px 9px; color: var(--text); }
-.prioritytrackhead .requirements.on {
-  border-color: var(--warning); color: var(--warning); background: rgba(var(--gold-rgb), 0.11);
-}
-.prioritytrack {
-  display: grid; grid-template-columns: repeat(var(--stat-count), minmax(0, 1fr));
-  gap: 4px; width: 100%; min-width: 0;
-}
-.prioritytoken {
-  position: relative; min-width: 0; height: 34px; display: flex;
-  align-items: center; justify-content: flex-start; gap: 3px;
-  padding: 4px; overflow: hidden; cursor: grab;
+/* Source is a set of answers, not one of them — "group or raid" is a normal
+   thing to want and was two searches while it was a dropdown. Six short words
+   fit on the band without being opened, which is the other half of the case. */
+.sourceboxes { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sourcebox {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 29px; padding: 2px 8px 2px 6px;
   border: 1px solid var(--border); border-radius: 3px;
-  background: var(--surface-raised); color: var(--text);
-  font-family: var(--font-data); font-size: 0.61rem; font-weight: 600;
+  background: var(--surface); color: var(--text);
+  font-size: var(--fs-label); cursor: pointer;
 }
-.prioritytoken:hover,
-.prioritytoken:focus-visible { border-color: var(--gold-dim); background: var(--row-hover); color: var(--gold-bright); }
-.prioritytoken:active { cursor: grabbing; }
-.prioritytoken > i {
-  width: 16px; height: 20px; flex: none; display: grid; place-items: center;
-  color: var(--text); opacity: 0.64; font-size: 0.55rem;
-  font-style: normal; font-weight: 800;
-}
-.prioritytoken > span { min-width: 0; white-space: nowrap; }
-.prioritytoken.ranked {
-  border-color: var(--gold); background: var(--gold);
-  color: var(--bg); font-weight: 800;
-}
-.prioritytoken.ranked:hover,
-.prioritytoken.ranked:focus-visible { background: var(--gold-bright); color: var(--bg); }
-.prioritytoken.ranked > i {
-  border-right: 1px solid rgba(0, 0, 0, 0.35); color: var(--bg); opacity: 1;
-}
-.prioritytoken.required { box-shadow: inset 0 -3px 0 var(--warning); }
-.prioritytoken.boundary { margin-right: 4px; box-shadow: 4px 0 0 var(--gold-bright); }
-.prioritytoken.boundary.required {
-  box-shadow: inset 0 -3px 0 var(--warning), 4px 0 0 var(--gold-bright);
-}
-.prioritytoken.over { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
-.compactmatch { display: inline-flex; align-items: center; gap: 5px; }
-.compactmatch > span { color: var(--text); font-size: var(--fs-label); }
-.compactmatch .pickerbtn {
-  min-height: 27px; border-color: var(--border); color: var(--text);
-  font-size: var(--fs-label);
+.sourcebox:hover { border-color: var(--gold); color: var(--gold-bright); }
+.sourcebox input { margin: 0; accent-color: var(--gold); cursor: pointer; }
+.sourcebox.on {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
+  color: var(--gold-bright); font-weight: 700;
 }
 .plansearchfooter {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -6436,13 +6496,29 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planempty b { color: var(--gold-bright); font-variant-numeric: tabular-nums; }
 .planemptynote { font-size: var(--fs-label); opacity: 0.78; }
 
-@media (max-width: 900px) {
-  .plansearchband { grid-template-columns: 1fr auto; }
-  .planquicksearch { grid-column: 1 / -1; }
-  .priorityintro { width: 100%; }
-  .prioritytrack { gap: 2px; }
-  .prioritytoken { padding: 3px 2px; font-size: 0.55rem; }
-  .prioritytoken > i { width: 12px; }
+@media (max-width: 760px) {
+  /* The label gutter stops earning its column once the controls under it wrap
+     anyway: each label goes back over its own row. */
+  .planbands { grid-template-columns: minmax(0, 1fr); gap: 3px 0; }
+  .planbandrow { margin-bottom: 6px; }
+  .bandnote { margin-left: 0; flex-basis: 100%; }
+  .prioritypick .pickerbtn { min-width: 96px; }
+}
+
+/* The score, and how many of the reader's stats the row actually carries. The
+   second is why the row is where it is — the table is tiered on it — so it
+   rides on the figure rather than spending a column. */
+.planscore { display: inline-flex; align-items: baseline; gap: 5px; justify-content: flex-end; }
+.planscore em {
+  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+/* A row already in the window. Clicking the row is what puts it there, so the
+   row has to be able to say it is in — the checkbox alone is a 12px answer to
+   a question asked by a click on anything. */
+.plantable tbody tr.picked > td { background: rgba(var(--success-rgb), 0.09); }
+.plantable tbody tr.picked > td:first-child {
+  box-shadow: inset 3px 0 0 var(--success);
 }
 
 /* Two badges, one job each: "this row's value is not in its stat columns."
@@ -6493,8 +6569,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* ---- the outline ----
    One stable spine: hand-kept prelude first, prerequisite DAG second. Tags are
    Phase 3 and will highlight this list rather than reorder it. */
-.planner .wsmain > .tabs { margin-top: 0; }
-.planoutline { display: grid; gap: 18px; }
+.planoutline { display: grid; gap: 18px; margin-top: 12px; }
 .outlineprelude {
   padding: 13px 15px;
   border-color: var(--gold-dim);
@@ -6621,11 +6696,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .prioadd summary { cursor: pointer; font-size: var(--fs-label); margin-top: 9px; }
 
 @media (max-width: 900px) {
-  /* The rail collapses above the main area at the width the top nav wraps.
-     The table keeps scrolling sideways inside its own wrapper rather than
-     making the page scroll. */
-  .planner { grid-template-columns: minmax(0, 1fr); }
-  .planner .plannerrail { position: static; max-height: none; }
+  /* `.pagehead` already wraps; the expansion chips just stop hugging the right
+     edge once they have their own line. The item table keeps scrolling
+     sideways inside its own wrapper rather than making the page scroll. */
+  .planner .pagehead .actions { margin-left: 0; }
 }
 
 /* Why potency and crit are not on the list. Said once, where the question is
@@ -6659,12 +6733,21 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 
 /* Looking a toon up by name on /plan — no account needed, so this sits beside
    the account picker rather than replacing it. */
-.plancharacterlookup { display: inline-flex; align-items: center; gap: 6px; }
+/* Small on purpose. It is the way IN to a character, not the statement of
+   which one is loaded — that is the picker beside it and the name in the
+   heading above. A 15rem box next to a 130px picker read the other way round. */
+.plancharacterlookup { display: inline-flex; align-items: center; gap: 5px; }
 .plancharacterlookup input {
-  width: 15rem; max-width: 46vw; padding: 4px 8px;
+  width: 9.5rem; max-width: 40vw; min-height: 28px; padding: 3px 7px;
   border: 1px solid var(--border); border-radius: 4px;
   background: var(--surface-raised); color: var(--text);
   font: inherit; font-size: var(--fs-label);
 }
 .plancharacterlookup input:focus-visible { outline: 1px solid var(--gold-bright); }
-.plancharacterlookup .lookuperr { color: var(--danger); font-size: var(--fs-label); }
+.plancharacterlookup .chip { min-height: 28px; }
+/* The error is the one thing here allowed to take a line of its own: it is an
+   answer to something the reader just did, and squeezing it between two
+   controls is what made the head wrap. */
+.plancharacterlookup .lookuperr {
+  flex-basis: 100%; color: var(--danger); font-size: var(--fs-label);
+}

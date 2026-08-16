@@ -427,3 +427,54 @@ def test_a_name_census_does_not_know_is_a_404_and_is_not_re_asked(client, fake):
                           params={"name": "Nobodyatall"}).status_code == 404
     # The MISS is cached too, so a typo does not re-ask Census every time.
     assert fake.calls == before
+
+
+def test_the_lookup_cache_is_refreshed_on_a_schedule(client, fake):
+    """A LOOKUP CACHE NOBODY REFRESHES GOES STALE IN ONE DIRECTION. `/plan`
+    only ever refills a row when a human types that name, so a character
+    somebody looked up once keeps that night's gear until somebody types them
+    again — and a name typed for the first time DURING an outage answers
+    nothing, because there is no row to fall back to. The census probe that
+    already runs every 30 minutes refreshes the stalest rows instead.
+
+    Bounded, oldest first, and it stops rather than hammering a Census that
+    has gone away mid-run."""
+    from census import sync as census_sync
+    conn = dbmod.get_db()
+
+    # Earlier tests in this file leave their own cached rows behind, and this
+    # one is counting requests.
+    conn.execute("DELETE FROM plan_characters")
+    census_sync.lookup_by_name(conn, fake, "Bobby")
+    conn.execute("UPDATE plan_characters SET fetched_ts = 0")
+    conn.commit()
+
+    before = fake.calls
+    out = census_sync.refresh_cached_lookups(conn, fake)
+    assert out["checked"] == 1 and out["found"] == 1 and out["queued"] == 0
+    assert fake.calls > before                     # it really did re-ask
+
+    # A row inside the window is left alone: this is a trickle, not a re-read.
+    quiet = fake.calls
+    assert census_sync.refresh_cached_lookups(conn, fake)["checked"] == 0
+    assert fake.calls == quiet
+
+
+def test_the_refresh_stops_when_census_goes_away_mid_run(client, fake):
+    from census import sync as census_sync
+    from census.client import CensusError
+    conn = dbmod.get_db()
+
+    conn.execute("DELETE FROM plan_characters")
+    census_sync.lookup_by_name(conn, fake, "Bobby")
+    conn.execute("UPDATE plan_characters SET fetched_ts = 0")
+    conn.commit()
+
+    class Dying:
+        def character_by_name(self, name, world_id=618):
+            raise CensusError("census unavailable")
+
+    out = census_sync.refresh_cached_lookups(conn, Dying())
+    assert out["stopped"] is True and out["checked"] == 0
+    # and the cached row is untouched, so the page still answers from it
+    assert census_sync.lookup_by_name(conn, Dying(), "Bobby") is not None

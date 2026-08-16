@@ -274,7 +274,7 @@ segmentation)
   NOTHING. It also feeds that account's overlay (`replaybus.py`); the `replay` block
   never crosses.
 
-**The Planner** (`docs/planner.md` — Phases 0-2 complete; 3-4 design)
+**The Gear Planner** (`docs/planner.md` — Phases 0-2 complete; 3-4 design)
 
 - **WHICH EXPANSIONS COUNT IS THE READER'S** — EoF and/or RoK, chosen on the
   page. Era is a COLUMN (`plan_items.era`, `plan_sources.era`), never a
@@ -311,7 +311,27 @@ segmentation)
   QUEST level above the cap**, which is normal and is a tag.
 - **The priority list is an ORDER, not numbers, and no weight is ever shown.**
   No sliders, no cap math, no set optimizer — the tool ranks options and the
-  reader chooses. A stat marked REQUIRED moves from ranking to filtering.
+  reader chooses. It is **three dropdowns numbered 1-3, defaulting to Any**
+  (the drag track and its "Score top" boundary control are gone); `required`
+  is still a server parameter with no control on the page.
+- **The rows carrying ALL your stats lead the table, then the partial ones in
+  score order** — a TIER, not a filter, sorted on the server because it decides
+  which rows survive `limit`. The four-stat floor below is unchanged.
+- **A rarity is asked for by the word a PLAYER uses** (`wiki.TIER_BUCKETS`):
+  five buckets, not the wiki's eleven `icat` spellings. How a piece was MADE is
+  not a rarity — mastercrafted fabled is Fabled. A value nothing recognizes
+  stays bucketless rather than being assigned one; `plan_items.tier` is
+  untouched.
+- **Clicking an item's ROW puts it in the window**; the name cell stops the
+  click and still opens the wiki.
+- **`/plan` HAS NO RAIL — one full-width column.** The expansion toggles are in
+  the page head beside the tabs (they govern the Outline too, which has no
+  filter band); class is a FACET with the others; the shortlist heads the
+  Outline tab, which is what consumes it.
+- **Worn set bonuses belong under the equipped gear, not in the stats panel** —
+  counted off the WINDOW, from both a set the reader installed and a turquoise
+  Census says is already worn. **Changing character empties the window** (the
+  shortlist survives), and **every changed slot carries its own reset**.
 - **POTENCY AND CRIT ARE NOT PRIORITY OPTIONS** — they are on 80% and 72% of
   the catalog, so ordering by them orders by nothing. `catalog.weights` honours
   only `wiki.PRIORITY_STATS` whatever the URL says. They stay on the card and
@@ -358,7 +378,15 @@ segmentation)
 - **`GET /api/plan/character?name=` is the ONE `/plan` route that may reach the
   network** — a name somebody TYPED, cache-first, stale-on-failure, no account,
   `plan_characters` (v43) is a cache of a PUBLIC record and never account
-  state. Nothing on a page load fetches anything.
+  state. Nothing on a page load fetches anything. **A signed-in reader's OWN
+  characters come from `census_snapshots` — a stored local row, no network at
+  all — which is why they keep working while Census is down and a first-time
+  name lookup does not.** The cache is kept current by
+  `tools/refresh_plan_characters.py` off the 30-min census probe: bounded rows
+  per run, oldest first, asked by `name_lower` (never the displayname), and it
+  STOPS when a row's stamp does not move — `lookup_by_name` swallows an
+  unreachable Census on purpose, so a raised error is not the only way a run
+  can be failing.
 - **The Outline is ONE STABLE ORDER** — hand-kept layer-3 prelude from
   `refdata/planner_standard.json`, then prerequisite-before-level body from
   `plan_quests` / `plan_quest_edges`. Phase 3 tags will highlight, never
@@ -373,7 +401,8 @@ segmentation)
 - **Multi-era sync resolves the graph again after all requested eras are
   stored**, so a cross-era prerequisite survives either CLI order. Dangling
   titles are counted and omitted, not invented as quests.
-- **`/plan` is off the nav and needs no account** — it reaches no parse,
+- **`/plan` is IN the nav as `Gear Planner`** (right of Compare, signed out
+  too — published 2026-08-16) **and needs no account** — it reaches no parse,
   session or account, and has no POST.
 - **Phase 0 is measured, not guessed** — 899 RoK quests / 3,452 coordinates;
   2,584 POI matches (74.86% overall, 83.46% of zone-labeled), with the main RoK
@@ -462,14 +491,17 @@ Details per area live in the `docs/` file named beside it.
   BROKEN (`receiving` is healthy); the accounts table is searched/sorted/paged on
   the SERVER. Feedback is triaged open → planned → closed. **Visitors** is the
   day-by-day count of who came to look (`visitors.py`), written out as rows.
-- **The Planner** `/plan` (`docs/planner.md`) — what to chase in an expansion.
-  Pick the expansions considered (EoF, RoK or both), declare the stats you are
-  pushing as an ORDER, and read a ranked, era-filtered catalog of every drop and
-  quest reward with where it comes from — plus the set adornments on their own
-  axis, since the turquoise detaches. The Outline tab puts a hand-kept prelude
-  ahead of the prerequisite-ordered quests and targets that serve the browser's
-  shortlist. Off the nav and signed-out; filled by `tools/sync_planner.py`
-  crawling the wiki by hand. Phases 0-2 are complete; spatial tags are not.
+- **The Gear Planner** `/plan` (`docs/planner.md`) — what to chase in an
+  expansion. Pick the expansions considered (EoF, RoK or both), declare the
+  stats you are pushing as an ORDER, and read a ranked, era-filtered catalog of
+  every drop and quest reward with where it comes from — plus the set
+  adornments on their own axis, since the turquoise detaches. Load a Census
+  character and the equipment window projects what a swap would change. The
+  Outline tab puts a hand-kept prelude ahead of the prerequisite-ordered quests
+  and targets that serve the browser's shortlist. **In the nav right of
+  Compare, signed-out**; one full-width column, no rail; filled by
+  `tools/sync_planner.py` on a monthly cron. Phases 0-2 are complete; spatial
+  tags are not.
 - **Coach and Census** (`docs/coach.md`, `docs/census-abilities.md`) — intact behind
   `coach_api` and the hidden Insights tab.
 
@@ -506,6 +538,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
@@ -525,4 +558,3 @@ builds here with `bash build.sh`.
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
-- 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)

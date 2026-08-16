@@ -366,6 +366,48 @@ def armor_of(dtype: str | None) -> str | None:
     return word[0] if word and word[0] in ARMOR_TYPES else None
 
 
+# THE RARITY LADDER A PLAYER ACTUALLY HAS IN THEIR HEAD, which is not the set
+# of strings the wiki's `icat` field holds. That field carries eleven distinct
+# values across the catalog — `MASTERCRAFTED LEGENDARY`, `MASTERCRAFTED FABLED`
+# and `FABLED, GREATER RELIC` among them — and offering all eleven as a filter
+# asks the reader to know the wiki's vocabulary rather than the game's.
+#
+# So the filter is five BUCKETS, in ascending rarity (Lindsay's list, from the
+# game). How a piece was made is not a rarity: mastercrafted armour is
+# Legendary quality and a mastercrafted fabled piece is Fabled, so both fold
+# into the tier they actually are. The three top rarities are one bucket
+# because on a TLE server they are the same answer — "past fabled" — and
+# splitting seven Mythical rows off would be three empty facet rows.
+#
+# Matched on WORDS PRESENT, not on the whole string, and checked from the top
+# down: `MASTERCRAFTED LEGENDARY` contains `LEGENDARY`, and `FABLED, GREATER
+# RELIC` contains `FABLED`, so the first bucket that recognizes a word wins.
+# A value none of them recognizes (`UNCOMMON`, `-`, blank) is bucketless and
+# is simply not reachable by this filter — inventing a rarity for it would be
+# a claim about the item that the wiki did not make.
+TIER_BUCKETS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("mythical", "Mythical+", ("MYTHICAL", "ETHEREAL", "CELESTIAL")),
+    ("fabled", "Fabled", ("FABLED",)),
+    ("legendary", "Legendary", ("LEGENDARY", "MASTERCRAFTED")),
+    ("treasured", "Treasured", ("TREASURED",)),
+    ("handcrafted", "Handcrafted", ("HANDCRAFTED",)),
+)
+TIER_BUCKET_LABEL = {key: label for key, label, _ in TIER_BUCKETS}
+# Ascending, which is the order the facet offers them in — the ladder reads
+# upward the way a player says it, and `TIER_BUCKETS` is written top-down only
+# because the word test has to be.
+TIER_ORDER = tuple(key for key, _, _ in reversed(TIER_BUCKETS))
+
+
+def tier_bucket(tier: str | None) -> str | None:
+    """`"MASTERCRAFTED FABLED"` -> `"fabled"`. None when nothing recognizes it."""
+    text = (tier or "").upper()
+    for key, _, words in TIER_BUCKETS:
+        if any(word in text for word in words):
+            return key
+    return None
+
+
 def is_two_handed(dtype: str | None) -> bool:
     """A two-hander takes BOTH hands and the wiki does not say so in `slot`.
 

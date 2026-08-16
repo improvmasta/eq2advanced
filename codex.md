@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-09 (claude): Loot tab: chest drops, EQ2i-style item cards and roll history (schema v32)
 - 2026-08-08 (claude): Live dashboard build-out (mini parse/overlay dock, livebus SSE wakeups, smooth clocks, ParseView), zone eras as reference data, Features page, docs/ split out of ARCHITECTURE
 - 2026-08-07 (claude): Replay a recorded fight through the live meter (curator/admin), no writes
-- 2026-08-07 (claude): Raid dashboard: the fight in progress (livemeter partials), raid notes by zone/named (v28), stream overlay (v29)

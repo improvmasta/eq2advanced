@@ -112,6 +112,11 @@ def _rows(conn, eras: list[str]) -> list[dict]:
         # Lifted out of `dtype` rather than stored beside it — one string op
         # per row, and no migration or re-crawl to start filtering on it.
         row["armor"] = wiki.armor_of(row["dtype"])
+        # Same treatment for the rarity: the wiki's eleven `icat` spellings
+        # collapse to the five-rung ladder a player names (`wiki.tier_bucket`).
+        # `tier` stays exactly as crawled — the card and the colour still read
+        # it — and the bucket is only what the filter offers.
+        row["tier_bucket"] = wiki.tier_bucket(row["tier"])
         row["two_handed"] = wiki.is_two_handed(row["dtype"])
         # The naming decision lives here rather than in the table, so anything
         # else that shows a slot says the same thing about a two-hander.
@@ -225,7 +230,9 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
     # slot must therefore find both off-hand items and shields.
     if "secondary" in want_slots:
         want_slots.add("shield")
-    want_tiers = {t.upper() for t in (tiers or []) if t}
+    # A tier is asked for by BUCKET (`wiki.TIER_BUCKETS`), and the raw crawled
+    # spelling is still accepted so an older link keeps working.
+    want_tiers = {t.strip().lower() for t in (tiers or []) if t}
     want_kinds = {k for k in (kinds or []) if k}
     need = [s for s in (required or []) if s in wiki.STAT_LABEL]
     needle = (q or "").strip().lower()
@@ -239,7 +246,8 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
         if want_slots and not ({(row["slot"] or "").lower(),
                                 (row["slot2"] or "").lower()} & want_slots):
             continue
-        if want_tiers and (row["tier"] or "") not in want_tiers:
+        if want_tiers and not want_tiers & {row["tier_bucket"] or "",
+                                            (row["tier"] or "").lower()}:
             continue
         if want_armor and row["armor"] not in want_armor:
             continue
@@ -268,12 +276,25 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
             continue
         # The four-stat floor. Counted over the stats that actually RANK, so a
         # hand-built order carrying potency does not let a row in on it.
-        if floor and sum(1 for s in w if row["stats"].get(s)) < floor:
+        row["matched"] = sum(1 for s in w if row["stats"].get(s))
+        if floor and row["matched"] < floor:
             continue
         row["score"] = score(row["stats"], w, scale)
         kept.append(row)
 
-    kept.sort(key=lambda r: (-r["score"], -(r["level"] or 0), r["name"]))
+    # HOW MANY OF YOUR STATS A ROW CARRIES ORDERS THE TABLE BEFORE ITS SCORE
+    # DOES. Naming three stats asks for the items that have all three, and
+    # there are usually a handful or none — but a two-stat item with large
+    # numbers outscores a three-stat item with modest ones, so a pure score
+    # sort buried the exact rows the third choice was made to find. Tiering
+    # instead of filtering keeps the promise both ways: the complete matches
+    # lead, the partial ones follow in score order under them, and nothing is
+    # hidden for being one stat short.
+    #
+    # It also decides which rows survive `limit`, which a client-side sort
+    # cannot: a full match ranked 250th would never have been sent.
+    kept.sort(key=lambda r: (-r["matched"], -r["score"], -(r["level"] or 0),
+                             r["name"]))
     set_names = sorted({r["set_name"] for r in kept if r.get("set_name")})
     set_hover = {}
     if set_names:
@@ -406,7 +427,9 @@ def _item_out(row: dict) -> dict:
         "adorns": row["adorns"], "set_name": row["set_name"],
         "stats": row["stats"], "effects": row["effects"],
         "effect_desc": row["effect_desc"], "icon": row["icon"],
-        "score": row.get("score", 0.0), "sources": row.get("sources", []),
+        "score": row.get("score", 0.0), "matched": row.get("matched", 0),
+        "tier_bucket": row.get("tier_bucket"),
+        "sources": row.get("sources", []),
     }
 
 
@@ -503,8 +526,8 @@ def meta(conn, eras: list[str] | None = None) -> dict:
         for slot in (row["slot"], row["slot2"]):
             if slot:
                 slots[slot] = slots.get(slot, 0) + 1
-        if row["tier"]:
-            tiers[row["tier"]] = tiers.get(row["tier"], 0) + 1
+        if row["tier_bucket"]:
+            tiers[row["tier_bucket"]] = tiers.get(row["tier_bucket"], 0) + 1
         if row["armor"]:
             armor[row["armor"]] = armor.get(row["armor"], 0) + 1
     for r in conn.execute(
@@ -535,7 +558,15 @@ def meta(conn, eras: list[str] | None = None) -> dict:
         # are. It is a fixed four-item scale a player already has in their
         # head, and sorting it by frequency would shuffle it every re-sync.
         "armor": [a for a in wiki.ARMOR_TYPES if a in armor],
-        "tiers": sorted(tiers, key=lambda t: -tiers[t]),
+        # In RARITY order, light to heavy, for the same reason armour weight
+        # is: it is a ladder the reader already knows, and sorting it by how
+        # many items happen to be on each rung would reshuffle it every
+        # re-sync. Labels travel with it so the page does not keep a second
+        # copy of the game's vocabulary.
+        "tiers": [{"key": key, "label": wiki.TIER_BUCKET_LABEL[key],
+                   "items": tiers[key]}
+                  for key in wiki.TIER_ORDER if key in tiers],
         "kinds": sorted(kinds, key=lambda k: -kinds[k]),
+        "kind_counts": kinds,
         "total": len(rows),
     }

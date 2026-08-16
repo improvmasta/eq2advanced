@@ -82,7 +82,7 @@ function pageTitle(pathname) {
   if (pathname === '/import' || pathname === '/uploads') return 'Import'
   if (pathname === '/live') return 'Live Parser'
   if (pathname === '/chat') return 'Chat'
-  if (pathname === '/plan') return 'Planner'
+  if (pathname === '/plan') return 'Gear Planner'
   if (pathname.startsWith('/sessions/')) return 'Session'
   if (pathname === '/calibration') return 'Calibration'
   if (pathname === '/characters') return 'Characters'
@@ -264,6 +264,14 @@ export default function App() {
             <NavLink to="/">Raid Parses</NavLink>
             {/* signed-out too: published runs compare like they read */}
             <NavLink to="/compare">Compare</NavLink>
+            {/* PUBLISHED 2026-08-16 (Lindsay). Signed-out like Compare, and for
+                a stronger reason: nothing on `/plan` reaches a parse, a session
+                or an account, and every row it serves is reference data about
+                the GAME. It was off the nav only while it was being built. */}
+            <NavLink to="/plan"
+                     title="What to chase in an expansion — ranked drops, quest rewards and set adornments">
+              Gear Planner
+            </NavLink>
             {user && <>
               <NavLink to="/groups">Sharing</NavLink>
               <NavLink to="/import">Import</NavLink>

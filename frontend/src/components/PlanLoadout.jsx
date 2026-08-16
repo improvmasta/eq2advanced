@@ -96,6 +96,95 @@ function activeSets(character, shortlist, active) {
   return Object.values(byName).map((set) => ({ ...set, count: counts[set.name] || 0 }))
 }
 
+/* WHAT THE CHARACTER IS ACTUALLY WEARING RIGHT NOW, counted off the window
+   rather than off the shortlist.
+
+   A set bonus is the reason to care about a turquoise at all, and the reason
+   it is worth moving one: the fourth piece is a different item from the third.
+   That number changes with every adornment click, so it belongs under the
+   equipment window where the clicking happens — not in a panel about the
+   shortlist, which was the only place it appeared and which could not see the
+   sets the character already had on.
+
+   Two sources, one count. A planned set adornment is one the reader installed
+   here (`set_slots`); a Census-equipped one is a turquoise the character is
+   already wearing, and its tiers come from Census's own `setbonus_list`
+   (`items._adornment`). SAME-NAMED ADORNMENTS ARE THE SAME SET — that is what
+   a set adornment is in EoF/RoK, and it is the only join either source
+   offers. */
+function bonusLines(bonuses) {
+  return (bonuses || []).map((bonus) => ({
+    pieces: bonus.pieces ?? bonus.required,
+    text: [bonus.text, ...(bonus.stat_lines || []), bonus.effect,
+      ...(bonus.descriptions || [])]
+      .filter(Boolean).map((line) => String(line).replace(/\|/g, '').trim())
+      .filter(Boolean).join(' · '),
+  })).filter((bonus) => bonus.pieces)
+}
+
+function wornSets(character, shortlist, active) {
+  const planned = Object.fromEntries((shortlist.sets || []).map((s) => [s.name, s]))
+  const twoHanded = shortlist.items.find(
+    (i) => i.page_title === active.primary)?.two_handed
+  const out = new Map()
+  const add = (name, bonuses) => {
+    const row = out.get(name) || { name, count: 0, bonuses: [] }
+    row.count += 1
+    if (!row.bonuses.length) row.bonuses = bonusLines(bonuses)
+    out.set(name, row)
+  }
+  PLAN_SLOTS.forEach((def) => {
+    if (def.key === 'secondary' && twoHanded) return
+    const item = equippedChoice(def.key, character, shortlist, active)
+    if (!item) return
+    const chosen = (shortlist.set_slots || {})[def.key]
+    const set = chosen ? planned[chosen] : null
+    if (set && socketColors(item).includes('turquoise')
+        && !(set.level && item.level && item.level < set.level)) {
+      add(set.name, set.bonuses)
+      return
+    }
+    ;(item.adornments || []).forEach((adorn) => {
+      if (adorn.color !== 'turquoise' || !adorn.name) return
+      add(adorn.name, adorn.stats?.adornment?.set_bonuses)
+    })
+  })
+  return [...out.values()].sort((a, b) => b.count - a.count
+    || a.name.localeCompare(b.name))
+}
+
+function WornSets({ character, shortlist, active }) {
+  const sets = useMemo(() => wornSets(character, shortlist, active),
+    [character, shortlist, active])
+  return (
+    <div className="wornsets">
+      <div className="seclabel">Worn set bonuses</div>
+      {!sets.length ? (
+        <p className="muted">
+          No set adornment in the window. A turquoise carries the set, not the
+          armour it came in — click one to try a set on.
+        </p>
+      ) : sets.map((set) => (
+        <div className="wornset" key={set.name}>
+          <div className="wornsethead">
+            <b>{set.name}</b>
+            <em>{set.count} piece{set.count === 1 ? '' : 's'}</em>
+          </div>
+          {!set.bonuses.length && (
+            <p className="muted">No tier text recorded for this set.</p>
+          )}
+          {set.bonuses.map((bonus, i) => (
+            <p className={set.count >= bonus.pieces ? 'on' : ''} key={i}>
+              <i aria-hidden="true">{set.count >= bonus.pieces ? '◆' : '◇'}</i>
+              <b>({bonus.pieces})</b> {bonus.text}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function projection(character, shortlist, active) {
   const current = Object.fromEntries((character?.gear || []).map((g) => [g.key, g]))
   const candidates = Object.fromEntries((shortlist.items || []).map((i) => [i.page_title, i]))
@@ -179,7 +268,7 @@ function AdornmentSocket({ adorn, installed, sets, onCycle }) {
 }
 
 function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
-                         onFocus, onCycle, onSetAdornment }) {
+                         onFocus, onCycle, onSetAdornment, onResetSlot }) {
   const current = character?.gear?.find((g) => g.key === def.key) || null
   const planned = shortlist.items.filter((i) => i.equip_slot === def.key)
   const options = [{ key: null, item: current, current: true },
@@ -225,6 +314,17 @@ function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
           <button type="button" aria-label={`Next ${def.label} option`}
                   onClick={(e) => cycle(1, e)}>›</button>
         </span>
+      )}
+      {/* ONE SLOT AT A TIME. Cycling can reach the equipped item too, but only
+          by walking past every candidate on the list — and undoing one change
+          is a thing you do far more often than comparing five rings. */}
+      {!isCurrent && shown && !occupied && (
+        <button type="button" className="planslotreset"
+                aria-label={`Reset ${def.label} to the equipped item`}
+                title={`Put ${def.label} back to the equipped item`}
+                onClick={(e) => { e.stopPropagation(); onResetSlot(def.key) }}>
+          ↺
+        </button>
       )}
       {!isCurrent && shown && <i className="plannedmark">planned</i>}
     </div>
@@ -319,22 +419,10 @@ function ProjectedStats({ character, shortlist, active, statLabel, statPct }) {
           </section>
         )
       })}
-      {!!out.sets.length && (
-        <section className="plansetstatus">
-          <h3>Set Adornments</h3>
-          {out.sets.map((set) => (
-            <div className="plansetrow" key={set.name}>
-              <div><b>{set.name}</b><em>{set.count} installed</em></div>
-              {(set.bonuses || []).map((bonus, i) => (
-                <p className={set.count >= bonus.pieces ? 'active' : ''} key={i}>
-                  <i>{set.count >= bonus.pieces ? '◆' : '◇'}</i>
-                  {bonus.pieces} pieces · {bonus.text.replace(/\|$/, '')}
-                </p>
-              ))}
-            </div>
-          ))}
-        </section>
-      )}
+      {/* The set TIERS moved under the equipment window (`WornSets`), where the
+          adornment clicks are and where what is actually worn can be counted.
+          What stays here is only their arithmetic contribution, which is a
+          stat like any other. */}
       <p className="planstatnote">
         Estimate: current Census total − equipped item stats + active planned item stats.
         Procs, named set effects, moved adornments and caps are not simulated.
@@ -351,10 +439,10 @@ function CharacterLookup({ onLoad, busy, err }) {
     <form className="plancharacterlookup"
           onSubmit={(e) => { e.preventDefault(); if (name.trim()) onLoad(name.trim()) }}>
       <input value={name} onChange={(e) => setName(e.target.value)}
-             placeholder="Load a character by name" aria-label="Character name"
+             placeholder="Look up a name" aria-label="Character name"
              maxLength={40} spellCheck={false} />
       <button className="chip" type="submit" disabled={busy || name.trim().length < 2}>
-        {busy ? 'Looking up…' : 'Load'}
+        {busy ? '…' : 'Load'}
       </button>
       {err && <span className="lookuperr" role="status">{err}</span>}
     </form>
@@ -363,7 +451,8 @@ function CharacterLookup({ onLoad, busy, err }) {
 
 export default function PlanLoadout({ characters, character, charId, onCharacter,
                                      shortlist, active, focusSlot, onFocusSlot,
-                                     onCycle, onReset, onSetAdornment, signedIn,
+                                     onCycle, onReset, onSetAdornment,
+                                     onResetSlot, signedIn,
                                      onLookup, lookupBusy, lookupErr,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
@@ -377,23 +466,43 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
     <EquipmentSlot key={def.key} def={def} character={character} shortlist={shortlist}
       active={active} focused={focusSlot === def.key}
       occupied={def.key === 'secondary' && twoHanded}
-      onFocus={onFocusSlot} onCycle={onCycle} onSetAdornment={onSetAdornment} />
+      onFocus={onFocusSlot} onCycle={onCycle} onSetAdornment={onSetAdornment}
+      onResetSlot={onResetSlot} />
   ))
   return (
     <div className="card planloadout">
       <div className="loadouthead">
-        <div>
-          <span className="seclabel">Character build</span>
+        {/* THE CHARACTER IS THE HEADLINE. It was the other way round —
+            "EQUIPMENT & STATS" in gold display caps with the toon's name in
+            small muted type after it — so the loudest words on the page named
+            the panel instead of the person, and the one fact that changes
+            (who this is) was the one set in the quietest type. The panel's
+            name is a label; the character is the subject. */}
+        <div className="loadoutwho">
+          <span className="seclabel">Equipment &amp; Stats</span>
           <h2>
-            Equipment &amp; Stats
-            {character?.character && (
-              <small>{character.character.name} · Level {character.character.level ?? '—'}{' '}
+            {character?.character?.name || 'No character loaded'}
+            {character?.character ? (
+              <small>Level {character.character.level ?? '—'}{' '}
                 {character.character.class || ''}</small>
+            ) : (
+              <small>Look one up, or plan against an empty window</small>
             )}
           </h2>
         </div>
+        {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It sits before the picker
+            and stays small: who you are planning for is the answer this row
+            exists to show, and a full-width search box beside it read as the
+            more important of the two.
+
+            A CENSUS CHARACTER IS PUBLIC, so looking one up needs no account.
+            Trying gear on your own toon is the whole point of this panel, and
+            making that the one part of a signed-out page that demands signing
+            up is backwards. Signed-in readers keep the picker AND get this,
+            because an alt you never added is still an alt. */}
         <div className="loadoutactions">
-          {signedIn && characters === null && <span className="muted">Loading characters…</span>}
+          <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
+          {signedIn && characters === null && <span className="muted">Loading…</span>}
           {characters?.length > 0 && (
             <label className="plancharacterpick">
               <span>Planning for</span>
@@ -402,20 +511,17 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                       options={charOptions} />
             </label>
           )}
-          {/* A CENSUS CHARACTER IS PUBLIC, so looking one up needs no account.
-              Trying gear on your own toon is the whole point of this panel, and
-              making that the one part of a signed-out page that demands signing
-              up is backwards. Signed-in readers keep the picker AND get this,
-              because an alt you never added is still an alt. */}
-          <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
           <button className="chip resetgear" type="button" onClick={onReset}
-                  disabled={!Object.keys(active).length}>Reset planned gear</button>
+                  disabled={!Object.keys(active).length}>Reset all</button>
         </div>
       </div>
       <div className="loadoutbody">
-        <div className="equipmentwindow">
-          <div className="planslots left">{slots(left)}</div>
-          <div className="planslots right">{slots(right)}</div>
+        <div className="loadoutgear">
+          <div className="equipmentwindow">
+            <div className="planslots left">{slots(left)}</div>
+            <div className="planslots right">{slots(right)}</div>
+          </div>
+          <WornSets character={character} shortlist={shortlist} active={active} />
         </div>
         <ProjectedStats character={character} shortlist={shortlist} active={active}
                         statLabel={statLabel} statPct={statPct} />

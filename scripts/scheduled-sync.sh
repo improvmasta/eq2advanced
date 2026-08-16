@@ -64,6 +64,11 @@ census)
   "$PY" "$APP/backend/tools/backfill_loot.py" --resolve-only 2>&1 | sed 's/^/  items: /'
   # Then the roster — classes and guild tags for the people in the raids.
   "$PY" "$APP/backend/tools/sync_roster.py" 2>&1 | sed 's/^/  roster: /'
+  # Then /plan's by-name lookup cache. It only ever refills when a human types
+  # a name, so without this a character somebody looked up once keeps that
+  # night's gear forever — and the cache is also what makes the page work at
+  # all while Census is away. Bounded per run; see the tool's docstring.
+  "$PY" "$APP/backend/tools/refresh_plan_characters.py" 2>&1 | sed 's/^/  lookups: /'
   log "census backfills done"
   ;;
 
