@@ -550,6 +550,15 @@ planned item already in the slot. This comparison follows the focused slot for
 paired jewelry positions, so a ring search does not silently compare the wrong
 finger.
 
+An equipped item's examine window is complete from the same cached record: its
+Census `effect_list` is rendered with the original indentation, and each socket
+at the top shows the actual installed adornment icon rather than a generic gem.
+Adornment stats and proc text fold into the host's normal blocks, as they do in
+game, while set thresholds retain their ladder. The adornment ids still come
+from the character equipment snapshot; Census item rows win, with the existing
+bounded Lexicon item fallback supplying the same fields when Census's item
+collection is down.
+
 The projection is explicit arithmetic over cached data:
 
 `current Census total − current item stats + active planned item stats`
@@ -594,6 +603,16 @@ dark framed recess, so the row reads like the in-game strip rather than three
 colored status badges. Socket order is fixed and right-anchored: the occasional
 yellow, black, green and orange slots grow the strip to the left, while the
 ordinary white and set-turquoise columns do not jump between equipment rows.
+Socketless rows stay silent rather than spelling out that they have no sockets.
+The character's Event item is shown too; Ammo and Event share the compact final
+row of the right equipment column, preserving the window's existing height.
+Event item ids are shared with Live and both Census and Lexicon currently expose
+Live's scaled effect and item level. The Event card therefore uses `leveltouse`
+and a small hand-curated TLE effect table backed by in-game examines; unknown
+Event effects stay blank instead of showing a confident Live-server number.
+Robust Plume of Inspired Jubilation is recorded at **2.2% Max Health** from
+Lindsay's Wuoshi examine on 2026-08-16; Striking Plume of Inspired Jubilation
+is recorded at **0.3% Ability Doublecast** from the same in-game source.
 
 Both white and turquoise are decisions, not decoration. Hovering a white shows
 its actual additive effect (for example `+3.8% Casting Speed`); clicking it opens

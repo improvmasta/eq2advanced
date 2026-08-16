@@ -242,6 +242,24 @@ function Examine({ row }) {
   const quality = (row.rarity || '').toLowerCase()
   const adorn = s?.adornment
   const included = s?.included_adornment
+  const installed = row.installed_adornments || []
+  const socketAdorns = (() => {
+    const left = [...installed]
+    return (s?.adornments || []).map((color) => {
+      const at = left.findIndex((item) => item.stats?.adornment?.color === color)
+      return at >= 0 ? left.splice(at, 1)[0] : null
+    })
+  })()
+  const installedStats = installed.flatMap((item) => item.stats?.stats || [])
+  const installedEffects = installed.flatMap((item) => item.stats?.effects || [])
+  const installedNames = installed.flatMap((item) => item.effects?.names || [])
+  const effectDesc = [
+    ...(fx?.desc || []),
+    ...installed.flatMap((item) => item.effects?.desc || []),
+  ]
+  const installedSets = installed.filter(
+    (item) => item.stats?.adornment?.set_bonuses?.length,
+  )
   return (
     <div className="examinewindow">
       <div className="ew-top">
@@ -262,10 +280,17 @@ function Examine({ row }) {
       {!!s?.flags.length && !adorn && <div className="ew-flags">{s.flags.join(',  ')}</div>}
       {!!s?.adornments.length && (
         <div className="ew-adorn">
-          {s.adornments.map((c, i) => (
-            <img key={i} src={`/api/items/adorn/${c}.png`} width="24" height="24"
-                 alt={`${c} adornment slot`} title={`${c} adornment slot`} />
-          ))}
+          {s.adornments.map((c, i) => {
+            const item = socketAdorns[i]
+            return (
+              <img key={i}
+                   src={item?.icon != null
+                     ? `/api/items/icon/${item.icon}.png`
+                     : `/api/items/adorn/${c}.png`}
+                   width="24" height="24" alt={`${c} adornment slot`}
+                   title={item?.name || `${c} adornment slot`} />
+            )
+          })}
         </div>
       )}
 
@@ -275,22 +300,28 @@ function Examine({ row }) {
           column fill rather than of any per-stat placement: `items.py` and
           `planner/catalog.py` both hand these over already sorted, so the
           layout never has to know what a stat is. */}
-      {!!s?.stats.length && (
+      {(!!s?.stats.length || !!installedStats.length) && (
         <div className="ew-stats ew-cols">
-          {s.stats.map((r) => <div key={r.name}>{num(r)}&nbsp;{r.name}</div>)}
+          {[...(s?.stats || []), ...installedStats].map((r, i) => (
+            <div key={`${r.name}-${i}`}>{num(r)}&nbsp;{r.name}</div>
+          ))}
         </div>
       )}
       {/* The proc's NAME sits with the modifiers, in the same light blue, and
           its description gets its own block below — EQ2i's own arrangement.
           The name is NOT columnised: it is a sentence, not a figure. */}
-      {(!!s?.effects.length || !!fx?.names.length) && (
+      {(!!s?.effects.length || !!fx?.names.length || !!installedEffects.length
+          || !!installedNames.length) && (
         <div className="ew-effectlist">
-          {!!s?.effects.length && (
+          {(!!s?.effects.length || !!installedEffects.length) && (
             <div className="ew-cols">
-              {s.effects.map((r) => <div key={r.name}>{num(r)}&nbsp;{r.name}</div>)}
+              {[...(s?.effects || []), ...installedEffects].map((r, i) => (
+                <div key={`${r.name}-${i}`}>{num(r)}&nbsp;{r.name}</div>
+              ))}
             </div>
           )}
           {fx?.names.map((n) => <div key={n}>{n}</div>)}
+          {installedNames.map((n, i) => <div key={`${n}-${i}`}>{n}</div>)}
         </div>
       )}
 
@@ -364,6 +395,18 @@ function Examine({ row }) {
         <div className="ew-classes">{row.classes.join(', ')}</div>
       )}
 
+      {installedSets.map((item, i) => (
+        <div className="ew-set" key={`${item.name}-${i}`}>
+          <div className="ew-set-name">{item.set_name || item.name}</div>
+          {item.stats.adornment.set_bonuses.map((bonus, j) => (
+            <div className="ew-set-bonus" key={j}>
+              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
+              <ul>{bonus.descriptions.map((d, k) => <li key={k}>{d}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      ))}
+
       {!!adorn?.set_bonuses.length && (
         <div className="ew-set">
           <div className="ew-set-name">
@@ -403,11 +446,11 @@ function Examine({ row }) {
         </div>
       )}
 
-      {!!fx?.desc.length && (
+      {!!effectDesc.length && (
         <>
           <div className="ew-effects">Effects:</div>
           <div className="ew-effectdesc">
-            {fx.desc.map((d, i) => (
+            {effectDesc.map((d, i) => (
               <div key={i} style={{ paddingLeft: `${(d.depth - 1) * 12}px` }}>
                 {d.text}
               </div>

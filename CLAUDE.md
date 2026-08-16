@@ -570,6 +570,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-16 (codex): Complete equipped item examine cards
 - 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
@@ -589,4 +590,3 @@ builds here with `bash build.sh`.
 - 2026-08-13 (claude): Docs pass: tighten CLAUDE/AGENTS/README and the docs/ reference, move the skillissue proposal into docs/
 - 2026-08-13 (claude): Crowdsourced AoE timers, account-kept hand marks, and a reflect countdown for Treyloth
 - 2026-08-10 (claude): Live meter: Census resolves strangers mid-pull, AoE rows with no timer expire (carries /act end, joust marks, overlay text scale)
-- 2026-08-09 (claude): Plugin update copy ships with the build (refdata NOTES), not hardcoded in the page

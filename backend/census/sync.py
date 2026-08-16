@@ -47,6 +47,56 @@ def adornment_set_name(name: str | None) -> str | None:
     return _SET_SLOT.sub("", name).strip() or name
 
 
+def item_effects(rec: dict) -> dict | None:
+    """Census item ``effect_list`` in the shared examine-card shape.
+
+    Item effects are already present on the exact records cached for equipped
+    gear.  Unlike the catalog's wiki template, Census does not provide a
+    separate effect-name field, but its indented description is complete.  The
+    frontend's depth is one-based while Census indentation is zero-based.
+    """
+    desc = [
+        {"depth": max(1, int(line.get("indentation") or 0) + 1),
+         "text": str(line.get("description") or "").strip()}
+        for line in (rec.get("effect_list") or [])
+        if str(line.get("description") or "").strip()
+    ]
+    return {"names": [], "desc": desc, "set": None} if desc else None
+
+
+# Event-slot ids are shared with Live, whose scaled record is not the item on
+# Wuoshi.  These values are hand-curated only from an in-game TLE examine; an
+# unknown Event item stays silent rather than advertising Live's number.
+_TLE_EVENT_EFFECTS = {
+    3649577502: {  # Robust Plume of Inspired Jubilation, observed 2026-08-16
+        "names": [], "set": None, "desc": [
+            {"depth": 1, "text": "When Equipped:"},
+            {"depth": 2,
+             "text": "Increases Max Health of caster by 2.2%."},
+            {"depth": 2,
+             "text": "The value of this effect is increased by the number of "
+                     "characters in the group or raid wearing an Amplifying "
+                     "Plume effect to a maximum of double the base value."},
+        ],
+    },
+    1464687634: {  # Striking Plume of Inspired Jubilation, observed 2026-08-16
+        "names": [], "set": None, "desc": [
+            {"depth": 1, "text": "When Equipped:"},
+            {"depth": 2,
+             "text": "Increases Ability Doublecast of caster by 0.3%."},
+            {"depth": 2,
+             "text": "The value of this effect is increased by the number of "
+                     "characters in the group or raid wearing an Amplifying "
+                     "Plume effect to a maximum of double the base value."},
+        ],
+    },
+}
+
+
+def event_item_effects(rec: dict) -> dict | None:
+    return _TLE_EVENT_EFFECTS.get(rec.get("id"))
+
+
 def _trim(doc: dict) -> dict:
     return {k: doc[k] for k in TRIM_KEYS if k in doc}
 
@@ -470,6 +520,7 @@ def _gear(conn, doc: dict) -> list[dict]:
     out = []
     for slot in sorted(slots, key=lambda s: s.get("id", 0)):
         item = slot.get("item") or {}
+        event_slot = slot.get("name") == "event_slot"
         cached = names.get(item.get("id"))
         lcached = lexicon.get(item.get("id"))
         rec = (json.loads(cached["json"]) if cached and cached["json"] else
@@ -511,6 +562,7 @@ def _gear(conn, doc: dict) -> list[dict]:
                          fallback["type"] if fallback else None),
                 "planner_stats": planner_item_stats(arec),
                 "stats": display_stats,
+                "effects": item_effects(arec),
             })
         out.append({
             "key": slot.get("name"),
@@ -518,7 +570,8 @@ def _gear(conn, doc: dict) -> list[dict]:
             "item_id": item.get("id"),
             "name": item_name,
             "tier": item_tier,
-            "level": rec.get("itemlevel"),
+            "level": (rec.get("leveltouse") if event_slot
+                      else rec.get("itemlevel")),
             "icon": rec.get("iconid"),
             "planner_stats": planner_item_stats(rec),
             "card": ({
@@ -526,8 +579,21 @@ def _gear(conn, doc: dict) -> list[dict]:
                 "rarity": (item_tier or "").title() or None,
                 "icon": rec.get("iconid"), "type": rec.get("type"),
                 "slot": slot.get("displayname") or slot.get("name"),
-                "level": rec.get("itemlevel"), "stats": host_stats,
-                "effects": None,
+                "level": (rec.get("leveltouse") if event_slot
+                          else rec.get("itemlevel")), "stats": host_stats,
+                "effects": (event_item_effects(rec) if event_slot
+                            else item_effects(rec)),
+                # Keep socket bonuses separate from the host's base numbers:
+                # the game shows what is installed, and replacing the host in
+                # the planner must still be able to subtract each adornment.
+                "installed_adornments": [{
+                    "name": adorn.get("name"),
+                    "set_name": adorn.get("set_name"),
+                    "rarity": ((adorn.get("tier") or "").title() or None),
+                    "icon": adorn.get("icon"), "type": adorn.get("type"),
+                    "level": adorn.get("level"), "stats": adorn.get("stats"),
+                    "effects": adorn.get("effects"),
+                } for adorn in adornments if adorn.get("name")],
             } if item_name else None),
             "adornments": adornments,
             "adorns": sum(1 for a in item.get("adornment_list") or [] if a.get("id")),

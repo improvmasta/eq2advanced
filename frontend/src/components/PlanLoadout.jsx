@@ -28,7 +28,8 @@ export const PLAN_SLOTS = [
   { key: 'right_wrist', label: 'Wrist II', catalog: 'Wrist', side: 'right' },
   { key: 'waist', label: 'Waist', catalog: 'Waist', side: 'right' },
   { key: 'ranged', label: 'Ranged', catalog: 'Ranged', side: 'right' },
-  { key: 'ammo', label: 'Ammo', catalog: 'Ammo', side: 'right' },
+  { key: 'ammo', label: 'Ammo', catalog: 'Ammo', side: 'right', compact: true },
+  { key: 'event_slot', label: 'Event', catalog: 'Event', side: 'right', compact: true },
 ]
 
 const BY_CATALOG = PLAN_SLOTS.reduce((out, slot) => {
@@ -462,7 +463,7 @@ function StaticAdornmentSocket({ adorn }) {
     name: adorn.name,
     rarity: adorn.tier ? String(adorn.tier).toLowerCase().replace(/^./, (c) => c.toUpperCase()) : null,
     icon: adorn.icon, type: adorn.type || `${adorn.color || ''} Adornment`,
-    level: adorn.level, stats: adorn.stats, effects: null,
+    level: adorn.level, stats: adorn.stats, effects: adorn.effects,
   } : null
   const button = (
     <button type="button" className={`planadornicon ${adorn.color || 'unknown'}`}
@@ -647,7 +648,8 @@ function compatibleWhite(adornments, item, slot) {
 function AdornmentIcons({ item, current, sets, whiteAdornments, slot, installed,
                           whiteInstalled, onChange, onWhiteChange, compact = false }) {
   const adornments = itemSockets(item).map((socket) => socket.adorn)
-  if (!adornments.length) return <span className="muted">No adornment sockets</span>
+  if (!adornments.length) return compact ? null
+    : <span className="muted">No adornment sockets</span>
   const legal = compatibleSets(sets, item, slot)
   const hasTurquoise = adornments.some((adorn) => adorn.color === 'turquoise')
   const equippedNames = adornments.map((adorn) => adorn.name).filter(Boolean)
@@ -790,7 +792,8 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
-  const right = PLAN_SLOTS.filter((slot) => slot.side === 'right')
+  const right = PLAN_SLOTS.filter((slot) => slot.side === 'right' && !slot.compact)
+  const compact = PLAN_SLOTS.filter((slot) => slot.side === 'right' && slot.compact)
   const charOptions = (characters || []).map((c) => ({
     value: String(c.id), label: c.name,
     hint: c.class ? `${c.class} ${c.level ?? ''}` : 'not synced',
@@ -853,7 +856,10 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
         <div className="loadoutgear">
           <div className="equipmentwindow">
             <div className="planslots left">{slots(left)}</div>
-            <div className="planslots right">{slots(right)}</div>
+            <div className="planslots right">
+              {slots(right)}
+              <div className="planslotpair">{slots(compact)}</div>
+            </div>
           </div>
         </div>
         <ProjectedStats character={character} shortlist={shortlist} active={active}

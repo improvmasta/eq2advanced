@@ -350,12 +350,22 @@ def as_census_item(record: dict) -> dict:
         bonuses.append(row)
     flags = {re.sub(r"[^a-z]", "", flag.lower()): {"value": 1}
              for flag in record.get("flags") or []}
+    effect_list = []
+    for effect in record.get("effects") or []:
+        if effect.get("trigger"):
+            effect_list.append({"description": effect["trigger"],
+                                "indentation": 0})
+        effect_list.extend({
+            "description": line.get("text"),
+            "indentation": line.get("indentation", 1),
+        } for line in (effect.get("lines") or []) if line.get("text"))
     return {
         "id": _int(record.get("id")), "displayname": record.get("name"),
         "tier": (record.get("quality") or "").upper() or None,
         "type": record.get("armor_type"), "itemlevel": record.get("item_level"),
         "iconid": _int(record.get("icon_id")), "modifiers": modifiers,
         "flags": flags, "typeinfo": typeinfo, "setbonus_list": bonuses,
+        "effect_list": effect_list,
         "adornmentslot_list": [
             {"color": str(color).lower()} for color in record.get("adornment_slots") or []],
     }

@@ -6156,6 +6156,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
     rgba(var(--bg-rgb), 0.2);
 }
 .planslots { min-width: 0; display: grid; align-content: start; gap: 2px; }
+.planslotpair { min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.planslotpair .planslot {
+  grid-template-columns: 24px minmax(0, 1fr); gap: 4px;
+}
+.planslotpair .plansloticon { width: 24px; height: 24px; }
+.planslotpair .plansloticon img { width: 22px; height: 22px; }
 .planslot {
   position: relative; min-width: 0; min-height: 34px;
   display: grid; grid-template-columns: 30px minmax(0, 1fr) auto;

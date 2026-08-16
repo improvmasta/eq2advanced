@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 
 import db as dbmod
 from census.effects import parse_effect, parse_effects
-from census.sync import (adornment_set_name, base_name, planner_character_stats,
+from census.sync import (adornment_set_name, base_name, event_item_effects,
+                         planner_character_stats, item_effects,
                          planner_item_stats, typed_fields)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "census"
@@ -144,6 +145,37 @@ def test_base_name():
         {"Spirit Siphoning Set"}
 
 
+def test_census_item_effects_keep_examine_indentation():
+    assert item_effects({"effect_list": [
+        {"description": "When Equipped:", "indentation": 0},
+        {"description": "May cast Powerfont.", "indentation": 1},
+        {"description": "Increases spell damage by 10%.", "indentation": 2},
+    ]}) == {"names": [], "set": None, "desc": [
+        {"depth": 1, "text": "When Equipped:"},
+        {"depth": 2, "text": "May cast Powerfont."},
+        {"depth": 3, "text": "Increases spell damage by 10%."},
+    ]}
+    assert item_effects({}) is None
+
+
+def test_event_effects_never_leak_live_scaling_into_tle():
+    robust = event_item_effects({"id": 3649577502, "effect_list": [
+        {"description": "Increases Max Health of caster by 90.0%.",
+         "indentation": 1},
+    ]})
+    assert robust["desc"][1]["text"] == \
+        "Increases Max Health of caster by 2.2%."
+    striking = event_item_effects({"id": 1464687634, "effect_list": [
+        {"description": "Increases Ability Doublecast of caster by 16.9.",
+         "indentation": 1},
+    ]})
+    assert striking["desc"][1]["text"] == \
+        "Increases Ability Doublecast of caster by 0.3%."
+    assert event_item_effects({"id": 999, "effect_list": [
+        {"description": "Live-only number", "indentation": 0},
+    ]}) is None
+
+
 def test_planner_stats_translate_census_items_and_character_totals():
     item = {"modifiers": {
         "all": {"value": 98},
@@ -211,7 +243,11 @@ def test_lexicon_fills_missing_worn_item_and_set_details(client):
                 "id": str(host_id), "name": "Najena's Voidcaller Hood",
                 "quality": "legendary", "icon_id": "2857", "item_level": 70,
                 "slot_type": "Head", "armor_type": "Cloth Armor",
-                "stats": [], "effects": [], "adornment_slots": ["Turquoise"],
+                "stats": [], "effects": [{
+                    "name": "Hood Focus", "trigger": "When Equipped:",
+                    "lines": [{"indentation": 1,
+                               "text": "Improves Lifetap."}],
+                }], "adornment_slots": ["Turquoise"],
                 "flags": [], "set_bonuses": [],
             }, {
                 "id": str(adorn_id), "name": "Spirit Siphoning Set: Head",
@@ -237,6 +273,13 @@ def test_lexicon_fills_missing_worn_item_and_set_details(client):
         "descriptions": ["Applies Focus: Lifetap IV.",
                          "Reduces power cost of Lifetap IV by 200."],
     }
+    assert gear[0]["card"]["effects"]["desc"] == [
+        {"depth": 1, "text": "When Equipped:"},
+        {"depth": 2, "text": "Improves Lifetap."},
+    ]
+    installed = gear[0]["card"]["installed_adornments"]
+    assert len(installed) == 1 and installed[0]["name"] == adorn["name"]
+    assert installed[0]["stats"]["adornment"]["set_bonuses"][0]["required"] == 2
     # Complete fallback rows are durable and make the next render a local read.
     assert lexicon.enrich_equipment(conn, "Bobby", doc, fallback, now=2000) == 0
     assert fallback.character_calls == 1
