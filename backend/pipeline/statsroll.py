@@ -40,6 +40,7 @@ from parser.events import (
     F_AUTOATTACK,
     F_CRIT,
     F_FLURRY,
+    F_INFERRED,
     F_MULTI,
     F_SELF_FOCUS,
     F_ZERO,
@@ -58,8 +59,9 @@ TICK_MODE_SHARE = 0.5   # share of gaps the modal one must carry
 MELEE_BUCKETS = frozenset(
     ("(melee)", "(multi attack)", "(aoe attack)", "(flurry)"))
 
-# what counts as "this player is up again" — the same list the raid report uses
-_ACTION_TYPES = frozenset((
+# what counts as "this player is up again" — the same list the raid report uses,
+# and the same one `pipeline/downs.py` reads a hole in the logger's activity by
+ACTION_TYPES = frozenset((
     "damage", "heal", "power", "threat", "dispel", "ward", "cast_flavor"))
 
 _AVOID_COL = {"miss": "misses", "parry": "parries", "riposte": "ripostes",
@@ -69,9 +71,10 @@ _AVOID_COL = {"miss": "misses", "parry": "parries", "riposte": "ripostes",
 ACTOR_INSERT = (
     "INSERT INTO encounter_actor_stats (encounter_id, entity_id, damage, dps, "
     "heals, overheal_est, save_count, wards_absorbed, ward_bleedthrough, "
-    "power_fed, power_drain, damage_taken, deaths, time_dead_s, rez_casts, "
+    "power_fed, power_drain, damage_taken, deaths, deaths_inferred, "
+    "time_dead_s, rez_casts, "
     "intercepts, cure_count, active_s, atk_swings, atk_span_s, presses, "
-    "press_span_s) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    "press_span_s) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 
 ABILITY_INSERT = (
     "INSERT INTO encounter_ability_stats (encounter_id, entity_id, ability_id, "
@@ -86,6 +89,7 @@ def actor_rows(enc_id: int, actor_stats: dict) -> list[tuple]:
     return [(enc_id, eid, a["damage"], a["dps"], a["heals"], a["overheal_est"],
              a["save_count"], a["wards_absorbed"], a["ward_bleedthrough"],
              a["power_fed"], a["power_drain"], a["damage_taken"], a["deaths"],
+             a["deaths_inferred"],
              a["time_dead_s"], a["rez_casts"], a["intercepts"], a["cure_count"],
              a["active_s"], a["atk_swings"], a["atk_span_s"], a["presses"],
              a["press_span_s"])
@@ -181,7 +185,8 @@ def roll_encounter(events: list[dict], duration_s: int,
     actors: dict[int, dict] = defaultdict(lambda: {
         "damage": 0, "heals": 0, "overheal_est": 0, "save_count": 0,
         "wards_absorbed": 0, "ward_bleedthrough": 0, "power_fed": 0,
-        "power_drain": 0, "damage_taken": 0, "deaths": 0, "rez_casts": 0,
+        "power_drain": 0, "damage_taken": 0, "deaths": 0, "deaths_inferred": 0,
+        "rez_casts": 0,
         "intercepts": 0, "cure_count": 0, "first_ts": None, "last_ts": None,
         "atk_swings": 0, "atk_first": None, "atk_last": None,
     })
@@ -246,8 +251,14 @@ def roll_encounter(events: list[dict], duration_s: int,
             press_rollup[src_id] = src_roll
         # acting again ends the dead clock, exactly as the raid report reads it
         # — a revive line is better evidence, but not every rez prints inside
-        # the fight it happened in
-        if src_roll in dead_since and etype in _ACTION_TYPES:
+        # the fight it happened in. THEIR OWN action, though: a swarm keeps
+        # swinging over its owner's corpse and every one of those ticks rolls
+        # up to them, which stopped the clock the second they died. Measured on
+        # session 301 (2026-08-16): Bobby's 27s dead on Mayong's killing pull
+        # read as 0s with his pets up, while the 20s on Malkonis read true only
+        # because the same swarm had died with him.
+        if (src_roll in dead_since and etype in ACTION_TYPES
+                and ev.get("src_kind") == "player"):
             time_dead[src_roll] += max(0, ev["ts"] - dead_since.pop(src_roll))
         flags = ev["flags"]
         ability = ev.get("ability") or (_melee_bucket(flags) if flags & F_AUTOATTACK else None)
@@ -415,6 +426,11 @@ def roll_encounter(events: list[dict], duration_s: int,
             tgt_roll = ev.get("tgt_rollup")
             if tgt_roll is not None:
                 actors[tgt_roll]["deaths"] += 1
+                # a death the log never printed, recovered from the hole it
+                # left (pipeline/downs.py). Counted with the rest and kept
+                # separately so the column can say which ones they were
+                if ev["flags"] & F_INFERRED:
+                    actors[tgt_roll]["deaths_inferred"] += 1
                 dead_since.setdefault(tgt_roll, ev["ts"])
 
         elif etype == "revive":
@@ -508,6 +524,7 @@ def roll_encounter(events: list[dict], duration_s: int,
             "power_drain": a["power_drain"],
             "damage_taken": a["damage_taken"],
             "deaths": a["deaths"],
+            "deaths_inferred": a["deaths_inferred"],
             "time_dead_s": min(time_dead.get(eid, 0), duration),
             "rez_casts": a["rez_casts"],
             "intercepts": a["intercepts"],

@@ -198,8 +198,49 @@ Still open, with evidence:
   `encounter_actor_stats.time_dead_s`: death → the first of {revive, acting
   again, end of fight}, clamped to the encounter. The raid report uses the same
   three-way rule and `test_agg_time_dead_matches_the_report` pins them together.
-  `You lose consciousness!` coincides with the kill line every time, so
-  `_dedupe_repeats` collapses it.
+  **"Acting again" means THEIR OWN action.** A swarm keeps swinging over its
+  owner's corpse and every one of those ticks rolls up to them, so a pet class's
+  dead clock stopped the second they died: Bobby's 27s on Mayong's killing pull
+  (2026-08-16) read as **0s**, while the 20s on Malkonis read true only because
+  the same swarm had died with him. That also zeroed the raid report's
+  damage-lost-while-dead, which is the number a death is actually judged by.
+  Engagement timing is unaffected and still counts a pet swing as a deliberate
+  opener.
+- **`You lose consciousness!` is NOT a death** (`RE_KO` → type `ko`). It means
+  incapacitated at 0 HP, and a heal that beats the timer undoes it with nothing
+  lost. Bronir's 2026-08-16 log settles it: KO 14:13:28 → `You regain
+  consciousness!` 14:13:29, then a real death 4s later with its killer named.
+  Counting the KO line recorded 2 deaths in that fight for the one death in it.
+  A `ko` is evidence, not a casualty: it counts nowhere and no longer makes a
+  no-damage segment a wipe.
+- **THE LOGGER'S OWN KILLER-LESS DEATH IS NOT IN THE LOG AT ALL**, and
+  `pipeline/downs.py` recovers it. EQ2 announces a death two ways and neither
+  covers this one: `<Killer> has killed you.` needs a killer to credit (a
+  necromancer's Lifeburn leaves them at 1 HP and their own choker proc finishes
+  it), and `Alas, <name> has died from pain and suffering.` is a broadcast about
+  OTHER PEOPLE — zero `Alas, Bobby` in Bobby's logs, zero `Alas, Oktavia` in
+  Oktavia's. With the KO line meaning something else, nothing prints.
+
+  What does survive is the shape of a corpse: the logger stops acting, for the
+  whole hole **nothing lands on them** — no damage, no heal, no ward, the same
+  signature as their killer-credited deaths — and the hole ends with `You regain
+  consciousness!`. So an **unpaired revive is a death**, dated to the last
+  moment the log proves they were up (their own action, or anything landing on
+  them; a swarm pet swinging over the corpse is not proof), flagged
+  `F_INFERRED`, and counted in `deaths` with `deaths_inferred` beside it so the
+  column can mark it and the recap can decline to name a killing blow.
+
+  Measured on session 301 (Bobby, 2026-08-16): two holes, 27s on Mayong's
+  killing pull and 20s on Malkonis D'Morte, each recorded as zero deaths, zero
+  time dead, and a fight the raider was "active" for all but 3 seconds of.
+  `MIN_DOWN_S` (5s) is the floor because a healed incapacitation is a
+  ONE-second hole, and `outstanding` is deliberately not cleared by the logger
+  acting again — a DoT of theirs ticking on a corpse would otherwise unpair a
+  real death and invent a second one. The pass is **idempotent** (the death it
+  inserts is what pairs the revive next time), which is what lets the live path
+  re-run it over its unflushed tail on every flush and stay identical to the
+  rebuild. ACT has the same blind spot, so this is one place the site is ahead
+  of it rather than at parity.
 - **Intercepts** (`RE_INTERCEPT`, `encounter_actor_stats.intercepts`). Three
   structural limits, not bugs: the log carries **no amount** (so this is a count,
   and the tooltip says so), the victim is only ever named from the logger's seat,

@@ -12,6 +12,9 @@ F_BLEED = 16          # ward absorb with bleedthrough
 F_ZERO = 32           # "hits X but fails to inflict any damage"
 F_AOE = 64            # "aoe attacks" verb
 F_FLURRY = 128        # "flurries" verb
+F_INFERRED = 256      # the log never printed this event; the site derived it
+#                       from the evidence around it (pipeline/downs.py). Only
+#                       ever set on the logger's unannounced deaths.
 
 
 @dataclass(slots=True)
@@ -31,7 +34,9 @@ class Subject:
 class ParsedEvent:
     ts: int
     type: str                       # damage|heal|ward|power|threat|dispel|affliction|expiry|
-                                    # kill|death|pet_death|rez|interrupt|cast_flavor|zone|
+                                    # kill|death|pet_death|ko|rez|interrupt|cast_flavor|zone|
+                                    # ko = the logger dropped unconscious at 0 HP, which a
+                                    # heal can still undo — never a death (pipeline/downs.py)
                                     # encounter_end (the raid typed `/act end`)|
                                     # buff_cast|buff|other
                                     # buff_cast = a curated buff being cast (src = caster);

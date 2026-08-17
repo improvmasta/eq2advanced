@@ -35,7 +35,7 @@ from census import catalog
 from census.roster import DEFAULT_WORLD
 from coach.descriptive import archetype_for
 from db import get_db, row_to_dict
-from parser.events import F_AUTOATTACK, F_CRIT, F_SELF_FOCUS
+from parser.events import F_AUTOATTACK, F_CRIT, F_INFERRED, F_SELF_FOCUS
 from pipeline import aoelearn, aoes, classstats, loot
 from pipeline import classmetrics  # noqa: F401 — importing registers the metrics
 from pipeline.classguess import (backfill_session, parse_class_guess, resolve_class,
@@ -363,7 +363,7 @@ def _agg(conn, enc_ids, encs, session_ids, sess_of):
             a["entity_ids"].append(r["entity_id"])
         for k in ("damage", "heals", "overheal_est", "save_count", "wards_absorbed",
                   "ward_bleedthrough", "power_fed", "power_drain", "damage_taken",
-                  "deaths", "time_dead_s", "rez_casts", "intercepts",
+                  "deaths", "deaths_inferred", "time_dead_s", "rez_casts", "intercepts",
                   "cure_count", "active_s", "atk_swings", "atk_span_s",
                   "presses", "press_span_s"):
             a[k] = (a[k] or 0) + (r[k] or 0)
@@ -707,7 +707,7 @@ def encounters_deaths(ids: str = Query(...), window: int = Query(DEATH_WINDOW_S)
 
     deaths = []
     for r in conn.execute(
-            f"SELECT encounter_id, ts, type, tgt_entity FROM events "
+            f"SELECT encounter_id, ts, type, tgt_entity, flags FROM events "
             f"WHERE encounter_id IN ({lph}) AND type IN ('death','kill') "
             f"ORDER BY ts, seq", live):
         tgt_roll = rollup.get(r["tgt_entity"])
@@ -718,7 +718,11 @@ def encounters_deaths(ids: str = Query(...), window: int = Query(DEATH_WINDOW_S)
         deaths.append({"ts": r["ts"], "encounter_id": r["encounter_id"],
                        "encounter_name": name_of_enc.get(r["encounter_id"]),
                        "key": _ent_key(meta[tgt_roll]["name"], meta[tgt_roll]["kind"]),
-                       "name": meta[tgt_roll]["name"]})
+                       "name": meta[tgt_roll]["name"],
+                       # the log never printed this one; it is dated to the last
+                       # thing they did, so the recap window is the run-up to it
+                       # and there is no killing blow to find (pipeline/downs.py)
+                       "inferred": bool(r["flags"] & F_INFERRED)})
     if not deaths:
         return {"window_s": window, "deaths": [],
                 "pruned_encounters": pruned_encounters}

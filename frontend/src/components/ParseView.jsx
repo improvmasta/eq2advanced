@@ -487,8 +487,17 @@ export default function ParseView({
   }
   const deathsTitle = (a) => {
     const n = repRows?.[a.name]
-    if (!n?.deaths) return undefined
-    return `dead ${fmt.dur(n.time_dead_s)} · ~${fmt.num(n.death_dps_lost)} damage lost`
+    const parts = []
+    if (n?.deaths) parts.push(`dead ${fmt.dur(n.time_dead_s)} · ~${fmt.num(n.death_dps_lost)} damage lost`)
+    /* A number the log did not print has to say so where it is read. EQ2
+       announces a death by naming its killer, and a self-inflicted one
+       (Lifeburn into a proc) has nobody to name — so the site reads it off the
+       hole it left instead (backend `pipeline/downs.py`). */
+    if (a.deaths_inferred) {
+      parts.push(`${a.deaths_inferred} with no death line in the log — recovered `
+        + 'from the gap in what they did, because a self-inflicted death names no killer')
+    }
+    return parts.join(' · ') || undefined
   }
   /* Engage is a claim about someone's opener, so the tooltip says what it was
      measured from — first hit, first heal, first cure — and how many pulls are
@@ -561,7 +570,14 @@ export default function ParseView({
   ] : []
   const deathsCol = {
     key: 'deaths', label: 'Deaths',
-    render: (a) => (a.deaths ? <span title={deathsTitle(a)}>{a.deaths}</span> : ''),
+    render: (a) => (a.deaths
+      ? (
+        <span title={deathsTitle(a)}>
+          {a.deaths}
+          {a.deaths_inferred ? <sup className="derived">†</sup> : null}
+        </span>
+      )
+      : ''),
   }
   /* Time dead and rezzes belong next to the deaths that caused them, on the
      tab people actually land on — a death costs the raid twice, once in the

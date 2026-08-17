@@ -28,6 +28,7 @@ from parser.prefix import split_prefix
 from pipeline.encounters import (GAP_S, TRAIL_GRACE_S, encounter_label,
                                  segment_events, split_trailing_corpse)
 from pipeline import aoelearn, chatbus, livebus, livemeter
+from pipeline.downs import infer_logger_deaths
 from pipeline.ingest_writer import EntityResolver, _resolve_events, parse_session
 from pipeline.redact import keep_line
 from pipeline.refine import roster_prescan
@@ -612,6 +613,11 @@ def _flush(conn, state: LiveState, force: bool = False) -> bool:
         state.open_events, state.open_start_ts, state.open_zone = [], None, None
         state.open_end_ts = None
         return False
+    # The logger's unannounced deaths, recovered before anything is segmented or
+    # rolled so the live meter counts them too (pipeline/downs.py). Runs over
+    # the whole unflushed tail every flush, which is safe because the pass is
+    # idempotent — the death it inserts is what pairs the revive next time.
+    events = state.pending = infer_logger_deaths(events, state.logger)
     latest = max(state.last_line_ts or 0, events[-1].ts)
     segs = segment_events(events, state.logger, initial_zone=state.zone)
 

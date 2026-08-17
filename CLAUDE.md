@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v46**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v47**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -85,17 +85,19 @@ with a rule or working near one.
   the table and the uploader deliberately not recorded. Redaction of an uploaded
   LOG is UNCHANGED and the inconsistency is the design: do not "fix"
   `redact.py` to agree with it.
-- **The chat channel test is default-deny twice** — the exact
-  `tells <Name> (<n>),` shape AND both the name and the number in `CHANNELS`;
-  live batches only. Storing the box made this test the only thing between a
-  private line and a permanent row.
+- **The chat channel test is default-deny by shape and name** — the exact
+  `tells <Name> (<n>),` channel shape AND an allowlisted name in `CHANNELS`;
+  the number is a per-character slot and must not be treated as identity. Live
+  batches only outside the explicit `backend/tools/recover_chat.py` operator
+  recovery. Storing the box made this test the only thing between a private
+  line and a permanent row.
 - **Chat dedupe is a WINDOW, not a key** (`DEDUPE_WINDOW_S`, 20s) — every
   player's client stamps the line off its OWN clock, so the same sentence
   arrives a second apart from two uploaders. `UNIQUE(ts, ch, who, text)` is only
   the exact-match backstop.
 - **The chat archive cannot be backfilled from this server** — uploads and raw
-  chunks are redacted before they are written, so it starts at the first line
-  relayed after v36. Only a player's own untouched log could seed it.
+  chunks are redacted before they are written. Only a player's own untouched
+  log can seed it, through the dry-run-first `backend/tools/recover_chat.py`.
 - **A chat date is the BROWSER's day** — `Chat.jsx` sends local-midnight bounds
   as unix seconds; the server never guesses a reader's midnight. Still no
   uploader LIST: naming who is logged in is the line, and a light is not.
@@ -172,6 +174,14 @@ segmentation)
   semantics change; the startup sweep reparses stale sessions.
 - **A segment is only a FIGHT if the raid engaged it** (`_ENGAGE_KINDS`); an ally
   death makes a no-damage segment a WIPE.
+- **`You lose consciousness!` is INCAPACITATED, never dead** (type `ko`) — a heal
+  beats the timer and nothing is lost.
+- **Only YOUR OWN action ends your dead clock**, never a pet's — a swarm outlives
+  its owner and rolls up to them. Engagement timing still counts pet swings.
+- **The logger's killer-less death prints NOTHING** (no kill line, and the `Alas`
+  broadcast is never about the logger) — `pipeline/downs.py` recovers it from an
+  unpaired `You regain consciousness!`, flagged `F_INFERRED`. Idempotent by
+  design; the live path re-runs it every flush.
 - **`/act end` ends the fight, live and on rebuild** — it hard-cuts like a zone
   line, nothing trails into it, and `Segment.ended_by_cmd` commits it without
   waiting out `CLOSE_S`.
@@ -595,6 +605,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-17 (claude): Track the logger's unannounced deaths; pets no longer end the dead clock
 - 2026-08-17 (claude): Gear Planner: one-line set adornment search
 - 2026-08-16 (codex): Overhaul Gear Planner adornments and set pieces
 - 2026-08-16 (codex): Refine character-bound planner outlines
@@ -614,4 +625,3 @@ builds here with `bash build.sh`.
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
 - 2026-08-15 (codex): Replace parchment light mode with neutral application palette
 - 2026-08-15 (codex): Add private Discord chat alerts and EQ2A branding
-- 2026-08-15 (codex): Polish chat trade labels and window chrome

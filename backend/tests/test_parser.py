@@ -390,15 +390,37 @@ def test_intercept_both_variants_in_one_second_count_once():
     assert [e.ts for e in evs] == [1785630967, 1785630969]
 
 
-def test_lose_consciousness_is_a_death_and_dedupes_with_the_kill_line():
+def test_lose_consciousness_is_not_a_death():
+    """Incapacitated at 0 HP, which a heal can still undo.
+
+    Bronir's 2026-08-16 log settles it: KO at 14:13:28, "You regain
+    consciousness!" 14:13:29 — healed back up, nothing lost — and then a REAL
+    death 4s later with its killer named. Counting the KO line as a death
+    recorded that fight as 2 deaths for the one death in it.
+    """
     from parser import parse_lines
-    assert ev("You lose consciousness!").type == "death"
+    assert ev("You lose consciousness!").type == "ko"
+    lines = [
+        "(1786907608)[Sun Aug 16 14:13:28 2026] You lose consciousness!\r\n",
+        "(1786907609)[Sun Aug 16 14:13:29 2026] You regain consciousness!\r\n",
+        "(1786907613)[Sun Aug 16 14:13:33 2026] Anguis has killed you.\r\n",
+        "(1786907620)[Sun Aug 16 14:13:40 2026] You regain consciousness!\r\n",
+    ]
+    evs = [e for e in parse_lines(lines, "Bronir") if e.type in ("death", "kill")]
+    assert [e.ts for e in evs] == [1786907613]
+
+
+def test_ko_in_the_kill_lines_second_is_still_its_own_event():
+    """A KO can share its second with the kill line for the death it became.
+    Different types now, so neither collapses the other."""
+    from parser import parse_lines
     lines = [
         "(1784856094)[Thu Jul 23 21:21:34 2026] Nizari'ishi vindicae has killed you.\r\n",
         "(1784856094)[Thu Jul 23 21:21:34 2026] You lose consciousness!\r\n",
     ]
-    evs = [e for e in parse_lines(lines, "Bobby") if e.type in ("death", "kill")]
-    assert len(evs) == 1
+    evs = [e for e in parse_lines(lines, "Bobby")
+           if e.type in ("death", "kill", "ko")]
+    assert [e.type for e in evs] == ["death", "ko"]
 
 
 # ---------------------------------------------------------------- buff lines ---

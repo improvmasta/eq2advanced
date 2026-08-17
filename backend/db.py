@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 46
+SCHEMA_VERSION = 47
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -378,6 +378,8 @@ CREATE TABLE IF NOT EXISTS encounter_actor_stats (
   power_drain INTEGER NOT NULL DEFAULT 0,
   damage_taken INTEGER NOT NULL DEFAULT 0,
   deaths INTEGER NOT NULL DEFAULT 0,
+  deaths_inferred INTEGER NOT NULL DEFAULT 0, -- of those, ones the log never
+                                          -- printed (pipeline/downs.py)
   time_dead_s INTEGER NOT NULL DEFAULT 0, -- death -> revive, clamped to the fight
   rez_casts INTEGER NOT NULL DEFAULT 0,
   intercepts INTEGER NOT NULL DEFAULT 0,  -- hits taken for someone else (count only)
@@ -830,10 +832,11 @@ CREATE TABLE IF NOT EXISTS planner_saved_sets (
 -- disk, because a window into the server's chat is only worth having if you can
 -- look at last Tuesday through it.
 --
--- WHAT DID NOT CHANGE: which lines get here. `redact.py` is still untouched and
--- `chatbus`'s channel test is still default-deny twice over — General (2), LFG
--- (3) and Auction (10) and nothing else. A tell, guild chat, officer chat and
--- /say have no route to this table any more than they had to the deque.
+-- WHAT DID NOT CHANGE: `redact.py` is still untouched. v36 originally treated
+-- General (2), LFG (3), and Auction (10) as fixed ids, but EQ2 channel numbers
+-- were later proven to be per-character slots. `chatbus` now defaults-deny by
+-- the numbered channel SHAPE plus those three exact names. A tell, guild chat,
+-- officer chat and /say still have no route here.
 --
 -- Nothing here JOINS. There is no user_id, no character_id, no session: a chat
 -- line belongs to the server, not to whoever's plugin happened to relay it, and
@@ -1509,7 +1512,9 @@ def init_db() -> None:
         # PARSE_VERSION sweep, so the defaults only live until the reparse.
         actor_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(encounter_actor_stats)")}
-        for col in ("intercepts", "presses", "press_span_s"):
+        # v47 rides along: how many of a row's deaths the log never announced
+        # and the site recovered from the hole they left (pipeline/downs.py).
+        for col in ("intercepts", "presses", "press_span_s", "deaths_inferred"):
             if col not in actor_cols:
                 conn.execute(f"ALTER TABLE encounter_actor_stats ADD COLUMN "
                              f"{col} INTEGER NOT NULL DEFAULT 0")

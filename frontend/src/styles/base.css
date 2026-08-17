@@ -2775,6 +2775,14 @@ table.tankevents tr.healrow td.what { color: var(--text-muted); }
   display: block; font-size: var(--fs-label); font-weight: 400;
   color: var(--text-muted); text-transform: none; letter-spacing: 0;
 }
+/* A figure the log did not print and the site worked out — today only the
+   logger's unannounced deaths (backend `pipeline/downs.py`). Muted and small
+   so it marks the number without competing with it; the tooltip on the cell is
+   what explains it. */
+sup.derived {
+  font-size: var(--fs-label); color: var(--text-muted);
+  margin-left: 1px; cursor: help;
+}
 table.deathlist tr.moment td strong { color: var(--text); }
 /* the twisty column: a glyph, not a word — see DeathList's caret cell */
 table.deathlist td.caret { width: 1%; color: var(--text-muted); padding-left: 0; }

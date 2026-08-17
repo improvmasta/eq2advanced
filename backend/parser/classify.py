@@ -193,9 +193,14 @@ def classify_body(ts: int, body: str, logger: str,
     if RE_REVIVE.match(body):
         return ParsedEvent(ts, "revive", tgt="YOU")
     if RE_KO.match(body):
-        # the logger's own death when nothing gets the kill credit (falling,
-        # an unattributed AoE); deduped against "<Killer> has killed you."
-        return ParsedEvent(ts, "death", tgt="YOU")
+        # INCAPACITATED, not dead. EQ2 drops you unconscious at 0 HP and a heal
+        # that beats the timer brings you back with nothing lost — Bronir's
+        # 2026-08-16 log goes KO 14:13:28 -> "You regain consciousness!"
+        # 14:13:29, and 4s later dies for real with its killer named. Counting
+        # this line as a death recorded 2 deaths for that one death. The
+        # logger's unannounced deaths are recovered from the shape of the hole
+        # instead (pipeline/downs.py).
+        return ParsedEvent(ts, "ko", tgt="YOU")
     if m := RE_REVIVED.match(body):
         tgt = m.group("tgt")
         return ParsedEvent(ts, "revive", tgt="YOU" if tgt == "You" else tgt)
@@ -499,7 +504,7 @@ def _pair_buffs(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
         yield ev
 
 
-_REPEATABLE = ("revive", "intercept", "death")
+_REPEATABLE = ("revive", "intercept", "death", "ko")
 
 
 def _dedupe_repeats(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
@@ -508,8 +513,8 @@ def _dedupe_repeats(events: Iterator[ParsedEvent]) -> Iterator[ParsedEvent]:
     - a rez lands as both "You regain consciousness!" and "You are revived!";
     - an intercept prints "…intended for you!" AND "…intended for your target!"
       (1270 of the 1442 intercept seconds in the raid logs carry both);
-    - the logger's own death prints "<Killer> has killed you." and sometimes
-      also "You lose consciousness!" (6 of 13).
+    - a `ko` ("You lose consciousness!") can share its second with the kill
+      line for the death it turned into, and is its own type either way.
     The window is the second, not a span: a tank intercepts again 2s later and
     that is a second intercept, not an echo. Two intercepts inside one second
     are indistinguishable in the log, so one is the honest floor."""

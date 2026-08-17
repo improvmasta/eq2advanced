@@ -19,6 +19,7 @@ from parser.events import ParsedEvent, Subject
 from parser.subjects import classify_entity_kind, decompose
 from pipeline import aoecycles
 from pipeline.classguess import guess_session_classes
+from pipeline.downs import infer_logger_deaths
 from pipeline.encounters import (encounter_label, segment_events,
                                  split_trailing_corpse)
 from pipeline.refine import refine_bare_pets, refine_known_mobs, roster_prescan
@@ -27,7 +28,7 @@ from pipeline.statsroll import (ABILITY_INSERT, ACTOR_INSERT,
 
 # bump whenever parser/attribution/rollup semantics change; stale sessions are
 # reparsed by the startup sweep (main.py) or POST /api/sessions/{id}/reparse
-PARSE_VERSION = 22    # 13: every rez family, revives + time dead, intercepts,
+PARSE_VERSION = 24    # 13: every rez family, revives + time dead, intercepts,
 #                            presses ("adjusted delay")
 #                      15: the clock stops at the group's last action; a dead
 #                            mob's trailing ticks leave the fight
@@ -76,6 +77,21 @@ PARSE_VERSION = 22    # 13: every rez family, revives + time dead, intercepts,
 #                            before, so the sweep is how a year of raids gets
 #                            one; no stat, segment or attribution moves
 #                            (pipeline/aoecycles.py)
+#                      23: the logger's DEATHS, both directions. "You lose
+#                            consciousness!" stops being one (it means
+#                            incapacitated, and a heal undoes it), and a death
+#                            EQ2 announced to nobody — killer-less, so no kill
+#                            line, and the Alas broadcast is never about the
+#                            logger — is recovered from the hole it left
+#                            (pipeline/downs.py). Deaths and time dead move on
+#                            any session whose logger died to their own Lifeburn
+#                      24: only YOUR OWN action ends your dead clock. A swarm
+#                            outlives its owner and every tick rolls up to
+#                            them, so a pet-class raider's `time_dead_s` (and
+#                            the raid report's damage-lost-while-dead) collapsed
+#                            to nearly nothing (pipeline/statsroll.py,
+#                            coach/raidreport.py — the two are pinned together
+#                            by test_agg_time_dead_matches_the_report)
 
 PET_KINDS = ("own_pet", "swarm_pet", "named_pet")
 
@@ -400,7 +416,8 @@ def parse_session(session_id: int, path: Path | list[Path]) -> None:
                 line_count += 1
                 yield line
 
-        events = list(parse_lines(counted(), logger, pet_names))
+        events = infer_logger_deaths(
+            list(parse_lines(counted(), logger, pet_names)), logger)
         known_mobs = refine_known_mobs(events, logger, roster)
         from census.catalog import pet_ability_names
         from census.roster import found_names, missing_names

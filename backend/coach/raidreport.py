@@ -67,7 +67,10 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
     first: dict[int, dict] = {}          # player -> first-action record
     deaths: dict[int, list[int]] = defaultdict(list)
     revives: dict[int, list[int]] = defaultdict(list)  # player -> "is revived!" ts
-    actions: dict[int, list[int]] = defaultdict(list)  # player -> sourced-event ts
+    # player -> ts of their OWN actions (not their pets'). Read by the dead
+    # clock alone; engagement timing is `first` below and still counts a pet
+    # swing as a deliberate opener.
+    actions: dict[int, list[int]] = defaultdict(list)
     cures: dict[int, int] = defaultdict(int)
     rez_delays: dict[int, list[int]] = defaultdict(list)
     all_death_ts: list[int] = []
@@ -87,8 +90,13 @@ def _encounter_report(conn, enc, ents: dict, proc_names: set[str]) -> dict:
             if tgt_roll is not None:
                 last_incoming[tgt_roll] = r["ts"]
         if src_roll is not None and src_roll in stats:
-            if r["type"] in ("damage", "heal", "power", "threat", "dispel", "ward",
-                             "cast_flavor"):
+            if (r["type"] in ("damage", "heal", "power", "threat", "dispel", "ward",
+                              "cast_flavor")
+                    # THEIR action, not their swarm's — see the same rule in
+                    # `statsroll`. A pet tick rolls up to its owner, so a
+                    # necromancer's dead clock used to stop on the pets that
+                    # outlived them.
+                    and src is not None and src["kind"] == "player"):
                 actions[src_roll].append(r["ts"])
             if r["type"] == "cast_flavor" and src_roll not in first:
                 # the logger's own cast start — deliberate by definition

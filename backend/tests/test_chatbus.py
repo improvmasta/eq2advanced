@@ -10,8 +10,9 @@ so since v36, when this stopped being a relay and became a stored record:
      redaction agree with the box.
   2. **The channel test is default-deny.** A tell, guild chat, officer chat,
      /say, Crafting and a channel invented tomorrow all store nothing — the
-     shape has to match AND the name and number both have to be known. This is
-     the only thing between a private line and a permanent row.
+     numbered channel shape and an allowlisted name both have to match. The
+     number itself varies per character and is not identity. This is the only
+     thing between a private line and a permanent row.
   3. **One line said once.** Everybody in the zone logs the same General line;
      the box keeps it once, and the collapse is the table's so it holds across
      a restart.
@@ -32,6 +33,7 @@ from fastapi.testclient import TestClient
 import db as dbmod
 from pipeline import chatbus
 from pipeline.redact import keep_line
+from tools import recover_chat
 
 
 def line(body: str, when: int | None = None) -> str:
@@ -40,10 +42,13 @@ def line(body: str, when: int | None = None) -> str:
 
 
 PUBLIC = [
-    '\\aPC -1 Evoxx:Evoxx\\/a tells General (2), "anyone up for Unrest"',
-    '\\aPC -1 Twissted:Twissted\\/a tells LFG (3), "34 brig LFG"',
-    '\\aPC -1 Evoxx:Evoxx\\/a tells Auction (10), "WTB fabled"',
-    'You tell General (2), "over here"',
+    '\\aPC -1 Evoxx:Evoxx\\/a tells General (7), "anyone up for Unrest"',
+    # Real failure shape: LFG was `(3)` in one character's log and `(4)` in
+    # another. Channel slots are per character, not server-wide identifiers.
+    '\\aPC -1 Xinbuckler:Xinbuckler\\/a tells LFG (4), '
+    '"Anyone doing a late night SOF run that a 70 Swashy can get in on?"',
+    '\\aPC -1 Evoxx:Evoxx\\/a tells Auction (12), "WTB fabled"',
+    'You tell General (9), "over here"',
 ]
 
 NOT_PUBLIC = [
@@ -55,10 +60,9 @@ NOT_PUBLIC = [
     'You say, "Some how I dropped from the group."',
     '\\aPC -1 Aros:Aros\\/a says to the group, "pull in 5"',
     '\\aPC -1 Crafty:Crafty\\/a tells Crafting (6), "WTS adornments"',
-    # a channel nobody anticipated, and one wearing a known name with the wrong
-    # number — both have to fail
+    # A channel nobody anticipated still fails even though it has the same
+    # numbered channel shape as the three public channels.
     '\\aPC -1 Nobody:Nobody\\/a tells Therapy (77), "my private business"',
-    '\\aPC -1 Faker:Faker\\/a tells General (44), "not that General"',
 ]
 
 
@@ -103,7 +107,7 @@ def test_public_channels_are_kept(conn):
     chatbus.absorb(conn, [line(b) for b in PUBLIC], "Bobby", "live", now)
     snap = chatbus.snapshot()
     assert [m["who"] for m in snap["channels"]["general"]] == ["Evoxx", "Bobby"]
-    assert [m["who"] for m in snap["channels"]["lfg"]] == ["Twissted"]
+    assert [m["who"] for m in snap["channels"]["lfg"]] == ["Xinbuckler"]
     assert [m["who"] for m in snap["channels"]["auction"]] == ["Evoxx"]
 
 
@@ -177,6 +181,42 @@ def test_backfill_and_history_are_kept_nowhere(conn):
     assert chatbus.absorb(conn, [line(body, when=old)], "Bobby", "live", now) == 0
     assert chatbus.snapshot()["channels"]["general"] == []
     assert conn.execute("SELECT COUNT(*) FROM chat_messages").fetchone()[0] == 0
+
+
+def test_original_log_recovery_is_bounded_preview_first_and_idempotent(conn, tmpdb):
+    start = 1786942800  # 2026-08-17 01:00:00 EDT
+    original = tmpdb / "eq2log_Ross.txt"
+    original.write_text("\n".join([
+        line('\\aPC -1 TooEarly:TooEarly\\/a tells LFG (4), "before"', start - 1),
+        line('\\aPC -1 Xinbuckler:Xinbuckler\\/a tells LFG (4), '
+             '"Anyone doing a late night SOF run that a 70 Swashy can get in on?"',
+             1786943366),
+        line('You tell General (8), "self line"', 1786943400),
+        line('\\aPC -1 Crafty:Crafty\\/a tells Crafting (6), "private channel"',
+             1786943410),
+        line('\\aPC -1 Friend:Friend\\/a tells you, "private tell"', 1786943420),
+    ]) + "\n")
+
+    preview = recover_chat.recover_paths(
+        conn, [original], start, start + 3600, apply=False)
+    assert preview["public_candidates"] == 2
+    assert preview["would_insert"] == 2
+    assert preview["slots"] == {"General (8)": 1, "LFG (4)": 1}
+    assert conn.execute("SELECT COUNT(*) FROM chat_messages").fetchone()[0] == 0
+
+    with conn:
+        applied = recover_chat.recover_paths(
+            conn, [original], start, start + 3600, apply=True)
+    assert applied["would_insert"] == 2
+    rows = conn.execute(
+        "SELECT ch,who FROM chat_messages ORDER BY ts").fetchall()
+    assert [tuple(row) for row in rows] == [("lfg", "Xinbuckler"),
+                                            ("general", "Ross")]
+
+    again = recover_chat.recover_paths(
+        conn, [original], start, start + 3600, apply=False)
+    assert again["would_insert"] == 0
+    assert again["duplicates"] == 2
 
 
 def test_item_links_become_labels(conn):

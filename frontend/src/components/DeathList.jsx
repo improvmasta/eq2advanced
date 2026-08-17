@@ -45,8 +45,15 @@ function clip(d, windowS) {
 }
 
 /* The last thing that hit them. `incoming` arrives ordered by (ts, seq) and a
-   truncated list keeps its TAIL, so the killing blow survives the cap. */
+   truncated list keeps its TAIL, so the killing blow survives the cap.
+
+   An INFERRED death has none to find. The log printed no death line for it at
+   all, so the site dated it to the last moment it can prove the player was up
+   (backend `pipeline/downs.py`) — and whatever finished them (a choker proc on
+   a Lifeburn) is not in the log either. The last hit before the hole is not the
+   killing blow and must not be dressed as one. */
 function killingBlow(d) {
+  if (d.inferred) return null
   const inc = d.incoming || []
   return inc.length ? inc[inc.length - 1] : null
 }
@@ -77,7 +84,15 @@ function commonBlow(members) {
    the fight heading above. */
 function KilledBy({ members }) {
   const c = commonBlow(members)
-  if (!c) return <span className="muted" title="Nothing hit them inside the window — the log kept no killing blow">—</span>
+  if (!c) {
+    /* Two different silences. An inferred death has no killing blow because
+       the log has no death line for it either — EQ2 announces a death by
+       naming its killer, and nothing killed them but their own Lifeburn. */
+    const title = members.every((m) => m.inferred)
+      ? 'The log never announced this death — nothing gets kill credit for a self-inflicted one, so there is no killing blow to name. Dated to the last moment the log proves they were up.'
+      : 'Nothing hit them inside the window — the log kept no killing blow'
+    return <span className="muted" title={title}>—</span>
+  }
   /* A moment where some deaths have no incoming events at all is a claim about
      the ones that do, and it has to say so rather than speak for all six.
      Only ever set on a group: a lone death with no events returned null above. */

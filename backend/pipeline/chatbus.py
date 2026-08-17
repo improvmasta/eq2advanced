@@ -18,14 +18,16 @@ the box now opens on the archive and every block carries a date filter. The
 deque survives as the live TAIL, which is all the SSE stream ever reads; the
 table is what a reader browses.
 
-DEFAULT-DENY, TWICE — UNCHANGED. A line reaches a channel only if it matches the
-exact `tells <Name> (<n>),` shape AND the name and number are BOTH in
-`CHANNELS`. A private tell is `You tell Ellea, "…"` — no `(n)` — so it cannot
-match whatever someone is called; Crafting (6), guild, officer and /say match
-nothing. A channel EQ2 adds later is dropped until somebody adds it here, which
-is the direction an error in this file has to fail in. Storing the box made this
-test MORE load-bearing, not less: it is the only thing standing between a
-private line and a permanent row.
+DEFAULT-DENY — BY SHAPE AND NAME, NOT NUMBER. A line reaches a channel only if
+it matches the exact `tells <Name> (<n>),` shape AND the name is in `CHANNELS`.
+The parenthesized number proves this is a channel, but it is not the channel's
+identity: EQ2 assigns different numbers to different characters (the same LFG
+was observed as both `(3)` and `(4)`). A private tell is `You tell Ellea, "…"`
+— no `(n)` — so it cannot match; Crafting, guild, officer and /say match
+nothing. A channel EQ2 adds later is dropped until somebody adds its NAME here,
+which is the direction an error in this file has to fail in. Storing the box
+makes this test load-bearing: it is the only thing standing between a private
+line and a permanent row.
 
 LIVE ONLY. `absorb` ignores backfill batches and anything whose log clock is
 more than `MAX_LAG_S` from the wall clock, for the same reason
@@ -57,12 +59,13 @@ from collections import deque
 from items import unsign
 from parser.prefix import split_prefix
 
-# name -> (key, the number EQ2 prints for it). Both are checked: the number is
-# what makes "General" unambiguous if a player-made channel ever borrows a name.
+# The number in `tells LFG (4)` is a per-character channel slot, not a stable
+# channel id. The numbered SHAPE distinguishes channels from private tells; the
+# exact allowlisted NAME decides which public channels this site keeps.
 CHANNELS = {
-    "General": ("general", 2),
-    "LFG": ("lfg", 3),
-    "Auction": ("auction", 10),
+    "General": "general",
+    "LFG": "lfg",
+    "Auction": "auction",
 }
 CHANNEL_KEYS = ("general", "lfg", "auction")
 
@@ -262,12 +265,12 @@ def parse_chat(ts: int, body: str, logger: str) -> dict | None:
         if m is None:
             return None
     chan = CHANNELS.get(m.group("chan"))
-    if chan is None or chan[1] != int(m.group("num")):
+    if chan is None:
         return None
     text = m.group("text")
     if len(text) > MAX_TEXT:
         text = text[:MAX_TEXT] + "…"
-    return {"ts": ts, "ch": chan[0], "who": who, "text": text}
+    return {"ts": ts, "ch": chan, "who": who, "text": text}
 
 
 def _wire(row) -> dict:

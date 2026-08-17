@@ -413,22 +413,26 @@ shown here).
 only thing between a private line and a permanent row, so the default-deny below
 is the rule to be most careful with in this file.
 
-**The channel test is default-deny twice over.** A line has to match the exact
-`tells <Name> (<n>),` shape AND have both its name and its number in
-`CHANNELS`. A private tell has no `(n)`, so no player name can impersonate a
-channel; Crafting (6), an unknown number on a known name, and a channel EQ2 adds
-next patch all relay nothing until somebody adds them here.
+**The channel test is default-deny by shape and name.** A line has to match the
+exact `tells <Name> (<n>),` channel shape AND have its name in `CHANNELS`. The
+number is only a character's local channel slot — LFG can be `(3)` for one
+character and `(4)` for another — so it must never be used as channel identity.
+A private tell has no `(n)`, so no player name can impersonate a channel;
+Crafting and a channel EQ2 adds next patch still relay nothing until somebody
+adds their names here.
 
-**Live only, which now also means "filed under the right night".** Backfill
-batches are ignored and so is anything whose log clock is more than `MAX_LAG_S`
-from the wall clock, for the same reason `live._publish_snapshot` gates:
+**Live only, which now also means "filed under the right night".** Normal
+backfill batches are ignored and so is anything whose log clock is more than
+`MAX_LAG_S` from the wall clock, for the same reason `live._publish_snapshot` gates:
 importing March's log must not scroll March's General chat past as if it were
 happening now — and must not date it tonight either. **The archive therefore
 starts at the first line relayed after v36 and cannot be backfilled from
 anything on this server**: uploads and raw chunks are both redacted before they
 are written, so the chat that would fill it in does not exist here. The only
-source is a player's own untouched `eq2log_<Character>.txt`, and reading one is
-a separate decision that has not been made.
+source is a player's own untouched `eq2log_<Character>.txt`. A deliberate
+operator recovery uses `backend/tools/recover_chat.py`; it previews by default,
+requires an explicit time window, and never sends historical Discord alerts or
+injects old lines into the live stream.
 
 **One line, several uploaders, one message — and their clocks do not agree.**
 The `(1786724295)` a log line opens with is written by each player's own EQ2

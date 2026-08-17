@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import db as dbmod
-from parser.events import F_AUTOATTACK, F_CRIT, F_MULTI, F_ZERO
+from parser.events import F_AUTOATTACK, F_CRIT, F_INFERRED, F_MULTI, F_ZERO
 from pipeline.statsroll import roll_encounter
 
 
@@ -315,6 +315,61 @@ def test_time_dead_ends_at_the_revive():
     actors, _ = roll_encounter(events, 60)
     assert actors[1]["deaths"] == 1
     assert actors[1]["time_dead_s"] == 15
+
+
+def test_a_pet_swinging_over_the_corpse_does_not_end_the_dead_clock():
+    """A swarm outlives its owner and every tick rolls up to them, which used to
+    stop the dead clock the second they died — Bobby's 27s dead on Mayong's
+    killing pull (2026-08-16) read as 0s."""
+    events = [
+        rev(0, "damage", ability="Stab", amount=10),
+        rev(5, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+        rev(10, "damage", src=2, src_roll=1, src_kind="swarm_pet",
+            ability="Grave Decay", amount=50),
+        rev(25, "revive", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+    ]
+    actors, _ = roll_encounter(events, 60)
+    assert actors[1]["time_dead_s"] == 20
+
+
+def test_their_own_action_still_ends_the_dead_clock():
+    """The revive line is better evidence, but not every rez prints inside the
+    fight it happened in — so acting again is still a ceiling."""
+    events = [
+        rev(5, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+        rev(10, "damage", src=1, src_roll=1, src_kind="player",
+            ability="Stab", amount=10),
+    ]
+    actors, _ = roll_encounter(events, 60)
+    assert actors[1]["time_dead_s"] == 5
+
+
+def test_an_inferred_death_counts_and_says_that_it_was_inferred():
+    """A death the log never printed (pipeline/downs.py) is a death in the
+    column, and the count of them rides along so the column can mark it."""
+    events = [
+        rev(0, "damage", ability="Stab", amount=10),
+        rev(5, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player", flags=F_INFERRED),
+        rev(25, "revive", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+    ]
+    actors, _ = roll_encounter(events, 60)
+    assert actors[1]["deaths"] == 1
+    assert actors[1]["deaths_inferred"] == 1
+    assert actors[1]["time_dead_s"] == 20
+
+
+def test_a_logged_death_is_not_marked_inferred():
+    events = [
+        rev(5, "death", src=None, src_roll=None, src_kind=None,
+            tgt=1, tgt_roll=1, tgt_kind="player"),
+    ]
+    actors, _ = roll_encounter(events, 60)
+    assert (actors[1]["deaths"], actors[1]["deaths_inferred"]) == (1, 0)
 
 
 def test_time_dead_runs_to_the_end_of_the_fight_without_a_revive():
