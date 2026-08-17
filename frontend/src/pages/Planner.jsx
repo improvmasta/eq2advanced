@@ -10,6 +10,8 @@ import SortableTable from '../components/SortableTable.jsx'
    reason (`backend/planner/catalog.py: card`). */
 import { Examine, Hover, rarityClass } from '../components/ItemCard.jsx'
 import { api } from '../lib/api.js'
+import { inheritSlotAdornments, itemSockets, setFitsHost,
+  setPieceForSlot } from '../lib/planAdornments.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
 /* The Planner — what to chase in an expansion. See docs/planner.md.
@@ -134,13 +136,13 @@ function bindShortlist(saved, owner) {
   const pages = new Set(items.map((item) => item.page_title))
   const active = Object.fromEntries(Object.entries(normalized.active || {})
     .filter(([, page]) => pages.has(page)))
-  const liveSlots = new Set(Object.keys(active))
+  const validSlots = new Set(PLAN_SLOTS.map((slot) => slot.key))
   return {
     ...normalized, owner, items, active,
     set_slots: Object.fromEntries(Object.entries(normalized.set_slots || {})
-      .filter(([slot]) => liveSlots.has(slot))),
+      .filter(([slot]) => validSlots.has(slot))),
     adorn_slots: Object.fromEntries(Object.entries(normalized.adorn_slots || {})
-      .filter(([slot]) => liveSlots.has(slot))),
+      .filter(([slot]) => validSlots.has(slot))),
   }
 }
 
@@ -209,6 +211,9 @@ export default function Planner({ user }) {
   const [characterParam, setCharacterParam] = useQueryState('character', '')
 
   const eras = useMemo(() => split(erasParam), [erasParam])
+  const adornmentEras = useMemo(() => [...new Set(eras.flatMap((era) => (
+    era === 'rok' ? ['rok', 'eof'] : [era]
+  )))], [eras])
   const requestedOrder = useMemo(() => split(orderParam), [orderParam])
   const kinds = useMemo(() => split(kindParam), [kindParam])
 
@@ -222,6 +227,7 @@ export default function Planner({ user }) {
   const [typed, setTyped] = useState('')
   const [q, setQ] = useState('')
   const [setSearch, setSetSearch] = useState('')
+  const [showAllSets, setShowAllSets] = useState(false)
   useEffect(() => {
     if (typed === q) return undefined
     const t = setTimeout(() => setQ(typed), 250)
@@ -229,7 +235,11 @@ export default function Planner({ user }) {
   }, [typed, q])
 
   const [meta, setMeta] = useState(null)
-  const [data, setData] = useState(null)
+  /* Keep each exact catalog result. Switching Items -> Sets -> Items used to
+     throw away the item response and collapse the entire results area while
+     the identical request ran again, which looked like a page reload. The
+     query string is already the complete cache key for either catalog. */
+  const [catalogResults, setCatalogResults] = useState({})
   const [outlineData, setOutlineData] = useState(null)
   const [outlineErr, setOutlineErr] = useState(null)
   const [err, setErr] = useState(null)
@@ -509,17 +519,14 @@ export default function Planner({ user }) {
     /* Set adornments are useful for two expansion bands. Their gear-window
        choices must not disappear merely because item search is showing only
        the newer expansion. */
-    const compatibilityEras = [...new Set(eras.flatMap((era) => (
-      era === 'rok' ? ['rok', 'eof'] : [era]
-    )))]
-    const p = new URLSearchParams({ eras: csv(compatibilityEras) })
+    const p = new URLSearchParams({ eras: csv(adornmentEras) })
     if (adornmentClass) p.set('classes', adornmentClass)
     let dead = false
     api.planSets(p.toString()).then((d) => {
       if (!dead) setAdornmentSets(d.sets || [])
     }).catch(() => { if (!dead) setAdornmentSets([]) })
     return () => { dead = true }
-  }, [erasParam, adornmentClass])
+  }, [adornmentEras, adornmentClass])
 
   useEffect(() => {
     let dead = false
@@ -535,7 +542,9 @@ export default function Planner({ user }) {
   }, [erasParam])
 
   const query = useMemo(() => {
-    const p = new URLSearchParams({ eras: csv(eras), order: csv(order) })
+    const p = new URLSearchParams({
+      eras: csv(mode === 'sets' ? adornmentEras : eras), order: csv(order),
+    })
     if (mode === 'items') {
       if (cls) p.set('classes', cls)
       if (slot) p.set('slots', slot)
@@ -553,8 +562,10 @@ export default function Planner({ user }) {
       p.set('classes', adornmentClass)
     }
     return p.toString()
-  }, [erasParam, order, cls, slot, tier, kindParam, armor,
+  }, [erasParam, adornmentEras, order, cls, slot, tier, kindParam, armor,
     levelMin, levelMax, q, carries, proc, mode, adornmentClass])
+  const catalogKey = `${mode}:${query}`
+  const data = catalogResults[catalogKey] || null
 
   /* Page titles can contain commas, so shortlist entries are repeated query
      parameters. The shortlist itself stays in localStorage and never enters
@@ -570,13 +581,15 @@ export default function Planner({ user }) {
 
   useEffect(() => {
     setErr(null)
-    setData(null)
+    if (catalogResults[catalogKey]) return undefined
     const call = mode === 'sets' ? api.planSets : api.planItems
     let dead = false
-    call(query).then((d) => { if (!dead) setData(d) })
+    call(query).then((d) => {
+      if (!dead) setCatalogResults((results) => ({ ...results, [catalogKey]: d }))
+    })
       .catch((e) => { if (!dead) setErr(e.message) })
     return () => { dead = true }
-  }, [query, mode])
+  }, [catalogKey, catalogResults, mode, query])
 
   useEffect(() => {
     if (!planCount) { setOutlineData(null); setOutlineErr(null); return undefined }
@@ -614,17 +627,27 @@ export default function Planner({ user }) {
     setPlanNotice('')
     setShortlist((s) => {
     if (s.items.some((i) => i.page_title === row.page_title)) {
+      const items = s.items.filter((i) => i.page_title !== row.page_title)
       const active = { ...(s.active || {}) }
-      const setSlots = { ...(s.set_slots || {}) }
-      const adornSlots = { ...(s.adorn_slots || {}) }
+      let setSlots = { ...(s.set_slots || {}) }
+      let adornSlots = { ...(s.adorn_slots || {}) }
       Object.entries(active).forEach(([key, page]) => {
         if (page === row.page_title) {
-          delete active[key]; delete setSlots[key]; delete adornSlots[key]
+          const fromItem = s.items.find((item) => item.page_title === page)
+          const next = items.find((item) => item.equip_slot === key)
+          if (next) active[key] = next.page_title
+          else delete active[key]
+          const toItem = next || planningCharacter?.gear?.find((gear) => gear.key === key)
+          const inherited = inheritSlotAdornments({
+            slot: key, fromItem, toItem, setSlots, adornSlots,
+          })
+          setSlots = inherited.setSlots
+          adornSlots = inherited.adornSlots
         }
       })
       return {
         ...s, active, set_slots: setSlots, adorn_slots: adornSlots,
-        items: s.items.filter((i) => i.page_title !== row.page_title),
+        items,
       }
     }
     const eligible = eligiblePlanSlots(row)
@@ -638,17 +661,22 @@ export default function Planner({ user }) {
       adorns: row.adorns, set_name: row.set_name, card: row.card,
       classes: row.classes,
     }
-    const setSlots = { ...(s.set_slots || {}) }
-    if (row.set_name) {
-      setSlots[equipSlot] = row.set_name
-    }
+    const currentItem = s.items.find((candidate) => candidate.equip_slot === equipSlot
+      && candidate.page_title === (s.active || {})[equipSlot])
+      || planningCharacter?.gear?.find((gear) => gear.key === equipSlot)
+      || null
+    const inherited = inheritSlotAdornments({
+      slot: equipSlot, fromItem: currentItem, toItem: item,
+      setSlots: s.set_slots, adornSlots: s.adorn_slots,
+    })
     return {
       ...s, items: [...s.items, item],
       active: { ...(s.active || {}), [equipSlot]: row.page_title },
-      set_slots: setSlots,
+      set_slots: inherited.setSlots,
+      adorn_slots: inherited.adornSlots,
     }
     })
-  }, [focusSlot, planningOwner, shortlist.items])
+  }, [focusSlot, planningCharacter, planningOwner, shortlist.items])
 
   const focusEquipmentSlot = useCallback((def) => {
     setFocusSlot(def.key)
@@ -658,16 +686,22 @@ export default function Planner({ user }) {
 
   const cycleEquipmentSlot = useCallback((key, page) => setShortlist((s) => {
     const active = { ...(s.active || {}) }
-    const setSlots = { ...(s.set_slots || {}) }
-    const adornSlots = { ...(s.adorn_slots || {}) }
+    const fromItem = s.items.find((candidate) => candidate.equip_slot === key
+      && candidate.page_title === active[key])
+      || planningCharacter?.gear?.find((gear) => gear.key === key)
+      || null
     if (page) active[key] = page
     else delete active[key]
-    delete setSlots[key]
-    delete adornSlots[key]
-    const item = page && s.items.find((candidate) => candidate.page_title === page)
-    if (item?.set_name) setSlots[key] = item.set_name
-    return { ...s, active, set_slots: setSlots, adorn_slots: adornSlots }
-  }), [])
+    const item = page
+      ? s.items.find((candidate) => candidate.page_title === page)
+      : planningCharacter?.gear?.find((gear) => gear.key === key)
+    const inherited = inheritSlotAdornments({
+      slot: key, fromItem, toItem: item,
+      setSlots: s.set_slots, adornSlots: s.adorn_slots,
+    })
+    return { ...s, active, set_slots: inherited.setSlots,
+      adorn_slots: inherited.adornSlots }
+  }), [planningCharacter])
 
   const setSlotAdornment = useCallback((key, setName) => setShortlist((s) => {
     const setSlots = { ...(s.set_slots || {}) }
@@ -694,44 +728,45 @@ export default function Planner({ user }) {
   const removeEquipmentItem = useCallback((key, page) => setShortlist((s) => {
     const items = s.items.filter((item) => item.page_title !== page)
     const active = { ...(s.active || {}) }
-    const setSlots = { ...(s.set_slots || {}) }
-    const adornSlots = { ...(s.adorn_slots || {}) }
     if (active[key] === page) {
+      const fromItem = s.items.find((item) => item.page_title === page)
       const next = items.find((item) => item.equip_slot === key)
       if (next) active[key] = next.page_title
       else delete active[key]
+      const toItem = next || planningCharacter?.gear?.find((gear) => gear.key === key)
+      const inherited = inheritSlotAdornments({
+        slot: key, fromItem, toItem,
+        setSlots: s.set_slots, adornSlots: s.adorn_slots,
+      })
+      return { ...s, items, active, set_slots: inherited.setSlots,
+        adorn_slots: inherited.adornSlots }
     }
-    delete setSlots[key]
-    delete adornSlots[key]
-    return { ...s, items, active, set_slots: setSlots, adorn_slots: adornSlots }
-  }), [])
+    return { ...s, items, active }
+  }), [planningCharacter])
 
-  /* Shortlisting from the set view adds the ADORNMENT, never the armour it
-     came in. The turquoise detaches and moves; the armour is only where you
-     first find it, and confusing the two is the mistake this whole view
-     exists to prevent (docs/planner.md). */
+  /* Tracking acquisition and trying an adornment on are independent. The set
+     goal asks the Outline where carrier gear comes from; set_slots says what
+     is currently in the equipment window. Removing one must not undo the
+     other. */
   const toggleSet = useCallback((row) => {
     const removing = shortlist.sets.some((set) => set.name === row.name)
     if (!removing && !planningOwner) {
-      setPlanNotice('Load a character before adding an adornment set to an outline.')
+      setPlanNotice('Load a character before tracking sources for an adornment set.')
       return
     }
     setPlanNotice('')
     setShortlist((s) => {
     if (s.sets.some((x) => x.name === row.name)) {
-      const setSlots = { ...(s.set_slots || {}) }
-      Object.entries(setSlots).forEach(([key, name]) => {
-        if (name === row.name) delete setSlots[key]
-      })
       return {
-        ...s, set_slots: setSlots,
+        ...s,
         sets: s.sets.filter((x) => x.name !== row.name),
       }
     }
     return {
       ...s,
       sets: [...s.sets, {
-        name: row.name, level: row.level, bonuses: row.bonuses,
+        name: row.name, set_name: row.set_name, slot_label: row.slot_label,
+        level: row.level, pieces: row.pieces, bonuses: row.bonuses,
       }],
     }
     })
@@ -829,13 +864,7 @@ export default function Planner({ user }) {
       if (def.key === 'secondary' && selectedPrimary?.two_handed) return []
       const item = planned[(shortlist.active || {})[def.key]] || current[def.key]
       if (!item) return []
-      const colors = item.card?.stats?.adornments?.length
-        ? item.card.stats.adornments
-        : item.adornments
-          ? item.adornments.map((adorn) => adorn.color)
-          : Object.entries(item.adorns || {}).flatMap(([color, count]) =>
-            Array.from({ length: count }, () => color))
-      if (!colors.includes('turquoise')) return []
+      if (!itemSockets(item).some((socket) => socket.color === 'turquoise')) return []
       const overridden = Object.prototype.hasOwnProperty.call(
         shortlist.set_slots || {}, def.key)
       const installed = overridden ? (shortlist.set_slots || {})[def.key]
@@ -843,9 +872,18 @@ export default function Planner({ user }) {
           (adorn) => adorn.color === 'turquoise')?.set_name
         || (item.adornments || []).find(
           (adorn) => adorn.color === 'turquoise')?.name || null
-      return [{ key: def.key, label: def.label, level: item.level, installed }]
+      return [{
+        key: def.key, label: def.label, catalog: def.catalog,
+        item, level: item.level, installed,
+      }]
     })
   }, [planningCharacter, shortlist])
+  const compatibleVisibleSets = useMemo(() => setSocketTargets.length
+    ? visibleSets.filter((set) => setSocketTargets.some((target) =>
+      setFitsHost(set, target.item, target.catalog)))
+    : visibleSets, [setSocketTargets, visibleSets])
+  const shownSets = setSocketTargets.length && !showAllSets && !setSearch.trim()
+    ? compatibleVisibleSets : visibleSets
 
   return (
     /* THIS IS A WORK RAIL, NOT NAVIGATION. Recommendations give it a useful
@@ -901,7 +939,7 @@ export default function Planner({ user }) {
           <div className="plansearchhead">
             <div className="plansearchtitle">
               <span className="seclabel">Gear catalog</span>
-              <b>{mode === 'sets' ? 'Build around a set bonus'
+              <b>{mode === 'sets' ? 'Set Adornments'
                 : slot ? `${slot} upgrades` : 'Find equipment'}</b>
             </div>
             {/* THE EXPANSION CHOICE LIVES IN THE SEARCH BLOCK (Lindsay), on its
@@ -1041,15 +1079,22 @@ export default function Planner({ user }) {
                          onChange={(e) => setSetSearch(e.target.value)} />
                 </label>
                 <p>
-                  Pick the bonus you want, then equip its adornment directly
-                  into a turquoise slot above. Results are limited to the
-                  selected character's class.
+                  Each set lists the exact pieces that fit your current gear.
+                  Click a piece to equip or remove it; track sources separately
+                  when you want to know where its carrier gear drops.
                 </p>
               </div>
               <div className="plansearchfooter" aria-live="polite">
-                <span><b>{visibleSets.length}</b> matching set
-                  {visibleSets.length === 1 ? '' : 's'}</span>
-                <span>Set socket choices include the previous expansion automatically</span>
+                <span><b>{shownSets.length}</b> set{shownSets.length === 1 ? '' : 's'} shown
+                  {setSocketTargets.length && !setSearch.trim()
+                    ? ` · ${compatibleVisibleSets.length} compatible with this loadout` : ''}</span>
+                {setSocketTargets.length && !setSearch.trim()
+                    && compatibleVisibleSets.length !== visibleSets.length ? (
+                  <button type="button" className="btnlink"
+                          onClick={() => setShowAllSets((value) => !value)}>
+                    {showAllSets ? 'Compatible only' : `Show all ${visibleSets.length}`}
+                  </button>
+                ) : <span>Slot and equipment-tier rules are applied automatically</span>}
               </div>
             </>
           )}
@@ -1068,7 +1113,7 @@ export default function Planner({ user }) {
         {!data && !err && <p className="muted">Loading…</p>}
 
         {data && mode === 'sets' && (
-          <SetList sets={visibleSets} inList={setsInList} canPlan={!!planningOwner}
+          <SetList sets={shownSets} inList={setsInList} canPlan={!!planningOwner}
                    targets={setSocketTargets} onToggle={toggleSet}
                    onEquipAdornment={setSlotAdornment} />
         )}
@@ -1454,6 +1499,25 @@ function Sources({ row }) {
 /* Rank and equip the SET ADORNMENTS themselves. Carrier armour and generic
    compatible-item lists bury the actual decision, so this surface contains
    only the bonus ladder and explicit adornment actions. */
+function SetBonusList({ bonuses }) {
+  return (
+    <ul className="setbonuses">
+      {(bonuses || []).map((bonus, index) => {
+        const summary = [...(bonus.stat_lines || []), bonus.text].filter(Boolean)
+        return (
+          <li key={index}>
+            <b>({bonus.pieces})</b>
+            <span>{summary.length ? summary.join(' · ') : 'Bonus details unavailable'}</span>
+            {(bonus.detail || []).map((line, lineIndex) => (
+              <small key={lineIndex}>{line}</small>
+            ))}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function SetList({ sets, inList, canPlan, targets, onToggle, onEquipAdornment }) {
   if (!sets.length) {
     return <p className="muted">No adornment sets in this selection.</p>
@@ -1462,52 +1526,72 @@ function SetList({ sets, inList, canPlan, targets, onToggle, onEquipAdornment })
     <div className="setlist">
       {sets.map((s) => {
         const legal = targets.filter((target) =>
-          !s.level || !target.level || target.level >= s.level)
+          setFitsHost(s, target.item, target.catalog))
         const equipped = legal.filter((target) => target.installed === s.name)
-        const choices = legal.filter((target) => target.installed !== s.name)
-        const equipLabel = !targets.length ? 'Load a character to equip'
-          : !legal.length ? 'No eligible turquoise slots'
-            : !choices.length ? 'Equipped in every slot' : 'Equip adornment…'
+        const pieceRows = (s.pieces || []).map((piece) => ({
+          piece,
+          label: piece.split(':').pop().trim(),
+          targets: legal.filter((target) =>
+            setPieceForSlot(s, target.catalog) === piece),
+        }))
+        const compatiblePieces = pieceRows.filter((row) => row.targets.length).length
+        const status = !targets.length ? 'Load a character to try this set on'
+          : !legal.length ? `No level-compatible piece fits the current loadout`
+            : `${equipped.length} equipped · ${compatiblePieces} of ${pieceRows.length} pieces fit`
         return (
           <div className="card setcard" key={s.name}>
           <div className="sethead">
             <div className="setpick">
               <span className="cardtitle">{s.name}</span>
-              <button type="button" className={`chip${inList.has(s.name) ? ' on' : ''}`}
-                      disabled={!canPlan && !inList.has(s.name)}
-                      title={!canPlan ? 'Load a character to build an outline' : undefined}
-                      onClick={() => onToggle(s)}>
-                {inList.has(s.name) ? 'In outline' : 'Add to outline'}
-              </button>
             </div>
-            <div className="setequip">
-              {!!equipped.length && <span>{equipped.length} equipped</span>}
-              <Picker value="" disabled={!choices.length}
-                      label={`Equip ${s.name} adornment`}
-                      placeholder={equipLabel}
-                      options={[
-                        { value: '', label: 'Equip adornment…' },
-                        ...choices.map((target) => ({
-                          value: target.key, label: target.label,
-                          hint: target.installed ? `Replace ${target.installed}` : 'Open turquoise slot',
-                        })),
-                      ]}
-                      filterFrom={99} maxMenuWidth={270}
-                      onChange={(target) => target && onEquipAdornment(target, s.name)} />
-              {!!equipped.length && (
-                <button type="button" className="btnlink"
-                        onClick={() => onEquipAdornment(
-                          equipped[equipped.length - 1].key, null)}>
-                  Remove one
-                </button>
-              )}
-            </div>
+            <span className={`setstatus${equipped.length ? ' equipped' : ''}`}>{status}</span>
           </div>
-          <ul className="setbonuses">
-            {s.bonuses.map((b, i) => (
-              <li key={i}><b>({b.pieces})</b> {b.text}</li>
-            ))}
-          </ul>
+          <SetBonusList bonuses={s.bonuses} />
+          <div className="setpieces" aria-label={`${s.name} adornment pieces`}>
+            {pieceRows.map((row) => {
+              const tracked = inList.has(row.piece)
+              return (
+                <div className={`setpiecerow${row.targets.length ? '' : ' unavailable'}`}
+                     key={row.piece}>
+                  <div className="setpieceidentity" title={row.piece}>
+                    <b>{row.label}</b>
+                    <span>{row.piece}</span>
+                  </div>
+                  <div className="setpiecehosts">
+                    {row.targets.map((target) => {
+                      const isEquipped = target.installed === s.name
+                      return (
+                        <button type="button" className={`settarget${isEquipped ? ' on' : ''}`}
+                                key={target.key}
+                                title={isEquipped
+                                  ? `Remove ${row.piece} from ${target.item.name}`
+                                  : target.installed
+                                    ? `Replace ${target.installed} on ${target.item.name}`
+                                    : `Equip ${row.piece} on ${target.item.name}`}
+                                onClick={() => onEquipAdornment(
+                                  target.key, isEquipped ? null : s.name)}>
+                          <b>{target.label}</b>
+                          <span>{target.item.name}</span>
+                          <em>{isEquipped ? 'Equipped · remove'
+                            : target.installed ? `Replace ${target.installed}` : 'Equip'}</em>
+                        </button>
+                      )
+                    })}
+                    {!row.targets.length && <span className="muted">No compatible host</span>}
+                  </div>
+                  <button type="button" className={`chip setpiecetrack${tracked ? ' on' : ''}`}
+                          disabled={!canPlan && !tracked}
+                          title={!canPlan ? 'Load a character to track this piece' : undefined}
+                          onClick={() => onToggle({
+                            name: row.piece, set_name: s.name, slot_label: row.label,
+                            level: s.level, pieces: s.pieces, bonuses: s.bonuses,
+                          })}>
+                    {tracked ? 'Tracked' : 'Track source'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
         )
       })}
@@ -1536,12 +1620,30 @@ function ShortItemIdentity({ item }) {
   ) : content
 }
 
+function SetPieceIdentity({ piece }) {
+  const card = (
+    <div className="setpiecegoalcard">
+      <span className="seclabel">Turquoise adornment</span>
+      <h3>{piece.name}</h3>
+      <p>{piece.set_name || 'Adornment set'}{piece.level ? ` · Level ${piece.level}` : ''}</p>
+      <SetBonusList bonuses={piece.bonuses} />
+    </div>
+  )
+  return (
+    <Hover className="setpiecegoalpopup" width={360} card={card}>
+      <span className="shortitemidentity" tabIndex="0">
+        <span className="shortrowname"><small>Set piece</small>{piece.name}</span>
+      </span>
+    </Hover>
+  )
+}
+
 function Shortlist({ list, onDropItem, onDropSet }) {
   const total = list.items.length + list.sets.length
   return (
     <details className="shortlist">
       <summary>
-        <span>Selected items</span>
+        <span>Tracked targets</span>
         <small>{total}</small>
       </summary>
       <div className="shortloaded">
@@ -1555,11 +1657,8 @@ function Shortlist({ list, onDropItem, onDropSet }) {
           ))}
           {list.sets.map((set) => (
             <div className="shortrow" key={set.name}>
-              <span className="shortitemidentity">
-                <span className="shortrowicon" aria-hidden="true">◆</span>
-                <span className="shortrowname"><small>Adornment</small>{set.name}</span>
-              </span>
-              <em>{set.level ? `L${set.level}` : ''}</em>
+              <SetPieceIdentity piece={set} />
+              <em>{set.slot_label || (set.level ? `L${set.level}` : '')}</em>
               <button className="iconbtn" aria-label={`Remove ${set.name}`}
                       onClick={() => onDropSet(set)}>✕</button>
             </div>

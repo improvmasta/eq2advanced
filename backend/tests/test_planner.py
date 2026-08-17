@@ -601,6 +601,46 @@ def test_outline_rejects_items_and_set_carriers_for_another_class(tmp_path):
     assert result["ineligible"] == ["Arcane Set", "Wizard Epic"]
 
 
+def test_outline_tracks_one_exact_set_piece_and_returns_real_carrier_cards(tmp_path):
+    conn = fresh_db(tmp_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO plan_sets VALUES (?,?,?,?,?,?,?)",
+            ("Arcane Set", "Arcane Set (Adornment Set)", "rok", 70,
+             json.dumps(["Arcane Set: Head", "Arcane Set: Feet"]),
+             json.dumps([{"pieces": 2, "text": "+20 Ability Modifier"}]), 1))
+        conn.executemany(
+            "INSERT INTO plan_items (page_title,name,era,slot,level,tier,classes,"
+            "set_name,stats_json,adorns_json,fetched_ts) VALUES "
+            "(?,?, 'rok',?,70,'FABLED','necromancer','Arcane Set','{}','{}',0)", [
+                ("Arcane Hood", "Arcane Hood", "Head"),
+                ("Arcane Slippers", "Arcane Slippers", "Feet"),
+            ])
+        conn.executemany(
+            "INSERT INTO plan_sources (page_title,source_page,source,kind,era) "
+            "VALUES (?,? ,?,'quest','rok')", [
+                ("Arcane Hood", "Hood Quest", "Hood Quest"),
+                ("Arcane Slippers", "Feet Quest", "Feet Quest"),
+            ])
+        conn.executemany(
+            "INSERT INTO plan_quests (page_title,name,era,kind,fetched_ts) "
+            "VALUES (?,?,'rok','solo',0)", [
+                ("Hood Quest", "Hood Quest"),
+                ("Feet Quest", "Feet Quest"),
+            ])
+
+    result = outline.outline(
+        conn, eras=["rok"], sets=["Arcane Set: Head"],
+        class_name="necromancer")
+    assert [row["name"] for row in result["rows"]] == ["Hood Quest"]
+    got = result["rows"][0]["gets"][0]
+    assert got["name"] == "Arcane Hood"
+    assert got["via_set"] == "Arcane Set"
+    assert got["via_set_piece"] == "Arcane Set: Head"
+    assert got["card"]["name"] == "Arcane Hood"
+    assert result["unplaced"] == []
+
+
 def test_epic_timeline_rejects_another_class_when_item_classes_are_unknown(tmp_path):
     conn = fresh_db(tmp_path)
     with conn:

@@ -527,7 +527,8 @@ Autoattack. Every value uses the same aligned value-and-delta ledger row.
 Casting Speed and Reuse Speed sit in Offense directly after Ability Mod, in that
 order. A current equipped value is green; a planned
 increase is cyan and a planned decrease is red. The signed delta repeats the
-direction so color is never the only signal. DPS, Haste, and Multi Attack are
+direction so color is never the only signal. Stat values use regular weight;
+bold numbers made the dense two-column ledger harder to scan. DPS, Haste, and Multi Attack are
 displayed as ratings without percent signs, matching the in-game stat window.
 Item Primary Attributes are normalized before projection: the wiki's legacy
 STR/AGI/WIS/INT field and Census's grouped `strength` storage both expand to
@@ -538,11 +539,18 @@ Clicking a slot filters the catalog to legal choices for that position. Adding
 an item puts it in that concrete slot and activates it. Multiple candidates stay
 in the slot; the item icon gains a highlighted frame and a small left-edge
 clicker that cycles them without taking width from the item name. **Current is
-always option one**. A planned item carries an `×` in the loadout row that
+always option one**. White and turquoise adornments belong to the concrete slot,
+not the candidate host: the first planned item inherits what the character is
+wearing there, and adding, cycling, or removing candidates carries the slot's
+current selections into matching sockets on the next item. A planned item carries
+an `×` in the loadout row that
 removes it from the shortlist immediately, promotes another candidate when one
 remains, or returns the slot to equipped gear. Finger, Ear, Wrist and Charm
 keep their first/second identities. A
 planned two-hander occupies Primary and removes Secondary from the projection.
+Carried adornments are compared with the character's original concrete slot,
+not with the replacement item's empty host: moving gear never marks the same
+adornment—or the same empty socket—as a new planned adornment.
 
 The right side of the header owns **Gear sets**: it starts with one named slot and a
 compact `+` that reveals another, up to five, instead of spending header width
@@ -678,7 +686,10 @@ Picking an unshortlisted set is allowed—the picker is an equipment decision;
 the shortlist remains a separate acquisition/outline decision.
 
 Every change recomputes installed pieces and the set threshold ledger
-immediately. Projection is a current-versus-planned threshold delta: pulling
+immediately. The page itself keeps each worn set to one compact horizontal card:
+set name, the concrete gear pieces carrying it, and piece count. The full
+threshold ladder is available on hover or keyboard focus instead of permanently
+consuming vertical space. Projection is a current-versus-planned threshold delta: pulling
 the second piece from a `2 pieces: +2 Crit Chance` set subtracts that Crit,
 while the unchanged pieces elsewhere in the window continue to count. Legacy
 wiki `All` modifier lines are displayed and typed as the in-game `Ability Mod`
@@ -862,18 +873,36 @@ catalog tasks without masquerading as a page-wide pair of feature cards or a
 tiny unrelated filter. The set view ranks the bonuses themselves and searches
 only set names and bonus text. Results are automatically restricted to the
 loaded character's class; the equipment-search Class facet does not leak into
-this character-specific choice.
+this character-specific choice. RoK includes EoF set adornments here just as
+the gear-window socket picker does: the removable adornment remains useful on
+newer gear, so an expansion filter on carrier equipment must not hide it. Exact catalog queries are cached for the life
+of the page, so returning to Equipment restores its existing table immediately
+instead of collapsing the results and refetching the same data.
 
-Each result shows the threshold ladder and acts on the adornment directly.
-**Equip adornment…** lists the character window's eligible turquoise positions,
-can install another copy, and can remove one already planned copy. It does not
-dump carrier armor or every item that could host the set—those inventories made
-the important action harder to find. Shortlisting remains separate and adds
-the adornment to the Outline, never the armor it came in.
+Each result shows the threshold ladder and the exact slot-specific pieces that
+fit the current loadout. Compatibility requires all three facts: that piece
+exists in the set (`: Head`, `: Fingers`, `: One Handed`, and so on), the host
+has a turquoise socket, and the set's level is no newer than and no more than
+two equipment tiers below the host. Each compatible gear piece is a direct
+Equip/Remove button; there is no empty picker that hides what can actually be
+done. This works for open sockets and replacements, whether or not the character
+already wears that set. With a character loaded, the default list contains only
+sets compatible with the visible loadout; **Show all** reveals out-of-tier sets
+with an explicit reason, and a name search always shows every textual match.
+
+Trying a set on and tracking how to acquire it are separate actions. Every
+slot-specific turquoise (`: Head`, `: Feet`, `: Fingers`, etc.) is its own row
+and can be tracked individually; tracking Head never adds all seven armour
+pieces. The set's complete bonus ladder stays visible above those rows and is
+also present when the tracked piece is hovered in the Outline. Stopping source
+tracking never unequips it. The Outline resolves an exact turquoise piece to
+the real matching-slot carrier gear, labels each real item/icon with “carries
+`<set piece>`”, and supplies its complete examine hover. A carrier icon is never
+labelled as if it were the turquoise or a synthetic set piece.
 
 ### The Outline
 
-A compact list derived only from selected items and set adornments. It groups
+A compact list derived only from selected items and tracked set sources. It groups
 by **zone**, then lists the source **mobs** and reward **quests** there. A reward
 quest brings in its complete hard-prerequisite chain; unrelated expansion
 prelude work and manually kept mob/quest targets are gone.
@@ -897,15 +926,16 @@ markers instead of a stack of horizontal rules and nested navy boxes. Gold
 belongs to the selected item and disclosure actions, and green belongs only to
 completed progress—not to an unearned reward.
 
-Directly under the Outline header, an explicit **Selected items** disclosure
-names every gear and set-adornment input currently driving the outline and
+Directly under the Outline header, an explicit **Tracked targets** disclosure
+names every gear and set-source input currently driving the outline and
 removes any of them in place. It is part of the panel structure, with no nested
 card or container chrome, so correcting the plan never requires finding the
 originating catalog row again. The loaded character's name sits beside
 **Outline**, without another `Character` label. Selected item identities,
 acquisition headers, and concrete zone/quest rewards use the shared EQ2 examine
-hover (and keyboard focus) already used by gear; an item icon or item name is
-never presented as inert decoration when its card is available.
+hover (and keyboard focus) already used by gear. Carrier items reached through
+an adornment-piece goal carry their full catalog card in the Outline response
+too, so those icons and names are never inert.
 
 Class epics have one deliberate exception to the generic quest-edge walk and
 to the outline's normal zone grouping:
@@ -1199,7 +1229,7 @@ thresholds. It remains useful with no outline and with no account.
   untouched slots is twenty buttons that do nothing. It clears that slot's
   `active` entry and its installed set adornment, and leaves the shortlist
   alone: those are candidates you found, and finding them again is the work.
-- **WORN SET BONUSES LIVE UNDER THE EQUIPPED GEAR** (`PlanLoadout.WornSets`,
+- **WORN SETS LIVE UNDER THE EQUIPPED GEAR** (`PlanLoadout.WornSets`,
   the way eq2lexicon does it), not in the projected-stats panel where they
   started. The count changes with every adornment click, so the fourth piece
   lighting up has to be visible in the same glance as the click that made it
@@ -1208,11 +1238,10 @@ thresholds. It remains useful with no outline and with no account.
   whose tiers come from Census's own `setbonus_list` (`items._adornment`) —
   and the old panel could see only the first. **Same-named adornments are the
   same set**: that is what a set adornment is in EoF/RoK and it is the only
-  join either source offers. Earned tiers are full-strength with a filled
-  diamond, unreached ones dimmed. Every set uses the same fixed-height preview,
-  so one long proc description cannot make its card taller than its neighbors;
-  hovering or keyboard-focusing the card opens the complete uncropped ladder
-  in a popup. A turquoise change marks every affected set as **planned** and
+  join either source offers. The compact card shows only its set name, concrete
+  gear pieces, and piece
+  count; hovering or keyboard-focusing it opens the complete ladder in a popup.
+  Cards fill horizontally before adding vertical rows. A turquoise change marks every affected set as **planned** and
   shows its signed piece-count difference (`+1`, `-1`, `+2`, and so on),
   including a set removed all the way to zero. Their arithmetic contribution stays in
   `projection()`, because that is a stat like any other.

@@ -21,7 +21,7 @@ import heapq
 import json
 from pathlib import Path
 
-from planner import wiki
+from planner import catalog, wiki
 
 _EPIC_WAYPOINT_FILE = (Path(__file__).resolve().parent.parent / "refdata" /
                        "planner_epic_waypoints.json")
@@ -44,56 +44,95 @@ def _wiki_url(page: str) -> str:
     return f"https://eq2.fandom.com/wiki/{page.replace(' ', '_')}"
 
 
+_PIECE_SLOT_ALIASES = {
+    "ears": {"ear"}, "fingers": {"finger"}, "wrists": {"wrist"},
+    "shoulder": {"shoulders"}, "shoulders": {"shoulders"},
+}
+
+
+def _piece_matches_item(piece: str, row: dict) -> bool:
+    """Whether a carrier item contains this exact slot-specific turquoise."""
+    suffix = piece.rsplit(":", 1)[-1].strip().lower()
+    slots = {str(row.get("slot") or "").lower(),
+             str(row.get("slot2") or "").lower()}
+    if suffix == "one handed":
+        return bool(slots & {"primary", "secondary"}) and not row.get("two_handed")
+    wanted = _PIECE_SLOT_ALIASES.get(suffix, {suffix})
+    return bool(slots & wanted)
+
+
 def _wanted(conn, eras: list[str], items: list[str], sets: list[str],
             class_name: str | None = None) -> tuple[dict[str, list[dict]], set[str]]:
-    """Shortlisted items (and set carriers) -> {source page: what it gets you}.
+    """Shortlisted items (and exact set-adornment pieces) -> their sources.
 
-    A SET IS SHORTLISTED AS THE ADORNMENT, never as the armour it came in, so
-    a set on the list resolves to every piece that carries one — you do not
-    care which of them you get, you care where any of them drop. That is the
-    same distinction the set view exists to make, carried through to the
-    outline instead of quietly collapsing back into an item list."""
+    A SET PIECE IS THE ADORNMENT, never the armour it came in. An exact tracked
+    `Set: Head` resolves only to Head carrier gear; the real carrier identity
+    and examine card stay in the response. Legacy whole-set selections remain
+    readable and resolve to every carrier until the reader replaces them."""
     keys = [e for e in eras if e in wiki.ERAS] or list(wiki.DEFAULT_ERAS)
     wanted: dict[str, list[dict]] = {}
     rejected: set[str] = set()
-    rows: list[tuple[dict, str | None]] = []
+    rows: list[tuple[dict, str | None, str | None]] = []
+    catalog_rows = catalog._rows(conn, keys)
+    by_page = {row["page_title"]: row for row in catalog_rows}
+    set_rows = {}
+    set_bonuses = {}
+    for row in conn.execute(
+            "SELECT name, pieces_json, bonuses_json FROM plan_sets WHERE era IN "
+            f"({','.join('?' * len(keys))})", keys):
+        pieces = json.loads(row["pieces_json"] or "[]")
+        set_rows[row["name"]] = pieces
+        set_bonuses[row["name"]] = catalog.normalize_set_bonuses(
+            json.loads(row["bonuses_json"] or "[]"))
 
     def eligible(row) -> bool:
-        classes = {value for value in (row["classes"] or "").split(",") if value}
+        raw_classes = row.get("classes") or []
+        classes = set(raw_classes if isinstance(raw_classes, list)
+                      else (value for value in raw_classes.split(",") if value))
         # An empty class field is unknown, not proof that nobody can use it.
         return not class_name or not classes or class_name in classes
 
     for page in items[:MAX_INPUT]:
-        row = conn.execute(
-            "SELECT page_title, name, tier, slot, dtype, level, set_name, classes, icon "
-            "FROM plan_items WHERE page_title=?", (page,)).fetchone()
+        row = by_page.get(page)
         if row and eligible(row):
-            rows.append((dict(row), None))
+            rows.append((row, None, None))
         elif row:
             rejected.add(page)
-    for name in sets[:MAX_INPUT]:
+    for selection in sets[:MAX_INPUT]:
+        set_name = next((name for name, pieces in set_rows.items()
+                         if selection == name or selection in pieces), None)
+        if not set_name and any(
+                row.get("set_name") == selection for row in catalog_rows):
+            # Legacy saved plans tracked the whole set name, and older test or
+            # partial catalogs may have carrier rows before their plan_sets row.
+            set_name = selection
+        selected_piece = selection if set_name and selection != set_name else None
         found = False
-        for row in conn.execute(
-                "SELECT page_title, name, tier, slot, dtype, level, set_name, classes, icon "
-                "FROM plan_items WHERE set_name=?", (name,)):
+        for row in (candidate for candidate in catalog_rows
+                    if candidate.get("set_name") == set_name):
+            if selected_piece and not _piece_matches_item(selected_piece, row):
+                continue
             if eligible(row):
-                rows.append((dict(row), name))
+                rows.append((row, set_name, selected_piece))
                 found = True
-        if not found and conn.execute(
-                "SELECT 1 FROM plan_items WHERE set_name=? LIMIT 1", (name,)).fetchone():
-            rejected.add(name)
+        if not found and set_name and any(
+                row.get("set_name") == set_name for row in catalog_rows):
+            rejected.add(selection)
 
-    for row, via_set in rows:
+    for row, via_set, via_set_piece in rows:
+        row["_set_bonuses"] = set_bonuses.get(row.get("set_name"), [])
         got = {
             "page_title": row["page_title"], "name": row["name"],
             "tier": row["tier"], "level": row["level"],
             "slot": wiki.slot_label(row["slot"], row["dtype"]),
             "icon": row["icon"],
+            "card": catalog.card(row),
             # Which shortlist entry this row is answering. A piece reached
             # through a set is a step towards the ADORNMENT, and saying so is
             # the difference between "you wanted these boots" and "any of these
             # six carry the turquoise you wanted".
             "via_set": via_set,
+            "via_set_piece": via_set_piece,
         }
         for src in conn.execute(
                 "SELECT source_page, source, kind, zone, level, detail, era "
@@ -101,7 +140,8 @@ def _wanted(conn, eras: list[str], items: list[str], sets: list[str],
                 f"({','.join('?' * len(keys))})", (row["page_title"], *keys)):
             entry = wanted.setdefault(src["source_page"], [])
             if not any(g["page_title"] == got["page_title"] and
-                       g["via_set"] == via_set for g in entry):
+                       g["via_set"] == via_set and
+                       g["via_set_piece"] == via_set_piece for g in entry):
                 entry.append(got)
     return wanted, rejected
 
@@ -235,9 +275,10 @@ def _exclude_other_class_epics(conn, wanted: dict[str, list[dict]],
         if not record or record["class_name"] == class_name:
             continue
         for got in wanted.pop(page, []):
-            candidates.add(got.get("via_set") or got["page_title"])
+            candidates.add(got.get("via_set_piece") or got.get("via_set")
+                           or got["page_title"])
         quests.pop(page, None)
-    remaining = {got.get("via_set") or got["page_title"]
+    remaining = {got.get("via_set_piece") or got.get("via_set") or got["page_title"]
                  for gets in wanted.values() for got in gets}
     rejected.update(candidates - remaining)
 
@@ -358,7 +399,8 @@ def _questlines(ordered: list[dict], seeds: set[str],
         seen = set()
         for row in goals:
             for item in row.get("gets") or []:
-                identity = item.get("via_set") or item["page_title"]
+                identity = item.get("via_set_piece") or item.get("via_set") \
+                    or item["page_title"]
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -470,7 +512,8 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             (set(items or []) -
              {g["page_title"] for r in rows for g in r["gets"]}) |
             (set(sets or []) -
-             {g["via_set"] for r in rows for g in r["gets"] if g["via_set"]})
+             {g.get("via_set_piece") or g["via_set"]
+              for r in rows for g in r["gets"] if g["via_set"]})
         ) - ineligible),
         # Separate from unplaced: these entries exist, but their authoritative
         # item class list rules them out for the character named by the plan.

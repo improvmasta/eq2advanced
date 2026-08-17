@@ -29,12 +29,13 @@ function Gets({ row, cards }) {
   return (
     <span className="outlinegets">
       {row.gets.map((item) => {
-        const card = !item.via_set ? cards.get(item.page_title) : null
+        const card = item.card || cards.get(item.page_title)
         const content = (
           <span className="outlineget" tabIndex={card ? 0 : undefined}>
             <OutlineItemIcon item={item} compact />
-            <span className={!item.via_set ? rarityClass(item.tier) : ''}>
-              {item.via_set || item.name}
+            <span className={rarityClass(item.tier)}>
+              {item.name}
+              {item.via_set && <small>carries {item.via_set}</small>}
             </span>
           </span>
         )
@@ -127,7 +128,8 @@ function Questline({ line, rows, done, toggle, cards }) {
   return (
     <details className="outlinezone outlinequestline" open={quests.length <= 8}>
       <summary className="questlinehead">
-        <ItemHeading item={line.targets[0]} card={cards.get(line.targets[0]?.page_title)} context="Questline"
+        <ItemHeading item={line.targets[0]}
+          card={line.targets[0]?.card || cards.get(line.targets[0]?.page_title)} context="Questline"
           detail={`${quests.length} quests · ${complete} complete`} />
       </summary>
       <div className="questlinesteps">
@@ -208,7 +210,7 @@ export default function PlanOutline({ data, ownerKey, items = [] }) {
         return (
           <details className="outlinezone outlineepic" key={epic.title} open>
             <summary className="outlineepichead">
-              <ItemHeading item={target} card={cards.get(target?.page_title)} context={`${className} epic weapon`}
+              <ItemHeading item={target} card={target?.card || cards.get(target?.page_title)} context={`${className} epic weapon`}
                 detail={target?.tier ? `${String(target.tier).toLowerCase()} questline` : 'Epic questline'} />
             </summary>
             {!!epic.requirements.length && (

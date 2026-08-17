@@ -151,7 +151,7 @@ def plan_outline(
     # the three that exist.
     item: list[str] | None = Query(None, description="shortlisted item pages"),
     set_: list[str] | None = Query(None, alias="set",
-                                   description="shortlisted adornment sets"),
+                                   description="tracked set-adornment pieces"),
 ):
     """One character's Outline. The character-keyed shortlist lives in the
     reader's browser, so it arrives with the request rather than being stored.
