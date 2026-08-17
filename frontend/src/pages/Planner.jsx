@@ -64,6 +64,14 @@ const TRACK_LABEL = {
   maxhealth: 'Max HP',
 }
 
+/* The two set-bonus stats `/plan/meta` does not carry a label for — it lists
+   what can be RANKED, and neither of these can be. */
+const SET_STAT_FALLBACK = { health: 'Health', power: 'Power' }
+
+const precise = (value) => Number(value).toLocaleString(undefined, {
+  maximumFractionDigits: 2,
+})
+
 const emptyShortlist = () => ({
   owner: null, items: [], sets: [], active: {}, set_slots: {}, adorn_slots: {},
 })
@@ -882,8 +890,18 @@ export default function Planner({ user }) {
     ? visibleSets.filter((set) => setSocketTargets.some((target) =>
       setFitsHost(set, target.item, target.catalog)))
     : visibleSets, [setSocketTargets, visibleSets])
-  const shownSets = setSocketTargets.length && !showAllSets && !setSearch.trim()
+  /* THE SCOPE IS A CONTROL, NOT A SIDE EFFECT OF TYPING. It used to widen to
+     every set the moment a search box had anything in it, which meant the list
+     silently changed what it was showing while the reader was narrowing it.
+     Fits my gear / All says which question is being asked and the search
+     filters inside the answer; the footer names what the scope is holding
+     back so nothing goes missing without a count. */
+  const shownSets = setSocketTargets.length && !showAllSets
     ? compatibleVisibleSets : visibleSets
+  const hiddenSets = setSocketTargets.length && !showAllSets
+    ? visibleSets.length - compatibleVisibleSets.length : 0
+  const eraLabel = useMemo(() => Object.fromEntries(
+    (meta?.eras || []).map((era) => [era.key, era.label])), [meta])
 
   return (
     /* THIS IS A WORK RAIL, NOT NAVIGATION. Recommendations give it a useful
@@ -1078,23 +1096,24 @@ export default function Planner({ user }) {
                          placeholder="Set name or bonus…"
                          onChange={(e) => setSetSearch(e.target.value)} />
                 </label>
-                <p>
-                  Each set lists the exact pieces that fit your current gear.
-                  Click a piece to equip or remove it; track sources separately
-                  when you want to know where its carrier gear drops.
-                </p>
+                {!!setSocketTargets.length && (
+                  <span className="setscope" role="group"
+                        aria-label="Which sets to list">
+                    <button type="button" className={showAllSets ? '' : 'on'}
+                            aria-pressed={!showAllSets}
+                            onClick={() => setShowAllSets(false)}>Fits my gear</button>
+                    <button type="button" className={showAllSets ? 'on' : ''}
+                            aria-pressed={showAllSets}
+                            onClick={() => setShowAllSets(true)}>All sets</button>
+                  </span>
+                )}
               </div>
               <div className="plansearchfooter" aria-live="polite">
-                <span><b>{shownSets.length}</b> set{shownSets.length === 1 ? '' : 's'} shown
-                  {setSocketTargets.length && !setSearch.trim()
-                    ? ` · ${compatibleVisibleSets.length} compatible with this loadout` : ''}</span>
-                {setSocketTargets.length && !setSearch.trim()
-                    && compatibleVisibleSets.length !== visibleSets.length ? (
-                  <button type="button" className="btnlink"
-                          onClick={() => setShowAllSets((value) => !value)}>
-                    {showAllSets ? 'Compatible only' : `Show all ${visibleSets.length}`}
-                  </button>
-                ) : <span>Slot and equipment-tier rules are applied automatically</span>}
+                <span><b>{shownSets.length}</b> set{shownSets.length === 1 ? '' : 's'}
+                  {hiddenSets ? ` · ${hiddenSets} more don't fit this loadout` : ''}</span>
+                <span>{setSocketTargets.length
+                  ? 'Open a set to equip a piece or track where it drops'
+                  : 'Load a character to see which sets fit its sockets'}</span>
               </div>
             </>
           )}
@@ -1115,7 +1134,8 @@ export default function Planner({ user }) {
         {data && mode === 'sets' && (
           <SetList sets={shownSets} inList={setsInList} canPlan={!!planningOwner}
                    targets={setSocketTargets} onToggle={toggleSet}
-                   onEquipAdornment={setSlotAdornment} />
+                   onEquipAdornment={setSlotAdornment} eraLabel={eraLabel}
+                   statLabel={statLabel} statPct={statPct} />
         )}
 
         {data && mode !== 'sets' && (
@@ -1518,83 +1538,174 @@ function SetBonusList({ bonuses }) {
   )
 }
 
-function SetList({ sets, inList, canPlan, targets, onToggle, onEquipAdornment }) {
-  if (!sets.length) {
+/* WHAT THE WHOLE SET IS WORTH, in the app's own set arithmetic — the same
+   typed per-tier stats `PlanLoadout` adds into the projection, summed up the
+   ladder because EQ2's thresholds are cumulative.
+
+   Prose tiers are not invented here. A Focus effect, or a line the typer
+   refuses rather than half-read, is on the ladder one click away; a set with no
+   typed stat at all leads with its top tier's own words instead of an empty
+   line. PLANNER DECIMALS ARE SOURCE PRECISION: a tier written "3.5% Max
+   Health" is not a 4. */
+function setGrants(set, statLabel, statPct) {
+  const ladder = set.bonuses || []
+  const totals = {}
+  ladder.forEach((bonus) => Object.entries(bonus.stats || {}).forEach(
+    ([key, value]) => { totals[key] = (totals[key] || 0) + value }))
+  const lines = Object.entries(totals).map(([key, value]) =>
+    `${precise(value)}${statPct[key] ? '%' : ''} `
+    + `${statLabel[key] || SET_STAT_FALLBACK[key] || key}`)
+  return lines.length ? lines.join(' · ') : (ladder[ladder.length - 1]?.text || '')
+}
+
+/* One set against one loadout: which equipped positions can legally host it,
+   which already wear it, and which of its slot-specific turquoises has
+   somewhere to go. Every piece is still individually trackable whether or not
+   anything can host it — where it DROPS is a separate question from whether
+   you can wear it today. */
+function setView(set, targets, inList) {
+  const legal = targets.filter((target) =>
+    setFitsHost(set, target.item, target.catalog))
+  const pieces = (set.pieces || []).map((piece) => ({
+    piece,
+    label: piece.split(':').pop().trim(),
+    tracked: inList.has(piece),
+    targets: legal.filter((target) =>
+      setPieceForSlot(set, target.catalog) === piece),
+  }))
+  return {
+    set,
+    pieces,
+    worn: legal.filter((target) => target.installed === set.name),
+    fits: pieces.filter((row) => row.targets.length).length,
+  }
+}
+
+function SetRow({ view, canPlan, hasCharacter, open, onOpen, onToggle,
+                  onEquipAdornment, eraLabel, statLabel, statPct }) {
+  const { set, pieces, worn, fits } = view
+  const ladder = (set.bonuses || []).map((bonus) => bonus.pieces).join('/')
+  const hosts = pieces.filter((row) => row.targets.length)
+  return (
+    <div className={`setrow${open ? ' open' : ''}${worn.length ? ' worn' : ''}`}>
+      <button type="button" className="setrowhead" aria-expanded={open}
+              onClick={onOpen}>
+        <span className="caret" aria-hidden="true">›</span>
+        <b className="setname">{set.name}</b>
+        {/* The three short facts travel together, so a narrow window drops
+            them under the name as one line instead of three. */}
+        <span className="setfacts">
+          <span className="setera">
+            {eraLabel[set.era] || set.era}{set.level ? ` ${set.level}` : ''}
+          </span>
+          {!!ladder && (
+            <span className="settiers" title="Piece thresholds">{ladder}</span>
+          )}
+          {hasCharacter && (
+            <span className={`setfit${worn.length ? ' worn' : fits ? '' : ' none'}`}>
+              {worn.length ? `${fits} fit · ${worn.length} worn`
+                : fits ? `${fits} fit` : 'No fit'}
+            </span>
+          )}
+        </span>
+        <span className="setgrant">{setGrants(set, statLabel, statPct)}</span>
+      </button>
+      {open && (
+        <div className="setdetail">
+          <SetBonusList bonuses={set.bonuses} />
+          <div className="setwork">
+            <div className="setworkrow">
+              <span className="seclabel">Equip on</span>
+              <div className="setworkhosts">
+                {hosts.length ? hosts.flatMap((row) => row.targets.map((target) => {
+                  const isWorn = target.installed === set.name
+                  return (
+                    <button type="button" key={`${row.piece}:${target.key}`}
+                            className={`settarget${isWorn ? ' on' : ''}`}
+                            title={isWorn
+                              ? `Remove ${row.piece} from ${target.item.name}`
+                              : target.installed
+                                ? `Replace ${target.installed} on ${target.item.name}`
+                                : `Equip ${row.piece} on ${target.item.name}`}
+                            onClick={() => onEquipAdornment(
+                              target.key, isWorn ? null : set.name)}>
+                      <b>{target.label}</b>
+                      <span>{target.item.name}</span>
+                      <em>{isWorn ? 'Equipped · remove'
+                        : target.installed ? `Replace ${target.installed}` : 'Equip'}</em>
+                    </button>
+                  )
+                })) : (
+                  <span className="muted">{hasCharacter
+                    ? 'No socket in this loadout can host a piece of this set'
+                    : 'Load a character to try this set on'}</span>
+                )}
+              </div>
+            </div>
+            <div className="setworkrow">
+              <span className="seclabel">Track source</span>
+              <div className="setworktrack">
+                {pieces.map((row) => (
+                  <button type="button" key={row.piece} aria-pressed={row.tracked}
+                          className={`chip settrackchip${row.tracked ? ' on' : ''}`}
+                          disabled={!canPlan && !row.tracked}
+                          title={canPlan ? row.piece
+                            : `Load a character to track ${row.piece}`}
+                          onClick={() => onToggle({
+                            name: row.piece, set_name: set.name, slot_label: row.label,
+                            level: set.level, pieces: set.pieces, bonuses: set.bonuses,
+                          })}>
+                    {row.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ONE LINE PER SET, OPENED FOR THE WORK.
+
+   The first pass drew all 113 of them as full cards — the whole bonus ladder,
+   seven piece rows apiece, and a three-line host button on each row, most of
+   which said "No compatible host". Finding one adornment in that is the entire
+   job of this view and it was the thing the view was worst at.
+
+   A reader here is scanning for two facts: what a set grants, and whether it
+   fits what they are wearing. The LINE carries those two. Equipping and
+   tracking are the work behind the decision, so they live in the opened row,
+   where the pieces that cannot go anywhere cost a chip instead of a row. */
+function SetList({ sets, inList, canPlan, targets, onToggle, onEquipAdornment,
+                   eraLabel, statLabel, statPct }) {
+  const [open, setOpen] = useState(() => new Set())
+  /* WORN FIRST, THEN WHAT FITS. Alphabetical is the server's order and stays
+     the tiebreak, but a reader with a character loaded is looking at their own
+     gear — what is already on it, then what could be. */
+  const views = useMemo(() => sets
+    .map((set) => setView(set, targets, inList))
+    .sort((a, b) => (b.worn.length ? 1 : 0) - (a.worn.length ? 1 : 0)
+      || (b.fits ? 1 : 0) - (a.fits ? 1 : 0)
+      || a.set.name.localeCompare(b.set.name)), [sets, targets, inList])
+  if (!views.length) {
     return <p className="muted">No adornment sets in this selection.</p>
   }
   return (
-    <div className="setlist">
-      {sets.map((s) => {
-        const legal = targets.filter((target) =>
-          setFitsHost(s, target.item, target.catalog))
-        const equipped = legal.filter((target) => target.installed === s.name)
-        const pieceRows = (s.pieces || []).map((piece) => ({
-          piece,
-          label: piece.split(':').pop().trim(),
-          targets: legal.filter((target) =>
-            setPieceForSlot(s, target.catalog) === piece),
-        }))
-        const compatiblePieces = pieceRows.filter((row) => row.targets.length).length
-        const status = !targets.length ? 'Load a character to try this set on'
-          : !legal.length ? `No level-compatible piece fits the current loadout`
-            : `${equipped.length} equipped · ${compatiblePieces} of ${pieceRows.length} pieces fit`
-        return (
-          <div className="card setcard" key={s.name}>
-          <div className="sethead">
-            <div className="setpick">
-              <span className="cardtitle">{s.name}</span>
-            </div>
-            <span className={`setstatus${equipped.length ? ' equipped' : ''}`}>{status}</span>
-          </div>
-          <SetBonusList bonuses={s.bonuses} />
-          <div className="setpieces" aria-label={`${s.name} adornment pieces`}>
-            {pieceRows.map((row) => {
-              const tracked = inList.has(row.piece)
-              return (
-                <div className={`setpiecerow${row.targets.length ? '' : ' unavailable'}`}
-                     key={row.piece}>
-                  <div className="setpieceidentity" title={row.piece}>
-                    <b>{row.label}</b>
-                    <span>{row.piece}</span>
-                  </div>
-                  <div className="setpiecehosts">
-                    {row.targets.map((target) => {
-                      const isEquipped = target.installed === s.name
-                      return (
-                        <button type="button" className={`settarget${isEquipped ? ' on' : ''}`}
-                                key={target.key}
-                                title={isEquipped
-                                  ? `Remove ${row.piece} from ${target.item.name}`
-                                  : target.installed
-                                    ? `Replace ${target.installed} on ${target.item.name}`
-                                    : `Equip ${row.piece} on ${target.item.name}`}
-                                onClick={() => onEquipAdornment(
-                                  target.key, isEquipped ? null : s.name)}>
-                          <b>{target.label}</b>
-                          <span>{target.item.name}</span>
-                          <em>{isEquipped ? 'Equipped · remove'
-                            : target.installed ? `Replace ${target.installed}` : 'Equip'}</em>
-                        </button>
-                      )
-                    })}
-                    {!row.targets.length && <span className="muted">No compatible host</span>}
-                  </div>
-                  <button type="button" className={`chip setpiecetrack${tracked ? ' on' : ''}`}
-                          disabled={!canPlan && !tracked}
-                          title={!canPlan ? 'Load a character to track this piece' : undefined}
-                          onClick={() => onToggle({
-                            name: row.piece, set_name: s.name, slot_label: row.label,
-                            level: s.level, pieces: s.pieces, bonuses: s.bonuses,
-                          })}>
-                    {tracked ? 'Tracked' : 'Track source'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        )
-      })}
+    <div className="setrows">
+      {views.map((view) => (
+        <SetRow key={view.set.name} view={view} canPlan={canPlan}
+                hasCharacter={!!targets.length}
+                open={open.has(view.set.name)}
+                onOpen={() => setOpen((current) => {
+                  const next = new Set(current)
+                  if (!next.delete(view.set.name)) next.add(view.set.name)
+                  return next
+                })}
+                onToggle={onToggle} onEquipAdornment={onEquipAdornment}
+                eraLabel={eraLabel} statLabel={statLabel} statPct={statPct} />
+      ))}
     </div>
   )
 }

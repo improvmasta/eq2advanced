@@ -879,22 +879,45 @@ newer gear, so an expansion filter on carrier equipment must not hide it. Exact 
 of the page, so returning to Equipment restores its existing table immediately
 instead of collapsing the results and refetching the same data.
 
-Each result shows the threshold ladder and the exact slot-specific pieces that
-fit the current loadout. Compatibility requires all three facts: that piece
-exists in the set (`: Head`, `: Fingers`, `: One Handed`, and so on), the host
-has a turquoise socket, and the set's level is no newer than and no more than
-two equipment tiers below the host. Each compatible gear piece is a direct
-Equip/Remove button; there is no empty picker that hides what can actually be
-done. This works for open sockets and replacements, whether or not the character
-already wears that set. With a character loaded, the default list contains only
-sets compatible with the visible loadout; **Show all** reveals out-of-tier sets
-with an explicit reason, and a name search always shows every textual match.
+**One line per set, opened for the work.** EoF and RoK hold 113 sets between
+them. The first build drew each as a card with its ladder open, seven piece
+rows, and a three-line host button on every row — most of them reading “No
+compatible host” — so finding one adornment meant scrolling tens of thousands
+of pixels past what could not be done. A reader in this view is scanning for
+two facts, so the line carries exactly those: **what the set grants** and
+**whether it fits what they wear**, beside its era, level and threshold ladder
+(`2/4/6`). Opening a row is what produces the bonus prose and the actions.
+
+The grant is the app's own set arithmetic — the typed per-tier stats
+`PlanLoadout` already adds into the projection — summed up the ladder, because
+EQ2's thresholds are cumulative. **Prose is not invented into a number**: a
+Focus effect, or a line `set_bonus_stats` refuses rather than half-types, is on
+the ladder one click away, and a set with no typed stat at all leads with its
+top tier's own words. Decimals are source precision, here as everywhere in the
+planner. Worn sets sort first, then those that fit, then the server's
+alphabetical order.
+
+Compatibility requires all three facts: that piece exists in the set
+(`: Head`, `: Fingers`, `: One Handed`, and so on), the host has a turquoise
+socket, and the set's level is no newer than and no more than two equipment
+tiers below the host. In the opened row, each compatible gear piece is a direct
+Equip/Remove button under **Equip on**; there is no empty picker that hides what
+can actually be done. This works for open sockets and replacements, whether or
+not the character already wears that set. The pieces that fit nothing no longer
+cost a row apiece — they are chips in the Track row, which is where they are
+still useful.
+
+**The scope is a control, not a side effect of typing.** With a character
+loaded, **Fits my gear / All sets** says which question is being asked and the
+search box filters inside that answer; the footer counts what the scope is
+holding back. Widening silently the moment the box had a character in it meant
+the list changed what it was showing while the reader was narrowing it.
 
 Trying a set on and tracking how to acquire it are separate actions. Every
-slot-specific turquoise (`: Head`, `: Feet`, `: Fingers`, etc.) is its own row
-and can be tracked individually; tracking Head never adds all seven armour
-pieces. The set's complete bonus ladder stays visible above those rows and is
-also present when the tracked piece is hovered in the Outline. Stopping source
+slot-specific turquoise (`: Head`, `: Feet`, `: Fingers`, etc.) is its own
+trackable chip; tracking Head never adds all seven armour pieces. The set's
+complete bonus ladder sits above those chips in the opened row and is also
+present when the tracked piece is hovered in the Outline. Stopping source
 tracking never unequips it. The Outline resolves an exact turquoise piece to
 the real matching-slot carrier gear, labels each real item/icon with “carries
 `<set piece>`”, and supplies its complete examine hover. A carrier icon is never

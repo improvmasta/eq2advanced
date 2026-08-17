@@ -387,6 +387,14 @@ segmentation)
 - **THE ITEM IS NOT THE UNIT OF VALUE**: in EoF/RoK the set bonus is on a
   turquoise that detaches and moves, so a set is its own row and shortlisting
   from the set view adds the ADORNMENT, never the armour it came in.
+- **A SET IS ONE LINE, OPENED FOR THE WORK** — 113 of them as full cards (open
+  ladder, seven piece rows, three-line host buttons) was unusable. The line
+  carries what it GRANTS and whether it FITS; Equip/Track live in the opened
+  row and a piece that fits nothing costs a chip, not a row. The grant is the
+  typed per-tier stats summed up the cumulative ladder — **prose is never
+  turned into a number**, it stays on the ladder one click away. Scope is the
+  **Fits my gear / All sets** control, never a side effect of typing in the
+  search box.
 - **`catalog.card` builds `items.display`'s shape** so `ItemCard.jsx` is reused
   unchanged — three ways to meet an item, one examine window.
 - **`tools/sync_planner.py` now runs MONTHLY on cron** (`scripts/scheduled-sync.sh
@@ -587,6 +595,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-17 (claude): Gear Planner: one-line set adornment search
 - 2026-08-16 (codex): Overhaul Gear Planner adornments and set pieces
 - 2026-08-16 (codex): Refine character-bound planner outlines
 - 2026-08-16 (codex): Document authoritative epic step coverage
@@ -606,4 +615,3 @@ builds here with `bash build.sh`.
 - 2026-08-15 (codex): Replace parchment light mode with neutral application palette
 - 2026-08-15 (codex): Add private Discord chat alerts and EQ2A branding
 - 2026-08-15 (codex): Polish chat trade labels and window chrome
-- 2026-08-14 (codex): Overhaul admin workspace around accounts and site health

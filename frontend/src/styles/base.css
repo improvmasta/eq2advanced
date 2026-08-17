@@ -6667,14 +6667,25 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-color: var(--gold); background: rgba(var(--gold-rgb), 0.16);
   color: var(--gold-bright);
 }
+/* The set search is a box and a scope and nothing else. It used to carry a
+   three-line paragraph explaining what the results do, above results that
+   were already too tall to reach — the instruction is one line in the footer
+   now and the rest is the list. */
 .plansetsearch {
-  padding: 10px 12px; display: flex; align-items: flex-end;
+  padding: 9px 12px; display: flex; align-items: flex-end;
   justify-content: space-between; gap: 12px; background: rgba(0, 0, 0, 0.08);
 }
 .plansetsearch label { display: grid; gap: 5px; }
-.plansetsearch p {
-  max-width: 68ch; margin: 0; color: var(--text-muted);
-  font-size: var(--fs-label); line-height: 1.4;
+.setscope { display: inline-flex; gap: 4px; }
+.setscope > button {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface); color: var(--text-muted);
+  font-size: var(--fs-label); font-weight: 700; cursor: pointer;
+}
+.setscope > button:hover { color: var(--text); background: rgba(var(--gold-rgb), 0.05); }
+.setscope > button.on {
+  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.16);
+  color: var(--gold-bright);
 }
 
 /* LABELLED ROWS IN A TWO-COLUMN GRID — a form, which is what this is. Every
@@ -6890,22 +6901,78 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 /* ---- the set-adornment view ----
    THE ITEM IS NOT THE UNIT OF VALUE. In EoF and RoK the set bonus rides on a
    turquoise adornment that ships inside the armour and can be pulled out and
-   moved, so a set is its own card with its own checkbox — and ticking it
-   shortlists the ADORNMENT, never the armour it came in. */
-.setlist { display: grid; gap: 10px; margin-top: 10px; }
-.setcard { padding: 11px 13px; }
-.sethead {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
+   moved, so a set is its own row — and tracking one shortlists the ADORNMENT,
+   never the armour it came in.
+
+   ONE LINE PER SET. There are 113 of them across EoF and RoK; as cards, with
+   the ladder open and seven piece rows apiece, the list was tens of thousands
+   of pixels of scroll to find one adornment. The line carries the two facts a
+   reader is scanning for — what it grants, and whether it fits — and opens
+   onto the work. */
+.setrows {
+  display: grid; gap: 1px; margin-top: 10px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--border);
 }
-.setpick { display: inline-flex; align-items: center; gap: 9px; }
-.setpick .chip { min-height: 27px; padding: 3px 9px; cursor: pointer; }
-.setpick .chip.on {
+.setrow { background: var(--surface); }
+.setrow.worn { background: rgba(var(--success-rgb), 0.05); }
+.setrow.open { background: var(--surface-raised); }
+.setrowhead {
+  width: 100%; min-width: 0; display: grid; align-items: baseline; gap: 1px 9px;
+  grid-template-columns: 11px minmax(0, 1fr) auto;
+  padding: 6px 11px 7px; border: 0; text-align: left;
+  background: none; color: var(--text); cursor: pointer;
+}
+.setrowhead:hover { background: rgba(var(--gold-rgb), 0.06); }
+.setrowhead:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: -1px; }
+.setrowhead .caret {
+  color: var(--text-muted); font-size: var(--fs-label); line-height: 1;
+  transition: transform 0.12s ease;
+}
+.setrow.open .setrowhead .caret { transform: rotate(90deg); }
+/* The caret still turns; it just stops travelling. The open state is the
+   information, and it survives. */
+@media (prefers-reduced-motion: reduce) {
+  .setrowhead .caret { transition: none; }
+}
+.setname {
+  min-width: 0; overflow: hidden; color: var(--gold-bright);
+  font-size: var(--fs-data); text-overflow: ellipsis; white-space: nowrap;
+}
+.setfacts {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 9px;
+  font-size: var(--fs-label); color: var(--text-muted);
+}
+.setera, .settiers, .setfit { white-space: nowrap; }
+.settiers { font-family: var(--font-data); color: var(--gold-dim); }
+.setfit.worn { color: var(--success); }
+.setfit.none { opacity: 0.6; }
+/* THE VALUE LINE IS THE ROW'S SECOND LINE, not a column — it is the longest
+   thing here and the only one whose length varies, so it gets the full width
+   under the name rather than squeezing the facts beside it. */
+.setgrant {
+  grid-column: 2 / -1; overflow: hidden; color: var(--text-muted);
+  font-size: var(--fs-label); text-overflow: ellipsis; white-space: nowrap;
+}
+.setdetail {
+  padding: 2px 11px 10px 31px; border-top: 1px solid var(--row-line);
+  margin-top: 1px;
+}
+.setwork { display: grid; gap: 6px; margin-top: 9px; }
+.setworkrow {
+  display: grid; grid-template-columns: 74px minmax(0, 1fr);
+  gap: 6px; align-items: start;
+}
+.setworkrow .seclabel { padding-top: 4px; }
+.setworkhosts { display: flex; flex-wrap: wrap; gap: 5px; }
+.setworkhosts > .settarget { flex: 0 1 230px; }
+.setworkhosts > .muted { padding: 4px 0; font-size: var(--fs-label); }
+.setworktrack { display: flex; flex-wrap: wrap; gap: 4px; }
+.settrackchip { min-height: 24px; padding: 2px 8px; cursor: pointer; }
+.settrackchip.on {
   border-color: var(--success); color: var(--success);
   background: rgba(var(--success-rgb), 0.08);
 }
-.setstatus { color: var(--text-muted); font-size: var(--fs-label); }
-.setstatus.equipped { color: var(--success); }
 .setbonuses {
   margin: 7px 0 0; padding: 0; font-size: var(--fs-data); list-style: none;
   display: grid; gap: 3px;
@@ -6914,32 +6981,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .setbonuses b { color: var(--gold-bright); font-family: var(--font-data); }
 .setbonuses small {
   grid-column: 2; display: block; color: var(--text-muted); font-size: var(--fs-label);
-}
-.setpieces {
-  display: grid; gap: 5px; margin-top: 9px; padding-top: 8px;
-  border-top: 1px solid var(--row-line);
-}
-.setpiecerow {
-  min-width: 0; display: grid;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(240px, 1.6fr) auto;
-  gap: 7px; align-items: center;
-}
-.setpiecerow.unavailable { opacity: 0.72; }
-.setpieceidentity { min-width: 0; display: grid; }
-.setpieceidentity b { color: var(--gold-bright); font-size: var(--fs-data); }
-.setpieceidentity span {
-  overflow: hidden; color: var(--text-muted); font-size: var(--fs-label);
-  text-overflow: ellipsis; white-space: nowrap;
-}
-.setpiecehosts {
-  min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 5px;
-}
-.setpiecehosts > .muted { padding: 5px 7px; font-size: var(--fs-label); }
-.setpiecetrack { min-width: 88px; cursor: pointer; }
-.setpiecetrack.on {
-  border-color: var(--success); color: var(--success);
-  background: rgba(var(--success-rgb), 0.08);
 }
 .settarget {
   min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
@@ -6966,23 +7007,15 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .setpiecegoalcard p { margin: 0; color: var(--text-muted); font-size: var(--fs-label); }
 .setpiecegoalcard .setbonuses { margin-top: 8px; }
 .setpiecegoalcard .setbonuses small { display: block; color: var(--text-muted); }
-.setcarriers {
-  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--row-line);
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 12px;
-}
-.setcarriers .seclabel { flex-basis: 100%; }
-.setpiece { display: inline-flex; align-items: baseline; gap: 5px; font-size: var(--fs-data); }
-.setpiece .hoverbox { min-width: 0; }
-.setpiece .btnlink { font-size: var(--fs-label); }
-.setpiece .btnlink.on { color: var(--danger); }
-.setpiece em {
-  font-style: normal; color: var(--text-muted); font-size: var(--fs-label);
-}
-.sethosts { margin-top: 5px; }
-
 @media (max-width: 760px) {
-  .setpiecerow { grid-template-columns: minmax(0, 1fr) auto; }
-  .setpiecehosts { grid-column: 1 / -1; grid-row: 2; }
+  /* The facts drop under the name rather than shrinking it — a set is found
+     by its NAME and that column never gives up width. */
+  .setrowhead { grid-template-columns: 11px minmax(0, 1fr); }
+  .setfacts { grid-column: 2; }
+  .setdetail { padding-left: 11px; }
+  .setworkrow { grid-template-columns: minmax(0, 1fr); }
+  .setworkrow .seclabel { padding-top: 0; }
+  .setworkhosts > .settarget { flex: 1 1 100%; }
 }
 
 /* ---- the outline ---- */
