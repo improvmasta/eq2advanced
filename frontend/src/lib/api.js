@@ -257,6 +257,39 @@ export const api = {
      read: an id nobody has resolved answers `{card: null}`. */
   itemCard: (id) => req(`/api/items/${id}/card`),
 
+  /* Experimental raid-night loot board. The opaque browser key is separate
+     from account auth: this first pass asks only for a character name. */
+  lootBidAccountAccess: () => req('/api/loot-bids/account-access'),
+  enrollLootBids: (name, inviteCode) => req(
+    '/api/loot-bids/enroll', json({ name, invite_code: inviteCode })),
+  updateLootBidProfile: (token, name) => req('/api/loot-bids/profile', {
+    ...json({ name }), method: 'PATCH',
+    headers: { ...json({}).headers, 'X-Loot-Bid-Token': token },
+  }),
+  setLootBidOfficer: (token, id, officer) => req(`/api/loot-bids/members/${id}`, {
+    ...json({ officer }), method: 'PATCH',
+    headers: { ...json({}).headers, 'X-Loot-Bid-Token': token },
+  }),
+  convertLootBidAccount: (token, username, password) => req('/api/loot-bids/convert-account', {
+    ...json({ username, password }),
+    headers: { ...json({}).headers, 'X-Loot-Bid-Token': token },
+  }),
+  lootBidState: (token) => req('/api/loot-bids/state', {
+    headers: { 'X-Loot-Bid-Token': token },
+  }),
+  putLootBid: (token, id, bid) => req(`/api/loot-bids/items/${id}/bid`, {
+    ...json({ bid }), headers: { ...json({}).headers, 'X-Loot-Bid-Token': token },
+  }),
+  awardLootBid: (token, id, awards) => req(`/api/loot-bids/items/${id}/award`, {
+    ...json({ awards }), headers: { ...json({}).headers, 'X-Loot-Bid-Token': token },
+  }),
+  openTestLootChest: (token) => req('/api/loot-bids/test-chest', {
+    method: 'POST', headers: { 'X-Loot-Bid-Token': token },
+  }),
+  linkTestLootItem: (token, id) => req(`/api/loot-bids/items/${id}/test-link`, {
+    method: 'POST', headers: { 'X-Loot-Bid-Token': token },
+  }),
+
   /* The Planner (`/plan`). Reference data about the game, per expansion —
      signed out too, like /chat, because nothing here reaches a parse or an
      account. Cached like the aggregates are: the answers cannot change while

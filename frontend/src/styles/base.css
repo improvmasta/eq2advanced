@@ -105,26 +105,14 @@ p + p { margin-top: 8px; }
 .topnav nav a:hover { color: var(--text); background: var(--row-hover); text-decoration: none; }
 .topnav nav a.active { color: var(--gold-bright); border-bottom-color: var(--gold); }
 
-/* The Live Parser tab: last in the bar and deliberately not dressed like the
-   others — every other tab is a place, this one is a state, and on a night when
-   ACT is sending it is the most important thing in the bar. It carries its own
-   answer ("Idle" / "In Combat") so the question is settled before anyone clicks.
-
-   Three states, ONE hue. Off is the plain tab dress: nothing is running, so
-   there is nothing to light up. Connected outlines in green with a dim light,
-   and a pull in progress fills the tab in and turns the light on. Green because
-   the parser working is the GOOD case — the state that used to go red was the
-   raid doing exactly what it is supposed to. Colour, never motion: this sits in
-   the corner of the eye for a whole raid night. */
+/* The Live Parser tab is a compact state pill. Off is plain, connected is
+   green, and combat is red; the tooltip supplies words without spending
+   permanent header width. Colour never moves or pulses. */
 .topnav nav a.navlive {
   display: inline-flex; align-items: center; gap: 7px;
   margin-left: 10px; padding: 3px 10px 4px;
   border: 1px solid var(--border); border-radius: 999px;
   border-bottom-width: 1px;
-}
-.topnav nav a.navlive em {
-  font-style: normal; font-size: 0.85em; letter-spacing: 0.06em;
-  color: var(--text-muted); text-transform: uppercase;
 }
 /* the light, on the tab rather than beside it — same 6px dot as the ACT pill */
 .topnav nav a.navlive .dot {
@@ -136,25 +124,34 @@ p + p { margin-top: 8px; }
   background: rgba(var(--success-rgb), 0.08);
   color: var(--text);
 }
-.topnav nav a.navlive.on em { color: var(--success); }
 .topnav nav a.navlive.combat {
-  border-color: var(--success);
-  background: rgba(var(--success-rgb), 0.2);
+  border-color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.16);
   color: var(--text);
 }
-.topnav nav a.navlive.combat .dot { opacity: 1; }
-.topnav nav a.navlive.combat em { color: var(--success); font-weight: 700; }
-/* only the lit states hover green; an Off tab is an ordinary tab */
-.topnav nav a.navlive.on:hover,
-.topnav nav a.navlive.combat:hover {
-  background: rgba(var(--success-rgb), 0.26);
-}
+.topnav nav a.navlive.combat .dot { opacity: 1; background: var(--danger); }
+/* only lit states have coloured hover; an Off tab is an ordinary tab */
+.topnav nav a.navlive.on:hover { background: rgba(var(--success-rgb), 0.2); }
+.topnav nav a.navlive.combat:hover { background: rgba(var(--danger-rgb), 0.23); }
 /* being ON the dashboard is the gold "you are here", and it must not fight the
    green that says what the parser is doing — so the underline goes and the
    brand colour lands on the label alone */
 .topnav nav a.navlive.active { color: var(--gold-bright); border-bottom-color: var(--border); }
 .topnav nav a.navlive.on.active { border-bottom-color: rgba(var(--success-rgb), 0.55); }
-.topnav nav a.navlive.combat.active { border-bottom-color: var(--success); }
+.topnav nav a.navlive.combat.active { border-bottom-color: var(--danger); }
+
+/* Private portal access is an entitlement, not another public site section.
+   It borrows the Live Parser pill shape but uses the brand hue because there
+   is no connection state to signal. Most users never render it at all. */
+.topnav nav a.navlive.navportal {
+  border-color: var(--gold-dim);
+  background: rgba(var(--gold-rgb), 0.07);
+  color: var(--text);
+}
+.topnav nav a.navlive.navportal:hover { background: rgba(var(--gold-rgb), 0.14); }
+.topnav nav a.navlive.navportal.active {
+  color: var(--gold-bright); border-color: var(--gold);
+}
 
 /* The sibling TLE sites, sitting in the gap the nav leaves. TWO auto margins —
    one here, one on .navtools — so the slack splits evenly and the plaques ride

@@ -656,6 +656,54 @@ very different records it is:
 a `PARSE_VERSION` bump: loot changes no stat, segment, roster or rollup. `clear_derived` still
 drops loot with the encounters it points at and the parse writes it back.
 
+### Skill Issue live loot portal (`/guild/skill-issue`, schema v48)
+
+This is a private Skill Issue portal, not a general-purpose loot-rules engine.
+Spades and Gabriel bootstrap as guild portal managers through their existing
+eq2advanced accounts; Bobby has the same portal-only access while building and
+testing it. A manager shares a coded `/guild/skill-issue?code=...` invite;
+opening it once with an EQ2 player name mints one durable personal token and
+the browser keeps it, so later visits need only `/guild/skill-issue`. Managers promote
+or demote that member record. The same personal token then gains or loses
+officer posting/award powers; it is never replaced or redistributed. The site
+can edit the player name, and the separate ACT loot plugin updates it from
+ACT's current `eq2log_<Character>.txt`. A lightweight portal member may
+optionally add a site username/password later; conversion links the existing
+member record, token, role, bid history, and player name to the new account.
+Recent raid activity is bounded to twelve hours; memberships are not.
+The portal is not a public navigation tab. A gold **Skill Issue Portal** pill,
+using the same compact navigation treatment as Live Parser, appears only when
+this browser holds a personal portal token or a signed-in linked account
+recovers one.
+
+Only a personal token currently promoted to officer can relay the relevant local log shapes;
+the normal parse uploader and its device token are not an access path to this
+board. Raw relay lines are scanned in the request and are not stored or added to
+the public chat archive. The officer plugin also reports ACT's current zone (and
+zone-entry lines as they happen), which is the raid context in the portal header.
+`<Player> opens <Chest> and discovers:` followed by
+same-second indented item links creates the chest contents immediately. The
+most recently completed fight supplies the provisional mob; a later
+`loots <item> from the <Chest> of <Mob>` line replaces it with the authoritative
+source. Duplicate item links in one discovery block become one auction with a
+quantity. An item link in **raid chat** opens only the newest waiting copy of
+that item, names the speaker as looter, and starts its independent countdown.
+Backfill batches never create or open live auctions.
+
+Bids are sealed whole-number point bids with a minimum of 5. During a running
+countdown everyone, including officers and the linking looter, sees only the bid
+count and their own bid. Once it closes, officers receive the bid table. One copy goes to
+the highest bidder for `second highest + 1`. For N identical copies, the lowest
+winning bid pays `bid N+1 + 1`, the next pays `+2`, and so on: two copies with
+bids 15/11/8 cost 10 and 9 respectively. With no losing bid the ladder starts at
+5, and nobody pays more than their own bid. After cutoff an officer sees the
+calculated winners and prices, may adjust either for an exception, and then
+confirms the public result. Every confirmation appends winner, item, and price
+to the site-only raid loot log. Re-linking a closed or awarded item in raid
+chat clears its former bids/result and starts a new timer. Duplicate copies in
+the test chest exercise the price ladder; **Link in raid chat** still starts
+each item alone so overlapping auctions can be introduced intentionally.
+
 ### Items as reference data (`backend/items.py`, schema v32)
 
 The display record for an item a log named. Census answers what it IS, the wiki what it LOOKS

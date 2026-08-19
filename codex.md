@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-19 (codex): Add private Skill Issue loot portal
 - 2026-08-19 (codex): Refine Gear Planner search and scalable outline
 - 2026-08-17 (claude): Track the logger's unannounced deaths; pets no longer end the dead clock
 - 2026-08-17 (claude): Gear Planner: one-line set adornment search
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
 - 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks
-- 2026-08-15 (codex): Replace parchment light mode with neutral application palette

@@ -1,0 +1,118 @@
+.lootbids { max-width: 1120px; margin: 0 auto; padding-bottom: 32px; }
+.lootbids.join { min-height: calc(100vh - 180px); display: grid; place-items: center; }
+.joincard { width: min(480px, 100%); padding: 28px; background: var(--surface); border: 1px solid var(--border); border-top-color: var(--gold); border-radius: var(--radius-md); box-shadow: var(--shadow); }
+.joincard h1 { margin: 3px 0 8px; }
+.joincard p { color: var(--text-muted); }
+.joincard form { margin-top: 20px; }
+.joincard label { display: block; margin-bottom: 5px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.joincard form > div { display: flex; gap: 8px; }
+.joincard input { flex: 1; width: auto; margin: 0; padding: 8px 10px; }
+.joincard form > label:not(:first-child) { margin-top: 10px; }
+.roomstart { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--row-line); }
+.roomstart h2 { font-size: 1rem; margin: 0 0 8px; }
+.roomcodes { display: grid; gap: 7px; }
+.roomcodes p { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 8px; margin: 0; }
+.roomcodes code { padding: 6px 8px; background: var(--surface-raised); color: var(--gold-bright); border: 1px solid var(--border); user-select: all; }
+.roomcodes small { color: var(--text-muted); line-height: 1.4; }
+.portalsettings { margin: 14px 0; border: 1px solid var(--border); background: var(--surface); }
+.portalsettings > summary { cursor: pointer; padding: 9px 12px; color: var(--text-muted); font: 600 var(--fs-xs) var(--font-data); text-transform: uppercase; letter-spacing: .06em; }
+.portalsettings-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 1px; padding-top: 1px; background: var(--row-line); border-top: 1px solid var(--row-line); }
+.portalsettings section { min-width: 0; padding: 12px; background: var(--surface); }
+.portalsettings h2 { margin: 0 0 9px; font-size: .9rem; }
+.portalsettings p, .portalsettings small { display: block; color: var(--text-muted); font-size: var(--fs-xs); }
+.portalsettings label { display: block; margin: 8px 0 4px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.portalsettings input { width: 100%; margin: 0; }
+.portalsettings code { display: block; overflow: auto; padding: 7px 8px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--gold-bright); font-size: var(--fs-xs); user-select: all; }
+.portalsettings .inlineform { display: flex; gap: 6px; }
+.portalsettings .inlineform input { min-width: 0; }
+.memberadmin { grid-column: 1 / -1; }
+.memberlist { display: grid; margin-top: 10px; border: 1px solid var(--row-line); }
+.memberlist > div { display: grid; grid-template-columns: minmax(100px,1fr) 110px auto; align-items: center; gap: 10px; padding: 7px 9px; border-top: 1px solid var(--row-line); }
+.memberlist > div:first-child { border-top: 0; }
+.memberlist span, .memberlist em { color: var(--text-muted); font: var(--fs-xs) var(--font-data); font-style: normal; }
+.memberlist label { display: flex; align-items: center; gap: 5px; margin: 0; color: var(--text); }
+.memberlist input { width: auto; }
+.eyebrow { color: var(--gold-bright); font: 600 var(--fs-xs) var(--font-data); text-transform: uppercase; letter-spacing: .12em; }
+.lootbids .pagehead { align-items: center; }
+.lootbids .pagehead h1 { margin-top: 1px; }
+.raidcontext { display: flex; align-items: center; gap: 18px; min-width: 0; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.raidcontext > span { display: flex; flex-direction: column; min-width: 0; }
+.raidcontext small { color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.raidcontext b { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.lootflow { display: flex; align-items: center; gap: 9px; margin: 14px 0; padding: 9px 12px; background: var(--surface); border: 1px solid var(--row-line); color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.lootflow span { display: inline-flex; align-items: center; gap: 6px; }
+.lootflow b { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--gold-dim); border-radius: 50%; color: var(--gold-bright); }
+.lootflow i { color: var(--gold-dim); font-style: normal; }
+.emptyloot { margin-top: 28px; padding: 52px 20px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-md); }
+.emptyloot p { color: var(--text-muted); }
+.lootworkspace { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 16px; }
+.lootworkspace > main { min-width: 0; }
+.awardlog { position: sticky; top: 72px; margin-top: 16px; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.awardlog > header { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 12px; background: var(--surface-raised); border-bottom: 1px solid var(--border); }
+.awardlog h2 { margin: 0; font-size: .92rem; }
+.awardlog header span, .awardlog > p { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.awardlog > p { margin: 0; padding: 18px 12px; }
+.awardlog-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 8px; padding: 9px 11px; border-top: 1px solid var(--row-line); }
+.awardlog-row:first-of-type { border-top: 0; }
+.awardlog-row b, .awardlog-row span, .awardlog-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.awardlog-row b { font-size: var(--fs-sm); }
+.awardlog-row span { grid-column: 1 / -1; color: var(--text); font-size: var(--fs-xs); }
+.awardlog-row em { grid-column: 2; grid-row: 1; color: var(--gold-bright); font: 600 var(--fs-xs) var(--font-data); font-style: normal; }
+.awardlog-row small { grid-column: 1 / -1; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.chestgroup { margin-top: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+.chestgroup > header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-raised); }
+.chestgroup > header > div { display: flex; align-items: center; gap: 9px; }
+.chestgroup h2 { margin: 0; font-size: 1rem; }
+.chestgroup > header > span { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.chesticon { color: var(--gold-bright); transform: rotate(90deg); }
+.chestitems { display: grid; gap: 1px; background: var(--row-line); }
+.biditem { padding: 12px 14px; background: var(--surface); }
+.biditem.open { box-shadow: inset 3px 0 var(--gold); }
+.biditem-main { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.biditem-main img { border-radius: 3px; }
+.biditem-noicon { display: grid; place-items: center; width: 34px; height: 34px; background: var(--surface-raised); color: var(--gold-dim); }
+.biditem-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.biditem-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.biditem-name span, .biditem-status span { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.biditem-status { min-width: 72px; text-align: right; display: flex; flex-direction: column; }
+.biditem-status b { color: var(--gold-bright); font: 700 1.05rem var(--font-data); font-variant-numeric: tabular-nums; }
+.biditem.closed .biditem-status b, .biditem.awarded .biditem-status b { color: var(--text); }
+.biditem-wait, .bidentry { margin: 10px 0 0 48px; }
+.biditem-wait { color: var(--text-muted); font-size: var(--fs-xs); }
+.bidentry { display: flex; align-items: center; gap: 7px; }
+.bidentry label { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.bidentry input { flex: 1; max-width: 360px; width: auto; margin: 0; }
+.bidentry input[type="number"] { background: var(--surface-raised); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; font: var(--fs-data) var(--font-data); }
+.bidsaved { color: var(--success); font: var(--fs-xs) var(--font-data); }
+.looterbox { margin: 11px 0 0 48px; padding: 10px; border: 1px solid var(--gold-dim); background: rgba(var(--gold-rgb), .055); }
+.looterbox-head { display: flex; align-items: baseline; gap: 10px; }
+.looterbox-head span, .looterbox p { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.looterbox p { margin: 6px 0 0; }
+.sealedbids { display: flex; align-items: baseline; gap: 10px; }
+.sealedbids span { color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.looterbids { margin-top: 7px; display: grid; gap: 4px; }
+.looterbids > div { display: grid; grid-template-columns: auto minmax(90px,.4fr) 1fr auto; align-items: center; gap: 8px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--row-line); }
+.looterbids input[type="checkbox"] { accent-color: var(--gold); }
+.awardprice { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.awardprice input { width: 72px; margin: 0; padding: 3px 5px; background: var(--surface-raised); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font: var(--fs-data) var(--font-data); }
+.looterbids > div.winner { border-color: var(--success); }
+.looterbids em { color: var(--success); font-style: normal; font: var(--fs-xs) var(--font-data); }
+.bidresolution { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--gold-dim); font: var(--fs-xs) var(--font-data); }
+.bidresult { margin: 9px 0 0 48px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.bidresult.won { color: var(--success); }
+.bidrerun { display: flex; align-items: center; gap: 8px; margin: 9px 0 0 48px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.lootcaveat { margin-top: 16px; color: var(--text-muted); font: var(--fs-xs) var(--font-data); }
+.formerror { color: var(--danger); font: var(--fs-xs) var(--font-data); }
+@media (max-width: 700px) {
+  .raidcontext { width: 100%; justify-content: space-between; }
+  .lootworkspace { grid-template-columns: 1fr; }
+  .awardlog { position: static; grid-row: 1; }
+  .lootflow { align-items: flex-start; flex-direction: column; }
+  .lootflow i { display: none; }
+  .biditem-main { grid-template-columns: 34px minmax(0,1fr); }
+  .biditem-status { grid-column: 2; flex-direction: row; gap: 7px; text-align: left; }
+  .bidentry { align-items: stretch; flex-direction: column; }
+  .bidentry input { max-width: none; }
+  .looterbids > div { grid-template-columns: 1fr auto; }
+  .looterbids > div span { grid-column: 1 / -1; }
+}

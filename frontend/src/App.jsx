@@ -10,6 +10,7 @@ import Features from './pages/Features.jsx'
 import Live from './pages/Live.jsx'
 import Chat from './pages/Chat.jsx'
 import Planner from './pages/Planner.jsx'
+import LootBids from './pages/LootBids.jsx'
 import Overlay from './pages/Overlay.jsx'
 import Workspace from './pages/Workspace.jsx'
 import EncounterRedirect from './pages/EncounterRedirect.jsx'
@@ -35,6 +36,11 @@ import { currentTheme, toggleTheme } from './theme.js'
 function NeedsAccount({ user, children }) {
   if (user === undefined) return <p className="muted">Loading…</p>
   return user ? children : <Navigate to="/login" replace />
+}
+
+function LegacyLootBids() {
+  const location = useLocation()
+  return <Navigate to={`/guild/skill-issue${location.search}`} replace />
 }
 
 /* The plaques, in the gap the nav leaves. The point is one door: a raider lands
@@ -83,6 +89,7 @@ function pageTitle(pathname) {
   if (pathname === '/live') return 'Live Parser'
   if (pathname === '/chat') return 'Chat'
   if (pathname === '/plan') return 'Gear Planner'
+  if (pathname === '/guild/skill-issue' || pathname === '/loot-bids') return 'Skill Issue Loot'
   if (pathname.startsWith('/sessions/')) return 'Session'
   if (pathname === '/calibration') return 'Calibration'
   if (pathname === '/characters') return 'Characters'
@@ -100,6 +107,8 @@ function pageTitle(pathname) {
 export default function App() {
   const [theme, setTheme] = useState(currentTheme())
   const [user, setUser] = useState(undefined) // undefined = checking, null = signed out
+  const [portalAccess, setPortalAccess] = useState(
+    () => Boolean(localStorage.getItem('eq2a:loot-bids:token')))
   // undefined = not asked yet, null = the plugin has never been here
   const [live, setLive] = useState(undefined) // | 'idle' | 'parsing' | 'on'
   // whether any receiving live session has an open fight RIGHT NOW — the
@@ -165,6 +174,24 @@ export default function App() {
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
   }, [])
+
+  useEffect(() => {
+    const sync = () => setPortalAccess(Boolean(localStorage.getItem('eq2a:loot-bids:token')))
+    window.addEventListener('eq2a:portal-access', sync)
+    return () => window.removeEventListener('eq2a:portal-access', sync)
+  }, [])
+
+  /* A linked full account can recover its personal portal token on a fresh
+     browser. The 404 is the normal answer for nearly every user and leaves no
+     portal affordance behind. */
+  useEffect(() => {
+    if (!user) return
+    api.lootBidAccountAccess().then((data) => {
+      localStorage.setItem('eq2a:loot-bids:token', data.token)
+      localStorage.setItem('eq2a:loot-bids:name', data.board.player)
+      setPortalAccess(true)
+    }).catch(() => {})
+  }, [user?.id])
 
   /* The hand marks follow the ACCOUNT now (schema v35), so they are read once
      per sign-in and merged with whatever this browser already had — see
@@ -278,18 +305,9 @@ export default function App() {
               {user.role === 'admin' && <NavLink to="/admin">Admin</NavLink>}
               {/* a curator's only door — they have no /admin to reach it from */}
               {user.role === 'curator' && <NavLink to="/admin/abilities">Abilities</NavLink>}
-              {/* Last, and dressed differently on purpose: every other tab is a
-                  place, this one is a state — and while a raid is being
-                  uploaded it is the most important thing in the bar, so it goes
-                  GREEN rather than merely underlined. The label answers the
-                  question a raider actually has — is the raid in a pull right
-                  now — before they click.
-
-                  Three states, one hue: not connected is the plain tab dress
-                  (there is no parser running to shout about), connected is an
-                  outlined green with a dim light, and a pull in progress fills
-                  it in. Colour, never motion: this sits in the corner of the eye
-                  for a whole raid night. */}
+              {/* Compact state pill: plain while disconnected, green between
+                  pulls, red in combat. The title carries the full explanation;
+                  the header spends no width spelling the state out. */}
               <NavLink to="/live"
                        className={`navlive ${combat ? 'combat' : live === 'on' ? 'on' : 'off'}`}
                        title={combat ? 'The live parser — a fight is in progress'
@@ -297,9 +315,14 @@ export default function App() {
                            : 'The live parser — ACT is not sending right now'}>
                 {live === 'on' && <i className="dot" />}
                 Live Parser
-                <em>{combat ? 'In Combat' : live === 'on' ? 'Idle' : 'Off'}</em>
               </NavLink>
             </>}
+            {portalAccess && (
+              <NavLink to="/guild/skill-issue" className="navlive navportal"
+                       title="Private Skill Issue raid portal">
+                Skill Issue Portal
+              </NavLink>
+            )}
             {/* Signed-out only. A raider who already uploads does not need the
                 pitch in their nav every night; the URL still works for them, and
                 it is the one they hand to somebody else. */}
@@ -444,6 +467,8 @@ export default function App() {
                 cached Census character over it for current gear/projections;
                 signed out keeps the complete catalog. */}
             <Route path="/plan" element={<Planner user={user} />} />
+            <Route path="/guild/skill-issue" element={<LootBids />} />
+            <Route path="/loot-bids" element={<LegacyLootBids />} />
             <Route path="/sessions/:id" element={<NeedsAccount user={user}><Workspace /></NeedsAccount>} />
             <Route path="/calibration" element={<NeedsAccount user={user}><Calibration /></NeedsAccount>} />
             <Route path="/characters" element={<NeedsAccount user={user}><Characters /></NeedsAccount>} />

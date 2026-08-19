@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 47
+SCHEMA_VERSION = 48
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -1158,6 +1158,93 @@ CREATE TABLE IF NOT EXISTS plan_epic_timelines (
   source_version INTEGER NOT NULL,
   fetched_ts INTEGER NOT NULL
 );
+
+-- v48: the private Skill Issue raid-night portal. Invite enrollment creates a
+-- durable personal token; role changes alter that token's powers in place.
+-- Bid contents remain sealed from everyone but their owner until cutoff.
+CREATE TABLE IF NOT EXISTS loot_bid_rooms (
+  id INTEGER PRIMARY KEY CHECK (id=1),
+  label TEXT NOT NULL,
+  invite_code_hash TEXT NOT NULL UNIQUE,
+  invite_code_plain TEXT NOT NULL,
+  current_zone TEXT,
+  current_mob TEXT,
+  created_ts INTEGER NOT NULL,
+  last_event_ts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loot_bid_participants (
+  token_hash TEXT PRIMARY KEY,
+  token_plain TEXT NOT NULL UNIQUE,
+  room_id INTEGER NOT NULL REFERENCES loot_bid_rooms(id) ON DELETE CASCADE,
+  user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'bidder',          -- bidder|officer
+  can_manage INTEGER NOT NULL DEFAULT 0,
+  created_ts INTEGER NOT NULL,
+  last_seen_ts INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loot_bid_items (
+  id INTEGER PRIMARY KEY,
+  room_id INTEGER NOT NULL REFERENCES loot_bid_rooms(id) ON DELETE CASCADE,
+  source_session_id INTEGER REFERENCES sessions(id),
+  event_ts INTEGER NOT NULL,
+  chest TEXT NOT NULL,
+  mob TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 1,
+  state TEXT NOT NULL DEFAULT 'waiting',       -- waiting|open|closed|awarded
+  looter TEXT,
+  opened_ts INTEGER,
+  closes_ts INTEGER,
+  winner_bid_id INTEGER,
+  confirmed_ts INTEGER,                        -- later "loots ... Chest of mob"
+  confirmed_qty INTEGER NOT NULL DEFAULT 0,
+  created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_loot_bid_items_recent
+  ON loot_bid_items(room_id, event_ts DESC, item_id);
+CREATE TABLE IF NOT EXISTS loot_bids (
+  id INTEGER PRIMARY KEY,
+  item_row_id INTEGER NOT NULL REFERENCES loot_bid_items(id) ON DELETE CASCADE,
+  participant_hash TEXT NOT NULL REFERENCES loot_bid_participants(token_hash),
+  bid TEXT NOT NULL,
+  created_ts INTEGER NOT NULL,
+  updated_ts INTEGER NOT NULL,
+  UNIQUE(item_row_id, participant_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_loot_bids_item ON loot_bids(item_row_id, updated_ts);
+CREATE TABLE IF NOT EXISTS loot_bid_awards (
+  item_row_id INTEGER NOT NULL REFERENCES loot_bid_items(id) ON DELETE CASCADE,
+  bid_id INTEGER NOT NULL REFERENCES loot_bids(id),
+  price INTEGER NOT NULL,
+  created_ts INTEGER NOT NULL,
+  PRIMARY KEY(item_row_id, bid_id)
+);
+CREATE TABLE IF NOT EXISTS loot_bid_award_log (
+  id INTEGER PRIMARY KEY,
+  room_id INTEGER NOT NULL REFERENCES loot_bid_rooms(id) ON DELETE CASCADE,
+  item_row_id INTEGER NOT NULL REFERENCES loot_bid_items(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  mob TEXT NOT NULL,
+  winner_name TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  awarded_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_loot_bid_award_log_recent
+  ON loot_bid_award_log(room_id, awarded_ts DESC, id DESC);
+CREATE TABLE IF NOT EXISTS loot_bid_announcements (
+  id INTEGER PRIMARY KEY,
+  room_id INTEGER NOT NULL REFERENCES loot_bid_rooms(id) ON DELETE CASCADE,
+  source_session_id INTEGER REFERENCES sessions(id),
+  event_ts INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  speaker TEXT NOT NULL,
+  created_ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_loot_bid_announcements_recent
+  ON loot_bid_announcements(room_id, item_id, event_ts DESC);
 """
 
 
@@ -1382,7 +1469,22 @@ def init_db() -> None:
     _rebuild_sessions(conn)
     _rebuild_planner(conn)
     with conn:
+        # The v48 experiment was reshaped before release from one global board
+        # into persistent guild-scoped credentials. No old row can be assigned
+        # to a guild safely, so discard only the unreleased experiment tables
+        # when a dev database still has that earlier shape.
+        loot_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(loot_bid_participants)")}
+        if loot_cols and ("room_id" not in loot_cols or "token_plain" not in loot_cols):
+            for table in ("loot_bid_award_log", "loot_bid_announcements",
+                          "loot_bid_awards", "loot_bids", "loot_bid_items",
+                          "loot_bid_participants", "loot_bid_rooms"):
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
         conn.executescript(SCHEMA)
+        loot_room_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(loot_bid_rooms)")}
+        if "current_zone" not in loot_room_cols:
+            conn.execute("ALTER TABLE loot_bid_rooms ADD COLUMN current_zone TEXT")
         # v2: checked unconditionally, not version-gated — the dev reloader can
         # restart mid-edit and stamp the version before a migration block lands
         user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
@@ -1734,6 +1836,14 @@ def init_db() -> None:
         # v46: `plan_epic_timelines` is wikq2's structured epic prerequisite
         # and quest-chain export. It is an offline cache and starts empty until
         # the next Planner sync, like the rest of the catalog.
+        # v48: the experimental raid-night loot board's tables start empty:
+        # only live-mode plugin batches create chest items or open bidding, and
+        # no historical/private chat is copied into them.
+        bid_item_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(loot_bid_items)")}
+        if bid_item_cols and "confirmed_qty" not in bid_item_cols:
+            conn.execute("ALTER TABLE loot_bid_items ADD COLUMN confirmed_qty "
+                         "INTEGER NOT NULL DEFAULT 0")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:
             # migration steps go here as `if version < N:` blocks

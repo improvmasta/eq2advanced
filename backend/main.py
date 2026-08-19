@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from db import get_db, init_db
 from routers import (admin_api, auth_api, census_api, characters_api, chat_api,
                      coach_api, discord_api, encounters_api, feedback_api, groups_api,
-                     ingest_api, marks_api, notes_api, overlay_api,
+                     ingest_api, loot_bids_api, marks_api, notes_api, overlay_api,
                      parseshots_api, planner_api, plugin_api, replay_api,
                      sessions_api, tokens_api, uploads_api, zoneruns_api)
 from spa import mount_spa
@@ -207,5 +207,6 @@ app.include_router(replay_api.router, prefix="/api")
 app.include_router(chat_api.router, prefix="/api")
 app.include_router(discord_api.router, prefix="/api")
 app.include_router(planner_api.router, prefix="/api")
+app.include_router(loot_bids_api.router, prefix="/api")
 
 mount_spa(app)
