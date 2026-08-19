@@ -620,25 +620,62 @@ def test_outline_tracks_one_exact_set_piece_and_returns_real_carrier_cards(tmp_p
             "INSERT INTO plan_sources (page_title,source_page,source,kind,era) "
             "VALUES (?,? ,?,'quest','rok')", [
                 ("Arcane Hood", "Hood Quest", "Hood Quest"),
+                ("Arcane Hood", "Other Hood Quest", "Other Hood Quest"),
                 ("Arcane Slippers", "Feet Quest", "Feet Quest"),
             ])
         conn.executemany(
             "INSERT INTO plan_quests (page_title,name,era,kind,fetched_ts) "
             "VALUES (?,?,'rok','solo',0)", [
                 ("Hood Quest", "Hood Quest"),
+                ("Other Hood Quest", "Other Hood Quest"),
                 ("Feet Quest", "Feet Quest"),
             ])
 
     result = outline.outline(
         conn, eras=["rok"], sets=["Arcane Set: Head"],
         class_name="necromancer")
-    assert [row["name"] for row in result["rows"]] == ["Hood Quest"]
+    assert [row["name"] for row in result["rows"]] == ["Hood Quest", "Other Hood Quest"]
     got = result["rows"][0]["gets"][0]
     assert got["name"] == "Arcane Hood"
     assert got["via_set"] == "Arcane Set"
     assert got["via_set_piece"] == "Arcane Set: Head"
     assert got["card"]["name"] == "Arcane Hood"
+    assert len(result["acquisitions"]) == 1
+    acquisition = result["acquisitions"][0]
+    assert acquisition["goal"] == "Arcane Set: Head"
+    assert acquisition["item"]["name"] == "Arcane Hood"
+    assert [source["name"] for source in acquisition["sources"]] == [
+        "Hood Quest", "Other Hood Quest"]
     assert result["unplaced"] == []
+
+
+def test_outline_lists_one_direct_item_with_every_acquisition_source():
+    item = {
+        "page_title": "One Robe", "name": "One Robe", "level": 80,
+        "tier": "FABLED", "icon": 42, "via_set": None,
+        "via_set_piece": None,
+    }
+    rows = [{
+        "key": key, "name": name, "kind": "target", "difficulty": "group",
+        "zone": zone, "wiki": f"https://example.test/{key}", "gets": [item],
+    } for key, name, zone in [
+        ("first", "First Named", "First Zone"),
+        ("second", "Second Named", "Second Zone"),
+    ]]
+
+    assert outline._acquisitions(rows) == [{
+        "key": "One Robe", "goal": "One Robe", "via_set": None,
+        "via_set_piece": None, "epic": False, "item": item,
+        "variants": [item],
+        "sources": [
+            {"key": "first", "name": "First Named", "kind": "target",
+             "difficulty": "group", "zone": "First Zone",
+             "wiki": "https://example.test/first", "item_pages": ["One Robe"]},
+            {"key": "second", "name": "Second Named", "kind": "target",
+             "difficulty": "group", "zone": "Second Zone",
+             "wiki": "https://example.test/second", "item_pages": ["One Robe"]},
+        ],
+    }]
 
 
 def test_epic_timeline_rejects_another_class_when_item_classes_are_unknown(tmp_path):
@@ -871,6 +908,17 @@ def test_no_order_means_nothing_is_ranked(tmp_path):
     assert out["scored"] is False
     assert out["items"][0]["score"] == 0.0
     assert conn is not None
+
+
+def test_unranked_catalog_can_return_a_bounded_random_sample(tmp_path):
+    out = catalog.search(loaded(tmp_path), eras=["rok"], sample=15)
+    assert out["sampled"] is True
+    assert len(out["items"]) == min(15, out["total"])
+
+
+def test_normal_catalog_response_is_not_marked_as_sampled(tmp_path):
+    out = catalog.search(loaded(tmp_path), eras=["rok"])
+    assert out["sampled"] is False
 
 
 def test_stats_are_normalised_so_the_biggest_number_does_not_win(tmp_path):

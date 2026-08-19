@@ -22,6 +22,7 @@ most valuable part of a piece of armour — the turquoise — detaches and moves
 """
 
 import json
+import random
 
 from planner import wiki
 
@@ -229,7 +230,8 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
            level_min: int | None = None, level_max: int | None = None,
            q: str | None = None, carries_set: bool = False,
            hosts_turquoise: bool = False, has_proc: bool = False,
-           match_min: int | None = None, limit: int = 400) -> dict:
+           match_min: int | None = None, limit: int = 400,
+           sample: int | None = None) -> dict:
     """The item table. Filters are HARD and ranking is separate from them.
 
     `required` is the one control that crosses the line on purpose: a stat can
@@ -328,11 +330,14 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
                 f"({','.join('?' * len(set_names))})", set_names):
             set_hover[set_row["name"]] = normalize_set_bonuses(
                 json.loads(set_row["bonuses_json"] or "[]"))
-    for row in kept:
+    sampled = random.sample(kept, min(sample, len(kept))) if sample else None
+    returned = sampled if sampled is not None else kept[:limit]
+    for row in returned:
         row["_set_bonuses"] = set_hover.get(row.get("set_name"), [])
     return {
         "total": len(kept),
-        "items": [_item_out(r) for r in kept[:limit]],
+        "items": [_item_out(r) for r in returned],
+        "sampled": sampled is not None,
         "scored": bool(w),
         # Answered back rather than assumed: the page shows "2 of 3" beside the
         # table, because a filter that quietly removes half the catalog has to

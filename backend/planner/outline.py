@@ -418,6 +418,55 @@ def _questlines(ordered: list[dict], seeds: set[str],
     return out
 
 
+def _acquisitions(rows: list[dict]) -> list[dict]:
+    """Invert source-first rows into one selected item with every source.
+
+    The route walk is source-first because prerequisites belong to quests, but
+    direct acquisition is item-first: the same robe dropping from three mobs
+    is one goal with three choices, not three copies of the robe. Exact tracked
+    set pieces are the identity so level variants of the same carrier stay one
+    acquisition goal.
+    """
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        for got in row.get("gets") or []:
+            goal = got.get("via_set_piece") or got["page_title"]
+            # Several level variants can be the same visible carrier (same
+            # name and icon), as with the two Blistered Strand Robes. Collapse
+            # those; genuinely different carrier items remain separate goals.
+            identity = (goal if not got.get("via_set_piece") else
+                        f"{goal}|{got['name']}|{got.get('icon')}")
+            group = grouped.setdefault(identity, {
+                "key": identity, "goal": goal, "items": {}, "sources": {},
+                "via_set": got.get("via_set"),
+                "via_set_piece": got.get("via_set_piece"), "epic": False,
+            })
+            group["items"].setdefault(got["page_title"], got)
+            group["epic"] = group["epic"] or bool(row.get("epic"))
+            source = group["sources"].setdefault(row["key"], {
+                "key": row["key"], "name": row["name"], "kind": row["kind"],
+                "difficulty": row.get("difficulty"), "zone": row.get("zone"),
+                "wiki": row.get("wiki"), "item_pages": [],
+            })
+            if got["page_title"] not in source["item_pages"]:
+                source["item_pages"].append(got["page_title"])
+
+    out = []
+    for group in grouped.values():
+        variants = list(group.pop("items").values())
+        sources = list(group.pop("sources").values())
+        variants.sort(key=lambda item: (-(item.get("level") or 0), item["name"],
+                                        item["page_title"]))
+        sources.sort(key=lambda source: (source.get("zone") or "Other",
+                                         source["name"], source["key"]))
+        out.append({
+            **group, "item": variants[0], "variants": variants,
+            "sources": sources,
+        })
+    out.sort(key=lambda group: (group["item"]["name"], group["key"]))
+    return out
+
+
 def outline(conn, *, eras: list[str], items: list[str] | None = None,
             sets: list[str] | None = None, class_name: str | None = None) -> dict:
     """Selected items -> source mobs and reward quests + quest prerequisites."""
@@ -497,10 +546,12 @@ def outline(conn, *, eras: list[str], items: list[str] | None = None,
             "requirement": False,
         })
 
+    acquisitions = _acquisitions(rows)
     ordered = _order(rows, edges)[:MAX_ROWS]
     questlines = _questlines(ordered, seeds, need)
     return {
         "rows": ordered,
+        "acquisitions": acquisitions,
         "questlines": questlines,
         "total": len(rows),
         "eras": keys,

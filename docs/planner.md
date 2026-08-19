@@ -490,7 +490,8 @@ Where the rail's four things went, and why:
   offered them to the filter band; they govern more than the item table —
   which items exist, what a score is measured against, which sets are offered,
   which quests the Outline knows. A control all of those surfaces obey lives
-  above the catalog rather than pretending to be one more result filter.
+  above the catalog rather than pretending to be one more result filter. The
+  search presents EoF before RoK while RoK remains the selected default.
 - **Class joined the facets**, which is what it is. Alone in the rail it read
   as a page-wide setting, and it is the single control most likely to be what
   emptied a table — `EmptyTable` names it by name for that reason.
@@ -823,7 +824,10 @@ columns.
 the one property that rules an item out before any number on it matters, and
 `catalog.card` sends nothing when the class list is the whole era-filtered
 subclass set — a list of every class on the server is not a restriction, and the
-game does not print one either.
+game does not print one either. With a character loaded, the shared examine
+window follows the game's unusable-item treatment: a candidate restricted away
+from that class has a red item name, and every listed class other than the
+loaded character's is red.
 
 **Loading a Census character does NOT set the class filter** (removed
 2026-08-16). It did, and the result was a search that silently answered a
@@ -840,6 +844,12 @@ visibly unavailable and cannot be equipped or shortlisted for that character;
 the outline API applies the same class check to items and set carriers, so
 stale browser state and hand-built URLs cannot introduce another class's quest
 line. Empty/unknown class metadata is not treated as proof of incompatibility.
+
+**An untouched equipment catalog is discovery, not an alphabetical dump.** It
+shows 15 random items and labels them as such. Entering a name, choosing any
+filter, or setting a stat priority restores the complete matching/ranked
+catalog; the random sample is stable for the life of the page through the same
+exact-query cache as other results.
 
 **AN EMPTY TABLE SAYS WHICH CONTROL EMPTIED IT** (`Planner.EmptyTable`).
 "Nothing in this expansion matches" reads as "no such item exists", which is a
@@ -873,11 +883,13 @@ catalog tasks without masquerading as a page-wide pair of feature cards or a
 tiny unrelated filter. The set view ranks the bonuses themselves and searches
 only set names and bonus text. Results are automatically restricted to the
 loaded character's class; the equipment-search Class facet does not leak into
-this character-specific choice. RoK includes EoF set adornments here just as
-the gear-window socket picker does: the removable adornment remains useful on
-newer gear, so an expansion filter on carrier equipment must not hide it. Exact catalog queries are cached for the life
-of the page, so returning to Equipment restores its existing table immediately
-instead of collapsing the results and refetching the same data.
+this character-specific choice. The set-adornment search inherits the expansion
+toggle exactly: EoF shows EoF, RoK shows RoK, and selecting both shows both. The
+gear-window socket picker remains a separate compatibility surface, where a
+removable older adornment can still be useful on newer gear. Exact catalog
+queries are cached for the life of the page, so returning to Equipment restores
+its existing table immediately instead of collapsing the results and refetching
+the same data.
 
 **One line per set, opened for the work.** EoF and RoK hold 113 sets between
 them. The first build drew each as a card with its ladder open, seven piece
@@ -910,12 +922,14 @@ still useful.
 **The scope is a control, not a side effect of typing.** With a character
 loaded, **Fits my gear / All sets** says which question is being asked and the
 search box filters inside that answer; the footer counts what the scope is
-holding back. Widening silently the moment the box had a character in it meant
-the list changed what it was showing while the reader was narrowing it.
+holding back. **All sets is the default**; compatibility is an optional narrow.
+Widening silently the moment the box had a character in it meant the list
+changed what it was showing while the reader was narrowing it.
 
 Trying a set on and tracking how to acquire it are separate actions. Every
 slot-specific turquoise (`: Head`, `: Feet`, `: Fingers`, etc.) is its own
-trackable chip; tracking Head never adds all seven armour pieces. The set's
+trackable carrier-item icon; its full examine card opens on hover/focus, and
+tracking Head never adds all seven armour pieces. The set's
 complete bonus ladder sits above those chips in the opened row and is also
 present when the tracked piece is hovered in the Outline. Stopping source
 tracking never unequips it. The Outline resolves an exact turquoise piece to
@@ -925,10 +939,21 @@ labelled as if it were the turquoise or a synthetic set piece.
 
 ### The Outline
 
-A compact list derived only from selected items and tracked set sources. It groups
-by **zone**, then lists the source **mobs** and reward **quests** there. A reward
-quest brings in its complete hard-prerequisite chain; unrelated expansion
-prelude work and manually kept mob/quest targets are gone.
+A compact list derived only from selected items and tracked set sources. Direct
+acquisition is **item-first**: each selected item or exact set-piece goal appears
+once with every known mob, quest, and world-drop source beneath it. Source-level
+carrier variants remain attached to their places without repeating the visible
+item card. Sources within that item are grouped under one zone heading, so a
+zone-wide drop and a named drop in the same instance do not repeat the zone.
+Prerequisite-only work can still group by zone, and a reward quest
+brings in its complete hard-prerequisite chain; unrelated expansion prelude work
+and manually kept mob/quest targets are gone.
+
+**Acquisition cards scale by collapsing, automatically.** One item opens its
+sources; an existing multi-item plan starts as compact item rows. Adding another
+item collapses the older acquisition rows and opens only the newly added goal,
+while every row remains manually expandable. Generic questlines also begin
+collapsed, so adding many short reward chains does not expand the whole rail.
 
 **A prerequisite closure is one acquisition task.** A selected item earned by
 one quest remains one quest in the outline. When earning it requires two or

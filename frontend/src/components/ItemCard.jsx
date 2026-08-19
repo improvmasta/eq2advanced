@@ -235,11 +235,17 @@ function Hover({ className, width, card, onOpen, children, block = false }) {
    change that stops it looking like the thing it is. */
 const num = (r) => `${r.value}${r.pct ? '%' : ''}`
 
-function Examine({ row }) {
+function Examine({ row, characterClass = null }) {
   const s = row.stats
   const w = s?.weapon
   const fx = row.effects
   const quality = (row.rarity || '').toLowerCase()
+  const normalizedClass = String(characterClass || '').trim().toLowerCase()
+  const allowedClasses = (row.classes || []).map((name) => ({
+    name, matches: String(name).trim().toLowerCase() === normalizedClass,
+  }))
+  const unusable = !!normalizedClass && !!allowedClasses.length
+    && !allowedClasses.some((entry) => entry.matches)
   const adorn = s?.adornment
   const included = s?.included_adornment
   const installed = row.installed_adornments || []
@@ -264,7 +270,7 @@ function Examine({ row }) {
     <div className="examinewindow">
       <div className="ew-top">
         <div className="ew-titles">
-          <div className="ew-title">{row.name}</div>
+          <div className={`ew-title${unusable ? ' ew-unusable' : ''}`}>{row.name}</div>
           {row.rarity && (
             <div className={`itemquality xqc-${quality}`}>
               {row.rarity.toUpperCase()}
@@ -392,7 +398,14 @@ function Examine({ row }) {
           is a RESTRICTION: the source sends nothing when every class on the
           server can equip it, the same silence the game keeps. */}
       {!!row.classes?.length && (
-        <div className="ew-classes">{row.classes.join(', ')}</div>
+        <div className="ew-classes">
+          {allowedClasses.map((entry, index) => (
+            <span key={entry.name}
+                  className={normalizedClass && !entry.matches ? 'ew-class-unusable' : ''}>
+              {index ? ', ' : ''}{entry.name}
+            </span>
+          ))}
+        </div>
       )}
 
       {installedSets.map((item, i) => (

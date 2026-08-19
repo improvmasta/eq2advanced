@@ -89,6 +89,7 @@ def plan_items(
     # with one.
     match_min: int | None = Query(None, ge=0, le=13),
     limit: int = Query(200, ge=1, le=MAX_LIMIT),
+    sample: int | None = Query(None, ge=1, le=50),
 ):
     return catalog.search(
         get_db(), eras=_eras(eras), order=_list(order), required=_list(required),
@@ -96,7 +97,7 @@ def plan_items(
         kinds=_list(kinds), armor=_list(armor), level_min=level_min,
         level_max=level_max, q=q, carries_set=carries_set,
         hosts_turquoise=hosts_turquoise, has_proc=has_proc,
-        match_min=match_min, limit=limit)
+        match_min=match_min, limit=limit, sample=sample)
 
 
 @router.get("/plan/sets")

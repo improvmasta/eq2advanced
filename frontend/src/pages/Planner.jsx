@@ -40,6 +40,8 @@ const SAVED_SET_COUNT = 5
    them too, so a hand-built URL cannot put them back (`catalog.weights`). They
    remain on the examine card and are available as table columns. */
 const PRIORITY_SLOTS = 3
+const ERA_DISPLAY_ORDER = ['eof', 'rok']
+const DISCOVERY_SAMPLE_SIZE = 15
 
 /* `zone` is a WORLD DROP: the item is in a zone's drop list and no named or
    quest in the catalog claims it, which is as much as can honestly be said
@@ -235,7 +237,7 @@ export default function Planner({ user }) {
   const [typed, setTyped] = useState('')
   const [q, setQ] = useState('')
   const [setSearch, setSetSearch] = useState('')
-  const [showAllSets, setShowAllSets] = useState(false)
+  const [showAllSets, setShowAllSets] = useState(true)
   useEffect(() => {
     if (typed === q) return undefined
     const t = setTimeout(() => setQ(typed), 250)
@@ -551,7 +553,7 @@ export default function Planner({ user }) {
 
   const query = useMemo(() => {
     const p = new URLSearchParams({
-      eras: csv(mode === 'sets' ? adornmentEras : eras), order: csv(order),
+      eras: csv(eras), order: csv(order),
     })
     if (mode === 'items') {
       if (cls) p.set('classes', cls)
@@ -564,13 +566,16 @@ export default function Planner({ user }) {
       if (q) p.set('q', q)
       if (carries) p.set('carries_set', '1')
       if (proc) p.set('has_proc', '1')
+      const hasFilters = [cls, slot, tier, kindParam, armor, levelMin, levelMax,
+        carries, proc, q].some(Boolean)
+      if (!hasFilters && !order.length) p.set('sample', String(DISCOVERY_SAMPLE_SIZE))
     } else if (adornmentClass) {
       // Sets are choices for the loaded character. The equipment-search class
       // facet is an independent catalog question and must not leak here.
       p.set('classes', adornmentClass)
     }
     return p.toString()
-  }, [erasParam, adornmentEras, order, cls, slot, tier, kindParam, armor,
+  }, [erasParam, order, cls, slot, tier, kindParam, armor,
     levelMin, levelMax, q, carries, proc, mode, adornmentClass])
   const catalogKey = `${mode}:${query}`
   const data = catalogResults[catalogKey] || null
@@ -602,7 +607,10 @@ export default function Planner({ user }) {
   useEffect(() => {
     if (!planCount) { setOutlineData(null); setOutlineErr(null); return undefined }
     setOutlineErr(null)
-    setOutlineData(null)
+    /* Keep the current outline mounted while its replacement is read. Besides
+       avoiding a rail-wide loading flash, this lets PlanOutline compare goal
+       identities and open only what was just added. Unmounting here erased
+       that history on every shortlist click. */
     let dead = false
     api.planOutline(outlineQuery).then((d) => { if (!dead) setOutlineData(d) })
       .catch((e) => { if (!dead) setOutlineErr(e.message) })
@@ -1076,10 +1084,14 @@ export default function Planner({ user }) {
               </div>
 
               <div className="plansearchfooter" aria-live="polite">
-                <span>{data
-                  ? <><b>{data.total}</b> matching item{data.total === 1 ? '' : 's'}</>
+                <span>{data?.sampled
+                  ? <><b>{data.items.length}</b> random items, just for fun</>
+                  : data
+                    ? <><b>{data.total}</b> matching item{data.total === 1 ? '' : 's'}</>
                   : 'Loading matching items…'}</span>
-                <span>{order.length
+                <span>{data?.sampled
+                  ? 'Search, filter, or choose a stat priority for the full catalog'
+                  : order.length
                   ? <>Scoring <b>{order.map(priorityLabel).join(' › ')}</b>
                     {ranked > 1 && <> — items carrying all {ranked} first</>}</>
                   : 'Choose a stat priority to score results'}</span>
@@ -1164,7 +1176,7 @@ export default function Planner({ user }) {
                   ].filter(Boolean).join(' ')}
                   defaultHidden={['dtype', 'potency', 'crit']}
                 />
-                {data.total > data.items.length && (
+                {!data.sampled && data.total > data.items.length && (
                   <p className="muted">
                     Showing the top {data.items.length} of {data.total}. Narrow it
                     with the filters — the rest are further down the same order.
@@ -1316,11 +1328,17 @@ function SourceFacet({ kinds, available, onToggle }) {
    stays on: "nothing selected" is not a plan, it is an empty page with no way
    to say why it is empty. */
 function EraFacet({ meta, eras, onToggle }) {
+  const displayEras = [...(meta?.eras || [])].sort((a, b) => {
+    const aRank = ERA_DISPLAY_ORDER.indexOf(a.key)
+    const bRank = ERA_DISPLAY_ORDER.indexOf(b.key)
+    return (aRank < 0 ? Number.MAX_SAFE_INTEGER : aRank)
+      - (bRank < 0 ? Number.MAX_SAFE_INTEGER : bRank)
+  })
   return (
     <span className="planfacet erafacet">
       <span className="facetlab">Expansions</span>
       <span className="erachips">
-        {(meta?.eras || []).map((e) => (
+        {displayEras.map((e) => (
           <button key={e.key} className={`chip${eras.includes(e.key) ? ' on' : ''}`}
                   title={e.items ? `${e.name} — ${e.items} items in the catalog`
                     : `${e.name} — not synced yet`}
@@ -1457,13 +1475,13 @@ function comparisonCards(row, character, shortlist, focusSlot) {
   ]
 }
 
-function ItemComparison({ cards }) {
+function ItemComparison({ cards, characterClass }) {
   return (
     <div className="planitemcompare">
       {cards.map(({ label, card }) => (
         <section key={`${label}-${card.name}`}>
           <div className="plancomparelabel">{label}</div>
-          <Examine row={card} />
+          <Examine row={card} characterClass={characterClass} />
         </section>
       ))}
     </div>
@@ -1473,6 +1491,7 @@ function ItemComparison({ cards }) {
 function ItemName({ row, character, shortlist, focusSlot }) {
   const label = <span className={rarityClass(row.tier)}>{row.name}</span>
   const cards = comparisonCards(row, character, shortlist, focusSlot)
+  const characterClass = character?.character?.class || null
   const width = cards.length * 350 + Math.max(0, cards.length - 1) * 5 + 6
   return (
     <span className="lootitem">
@@ -1483,7 +1502,7 @@ function ItemName({ row, character, shortlist, focusSlot }) {
         )}
       </span>
       <Hover className="examinecard plancomparecard" width={width}
-             card={<ItemComparison cards={cards} />}>
+             card={<ItemComparison cards={cards} characterClass={characterClass} />}>
         {/* The row equips the item; the NAME still goes to the wiki, so its
             click must not also do the row's job. */}
         <a href={row.card.wiki} target="_blank" rel="noreferrer noopener"
@@ -1566,19 +1585,52 @@ function setGrants(set, statLabel, statPct) {
 function setView(set, targets, inList) {
   const legal = targets.filter((target) =>
     setFitsHost(set, target.item, target.catalog))
-  const pieces = (set.pieces || []).map((piece) => ({
-    piece,
-    label: piece.split(':').pop().trim(),
-    tracked: inList.has(piece),
-    targets: legal.filter((target) =>
-      setPieceForSlot(set, target.catalog) === piece),
-  }))
+  const pieces = (set.pieces || []).map((piece) => {
+    const carriers = (set.carriers || []).filter((item) =>
+      [item.slot, item.slot2].filter(Boolean).some(
+        (slot) => setPieceForSlot(set, slot) === piece))
+      .sort((a, b) => (b.level || 0) - (a.level || 0)
+        || a.name.localeCompare(b.name))
+    return {
+      piece,
+      label: piece.split(':').pop().trim(),
+      tracked: inList.has(piece),
+      carriers,
+      targets: legal.filter((target) =>
+        setPieceForSlot(set, target.catalog) === piece),
+    }
+  })
   return {
     set,
     pieces,
     worn: legal.filter((target) => target.installed === set.name),
     fits: pieces.filter((row) => row.targets.length).length,
   }
+}
+
+function SetTrackButton({ row, canPlan, set, onToggle }) {
+  const carrier = row.carriers[0]
+  const button = (
+    <button type="button" aria-pressed={row.tracked}
+            className={`settrackchip${row.tracked ? ' on' : ''}`}
+            disabled={!canPlan && !row.tracked}
+            title={!carrier && canPlan ? row.piece
+              : !canPlan ? `Load a character to track ${row.piece}` : undefined}
+            onClick={() => onToggle({
+              name: row.piece, set_name: set.name, slot_label: row.label,
+              level: set.level, pieces: set.pieces, bonuses: set.bonuses,
+            })}>
+      {carrier?.icon != null
+        ? <img src={`/api/items/icon/${carrier.icon}.png`} alt="" width="28" height="28" />
+        : <span className="settrackfallback" aria-hidden="true">◆</span>}
+      <span>{row.label}</span>
+    </button>
+  )
+  return carrier?.card ? (
+    <Hover className="examinecard" width={350} card={<Examine row={carrier.card} />}>
+      {button}
+    </Hover>
+  ) : button
 }
 
 function SetRow({ view, canPlan, hasCharacter, open, onOpen, onToggle,
@@ -1645,19 +1697,8 @@ function SetRow({ view, canPlan, hasCharacter, open, onOpen, onToggle,
             <div className="setworkrow">
               <span className="seclabel">Track source</span>
               <div className="setworktrack">
-                {pieces.map((row) => (
-                  <button type="button" key={row.piece} aria-pressed={row.tracked}
-                          className={`chip settrackchip${row.tracked ? ' on' : ''}`}
-                          disabled={!canPlan && !row.tracked}
-                          title={canPlan ? row.piece
-                            : `Load a character to track ${row.piece}`}
-                          onClick={() => onToggle({
-                            name: row.piece, set_name: set.name, slot_label: row.label,
-                            level: set.level, pieces: set.pieces, bonuses: set.bonuses,
-                          })}>
-                    {row.label}
-                  </button>
-                ))}
+                {pieces.map((row) => <SetTrackButton key={row.piece} row={row}
+                  canPlan={canPlan} set={set} onToggle={onToggle} />)}
               </div>
             </div>
           </div>

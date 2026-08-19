@@ -634,6 +634,7 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .ew-titles { flex: 1 1 auto; min-width: 0; }
 .ew-icon { flex: 0 0 42px; }
 .ew-title { font-size: 150%; font-weight: bold; line-height: 1.15; }
+.ew-title.ew-unusable { color: #ff3333; }
 /* The glow is the wiki's four-way black outline plus a triple coloured
    shadow. It is what makes a Fabled name read as Fabled at a glance. */
 .itemquality {
@@ -706,6 +707,7 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .ew-classes {
   color: #ffffff; margin-top: 8px; font-size: 92%; line-height: 1.35;
 }
+.ew-class-unusable { color: #ff3333; }
 
 /* The roll list behind a contested drop. This one IS site chrome, not a
    quotation — the lotto block has no examine window to imitate — so it uses
@@ -6975,8 +6977,25 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .setworkhosts { display: flex; flex-wrap: wrap; gap: 5px; }
 .setworkhosts > .settarget { flex: 0 1 230px; }
 .setworkhosts > .muted { padding: 4px 0; font-size: var(--fs-label); }
-.setworktrack { display: flex; flex-wrap: wrap; gap: 4px; }
-.settrackchip { min-height: 24px; padding: 2px 8px; cursor: pointer; }
+.setworktrack { display: flex; flex-wrap: wrap; gap: 5px; }
+.settrackchip {
+  min-width: 52px; min-height: 48px; display: grid; grid-template-rows: 28px auto;
+  place-items: center; gap: 2px; padding: 4px 6px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-muted); background: rgba(var(--bg-rgb), 0.22);
+}
+.settrackchip:hover, .settrackchip:focus-visible {
+  color: var(--text); border-color: var(--gold-dim); outline: none;
+}
+.settrackchip img {
+  width: 28px; height: 28px; object-fit: cover; border-radius: 3px;
+  border: 1px solid var(--gold-dim); background: var(--bg);
+}
+.settrackchip > span:last-child { font-size: var(--fs-label); line-height: 1; }
+.settrackfallback {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  color: var(--gold-bright); border: 1px solid var(--gold-dim); border-radius: 3px;
+}
 .settrackchip.on {
   border-color: var(--success); color: var(--success);
   background: rgba(var(--success-rgb), 0.08);
@@ -7112,6 +7131,69 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .outlineitemheading em {
   display: block; margin-top: 3px; color: var(--text-muted);
   font-size: var(--fs-label); font-style: normal; text-transform: capitalize;
+}
+.outlinequesticon {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-muted); background: var(--surface-raised);
+  font: 700 var(--fs-label)/1 var(--font-data);
+}
+.outlinequestheading h3 { color: var(--text); }
+.outlineacquisitionhead {
+  position: relative; padding: 6px 28px 6px 8px; cursor: pointer; list-style: none;
+}
+.outlineacquisitionhead::-webkit-details-marker { display: none; }
+.outlineacquisitionhead::after {
+  content: '▶'; position: absolute; top: 50%; right: 9px;
+  color: var(--gold-bright); font-size: 0.56rem;
+  transform: translateY(-50%); transition: transform 100ms ease;
+}
+.outlineacquisition[open] > .outlineacquisitionhead::after {
+  transform: translateY(-50%) rotate(90deg);
+}
+.outlineacquisitionhead:hover { background: rgba(var(--gold-rgb), 0.045); }
+.outlineacquisitionhead:focus-visible { outline: 1px solid var(--gold-dim); outline-offset: -2px; }
+.outlineacquisitionhead .outlineitemheading {
+  grid-template-columns: 30px minmax(0, 1fr); gap: 7px;
+}
+.outlineacquisitionhead .outlineitemicon { width: 28px; height: 28px; }
+.outlineacquisitionhead .outlineitemheading h3 { margin-top: 1px; }
+.outlineacquisitionhead .outlineitemheading em { margin-top: 1px; }
+.acquisitionsources { display: grid; border-top: 1px solid var(--row-line); }
+.acquisitionsources > b {
+  padding: 5px 8px 2px; color: var(--text-muted); font-size: var(--fs-label);
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+.acquisitionzone { display: grid; }
+.acquisitionzone > h4 {
+  margin: 0; padding: 6px 8px 3px; border-top: 1px solid var(--row-line);
+  color: var(--text-muted); font-size: var(--fs-label); font-weight: 650;
+  letter-spacing: 0.055em; text-transform: uppercase;
+}
+.acquisitionsource {
+  min-width: 0; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  gap: 7px; align-items: center; padding: 6px 8px;
+  font-size: var(--fs-label);
+}
+.acquisitionsource + .acquisitionsource { border-top: 1px solid var(--row-line); }
+.acquisitionsource:not(.quest) { grid-template-columns: minmax(0, 1fr) auto; }
+.acquisitionsource > span { min-width: 0; display: grid; gap: 1px; }
+.acquisitionsource > span small {
+  overflow: hidden; color: var(--text-muted); font-size: 0.58rem;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.acquisitionsource > span a {
+  overflow: hidden; color: var(--gold); text-decoration: none;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.acquisitionsource > span a:hover { color: var(--gold-bright); }
+.acquisitionsource > em { color: var(--text-muted); font-style: normal; white-space: nowrap; }
+.acquisitionsource.quest { cursor: pointer; }
+.acquisitionsource.quest.done > span a { color: var(--text-muted); text-decoration: line-through; }
+.acquisitionsourcequest {
+  width: 16px; height: 16px; display: grid; place-items: center;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 50%;
+  font: 700 0.5rem/1 var(--font-data); font-style: normal;
 }
 
 /* A CLASS EPIC IS A SEQUENCE, NOT A PILE OF ZONES. The timeline owns the
