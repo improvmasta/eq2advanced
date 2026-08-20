@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v47**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v49**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -340,14 +340,17 @@ segmentation)
   its shortlist and path consume the same plan as the equipment window.
 - **Worn set bonuses span beneath equipped gear AND stats** —
   counted off the WINDOW, from both a set the reader installed and a turquoise
-  Census says is already worn. **Changing character empties the window** (the
-  shortlist survives). Turquoise changes carry a `planned` tag and signed
+  Census says is already worn. **Plans are character-keyed** and return with
+  that character. Turquoise changes carry a `planned` tag and signed
   piece delta, including a set reduced to zero. Four sets should use that full
   row rather than stack in the gear column.
-- **SAVED SET TABS LOAD; THEY DO NOT EDIT.** An explicit Edit action opens the
-  name/save panel, a changed loadout offers Save changes, and an empty slot
-  offers Save Set N. With the Outline open, identity/set controls and account
-  actions reflow onto separate rows rather than wrapping the five tabs.
+- **GEAR SETS ARE A STABLE CHARACTER-SCOPED CONTROL, NOT TABS.** One chooser
+  names the active set, `+` saves a new one (up to five per public character),
+  while Rename and Delete stay visible. Contents lists the set's checked gear
+  and set-adornment goals; unchecking removes the same entry from its linked
+  Outline. Loading or resetting never discards unsaved work without
+  Save/Discard/Cancel. The control reflows by its container width, so opening
+  Outline cannot squeeze it into broken rows.
 - **PLANNED GEAR MUST NEVER GET TRAPPED** — the highlighted item icon gets one
   left-edge clicker when a slot has alternatives; never spend item-name width
   on `1/2` plus previous/next controls. Every non-equipped item has a direct
@@ -453,10 +456,15 @@ segmentation)
   separator.** Only linked `prelist` / `nextlist` fields are multi-valued;
   alternatives are stored as OR-groups. Outline shortlist values use repeated
   `item=` / `set=` parameters for the same reason.
-- **Five named equipment-set slots are saved locally for everyone and on the
-  account when signed in** (`planner_saved_sets`, v45). Guest slots are offered
-  to empty account slots after sign-in. The working shortlist remains the
-  browser's scratch state.
+- **Five named equipment-set slots repeat per public character** and are saved
+  locally for everyone and on the reader's account when signed in
+  (`planner_saved_sets`, v49). A character key is only a private filing folder,
+  never ownership: unrelated readers may save unrelated sets for the same
+  character. Each set snapshots its complete Outline plus exact white and
+  turquoise adornment state, including equipped and empty sockets. Guest slots
+  are offered to that character's empty account slots after sign-in, and
+  successful public searches remain in the browser's `Select Char` list. The
+  unsaved working shortlist remains browser scratch state.
 - **Multi-era sync resolves the graph again after all requested eras are
   stored**, so a cross-era prerequisite survives either CLI order. Dangling
   titles are counted and omitted, not invented as quests.
@@ -605,6 +613,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-19 (codex): Redesign character-scoped Planner gear sets
 - 2026-08-19 (codex): Add private Skill Issue loot portal
 - 2026-08-19 (codex): Refine Gear Planner search and scalable outline
 - 2026-08-17 (claude): Track the logger's unannounced deaths; pets no longer end the dead clock
@@ -624,4 +633,3 @@ builds here with `bash build.sh`.
 - 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
 - 2026-08-16 (codex): Build Census-backed equipment planner
-- 2026-08-15 (codex): Keep long test runs visible and enforce backend ship checks

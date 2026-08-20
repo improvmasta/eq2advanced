@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Picker from './Picker.jsx'
 import { Examine, Hover, rarityClass } from './ItemCard.jsx'
 import { CLASS_FAMILY } from '../lib/classes.js'
 import { adornmentChanged, adornmentName, itemSockets,
   setFitsHost, setPieceForSlot } from '../lib/planAdornments.js'
+import { firstAvailableSavedSet, savedSetInUse,
+  setReplacementNeedsConfirmation } from '../lib/planSavedSets.js'
 
 /* Concrete equipment positions, rather than the catalog's broad slot names.
    Finger, Ear, Wrist and Charm each occur twice; keeping those identities is
@@ -279,10 +281,7 @@ function WornSets({ character, shortlist, active, catalog }) {
         <div className="seclabel">Worn sets</div>
       </div>
       {!sets.length ? (
-        <p className="muted">
-          No set adornment in the window. A turquoise carries the set, not the
-          armour it came in — click one to try a set on.
-        </p>
+        <p className="muted">No set adornment in the window.</p>
       ) : (
         <div className="wornsetgrid">
           {sets.map((set) => (
@@ -804,26 +803,38 @@ function CharacterLookup({ onLoad, busy, err, placeholder = 'Look up a name' }) 
   )
 }
 
-export default function PlanLoadout({ characters, character, charId, onCharacter,
+export default function PlanLoadout({ characters, recentCharacters, character,
+                                     characterValue, onCharacter,
                                      shortlist, adornmentSets, whiteAdornments,
                                      active, focusSlot, onFocusSlot,
                                      onCycle, onReset, onSetAdornment, onWhiteAdornment,
-                                     onRemoveItem, signedIn,
+                                     onRemoveItem, onToggleTrackedSet,
+                                     onClearSetContents, signedIn,
                                      onLookup, lookupBusy, lookupErr,
-                                     savedSets, savedSetSlot, savedSetBusy, savedSetStatus,
-                                     savedSetDirty,
-                                     onSavedSetSlot, onSaveSet, onRenameSet,
-                                     onLoadSet,
+                                     savedSets, activeSavedSetSlot, savedSetBusy,
+                                     savedSetStatus, savedSetDirty, savedSetModified,
+                                     onSaveSet, onRenameSet, onDeleteSet, onLoadSet,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
   const right = PLAN_SLOTS.filter((slot) => slot.side === 'right' && !slot.compact)
   const compact = PLAN_SLOTS.filter((slot) => slot.side === 'right' && slot.compact)
+  const accountNames = new Set((characters || []).map((row) => row.name.toLowerCase()))
   const charOptions = (characters || []).map((c) => ({
-    value: String(c.id), label: c.name,
+    value: `account:${c.id}`, label: c.name, group: 'My characters',
     hint: c.class ? `${c.class} ${c.level ?? ''}` : 'not synced',
-  }))
+  })).concat((recentCharacters || [])
+    .filter((row) => !accountNames.has(row.name.toLowerCase())
+      || characterValue === `recent:${row.key}`)
+    .map((row) => ({
+      value: `recent:${row.key}`, label: row.name, group: 'Recent searches',
+      hint: row.className
+        ? `${row.className} ${row.level ?? ''}` : row.saved ? 'saved gear sets' : row.world,
+    })))
   const guestNeedsCharacter = !signedIn && !character?.character
+  const resetDisabled = !Object.keys(active).length
+    && !Object.keys(shortlist.set_slots || {}).length
+    && !Object.keys(shortlist.adorn_slots || {}).length
   const slots = (rows) => rows.map((def) => (
     <EquipmentSlot key={def.key} def={def} character={character} shortlist={shortlist}
       active={active} focused={focusSlot === def.key}
@@ -842,15 +853,6 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             the window needs naming. */}
         <div className="loadoutwho">
           <h2>{character?.character?.name || 'No character loaded'}</h2>
-          <div className="loadoutidentityline">
-            <span className="loadoutmeta">{character?.character
-              ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}</>
-              : 'Look one up, or plan against an empty window'}</span>
-            <button className="chip resetgear" type="button" onClick={onReset}
-                    disabled={!Object.keys(active).length
-                      && !Object.keys(shortlist.set_slots || {}).length
-                      && !Object.keys(shortlist.adorn_slots || {}).length}>Reset Gear</button>
-          </div>
         </div>
         {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It occupies the compact
             top-right row. Reset belongs beside the class it resets; the
@@ -859,30 +861,36 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
             CHARACTER RECORDS ARE PUBLIC, so looking one up needs no account.
             Trying gear on your own toon is the whole point of this panel, and
             making that the one part of a signed-out page that demands signing
-            up is backwards. Signed-in readers keep the picker AND get this,
-            because an alt you never added is still an alt. */}
-        <div className="loadoutactions">
-          <div className="loadoutsearchrow">
-            {!guestNeedsCharacter && (
-              <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
-            )}
-          </div>
-          <div className="loadoutcharacterrow">
-            {signedIn && characters === null && <span className="muted">Loading…</span>}
-            {characters?.length > 0 && (
-              <label className="plancharacterpick">
-                <span>Select Char</span>
-                <Picker className="characterpicker" value={charId ? String(charId) : ''}
-                        onChange={onCharacter} placeholder="Choose character"
-                        options={charOptions} />
-              </label>
-            )}
-            <SavedSetControls sets={savedSets} slot={savedSetSlot}
-              signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
-              dirty={savedSetDirty}
-              onSlot={onSavedSetSlot} onSave={onSaveSet} onRename={onRenameSet}
-              onLoad={onLoadSet} />
-          </div>
+            up is backwards. The picker also keeps successful public searches;
+            an alt you never added is still an alt. */}
+        <div className="loadoutsearchrow">
+          {!guestNeedsCharacter && (
+            <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr} />
+          )}
+        </div>
+        <div className="loadoutcontrolrow">
+          <span className="loadoutmeta">{character?.character
+            ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}</>
+            : 'Look up a character on Wuoshi, or just start looking up gear.'}</span>
+          <SavedSetControls sets={savedSets} slot={activeSavedSetSlot}
+            ownerLoaded={!!character?.character}
+            signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
+            dirty={savedSetDirty} modified={savedSetModified}
+            resetDisabled={resetDisabled} onReset={onReset}
+            shortlist={shortlist} onRemoveItem={onRemoveItem}
+            onToggleTrackedSet={onToggleTrackedSet}
+            onClearContents={onClearSetContents}
+            onSave={onSaveSet} onRename={onRenameSet} onDelete={onDeleteSet}
+            onLoad={onLoadSet} />
+          {signedIn && characters === null && <span className="muted">Loading…</span>}
+          {charOptions.length > 0 && (
+            <label className="plancharacterpick">
+              <span>Select Char</span>
+              <Picker className="characterpicker" value={characterValue}
+                      onChange={onCharacter} placeholder="Choose character"
+                      options={charOptions} />
+            </label>
+          )}
         </div>
       </div>
       <div className="loadoutbody">
@@ -911,98 +919,275 @@ export default function PlanLoadout({ characters, character, charId, onCharacter
   )
 }
 
-function SavedSetControls({ sets, slot, signedIn, busy, status, dirty,
-                            onSlot, onSave, onRename, onLoad }) {
+function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dirty,
+                            modified, resetDisabled, onReset, shortlist,
+                            onRemoveItem, onToggleTrackedSet, onClearContents,
+                            onSave, onRename, onDelete, onLoad }) {
   const selected = sets?.find((row) => row.slot === slot)
-  const meaningfulCount = Math.max(1, ...(sets || [])
-    .filter((row) => row.payload || row.name !== `Set ${row.slot}`)
-    .map((row) => row.slot))
-  const [visibleCount, setVisibleCount] = useState(meaningfulCount)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(selected?.name || '')
+  const used = (sets || []).filter(savedSetInUse)
+  const available = firstAvailableSavedSet(sets)
+  const options = used.map((row) => ({ value: String(row.slot), label: row.name }))
+  const slotOrder = new Map(PLAN_SLOTS.map((row, index) => [row.key, index]))
+  const slotLabels = new Map(PLAN_SLOTS.map((row) => [row.key, row.label]))
+  const contentItems = [...(shortlist?.items || [])].sort((a, b) => (
+    (slotOrder.get(a.equip_slot) ?? 99) - (slotOrder.get(b.equip_slot) ?? 99)
+    || a.name.localeCompare(b.name)
+  ))
+  const contentSets = shortlist?.sets || []
+  const contentCount = contentItems.length + contentSets.length
+  const [panel, setPanel] = useState(null)
+  const [draft, setDraft] = useState('')
+  const [pending, setPending] = useState(null)
+  const root = useRef(null)
+
   useEffect(() => {
-    setVisibleCount((count) => Math.max(count, meaningfulCount))
-  }, [meaningfulCount])
-  useEffect(() => {
-    setDraft(selected?.name || '')
-    setEditing(false)
-  }, [selected?.name, slot])
-  const choose = (row) => {
-    onSlot(row.slot)
-    setDraft(row.name)
-    setEditing(false)
-    if (row.payload) onLoad(row.slot)
+    if (!panel) return undefined
+    const away = (event) => {
+      if (!root.current?.contains(event.target)) setPanel(null)
+    }
+    const escape = (event) => {
+      if (event.key === 'Escape') setPanel(null)
+    }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [panel])
+
+  const close = () => {
+    setPanel(null)
+    setPending(null)
   }
-  const leave = () => {
-    setDraft(selected?.name || '')
-    setEditing(false)
+
+  const finishPending = () => {
+    if (pending?.kind === 'set') onLoad(pending.slot)
+    if (pending?.kind === 'reset') onReset()
+    close()
   }
-  const add = () => {
-    const nextCount = Math.min(visibleCount + 1, sets?.length || 0)
-    const row = sets?.[nextCount - 1]
-    if (!row) return
-    setVisibleCount(nextCount)
-    onSlot(row.slot)
-    setDraft(row.name)
-    setEditing(true)
+
+  const openNew = () => {
+    if (!available) return
+    setDraft(available.name)
+    setPanel('new')
   }
-  const save = () => {
-    if (selected?.payload) onRename(slot, draft)
-    else onSave(slot, draft)
-    setEditing(false)
+
+  const create = async () => {
+    if (!available) return
+    await onSave(available.slot, draft)
+    if (pending) finishPending()
+    else close()
   }
-  return (
-    <div className="plansavedsets">
-      <span className="seclabel">Gear sets</span>
-      <div className="plansavedtabs" aria-label="Saved equipment sets">
-        {(sets || []).slice(0, visibleCount).map((row) => (
-          <button type="button" key={row.slot}
-                  className={row.slot === slot ? 'on' : ''}
-                  title={row.payload ? `Load ${row.name}` : `Select ${row.name}`}
-                  onClick={() => choose(row)}>{row.name}</button>
-        ))}
-        {visibleCount < (sets?.length || 0) && (
-          <button type="button" className="plansavedadd" disabled={busy}
-                  aria-label="Add gear set" title="Add gear set"
-                  onClick={add}>+</button>
-        )}
-      </div>
-      {!editing && selected && (
-        <div className="plansavedactions">
-          {dirty && (
-            <button type="button" className="chip on" disabled={busy}
-                    onClick={() => onSave(slot, selected.name)}>Save changes</button>
-          )}
-          <button type="button"
-                  className={selected.payload ? 'iconbtn plansavededit' : 'chip plansavedsave'}
-                  disabled={busy}
-                  aria-label={selected.payload ? `Rename ${selected.name}` : 'Save current gear as a set'}
-                  title={selected.payload ? `Rename ${selected.name}` : 'Save current gear as a set'}
-                  onClick={() => setEditing(true)}>
-            {selected.payload ? '✎' : 'Save gear set'}
-          </button>
-          {status && <span className="plansavedstatus">{status}</span>}
-        </div>
-      )}
-      {editing && (
-        <div className="plansavedpanel">
-          <input value={draft} maxLength={40} aria-label={`Name for gear set ${slot}`}
-                 autoFocus
-                 onChange={(event) => setDraft(event.target.value)}
-                 onKeyDown={(event) => {
-                   if (event.key === 'Enter') save()
-                   if (event.key === 'Escape') leave()
-                 }} />
+
+  const requestLoad = (value) => {
+    const target = Number(value)
+    if (!target || target === Number(slot)) return
+    if (setReplacementNeedsConfirmation({
+      targetSlot: target, activeSlot: slot, activeDirty: dirty, hasPlanned: modified,
+    })) {
+      setPending({ kind: 'set', slot: target })
+      setPanel('replace')
+      return
+    }
+    onLoad(target)
+  }
+
+  const requestReset = () => {
+    if (dirty || (!slot && modified)) {
+      setPending({ kind: 'reset' })
+      setPanel('replace')
+      return
+    }
+    onReset()
+  }
+
+  const saveThenContinue = async () => {
+    if (!selected) return
+    await onSave(selected.slot, selected.name)
+    finishPending()
+  }
+
+  const saveCurrent = () => {
+    if (!selected) {
+      openNew()
+      return
+    }
+    setPanel('save')
+  }
+
+  const submitRename = async () => {
+    if (!selected) return
+    await onRename(selected.slot, draft)
+    close()
+  }
+
+  const replacementPanel = () => (
+    <div className="plansavedpopover" role="alertdialog" aria-label="Unsaved gear changes">
+      <b>Keep these changes?</b>
+      <p>{pending.kind === 'reset'
+        ? 'Resetting will replace the current working loadout.'
+        : 'Loading another set will replace the current working loadout.'}</p>
+      <div className="plansavedpopoveractions">
+        {selected && dirty && (
           <button type="button" className="chip on" disabled={busy}
-                  onClick={save}>{selected?.payload ? 'Save name' : 'Save set'}</button>
-          <button type="button" className="iconbtn plansavedclose" onClick={leave}
-                  aria-label="Close gear set editor" title="Close">×</button>
-          <span className="plansavedstatus">{status}</span>
-          {!signedIn && (
-            <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>
-          )}
-        </div>
-      )}
+                  onClick={saveThenContinue}>Save and continue</button>
+        )}
+        {!selected && available && (
+          <button type="button" className="chip on" onClick={openNew}>Save as a set…</button>
+        )}
+        <button type="button" className="chip" onClick={finishPending}>Discard changes</button>
+        <button type="button" className="btnlink" onClick={close}>Cancel</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="plansavedsets" ref={root}>
+      <span className="seclabel">Gear sets</span>
+      <span className="plansavedanchor plansavedpickeranchor">
+        <Picker className="plansavedpicker" value={slot ? String(slot) : ''}
+                onChange={requestLoad} options={options}
+                placeholder={used.length ? 'Choose set' : 'Unsaved build'}
+                label="Gear set" disabled={busy || !used.length} filterFrom={6} />
+        {panel === 'replace' && pending?.kind === 'set' && replacementPanel()}
+      </span>
+      <span className="plansavedanchor plansavedaddanchor">
+        <button type="button" className="iconbtn plansavedadd"
+                disabled={busy || !ownerLoaded || !available}
+                aria-label="Save as a new gear set"
+                title={available ? 'Save as a new gear set' : 'All five gear sets are in use'}
+                onClick={openNew}>+</button>
+        {panel === 'new' && available && (
+          <div className="plansavedpopover" role="dialog" aria-label="New gear set">
+            <label><span>Name this set</span>
+              <input value={draft} maxLength={40} autoFocus
+                     onFocus={(event) => event.target.select()}
+                     onChange={(event) => setDraft(event.target.value)}
+                     onKeyDown={(event) => { if (event.key === 'Enter') create() }} />
+            </label>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip on" disabled={busy}
+                      onClick={create}>Save set</button>
+              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+            </div>
+            {!signedIn && (
+              <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>
+            )}
+          </div>
+        )}
+      </span>
+      <span className={`plansaveddirty${dirty || (!slot && modified) ? ' on' : ''}`}>
+        {dirty || (!slot && modified) ? '● Unsaved' : '\u00a0'}
+      </span>
+      <span className="plansavedanchor plansavedsaveanchor">
+        <button type="button" className="chip plansavedsave"
+                disabled={busy || !ownerLoaded || (Boolean(slot) && !dirty)}
+                onClick={saveCurrent}>Save…</button>
+        {panel === 'save' && selected && (
+          <div className="plansavedpopover" role="dialog" aria-label="Save gear set">
+            <b>Save {selected.name}</b>
+            <p>Update this set, or keep it and create another.</p>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip on" disabled={busy}
+                      onClick={async () => { await onSave(selected.slot, selected.name); close() }}>
+                Update set
+              </button>
+              {available && <button type="button" className="chip" onClick={openNew}>Save as new</button>}
+              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </span>
+      <span className="plansavedanchor plansavedcontentsanchor">
+        <button type="button" className="chip plansavedcontents"
+                disabled={busy || !contentCount}
+                onClick={() => setPanel(panel === 'contents' ? null : 'contents')}>
+          Contents {contentCount}
+        </button>
+        {panel === 'contents' && (
+          <div className="plansavedpopover contents" role="dialog" aria-label="Set contents">
+            <b>Set contents</b>
+            <p>Uncheck gear or set-adornment goals to remove them from this set and its Outline.</p>
+            <div className="plansavedcontentlist">
+              {!!contentItems.length && <span className="seclabel">Gear</span>}
+              {contentItems.map((item) => (
+                <label key={item.page_title}>
+                  <input type="checkbox" checked
+                         onChange={() => onRemoveItem(item.equip_slot, item.page_title)} />
+                  <span><small>{slotLabels.get(item.equip_slot) || item.equip_slot}</small>
+                    <b>{item.name}</b></span>
+                </label>
+              ))}
+              {!!contentSets.length && <span className="seclabel">Set adornments</span>}
+              {contentSets.map((set) => (
+                <label key={set.name}>
+                  <input type="checkbox" checked onChange={() => onToggleTrackedSet(set)} />
+                  <span><b>{set.name}</b></span>
+                </label>
+              ))}
+              {!contentCount && <span className="muted">No planned gear or set adornments.</span>}
+            </div>
+            <div className="plansavedpopoveractions">
+              {!!contentCount && (
+                <button type="button" className="btnlink danger"
+                        onClick={onClearContents}>Uncheck all</button>
+              )}
+              <button type="button" className="btnlink" onClick={close}>Done</button>
+            </div>
+          </div>
+        )}
+      </span>
+      <span className="plansavedanchor plansavedrenameanchor">
+        <button type="button" className="btnlink plansavedaction"
+                disabled={busy || !selected}
+                onClick={() => {
+                  if (!selected) return
+                  setDraft(selected.name); setPanel('rename')
+                }}>Rename</button>
+        {panel === 'rename' && selected && (
+          <div className="plansavedpopover" role="dialog" aria-label="Rename gear set">
+            <label><span>Rename set</span>
+              <input value={draft} maxLength={40} autoFocus
+                     onFocus={(event) => event.target.select()}
+                     onChange={(event) => setDraft(event.target.value)}
+                     onKeyDown={(event) => { if (event.key === 'Enter') submitRename() }} />
+            </label>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip on" disabled={busy}
+                      onClick={submitRename}>Save name</button>
+              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </span>
+      <span className="plansavedanchor plansaveddeleteanchor">
+        <button type="button" className="btnlink plansavedaction danger"
+                disabled={busy || !selected}
+                onClick={() => setPanel('delete')}>Delete</button>
+        {panel === 'delete' && selected && (
+          <div className="plansavedpopover" role="alertdialog" aria-label="Delete gear set">
+            <b>Delete {selected.name}?</b>
+            <p>The current plan stays open. This frees one of the five saved slots.</p>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip danger" disabled={busy}
+                      onClick={async () => { await onDelete(selected.slot); close() }}>
+                Delete set
+              </button>
+              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </span>
+      <span className="plansavedstatus" role="status" aria-live="polite">
+        {status || '\u00a0'}
+      </span>
+      <span className="plansavedanchor plansavedresetanchor">
+        <button className="chip resetgear" type="button" onClick={requestReset}
+                disabled={busy || resetDisabled}>Reset to Equipped</button>
+        {panel === 'replace' && pending?.kind === 'reset' && replacementPanel()}
+      </span>
+
     </div>
   )
 }

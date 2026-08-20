@@ -12,6 +12,10 @@ from fastapi.testclient import TestClient
 import db as dbmod
 
 
+BOBBY = {"owner_key": "wuoshi:123", "owner_name": "Bobby"}
+SALLY = {"owner_key": "wuoshi:456", "owner_name": "Sally"}
+
+
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("eq2adv-planner-saved")
@@ -42,7 +46,7 @@ def signed_in(client):
 
 
 def test_every_account_starts_with_five_named_empty_slots(client):
-    response = client.get("/api/plan/saved-sets")
+    response = client.get("/api/plan/saved-sets", params={"owner_key": BOBBY["owner_key"]})
     assert response.status_code == 200
     assert response.json()["sets"] == [
         {"slot": slot, "name": f"Set {slot}", "payload": None,
@@ -54,29 +58,53 @@ def test_every_account_starts_with_five_named_empty_slots(client):
 def test_a_slot_can_be_renamed_and_replaced(client):
     payload = {"version": 1, "shortlist": {"items": [{"name": "Hat"}]}}
     response = client.put("/api/plan/saved-sets/3",
-                          json={"name": "  Raid   build  ", "payload": payload})
+                          json={**BOBBY, "name": "  Raid   build  ", "payload": payload})
     assert response.status_code == 200
     assert response.json()["set"]["name"] == "Raid build"
     assert response.json()["set"]["payload"] == payload
-    assert client.get("/api/plan/saved-sets").json()["sets"][2]["payload"] == payload
+    assert client.get("/api/plan/saved-sets",
+                      params={"owner_key": BOBBY["owner_key"]}).json()["sets"][2]["payload"] == payload
 
 
-def test_slots_are_per_account_and_require_login(client):
+def test_each_character_gets_an_independent_five_slots(client):
     client.put("/api/plan/saved-sets/1",
-               json={"name": "Mine", "payload": {"version": 1}})
+               json={**BOBBY, "name": "Bobby raid", "payload": {"version": 1}})
+    client.put("/api/plan/saved-sets/1",
+               json={**SALLY, "name": "Sally solo", "payload": {"version": 1}})
+    bobby = client.get("/api/plan/saved-sets",
+                       params={"owner_key": BOBBY["owner_key"]}).json()["sets"]
+    sally = client.get("/api/plan/saved-sets",
+                       params={"owner_key": SALLY["owner_key"]}).json()["sets"]
+    assert bobby[0]["name"] == "Bobby raid"
+    assert sally[0]["name"] == "Sally solo"
+    owners = {row["owner_key"]: row
+              for row in client.get("/api/plan/saved-set-owners").json()["characters"]}
+    assert owners == {
+        SALLY["owner_key"]: {"owner_key": SALLY["owner_key"], "owner_name": "Sally",
+                              "updated_ts": sally[0]["updated_ts"]},
+        BOBBY["owner_key"]: {"owner_key": BOBBY["owner_key"], "owner_name": "Bobby",
+                              "updated_ts": bobby[0]["updated_ts"]},
+    }
+
+
+def test_same_public_character_has_independent_sets_per_account_and_requires_login(client):
+    client.put("/api/plan/saved-sets/1",
+               json={**BOBBY, "name": "Mine", "payload": {"version": 1}})
     client.post("/api/auth/register",
                 json={"username": f"other{uuid.uuid4().hex[:8]}",
                       "password": "hunter2hunter2"})
-    assert client.get("/api/plan/saved-sets").json()["sets"][0]["payload"] is None
+    assert client.get("/api/plan/saved-sets",
+                      params={"owner_key": BOBBY["owner_key"]}).json()["sets"][0]["payload"] is None
     client.cookies.clear()
-    assert client.get("/api/plan/saved-sets").status_code == 401
+    assert client.get("/api/plan/saved-sets",
+                      params={"owner_key": BOBBY["owner_key"]}).status_code == 401
     assert client.put("/api/plan/saved-sets/1",
-                      json={"name": "No", "payload": None}).status_code == 401
+                      json={**BOBBY, "name": "No", "payload": None}).status_code == 401
 
 
 def test_slot_bounds_and_payload_size_are_enforced(client):
     assert client.put("/api/plan/saved-sets/6",
-                      json={"name": "No", "payload": None}).status_code == 400
+                      json={**BOBBY, "name": "No", "payload": None}).status_code == 400
     huge = {"value": "x" * 400_001}
     assert client.put("/api/plan/saved-sets/1",
-                      json={"name": "No", "payload": huge}).status_code == 400
+                      json={**BOBBY, "name": "No", "payload": huge}).status_code == 400

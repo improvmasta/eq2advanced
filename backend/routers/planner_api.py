@@ -6,11 +6,13 @@
   GET /api/plan/adornments           -> ordinary white socket choices
   GET /api/plan/outline?…           -> source mobs, quests and hard prerequisites
   GET /api/plan/character?name=…    -> a public character, no account needed
-  GET/PUT /api/plan/saved-sets/…    -> five private account-backed loadouts
+  GET/PUT /api/plan/saved-sets/…    -> five private loadouts per public character
 
 **The catalog is open to anybody, signed in or not**, for the same reason
 `/chat` is. Saved sets are the narrow exception: their two routes require an
-account and reach only that account's five rows. Guests use localStorage.
+    account and reach only that account's rows, keyed by whichever public
+    character they are planning for. The key is organization, not ownership.
+    Guests use character-keyed localStorage.
 
 **`/plan/character` is the ONE route here that can reach the network**, and it
 is the exception the rule was already making elsewhere: it runs on a name a
@@ -50,6 +52,8 @@ MAX_LIMIT = 400
 
 
 class SavedSetIn(BaseModel):
+    owner_key: str = Field(min_length=1, max_length=saved_sets.MAX_OWNER_KEY)
+    owner_name: str = Field(min_length=1, max_length=saved_sets.MAX_OWNER_NAME)
     name: str = Field(min_length=0, max_length=saved_sets.MAX_NAME)
     payload: dict | None = None
 
@@ -125,16 +129,23 @@ def plan_epics(class_name: str = Query(..., alias="class", min_length=2,
 
 
 @router.get("/plan/saved-sets")
-def plan_saved_sets(user=Depends(require_user)):
-    return {"sets": saved_sets.read(get_db(), user["id"])}
+def plan_saved_sets(owner_key: str = Query(..., min_length=1,
+                                           max_length=saved_sets.MAX_OWNER_KEY),
+                    user=Depends(require_user)):
+    return {"sets": saved_sets.read(get_db(), user["id"], owner_key)}
+
+
+@router.get("/plan/saved-set-owners")
+def plan_saved_set_owners(user=Depends(require_user)):
+    return {"characters": saved_sets.owners(get_db(), user["id"])}
 
 
 @router.put("/plan/saved-sets/{slot}")
 def put_plan_saved_set(slot: int, body: SavedSetIn,
                        user=Depends(require_user)):
     try:
-        row = saved_sets.write(get_db(), user["id"], slot, body.name,
-                               body.payload)
+        row = saved_sets.write(get_db(), user["id"], body.owner_key,
+                               body.owner_name, slot, body.name, body.payload)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"set": row}

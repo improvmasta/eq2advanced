@@ -21,8 +21,11 @@ was being built, on the plan that adding the tab would be the whole publish
 step. It was: `Gear Planner` now sits in the top nav to the right of Compare
 and, like Compare, it is there **signed out**. That is safe for a stronger
 reason than Compare's — catalog and character reads remain public. The narrow
-account exception is five named saved equipment-set slots; guests get the same
-five in localStorage and a short account-safety nudge.
+account exception is persistence for five named equipment-set slots per public
+character; guests get the same character-scoped slots in localStorage and a
+short account-safety nudge. The character key organizes a reader's private
+sets and never claims ownership: any number of readers may independently plan
+against the same public character.
 
 **Character names elsewhere on EQ2Advanced link here, not to a bare external
 profile.** Chat speakers and player drilldown headings use
@@ -553,24 +556,39 @@ Carried adornments are compared with the character's original concrete slot,
 not with the replacement item's empty host: moving gear never marks the same
 adornment—or the same empty socket—as a new planned adornment.
 
-The right side of the header owns **Gear sets**: it starts with one named slot and a
-compact `+` that reveals another, up to five, instead of spending header width
-on five slots before they are needed. Previously saved or renamed slots remain
-visible. Choosing a populated tab loads it. The selected tab offers the explicit
-**Save changes** action only when the current gear differs, while the pencil
-renames without overwriting the saved gear. The inline name editor closes with
-an `×` (or Escape). Guests use the same workflow in browser storage with the
-terse note
-“Saved by cookie. Create an account to save long-term.”; signed-in saves also
-persist to the account. Before a signed-out reader loads a character, the normal
-equipment window stays in place as a dimmed backdrop and centers the public
-“Look up a character on the Wuoshi server...” search over it. Loading a result
-removes the overlay and restores the same working layout used by an account.
+**Gear sets** is one stable loadout bar, not five shape-shifting tabs. Its
+chooser names only the active set; `+` saves the current loadout into the first
+free slot, up to five for the loaded public character. `Save…` updates the
+active set or saves as new, while Rename and Delete stay visible. The new-set
+editor opens from `+` instead of crossing to the far edge of the header.
+**Contents** shows every checked gear candidate and tracked set-adornment goal;
+unchecking one removes it from both the working set and its linked Outline, and
+**Uncheck all** clears the list in one action. Save persists that change.
 
-For signed-in readers, the header is a shared two-column, two-row grid: the
-character name shares its row with character-name search, while level/class and
-**Reset Gear** stay together on the left. The **Select Char** account picker
-and Gear sets occupy the right side of the next row.
+A saved set captures the whole Outline, not only the item currently shown in
+each equipment slot. It also materializes the exact white and turquoise
+adornment state, including equipped adornments and deliberately empty sockets,
+instead of inheriting a later character refresh. Editors and confirmations are
+anchored popovers, so no action changes the header's width. Loading another set
+or resetting a changed scratch loadout requires Save/Discard/Cancel. The dirty
+comparison canonicalizes object keys, so undoing a socket change cannot leave a
+false `Unsaved` marker.
+
+Guests use the same workflow in character-keyed browser storage with the terse
+note “Saved by cookie. Create an account to save long-term.”; signed-in saves
+also persist privately to that account and guest copies remain available after
+logout. Successful public lookups remain in the browser's **Select Char** list,
+including for signed-out readers. Account-backed saved-set character folders
+also repopulate that list on another browser. These are shortcuts to public
+records, never character claims or verification.
+
+The header keeps character name opposite search, then level/class, Gear sets,
+**Reset to Equipped**, and **Select Char** in one aligned control row. Container
+queries reflow Gear sets onto its own row when the actual loadout card narrows
+(including when Outline is open), rather than guessing from viewport width.
+Before a signed-out reader loads a character, the normal equipment window stays
+in place as a dimmed backdrop and centers the public “Look up a character on
+the Wuoshi server...” search over it. Loading a result removes the overlay.
 
 The class epic suggestion lives in **Recommended Items** only until it is added
 to the plan. At that point the Outline owns the work and the recommendation card
@@ -1099,8 +1117,10 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 
 Catalog tables are reference data and touch no parse or visibility predicate.
 `planner_saved_sets` is the one account-owned Planner table: five bounded JSON
-loadouts per user. Current schema is v46, guarded by table shape like every
-other migration in `db.py`.
+loadouts per `(user, public character key)`. The key is private organization,
+not character ownership. Current schema is v49, guarded by table shape like
+every other migration in `db.py`; v45 rows migrate under the owner embedded in
+their payload and the original table remains as a recovery copy.
 
 | Table | Holds |
 | --- | --- |
@@ -1115,7 +1135,7 @@ other migration in `db.py`.
 | `plan_waypoints` *(planned)* | Step → coordinate → map/POI match, with match confidence |
 | `plan_clusters`, `plan_cluster_members` *(planned)* | Computed tags and membership |
 | `plan_nominations` *(planned)* | Layer-2 candidates awaiting a curator, with the quoted sentence |
-| `planner_saved_sets` | Five renameable equipment-set slots per account; missing rows are empty defaults |
+| `planner_saved_sets` | Five renameable equipment-set slots per account and public character; missing rows are empty defaults |
 
 `refdata/planner_standard.json` holds layer 3, keyed by era, and is **not** a
 table — it is edited by hand and read like `zone_eras.json`. Adding a third
@@ -1293,12 +1313,12 @@ thresholds. It remains useful with no outline and with no account.
   shows its signed piece-count difference (`+1`, `-1`, `+2`, and so on),
   including a set removed all the way to zero. Their arithmetic contribution stays in
   `projection()`, because that is a stat like any other.
-- **A SAVED-SET TAB SELECTS AND LOADS; IT DOES NOT OPEN AN EDITOR.** The
-  selected set has an explicit Edit action, while a changed loadout offers
-  Save changes. Empty slots offer Save Set N (especially the initial Set 1)
-  rather than pretending there is something to load. Opening the contextual
-  Outline gives the character/set identity and the lookup/account controls
-  separate rows, so the five tabs never wrap into a back-and-forth block.
+- **GEAR SETS ARE ONE STABLE CHOOSER, NOT TABS.** Only the active set occupies
+  the bar; `+` commits the first free character-scoped slot and never reveals an
+  empty slot merely because a form opened. Save, rename, clear, sync status and
+  unsaved replacement confirmation keep fixed positions or use anchored
+  popovers. Layout follows the card's container width, including Outline-open,
+  rather than a viewport-only breakpoint.
 - **Plans are character-keyed.** Changing who you are planning for loads that
   character's own shortlist, equipment choices, outline, and quest completion
   state. A planned choice
@@ -1379,7 +1399,7 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
 | The outline read side: selected-item sources and prerequisite walk | `backend/planner/outline.py` |
 | Public catalog/outline/character GETs plus authenticated saved-set GET/PUT | `backend/routers/planner_api.py` |
-| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots (schema v46) | `backend/db.py` |
+| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots per public character (schema v49) | `backend/db.py` |
 | The page: game-grouped concrete slots, named saved sets, Fabled→Mythical epic suggestion, adornment choices, projected stats, gear/set search, and zone-grouped source list | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
 | The monthly sync, including wikq2's offline epic export | `backend/tools/sync_planner.py`, `backend/planner/epic_timelines.py` |

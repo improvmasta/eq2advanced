@@ -302,9 +302,14 @@ export const api = {
   planAdornments: () => cachedGet('/api/plan/adornments'),
   planOutline: (qs) => cachedGet(`/api/plan/outline?${qs}`),
   planEpics: (className) => cachedGet(`/api/plan/epics?class=${encodeURIComponent(className)}`),
-  planSavedSets: () => req('/api/plan/saved-sets'),
-  putPlanSavedSet: (slot, name, payload) => req(
-    `/api/plan/saved-sets/${slot}`, { ...json({ name, payload }), method: 'PUT' }),
+  planSavedSets: (ownerKey) => req(
+    `/api/plan/saved-sets?owner_key=${encodeURIComponent(ownerKey)}`),
+  planSavedSetOwners: () => req('/api/plan/saved-set-owners'),
+  putPlanSavedSet: (owner, slot, name, payload) => req(
+    `/api/plan/saved-sets/${slot}`, {
+      ...json({ owner_key: owner.key, owner_name: owner.name, name, payload }),
+      method: 'PUT',
+    }),
 
   // groups + sharing
   groups: () => req('/api/groups'),

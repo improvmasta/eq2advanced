@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 48
+SCHEMA_VERSION = 49
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -814,18 +814,22 @@ CREATE TABLE IF NOT EXISTS user_marks (
   updated_ts INTEGER NOT NULL,
   PRIMARY KEY (user_id, kind, ability)
 );
--- v45: five named Planner equipment-set slots per account. The payload is the
--- reader's chosen loadout, not game reference data; keeping it as versioned
--- JSON lets the client evolve the working-set shape without a schema change.
--- Missing rows are the untouched defaults ("Set 1" through "Set 5").
+-- v49: five named Planner equipment-set slots per account AND public character.
+-- The payload is the reader's chosen loadout, not game reference data; keeping
+-- it as versioned JSON lets the client evolve the working-set shape without a
+-- schema change. Missing rows are untouched defaults for that character.
 CREATE TABLE IF NOT EXISTS planner_saved_sets (
   user_id INTEGER NOT NULL REFERENCES users(id),
+  owner_key TEXT NOT NULL,
+  owner_name TEXT NOT NULL,
   slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 5),
   name TEXT NOT NULL,
   payload_json TEXT,
   updated_ts INTEGER NOT NULL,
-  PRIMARY KEY (user_id, slot)
+  PRIMARY KEY (user_id, owner_key, slot)
 );
+CREATE INDEX IF NOT EXISTS idx_planner_saved_sets_owner
+  ON planner_saved_sets(user_id, owner_name);
 -- v36: the public chat box became a RECORD (`pipeline/chatbus.py`). It used to
 -- be a relay with a few hours of memory that a restart emptied; it is now the
 -- site's archive of the three PUBLIC channels, kept for as long as there is
@@ -1469,6 +1473,25 @@ def init_db() -> None:
     _rebuild_sessions(conn)
     _rebuild_planner(conn)
     with conn:
+        # v49: saved sets are still private to the reader, but the five slots
+        # repeat for every public character they plan against. Preserve the
+        # v45 table as a recovery copy, then file each meaningful legacy row
+        # under the owner already embedded in its versioned payload. This is a
+        # storage key, never proof that the account owns the EQ2 character.
+        saved_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(planner_saved_sets)")}
+        if saved_cols and "owner_key" not in saved_cols:
+            backup_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='planner_saved_sets_v45'").fetchone()
+            if backup_exists:
+                conn.execute(
+                    "INSERT OR REPLACE INTO planner_saved_sets_v45 "
+                    "SELECT * FROM planner_saved_sets")
+                conn.execute("DROP TABLE planner_saved_sets")
+            else:
+                conn.execute("ALTER TABLE planner_saved_sets "
+                             "RENAME TO planner_saved_sets_v45")
         # The v48 experiment was reshaped before release from one global board
         # into persistent guild-scoped credentials. No old row can be assigned
         # to a guild safely, so discard only the unreleased experiment tables
@@ -1481,6 +1504,28 @@ def init_db() -> None:
                           "loot_bid_participants", "loot_bid_rooms"):
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
         conn.executescript(SCHEMA)
+        legacy_saved = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='planner_saved_sets_v45'").fetchone()
+        if legacy_saved:
+            for row in conn.execute(
+                    "SELECT user_id, slot, name, payload_json, updated_ts "
+                    "FROM planner_saved_sets_v45").fetchall():
+                try:
+                    payload = json.loads(row["payload_json"]) if row["payload_json"] else None
+                    owner = (payload or {}).get("shortlist", {}).get("owner") or {}
+                    owner_key = str(owner.get("key") or "").strip().lower()[:160]
+                    owner_name = " ".join(str(owner.get("name") or "").split())[:40]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    owner_key = owner_name = ""
+                if not owner_key or not owner_name:
+                    continue
+                conn.execute(
+                    "INSERT OR IGNORE INTO planner_saved_sets"
+                    "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (row["user_id"], owner_key, owner_name, row["slot"], row["name"],
+                     row["payload_json"], row["updated_ts"]))
         loot_room_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(loot_bid_rooms)")}
         if "current_zone" not in loot_room_cols:
@@ -1830,9 +1875,10 @@ def init_db() -> None:
         # adornment ids Census could not resolve. It is intentionally not a
         # column on `census_items`: source precedence must remain explicit and
         # a later Census answer must supersede the fallback without a rewrite.
-        # v45: `planner_saved_sets` gives every account five renameable gear
-        # builds. It is a new table, so an old database receives five implicit
-        # empty defaults and no existing Planner state changes.
+        # v45: `planner_saved_sets` first gave every account five renameable
+        # gear builds. v49 repeats those five slots per public character; the
+        # shape-guarded migration above keeps the old table as a recovery copy
+        # and files payloads under their embedded owner key.
         # v46: `plan_epic_timelines` is wikq2's structured epic prerequisite
         # and quest-chain export. It is an offline cache and starts empty until
         # the next Planner sync, like the rest of the catalog.

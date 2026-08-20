@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { adornmentChanged, inheritSlotAdornments,
-  setFitsHost, setPieceForSlot } from './planAdornments.js'
+  setFitsHost, setPieceForSlot, snapshotAdornmentState } from './planAdornments.js'
 
 const host = (colors, adornments = [], extra = {}) => ({
   card: { stats: { adornments: colors } }, adornments, ...extra,
@@ -21,6 +21,30 @@ test('a new item inherits equipped white and turquoise adornments', () => {
   assert.equal(result.setSlots.head, 'Focused Mind Set')
   assert.equal(result.adornSlots.head[0].name, white.name)
   assert.deepEqual(result.adornSlots.head[0].projection_stats, { wis: 12 })
+})
+
+test('a saved set materializes equipped, selected, and empty adornment state', () => {
+  const equippedWhite = { id: 17, name: 'Scintillating Adornment of Wisdom',
+    color: 'white', planner_stats: { wis: 12 } }
+  const equippedSet = { id: 18, name: 'Focused Mind Set: Head',
+    set_name: 'Focused Mind Set', color: 'turquoise' }
+  const selectedWhite = { key: 'swift-casting', name: 'Swift Casting',
+    color: 'white', projection_stats: { acspeed: 4 } }
+  const result = snapshotAdornmentState({
+    active: {}, items: [],
+    set_slots: { chest: null },
+    adorn_slots: { chest: { 0: selectedWhite, 1: null } },
+  }, [
+    { key: 'head', ...host(['white', 'turquoise'], [equippedWhite, equippedSet]) },
+    { key: 'chest', ...host(['white', 'white', 'turquoise']) },
+  ])
+
+  assert.equal(result.setSlots.head, 'Focused Mind Set')
+  assert.equal(result.adornSlots.head[0].name, equippedWhite.name)
+  assert.equal(result.adornSlots.head[0].key, 'carried:17')
+  assert.equal(result.setSlots.chest, null)
+  assert.equal(result.adornSlots.chest[0], selectedWhite)
+  assert.equal(result.adornSlots.chest[1], null)
 })
 
 test('selected slot adornments survive cycling to another item', () => {
