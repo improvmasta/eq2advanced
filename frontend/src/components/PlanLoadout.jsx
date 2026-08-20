@@ -870,7 +870,12 @@ export default function PlanLoadout({ characters, recentCharacters, character,
         </div>
         <div className="loadoutcontrolrow">
           <span className="loadoutmeta">{character?.character
-            ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}</>
+            ? <>Level {character.character.level ?? '—'}{' '}{character.character.class || ''}
+                {character.character.ts_level ? (
+                  <span className="loadoutcraft"
+                        title="Tradeskill level">{' · '}{character.character.ts_level}
+                    {character.character.ts_class ? ` ${character.character.ts_class}` : ''}</span>
+                ) : null}</>
             : 'Look up a character on Wuoshi, or just start looking up gear.'}</span>
           <SavedSetControls sets={savedSets} slot={activeSavedSetSlot}
             ownerLoaded={!!character?.character}

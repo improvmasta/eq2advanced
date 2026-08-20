@@ -1191,6 +1191,122 @@ the crate's source. Followed until nothing new appears (bounded by
 raid zones — game knowledge, from Lindsay. The turquoise moves between them,
 which is why the adornment and the armour are separate rows (below).*
 
+### The same mistake, four more times (2026-08-19)
+
+Prompted by one question — why `Earring of the Solstice` was not in the
+catalog. It is the Artisan Epic reward: a level-80 mastercrafted ear slot with
++101 Ability Mod. Four independent reasons it could not be found, and each one
+is a whole class of missing gear rather than one page.
+
+**4. The expansion category is not the expansion — for QUESTS either.** Fix 1
+gave mobs a zone sweep and left quests asking `Category:<expansion> Quests` and
+nothing else. Measured 2026-08-19: RoK's expansion category holds 906 quests
+and its zones hold 241 more it never names; EoF's holds 514 where its zones
+hold 1,173. (`wiki.quest_categories`.)
+
+**5. A zone sweep cannot see NEW content in an OLD zone.** This is the one the
+earring turns on, and no amount of zone coverage would have fixed it. The
+Artisan Epic starts in Rivervale, which reference data correctly calls a
+Shattered Lands zone, and the quest page says `patch = LU42` — an update that
+shipped *before* Rise of Kunark. No expansion category, no era zone, no era
+patch, and yet unmistakably RoK content, because the reward is level 80 and
+nobody could wear it until the cap moved. **The wiki files quests and equipment
+by TIER, a tier is a level band, and a level band belongs to whichever
+expansion raised the cap to reach it** — `Category:Tier 9 Quests` names it. So
+the tier index is the third one, and what only IT names is filtered on the page
+itself: later expansions are refused by patch (RoK and TSO share Tier 9
+entirely, since the cap did not move between them, so no level can separate
+them), and earlier ones are carried forward by level. (`wiki.era_at_least`,
+`ingest._tier_page_belongs`.)
+
+**6. A reward is the first thing a bullet names, whatever names it.**
+`parse_quest` read `{{Equip|…}}` and, narrowly, plain links on class epic
+pages. The Artisan Epic writes its reward `{{Item|Earring of the Solstice||}}`,
+so the quest looked like it rewarded nothing at all. Over 200 RoK quest pages,
+16 wrote every reward that way and 4 more hid some behind it. The rule is now
+one title per reward bullet from `{{Equip}}`, `{{Item}}` or a plain link —
+**which is the rule wikq2 already arrived at against the rendered page**
+(`collectQuestRewards` takes the first usable anchor of each `<li>` under the
+Rewards heading). One per bullet and not every link, because the bullet leads
+with what you get and then explains it in prose that links zones and NPCs.
+Non-equipment costs one page fetch and nothing else: `parse_equip` refuses
+anything without an `EquipInformation` block.
+
+**7. Crafted gear is indexed from nowhere the inversions look.** A recipe makes
+it. No monster links it, no quest rewards it, no zone drops it — all three
+source indexes are *structurally* incapable of reaching one, and the catalog
+held 1 of the 1,107 mastercrafted pages in RoK's level band. This is real
+planning gear: it is what a raider wears in the slots the expansion has not
+dropped for them yet. The index that does reach it is on the item side and is
+precise — the crafted categories intersected with the era's tier band — and
+both halves are category listings, so the cut costs a few lookups and no page
+reads. Which era it lands in comes from the RECIPE level, which is not the
+item's own: `Blessed Brellium Great Spear` equips at 80 and is made at
+Weaponsmith 88, past every cap this Planner serves. Handcrafted is the
+treasured-tier version of the same corpus and is behind `--handcrafted`, off by
+default. (`wiki.crafted_categories`, `ingest._crafted_sources`.)
+
+**And `obtain` was never read at all.** The module header is right that it is
+blank on more than half of item pages and so cannot be the spine of the crawl —
+but that got read as "not worth reading", and on the pages that fill it in it
+is the most exact source claim the wiki holds. The earring arrives via the
+crafted sweep, its `obtain` is `{{QuestReward|The Proof of the Pudding}}` and
+nothing else, and following that back gets the item a real quest source AND
+puts the Artisan Epic into the Outline — off an item page that named it.
+(`wiki.parse_obtain`.)
+
+### Coverage — the number a crawl cannot produce about itself
+
+`sync_planner` prints what it found, and what it found is exactly what its
+indexes reach. The one number it can never produce is the size of what they
+miss, and that gap was not theoretical: every count the crawl printed looked
+healthy while it held 1 of 1,107 mastercrafted pages.
+
+`planner/coverage.py` and `tools/planner_coverage.py` take the denominator from
+indexes the crawl does not use, on **category listings only** — no page
+fetches, no parsing — so it is cheap to run before a crawl and again after.
+
+    .venv/bin/python backend/tools/planner_coverage.py --era rok --list-missing
+
+It reports the three quest indexes separately, so a gap names the index that
+should have caught it, and it splits the era's equipment band into the crafted
+slice (era-decidable from the recipe level alone, so a miss there is a real
+to-do) and the rest (only reachable through a source page, which is the crawl's
+own job). **The band is not a to-do list** and the tool does not pretend it is:
+Tier 9 spans RoK and TSO together, because the cap did not move between them.
+
+### What the re-crawl found (2026-08-19)
+
+Both eras, `--era rok --era eof`, after fixes 4-7. Nothing in the previous
+catalog was lost.
+
+| | before | after |
+|---|---|---|
+| catalog items | 7,129 | **10,519** (+48%) |
+| sources | 7,454 | 11,099 |
+| RoK items | 3,788 | 5,101 |
+| EoF items | 3,427 | 5,694 |
+| quests known | 1,416 | 2,510 |
+| quest sources | 2,646 | 4,372 |
+| crafted sources | 0 | 2,017 |
+
+Crafted coverage is now effectively complete rather than merely larger: of the
+441 RoK crafted pages the audit still calls missing, a 40-page sample was
+100% correctly excluded — 35 need a recipe level of 82-90 (past every cap this
+Planner serves) and 5 are level-70 gear that belongs to the EoF crawl.
+
+**One regression was introduced and caught by diffing the crawl against the
+previous catalog**, which is the check worth keeping: a choice of rewards is
+written as a NUMBERED list (`#`), and the first per-bullet rule read only `*`.
+Four level-20 weapons silently stopped existing. Both markers are read now, and
+a Rewards section that is not a list at all falls back to every reward template
+in it.
+
+*Known wrinkle, pre-existing: `plan_quests.era` is one column and the upsert
+lets the last crawl win, so a quest both eras name is filed under whichever ran
+last. It affects the audit's "catalog holds" quest count and nothing a reader
+sees, since the era a reader filters on lives on the SOURCE row.*
+
 ### Running it unattended (2026-08-16)
 
 The crawl is now **monthly on cron** (`scripts/scheduled-sync.sh planner`),

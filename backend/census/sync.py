@@ -666,8 +666,16 @@ def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
                for k, v in (doc.get("resists") or {}).items()}
     aa = doc.get("alternateadvancements") or {}
     guild = (doc.get("guild") or {}).get("name")
+    # A TRADESKILL LEVEL IS PART OF WHO THE CHARACTER IS, not a second
+    # character. It rides on the same `type` block Census already hands over,
+    # so every path that builds this summary — owned, looked-up, or the local
+    # snapshot fallback — gets it without a fourth place to keep in step.
+    ctype = doc.get("type") or {}
+    character = {**(base.get("character") or {}),
+                 "ts_level": ctype.get("ts_level"),
+                 "ts_class": ctype.get("ts_class")}
     return {
-        **base, "synced": True,
+        **base, "character": character, "synced": True,
         "snapshot": snapshot,
         "guild": guild,
         "key_stats": key_stats, "attributes": attributes, "vitals": vitals,

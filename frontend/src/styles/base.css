@@ -6127,6 +6127,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font-size: 0.72rem; font-weight: 650; line-height: 1.2; text-transform: uppercase;
   letter-spacing: 0.075em; white-space: nowrap;
 }
+/* The tradeskill level is a second, quieter fact about the same character:
+   it rides beside the adventure level rather than competing with it, so it
+   drops a step in size and weight and takes the muted colour. */
+.loadoutcraft {
+  color: var(--text-muted); font-size: 0.92em; font-weight: 550;
+  letter-spacing: 0.05em;
+}
 /* A NAME IS NOT A SECTION LABEL. The site's `h2` is a small-caps label by
    design; "BOBBY" is not how anybody writes a character's name, so this one
    heading opts out of the uppercase and reads as typed. */

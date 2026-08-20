@@ -16,7 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
-from planner import adornments, catalog, epic_timelines, ingest, outline, wiki
+from planner import (adornments, catalog, coverage, epic_timelines, ingest,
+                     outline, wiki)
 
 PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
@@ -97,7 +98,10 @@ def test_plain_linked_epic_rewards_enter_the_item_crawl():
 * [[Epic Aspect Choice]]
 """
     row = wiki.parse_quest("Lessons of the Fallen", text)
-    assert row["rewards"] == ["Bite of the Wolf (Fabled)"]
+    # One title per reward bullet, whatever names it. `Epic Aspect Choice` is
+    # a real bullet and comes along: what it points at is decided by fetching
+    # it, and `parse_equip` refuses it if it is not equipment.
+    assert row["rewards"] == ["Bite of the Wolf (Fabled)", "Epic Aspect Choice"]
 
 
 def test_a_named_monster_carries_the_era_and_the_raid_group_solo_split():
@@ -1191,3 +1195,189 @@ def test_several_sources_can_be_asked_for_at_once(tmp_path):
     assert catalog.search(conn, eras=["rok"], kinds=["quest"])["total"] == 1
     assert catalog.search(conn, eras=["rok"], kinds=["raid"])["total"] == 1
     assert catalog.search(conn, eras=["rok"], kinds=["raid", "quest"])["total"] == 2
+
+
+# ---------- the three indexes, and the gear none of them reach ----------
+
+EARRING = "Earring of the Solstice"
+ARTISAN_EPIC = "The Proof of the Pudding"
+BRELLIUM = "Blessed Brellium Great Spear"
+
+
+def test_a_reward_is_the_first_thing_a_bullet_names_whatever_names_it():
+    """Reading only `{{Equip}}` lost whole quests.
+
+    The Artisan Epic writes its reward `{{Item|Earring of the Solstice||}}`, so
+    the quest that hands out the earring looked like it rewarded nothing at
+    all. Measured over 200 RoK quest pages, 16 wrote every reward that way.
+
+    The harvestables on the next bullets come along and are meant to: what a
+    title points at is decided by fetching it, and `parse_equip` refuses
+    anything that is not equipment."""
+    row = wiki.parse_quest(ARTISAN_EPIC, PAGES[ARTISAN_EPIC])
+    assert row["rewards"][0] == EARRING
+    assert "mahogany lumber" in row["rewards"]
+    assert wiki.parse_equip("mahogany lumber", "{{ItemInformation|}}") is None
+
+
+def test_the_obtain_field_is_structured_and_says_where_an_item_came_from():
+    """It is blank on more than half of item pages, which is why it cannot be
+    the spine of the crawl — and on the pages that fill it in it is the most
+    exact source claim the wiki holds."""
+    assert wiki.parse_obtain(PAGES[EARRING])["quests"] == [ARTISAN_EPIC]
+    crafted = wiki.parse_obtain(PAGES[BRELLIUM])["crafted"]
+    # The RECIPE level, which is not the item's own — this weapon equips at 82
+    # and is made at Weaponsmith 88.
+    assert {c["level"] for c in crafted} == {88}
+    assert crafted[0]["ts_class"] == "Weaponsmith"
+
+
+def test_a_level_carries_a_page_forward_to_the_era_that_admitted_it():
+    """`The Proof of the Pudding` says `patch = LU42`, an update that shipped
+    before Rise of Kunark, and rewards a level-80 earring. The update is not
+    wrong; it is just not the whole story, because nobody could wear the thing
+    until the cap moved."""
+    assert wiki.era_of_level(80) == "rok"
+    assert wiki.era_of_level(70) == "eof"
+    assert wiki.era_at_least("eof", 80) == "rok"
+    # A floor never drags a page backwards.
+    assert wiki.era_at_least("rok", 70) == "rok"
+    # Past every cap this Planner serves is not an era at all.
+    assert wiki.era_of_level(88) is None
+
+
+def test_a_later_expansion_is_refused_even_though_it_shares_the_tier():
+    """RoK and TSO both cap at 80 and so share Tier 9 entirely. No level can
+    separate them and the page's own patch is the only thing that can."""
+    assert wiki.declared_after("The Shadow Odyssey", "rok") is True
+    assert wiki.declared_after("Echoes of Faydwer", "rok") is False
+    assert wiki.declared_after(None, "rok") is False
+    assert wiki.declared_after("LU42", "rok", {"LU42": "The Shadow Odyssey"}) is True
+
+
+def test_quests_are_asked_for_by_tier_as_well_as_by_zone_and_expansion():
+    """A ZONE SWEEP CANNOT SEE NEW CONTENT IN AN OLD ZONE. The Artisan Epic
+    runs out of Rivervale, which reference data correctly calls a Shattered
+    Lands zone, and rewards level-80 gear. Only the tier index names it."""
+    cats = wiki.quest_categories("rok")
+    assert cats[0] == "Category:Rise of Kunark Quests"
+    assert "Category:Tier 9 Quests" in cats
+    assert "Category:Kylong Plains Quests" in cats
+    # Not by tier for monsters: a RoK raid mob is level 85, well past the band
+    # its loot belongs to, so the level test that files a quest cannot file it.
+    assert not [c for c in wiki.named_categories("rok") if c.startswith("Category:Tier ")]
+
+
+def crafted_wiki(band, crafted, quests=()):
+    """A crawl whose only index that answers is the crafted sweep."""
+    def members(cat):
+        if cat in wiki.CRAFTED_CATEGORIES:
+            return list(crafted)
+        if cat.endswith(" " + wiki.TIER_EQUIPMENT_SUFFIX):
+            return list(band)
+        if cat.startswith("Category:Tier ") and cat.endswith(" Quests"):
+            return list(quests)
+        return []
+
+    def fetch(titles):
+        return {t: PAGES[t] for t in titles if t in PAGES}
+    return fetch, members
+
+
+def test_crafted_gear_is_swept_in_because_nothing_points_at_it(tmp_path):
+    """A recipe makes it. No monster links it, no quest rewards it and no zone
+    drops it, so all three source indexes are structurally incapable of
+    reaching one — the catalog held 1 of the 1,107 mastercrafted pages in RoK's
+    band. The crafted categories cut to the tier band are the index that does,
+    and both halves are category listings, so the cut costs no page reads."""
+    conn = fresh_db(tmp_path)
+    fetch, members = crafted_wiki([EARRING, BRELLIUM], [EARRING, BRELLIUM])
+    ingest.sync(conn, "rok", fetch=fetch, members=members, lu_dates=lambda n: {})
+    got = {r["page_title"] for r in conn.execute("SELECT page_title FROM plan_items")}
+    # The earring is in. The Brellium weapon is made at Weaponsmith 88 and
+    # equips at 82 — past the cap, so it is not this era's however it is filed.
+    assert got == {EARRING}
+
+
+def test_obtain_follows_a_swept_item_back_to_the_quest_that_rewards_it(tmp_path):
+    """The whole argument in one row. `Earring of the Solstice` arrives as
+    mastercrafted, its `obtain` names one quest and nothing else, and following
+    that back gets the item a real quest source AND puts the Artisan Epic in
+    the Outline — off an item page that named it."""
+    conn = fresh_db(tmp_path)
+    fetch, members = crafted_wiki([EARRING], [EARRING])
+    ingest.sync(conn, "rok", fetch=fetch, members=members, lu_dates=lambda n: {})
+    src = conn.execute("SELECT * FROM plan_sources WHERE page_title=?",
+                       (EARRING,)).fetchone()
+    assert (src["kind"], src["source"], src["era"]) == ("quest", ARTISAN_EPIC, "rok")
+    assert src["detail"] == "Artisan Epic"
+    quest = conn.execute("SELECT * FROM plan_quests WHERE page_title=?",
+                         (ARTISAN_EPIC,)).fetchone()
+    assert quest["zone"] == "Rivervale" and quest["level"] == 80
+
+
+def test_a_tier_quest_that_belongs_to_another_expansion_never_enters(tmp_path):
+    """The tier sweep is wide on purpose and filtered on the page itself. A
+    live update dated into The Shadow Odyssey is later than the crawl, and
+    later is disqualifying."""
+    fetch, members = crafted_wiki([], [], quests=[ARTISAN_EPIC])
+    late = fresh_db(tmp_path)
+    ingest.sync(late, "rok", fetch=fetch, members=members,
+                lu_dates=lambda numbers: {"LU42": "2008-11-19"})
+    assert late.execute("SELECT COUNT(*) FROM plan_quests").fetchone()[0] == 0
+    # The same page off the same index lands when the update dates BEFORE the
+    # expansion: earlier is not disqualifying, because the level carries it
+    # forward. Without this half the test above would pass on any bug that
+    # dropped tier quests wholesale.
+    early = fresh_db(tmp_path)
+    ingest.sync(early, "rok", fetch=fetch, members=members,
+                lu_dates=lambda numbers: {"LU42": "2007-08-01"})
+    assert [r["era"] for r in early.execute(
+        "SELECT era FROM plan_quests")] == ["rok"]
+
+
+def test_coverage_measures_the_catalog_against_indexes_the_crawl_does_not_use(tmp_path):
+    """A CRAWL CANNOT REPORT ITS OWN COMPLETENESS — what it found is exactly
+    what its indexes reach. The audit asks the wiki for the era's universe and
+    subtracts the catalog, on category listings alone, so the gap the crawl is
+    structurally blind to has a number."""
+    conn = fresh_db(tmp_path)
+    fetch, members = crafted_wiki([EARRING, BRELLIUM], [EARRING, BRELLIUM])
+    ingest.sync(conn, "rok", fetch=fetch, members=members, lu_dates=lambda n: {})
+
+    def wiki_says(cat):
+        if cat in wiki.CRAFTED_CATEGORIES:
+            return [EARRING, BRELLIUM]
+        if cat.endswith(" " + wiki.TIER_EQUIPMENT_SUFFIX):
+            return [EARRING, BRELLIUM, "Some Uncrawled Bracers"]
+        return []
+
+    report = coverage.audit(conn, "rok", members=wiki_says)
+    gear = report["equipment"]
+    assert gear["band"] == 3
+    assert gear["crafted_in_band"] == 2
+    # The earring is sourced; the Brellium weapon is past the cap and stays
+    # missing, which is the point — the audit reports it rather than hiding it.
+    assert gear["crafted_held"] == 1
+    assert gear["crafted_missing"] == [BRELLIUM]
+
+
+def test_a_choice_of_rewards_is_a_NUMBERED_list_and_is_read_too():
+    """`Gruedheim Steel` writes "One of the following:" and then four `#`
+    lines. Reading only `*` dropped every quest that offers a choice — caught
+    by diffing a real crawl against the previous catalog, where four level-20
+    weapons had silently stopped existing."""
+    row = wiki.parse_quest("Gruedheim Steel", PAGES["Gruedheim Steel"])
+    assert row["rewards"] == ["Gruedheim Beater", "Gruedheim Rib Piercer",
+                              "Gruedheim Smasher", "Gruedheim War Axe"]
+
+
+def test_a_rewards_section_that_is_not_a_list_still_gives_up_its_templates():
+    """One-per-item is the precise rule and it needs the page to be a list.
+    Where it is not, a reward template is still a reward claim."""
+    assert wiki.parse_quest("Loose", """{{QuestInformation|
+ level = 70 |
+}}
+== Rewards ==
+You are given {{Equip|Some Bracers}} and {{Item|Some Ring}} for your trouble.
+""")["rewards"] == ["Some Bracers", "Some Ring"]

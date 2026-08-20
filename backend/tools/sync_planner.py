@@ -42,6 +42,11 @@ def main() -> int:
     ap.add_argument("--force", action="store_true",
                     help="write the crawl even if it came back far smaller "
                          "than the last one (see ingest.COLLAPSE_RATIO)")
+    ap.add_argument("--handcrafted", action="store_true",
+                    help="also sweep in HANDCRAFTED gear (treasured-tier "
+                         "crafted, ~1,000 more pages in an era's band). Off by "
+                         "default: the catalog is read by somebody deciding "
+                         "what to chase at cap, not what to level in")
     ap.add_argument("--skip-wikq2", action="store_true",
                     help="leave the last structured epic timeline snapshot in place")
     args = ap.parse_args()
@@ -59,7 +64,8 @@ def main() -> int:
         for era in eras:
             named = {t for cat in wiki.named_categories(era)
                      for t in gamewiki.category_members(cat)}
-            quests = len(gamewiki.category_members(wiki.CATEGORIES[era]["quests"]))
+            quests = len({t for cat in wiki.quest_categories(era)
+                          for t in gamewiki.category_members(cat)})
             drops = sum(len(gamewiki.category_members(cat))
                         for cat, _ in wiki.drop_categories(era))
             print(f"{era} ({wiki.ERAS[era]}): {len(named)} named monsters over "
@@ -80,7 +86,8 @@ def main() -> int:
     reports = []
     for era in eras:
         print(f"{era} ({wiki.ERAS[era]})")
-        crawled = ingest.crawl(era, progress=progress)
+        crawled = ingest.crawl(era, progress=progress,
+                               handcrafted=args.handcrafted)
         try:
             report = ingest.store(conn, crawled, force=args.force)
         except ingest.CrawlCollapsed as exc:
@@ -108,6 +115,16 @@ def main() -> int:
               f"-> {report['items']} items, {report['sources']} sources, "
               f"{report['sets']} adornment sets ({report['pages']} pages read)")
         print(f"  {report['edges']} prerequisite edges between quests")
+        if report["tier_quests"]:
+            # New content in an OLD zone: quests neither the expansion category
+            # nor any era zone names, reached only by their tier. The Artisan
+            # Epic runs out of Rivervale and rewards level-80 gear.
+            print(f"  {report['tier_quests']} quests came from the tier index "
+                  f"and no expansion or zone category")
+        if report["crafted_swept"]:
+            # Gear no source page anywhere links. No inversion can reach one.
+            print(f"  {report['crafted_swept']} crafted item pages swept in "
+                  f"from the crafted categories")
         if report["zone_drops"]:
             # What the mob and quest inversions cannot reach: gear that fell
             # off something with no page of its own. This number IS the gap the

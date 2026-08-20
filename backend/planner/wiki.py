@@ -56,6 +56,59 @@ DEFAULT_ERAS = ("rok",)
 # than a guess about the page.
 ERA_CAP = {"eof": 70, "rok": 80}
 
+# The eras in RELEASE order, so "earlier" and "later" are answerable. Taken
+# from `zones.EXPANSIONS` rather than written again here: the launch dates are
+# already reference data and an era key already spells its expansion the same
+# way.
+ERA_ORDER = tuple(ERA_KEY[name] for name, _ in zones.EXPANSIONS if name in ERA_KEY)
+
+# The LEVEL BAND an expansion's own gear and quests sit in — game knowledge,
+# written down for the same reason `ERA_CAP` is. It is not derived from the
+# neighbouring cap because the neighbour may not be configured: EoF is the
+# earliest era here, and deriving its floor from "nothing before it" would
+# claim the whole game up to 70 as EoF content and sweep tiers 1-8 for it.
+#
+# The band is what the TIER indexes are asked for (below). The cap is still the
+# separate and stricter rule about what can be equipped at all.
+ERA_BAND = {"eof": (60, 70), "rok": (71, 80)}
+
+
+def era_of_level(level: int | None) -> str | None:
+    """The EARLIEST era whose cap admits this level, or None.
+
+    **A LEVEL IS AN ERA CLAIM, and for some content it is the only one.** The
+    Artisan Epic reward is a level-80 earring behind a quest in Rivervale — a
+    Shattered Lands zone — filed on the wiki under `LU42` and `Tier 9`. Neither
+    its zone nor its category nor its patch says "Rise of Kunark", and yet the
+    level says it plainly: nobody could equip it before the expansion that
+    raised the cap to 80.
+
+    Earliest rather than nearest, because an item stays equippable in every
+    expansion after the one that admitted it. This is a FLOOR, so it never
+    overrides an era a source actually declared — see `era_at_least`."""
+    if not level:
+        return None
+    for key in ERA_ORDER:
+        if key in ERA_CAP and level <= ERA_CAP[key]:
+            return key
+    return None
+
+
+def era_at_least(era: str | None, level: int | None) -> str | None:
+    """An era, moved forward if the level cannot be reached that early.
+
+    A source's own claim wins whenever it is not impossible. `patch = LU42` on
+    a quest whose reward is level 80 is not a lie about the update, it is just
+    not the whole story: the update shipped before the cap moved, and the thing
+    it rewards could not be worn until it did."""
+    floor = era_of_level(level)
+    if floor is None:
+        return era
+    if era is None:
+        return floor
+    order = {key: i for i, key in enumerate(ERA_ORDER)}
+    return floor if order.get(floor, -1) > order.get(era, -1) else era
+
 # The categories that enumerate one expansion's content. `Named Monsters` and
 # `Quests` are the two INVERSIONS the catalog is built from: between them they
 # name every item worth chasing, with its source and its era attached.
@@ -121,14 +174,122 @@ def era_zones(era: str) -> list[dict]:
     return zones.in_era(ERAS.get(era, ""))
 
 
+# ---------- the THIRD index: by tier, for new content in an old zone ----------
+#
+# **A ZONE SWEEP CANNOT SEE NEW CONTENT IN AN OLD ZONE**, and there is a lot of
+# it. The Artisan Epic runs out of Rivervale — a Shattered Lands zone — and
+# rewards a level-80 earring; a holiday timeline, a city writ line and every
+# revamped classic quest have the same shape. Asking `Category:Rivervale
+# Quests` for RoK would mean claiming Rivervale for RoK, which is false and
+# would drag in its level-20 content too.
+#
+# The wiki files both quests and monsters by TIER, and a tier is a level band,
+# and a level band belongs to whichever expansion raised the cap to reach it.
+# So the tier categories are the index that is blind to zone and to patch and
+# still lands on the right era — `Category:Tier 9 Quests` holds `The Proof of
+# the Pudding` (1,049 pages), and `Category:Tier 9 Equipment` holds the earring.
+#
+# Nothing is trusted from the category alone: everything it names is fetched
+# and re-filed on its own level, which is what `era_at_least` is for.
+TIER_QUESTS_SUFFIX = "Quests"
+TIER_EQUIPMENT_SUFFIX = "Equipment"
+
+
+def tier_of_level(level: int) -> int:
+    """The wiki's tier number for a level. Tier 8 is 70-79, Tier 9 is 80-89."""
+    return level // 10 + 1
+
+
+def era_tiers(era: str) -> list[int]:
+    """The tier numbers covering an expansion's own level band."""
+    band = ERA_BAND.get(era)
+    if not band:
+        return []
+    return list(range(tier_of_level(band[0]), tier_of_level(band[1]) + 1))
+
+
+def tier_categories(era: str, suffix: str) -> list[str]:
+    return [f"Category:Tier {n} {suffix}" for n in era_tiers(era)]
+
+
 def named_categories(era: str) -> list[str]:
     """Every category that enumerates this expansion's named monsters.
 
     The expansion's own first — it is the one that carries the mobs whose zone
-    page the wiki never made — then one per zone."""
+    page the wiki never made — then one per zone.
+
+    NOT by tier, unlike quests and equipment: every named lives in a zone and
+    every zone knows its era, so the zone index is already structurally
+    complete here. A tier index would add only revamped classic content, and it
+    could not be filtered honestly — a RoK raid mob is level 85, well past the
+    band its loot belongs to, so the level test that files a quest cannot file
+    a monster."""
     cats = [CATEGORIES[era]["named"]]
     cats += [f"Category:{z['page_title']} {NAMED_SUFFIX}" for z in era_zones(era)]
     return list(dict.fromkeys(cats))
+
+
+def quest_categories(era: str) -> list[str]:
+    """Every category that enumerates this expansion's quests.
+
+    **THE EXPANSION CATEGORY IS THE SMALLEST OF THE THREE.** Measured 2026-08-19:
+    `Category:Rise of Kunark Quests` holds 906 pages, its zones hold 241 more
+    that it never named, and `Tier 8/9 Quests` reaches the ones filed in a zone
+    from an older expansion. For EoF the zone sweep alone more than doubles it
+    — 514 in the expansion category, 1,173 across its zones."""
+    cats = [CATEGORIES[era]["quests"]]
+    cats += [f"Category:{z['page_title']} {TIER_QUESTS_SUFFIX}" for z in era_zones(era)]
+    cats += tier_categories(era, TIER_QUESTS_SUFFIX)
+    return list(dict.fromkeys(cats))
+
+
+# ---------- gear with no source page at all ----------
+#
+# **CRAFTED GEAR IS NOT DROPPED, NOT QUESTED, AND INDEXED FROM NOWHERE THE
+# INVERSIONS LOOK.** A recipe makes it; no monster links it and no quest
+# rewards it, so a source-first crawl is structurally incapable of finding one.
+# Measured 2026-08-19: 1,107 mastercrafted pages sit in RoK's level band and
+# the catalog held exactly one of them, and mastercrafted is real planning gear
+# — it is what a raider wears in the slots the expansion has not dropped yet.
+#
+# The item side does have an index for these, and it is precise: the crafted
+# categories intersected with the era's tier band. Both halves are cheap
+# category listings, so the intersection costs two lookups and no page fetches,
+# and only what survives it is ever read.
+#
+# Handcrafted is the treasured-tier version of the same corpus (990 more in the
+# band) and is behind a flag: it is levelling gear, and the catalog is read by
+# somebody deciding what to chase at cap.
+CRAFTED_CATEGORIES = (
+    "Category:Mastercrafted Equipment",
+    "Category:Mastercrafted Legendary Equipment",
+    "Category:Mastercrafted Fabled Equipment",
+    "Category:Mastercrafted Mythical Equipment",
+)
+HANDCRAFTED_CATEGORIES = ("Category:Handcrafted Equipment",)
+
+# What a crafted item's SOURCE kind is. Not solo/group/raid: you do not fight
+# anything for it, and a reader filtering for what a group can get should not
+# be handed a recipe. The tradeskill class rides along in `detail` when the
+# page says which.
+CRAFTED_SOURCE_KIND = "crafted"
+
+
+def crafted_categories(era: str, handcrafted: bool = False) -> list[str]:
+    cats = list(CRAFTED_CATEGORIES)
+    if handcrafted:
+        cats += list(HANDCRAFTED_CATEGORIES)
+    return cats
+
+
+def crafted_source(era: str, detail: str | None = None) -> dict:
+    """The `plan_sources` fields a crafted item gets.
+
+    No zone and no source page: a recipe is not a place and the item page is
+    its own best reference. The era is the one its LEVEL admits, because that
+    is the expansion whose tradeskill cap could make it."""
+    return {"source_page": None, "source": "Crafted", "kind": CRAFTED_SOURCE_KIND,
+            "zone": None, "level": None, "detail": detail, "era": era}
 
 
 def drop_categories(era: str) -> list[tuple[str, dict]]:
@@ -479,6 +640,100 @@ def _unsign(item_id: int) -> int:
     return item_id + 2**32 if item_id < 0 else item_id
 
 
+# ---------- what the item page says about itself ----------
+#
+# **`obtain` IS STRUCTURED, and it was being thrown away.** The module header
+# is right that it is blank on more than half of item pages and so cannot be
+# the SPINE of the crawl — but "not the spine" got read as "not worth reading",
+# and on the pages that do fill it in, it is the most precise source statement
+# the wiki holds:
+#
+#     {{CraftedItem|Weaponsmith|88|Advanced Weaponsmith Volume 88}}
+#     {{QuestReward|The Proof of the Pudding}}
+#     {{DroppedItem|Quarry Cobble Rock||The Outer Vault|Ornate}}
+#     {{VendorItem||a mysterious Quellthulian|...}}
+#     {{FromCrate|Box of Old Boots (Level 85)|Box of Old Boots}}
+#
+# `CraftedItem`'s second parameter is the RECIPE level, and it is a better era
+# signal than the item's own: `Blessed Brellium Great Spear` equips at 80 and
+# is made at Weaponsmith 88, which is past every tradeskill cap this Planner
+# serves. Reading it is the difference between admitting RoK's crafted gear and
+# admitting all of TSO's alongside it.
+_OBTAIN_TEMPLATES = ("CraftedItem", "QuestReward", "DroppedItem", "VendorItem",
+                     "FromCrate")
+
+
+def _templates(text: str, names) -> list[list[str]]:
+    """Every `{{Name|a|b}}` in the text as `[name, a, b]`, nesting-aware.
+
+    A `VendorItem` carries a `{{Loc}}` inside it, so splitting the whole field
+    on `|` would tear one claim into three. Depth is tracked instead."""
+    wanted = {n.lower() for n in names}
+    out: list[list[str]] = []
+    i = 0
+    while (i := text.find("{{", i)) != -1:
+        depth, j, parts, cur = 0, i, [], []
+        while j < len(text):
+            if text.startswith("{{", j):
+                depth += 1
+                if depth > 1:
+                    cur.append("{{")
+                j += 2
+            elif text.startswith("}}", j):
+                depth -= 1
+                if depth == 0:
+                    parts.append("".join(cur))
+                    break
+                cur.append("}}")
+                j += 2
+            elif text[j] == "|" and depth == 1:
+                parts.append("".join(cur))
+                cur = []
+                j += 1
+            else:
+                cur.append(text[j])
+                j += 1
+        else:
+            break                              # an unclosed template ends it
+        if parts and parts[0].strip().lower() in wanted:
+            out.append([p.strip() for p in parts])
+        i = j + 2
+    return out
+
+
+def parse_obtain(wikitext: str) -> dict:
+    """The `obtain` field -> the claims it makes, by kind.
+
+    Kept as claims rather than resolved sources: what a title MEANS is the
+    crawl's job — a quest named here has to be fetched before its era is known,
+    and a recipe level has to be compared against a cap this module does not
+    apply."""
+    block = _block(_clean(wikitext), "obtain")
+    out: dict[str, list] = {"crafted": [], "quests": [], "dropped": [],
+                            "vendors": [], "crates": []}
+    if not block:
+        return out
+    for parts in _templates(block, _OBTAIN_TEMPLATES):
+        name = parts[0].lower()
+        args = parts[1:]
+
+        def arg(n):
+            return args[n].strip() if len(args) > n and args[n].strip() else None
+
+        if name == "crafteditem":
+            out["crafted"].append({"ts_class": arg(0), "level": _int(arg(1) or ""),
+                                   "book": arg(2)})
+        elif name == "questreward" and arg(0):
+            out["quests"].append(_PIPE_ESCAPE.split(arg(0))[0].strip())
+        elif name == "droppeditem":
+            out["dropped"].append({"mob": arg(0), "zone": arg(2), "chest": arg(3)})
+        elif name == "vendoritem":
+            out["vendors"].append({"zone": arg(0), "npc": arg(1)})
+        elif name == "fromcrate" and arg(0):
+            out["crates"].append(arg(0))
+    return out
+
+
 def parse_equip(page_title: str, wikitext: str) -> dict | None:
     """An `EquipInformation` page -> one catalog row, or None if the page is
     not a piece of equipment.
@@ -525,6 +780,9 @@ def parse_equip(page_title: str, wikitext: str) -> dict | None:
         "effects": re.sub(r"<br\s*/?>", ", ", effects).strip() or None,
         "effect_desc": _strip_markup(effect_desc) or None,
         "icon": _int(_field(text, "iconnum")),
+        # Not a stored column — the crawl reads it to decide where the item
+        # came from when nothing pointed at it. See `parse_obtain`.
+        "obtain": parse_obtain(wikitext),
     }
 
 
@@ -588,6 +846,57 @@ def source_kind(diff: str | None) -> str:
 
 _LINKS = re.compile(r"\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]")
 _EQUIP_TPL = re.compile(r"\{\{\s*Equip\s*\|\s*([^|}]+)", re.I)
+
+# **A REWARD IS THE FIRST THING A BULLET NAMES, WHATEVER TEMPLATE NAMES IT.**
+# Reading only `{{Equip}}` lost whole quests: measured over 200 RoK pages, 16
+# wrote every reward as `{{Item}}` and 4 more hid some behind it. `The Proof of
+# the Pudding` is one of the 16 — the Artisan Epic earring is written
+# `{{Item|Earring of the Solstice||}}`, so the quest looked like it rewarded
+# nothing at all.
+#
+# One link per bullet, not every link on the page, and this is the rule wikq2
+# already arrived at against the RENDERED page (`collectQuestRewards` in
+# `lib/eq2.ts` takes the first usable anchor of each `<li>` under the Rewards
+# heading). It is what separates a reward from the prose around it: the bullet
+# leads with what you get and then explains it, and an explanation links zones,
+# NPCs and factions that are emphatically not rewards.
+#
+# `{{Item}}` is not equipment-specific — the same list hands out
+# `{{Item|mahogany lumber||}}` — and that costs one page fetch and nothing
+# else, because `parse_equip` refuses any page without an `EquipInformation`
+# block.
+# `#` as well as `*`: a choice of rewards is written as a NUMBERED list —
+# "One of the following:" then `#{{Equip|Gruedheim Beater}}` — and reading only
+# `*` silently dropped every quest that offers a choice.
+_REWARD_BULLET = re.compile(r"^\s*[*#]+\s*(.+)$", re.M)
+_REWARD_LINK = re.compile(
+    r"\{\{\s*Equip\s*\|\s*([^|}]+)"
+    r"|\{\{\s*Item\s*\|\s*([^|}]+)"
+    r"|\[\[([^\]|#]+)", re.I)
+
+
+def _reward_links(block: str) -> list[str]:
+    """The Rewards block -> one title per list item, in order.
+
+    Falls back to every reward TEMPLATE in the block when the section is not a
+    list at all. One-per-item is the precise rule and it depends on the page
+    being written as a list; where it is not, the old behaviour is still
+    strictly better than returning nothing, and a template is a reward claim
+    wherever it appears."""
+    out = []
+    for line in _REWARD_BULLET.findall(block):
+        m = _REWARD_LINK.search(line)
+        if not m:
+            continue
+        title = next(g for g in m.groups() if g)
+        title = _PIPE_ESCAPE.split(title)[0].strip()
+        if title:
+            out.append(title)
+    if out:
+        return out
+    return [_PIPE_ESCAPE.split(g)[0].strip()
+            for m in _REWARD_LINK.finditer(block)
+            for g in [next((x for x in m.groups()[:2] if x), None)] if g]
 
 
 def links(wikitext: str) -> list[str]:
@@ -721,20 +1030,15 @@ def parse_quest(page_title: str, wikitext: str) -> dict | None:
     m = _REWARDS.search(text)
     if m:
         block = m.group(1)
-        # Most ordinary rewards use {{Equip|...}}, but the class epic pages
-        # use plain item links (for example [[Bite of the Wolf (Fabled)]]).
-        # Follow both and let parse_equip reject coins, spells and other linked
-        # non-equipment later. Reading only the template silently removed the
-        # defining rewards of Rise of Kunark from the item catalog.
-        templated = [r.strip() for r in _EQUIP_TPL.findall(block)]
-        # The plain-link exception is deliberately narrow. Reward prose links
-        # many pieces of real equipment that are context, not rewards; only
-        # class Epic Weapon timelines use the explicit item-version suffix as
-        # their reward contract.
-        linked_epics = ([r.strip() for r in _LINKS.findall(block)
-                         if re.search(r"\((?:Fabled|Mythical)\)$", r.strip(), re.I)]
-                        if "epic weapon" in timeline.lower() else [])
-        rewards = [*templated, *linked_epics]
+        # `{{Equip}}`, `{{Item}}` and a plain link are all read the same way
+        # now — one per bullet — which subsumes the old class-epic exception.
+        # That exception existed because the epic pages write their reward as
+        # `[[Bite of the Wolf (Fabled)]]` and reading only the template
+        # silently removed the defining rewards of Rise of Kunark from the
+        # catalog; the general rule covers it and 20 more reward titles per 200
+        # quest pages besides. Order-preserving dedupe: a page that writes the
+        # same reward twice rewards it once.
+        rewards = list(dict.fromkeys(_reward_links(block)))
     diff = _field(text, "diff")
     level_text = _field(text, "level")
     return {
@@ -843,19 +1147,48 @@ def era_name(key: str) -> str | None:
     return ERAS.get((key or "").strip().lower())
 
 
-def era_of_patch(patch: str | None) -> str | None:
+EXPANSION_RANK = {name: i for i, (name, _) in enumerate(zones.EXPANSIONS)}
+
+
+def expansion_of_patch(patch: str | None, lu_eras: dict | None = None) -> str | None:
+    """A `patch = …` value -> the EXPANSION it shipped in, ours or not.
+
+    Every expansion, not only the two the Planner serves, because the question
+    this answers is "did this page come from LATER than the era being crawled"
+    and the answer has to be able to be "yes, The Shadow Odyssey" for a crawl
+    that has never heard of it.
+
+    `lu_eras` is `{"LU42": "Echoes of Faydwer"}` — resolved once per crawl by
+    `ingest`, since dating a live update is a network read and this module does
+    not do those."""
+    name = (patch or "").strip()
+    if name in EXPANSION_RANK:
+        return name
+    return (lu_eras or {}).get(name)
+
+
+def era_of_patch(patch: str | None, lu_eras: dict | None = None) -> str | None:
     """A `patch = …` value -> the era key this Planner knows, or None.
 
     The field is free text on the wiki and carries live-update names as well as
     expansion names, so anything not one of ours is simply not ours — an item
     is filed under an era we serve or it is not filed at all."""
-    name = (patch or "").strip()
-    if name in ERA_KEY:
-        return ERA_KEY[name]
-    # `patch = LU42` on a zone or mob added mid-expansion; `zones` already
-    # knows which expansion was live on a date, but not which update was when,
-    # so an update-numbered page is left to the category it was crawled from.
-    return None
+    return ERA_KEY.get(expansion_of_patch(patch, lu_eras) or "")
+
+
+def declared_after(patch: str | None, era: str, lu_eras: dict | None = None) -> bool:
+    """Does the page's own patch put it in a LATER expansion than this crawl?
+
+    The one guard the tier sweep needs. `Category:Tier 9 Quests` is level 80,
+    and level 80 is Rise of Kunark AND The Shadow Odyssey — the cap did not
+    move between them — so the level alone cannot separate the two and the
+    page's own patch has to be asked. Unknown is not later: a page that says
+    nothing is decided on its level, which is the whole point of the sweep."""
+    declared = expansion_of_patch(patch, lu_eras)
+    if declared is None:
+        return False
+    mine = ERAS.get(era)
+    return EXPANSION_RANK.get(declared, -1) > EXPANSION_RANK.get(mine, -1)
 
 
 ERA_LABEL = {key: zones.ERA_SHORT.get(name, name) for key, name in ERAS.items()}

@@ -613,6 +613,7 @@ builds here with `bash build.sh`.
 
 ## Ship log
 
+- 2026-08-19 (claude): Planner: find the gear three indexes and a crafted sweep were missing
 - 2026-08-19 (codex): Redesign character-scoped Planner gear sets
 - 2026-08-19 (codex): Add private Skill Issue loot portal
 - 2026-08-19 (codex): Refine Gear Planner search and scalable outline
@@ -632,4 +633,3 @@ builds here with `bash build.sh`.
 - 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
 - 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
 - 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup
-- 2026-08-16 (codex): Build Census-backed equipment planner

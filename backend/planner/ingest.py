@@ -43,6 +43,7 @@ import json
 import time
 
 import gamewiki
+import zones
 from planner import wiki
 
 # A page whose title is one of these is a category or a file, not a thing.
@@ -73,8 +74,53 @@ def _fetch_all(titles: list[str], fetch, progress=None, label: str = "") -> dict
     return out
 
 
+def _sweep(members, categories: list[str]) -> tuple[set[str], set[str]]:
+    """Run a list of category indexes -> (named by a specific one, tier only).
+
+    The split is the whole point. A page the EXPANSION or a ZONE category named
+    is this era's by the wiki's own filing. A page only a TIER category named
+    is a candidate: the tier is a level band, and every expansion that left the
+    cap alone shares it."""
+    tier_prefix = "Category:Tier "
+    solid, tiered = set(), set()
+    for cat in categories:
+        got = set(_titles(members(cat)))
+        (tiered if cat.startswith(tier_prefix) else solid).update(got)
+    return solid, tiered - solid
+
+
+def _live_update_eras(patches, lu_dates) -> dict[str, str]:
+    """`{"LU42": "Echoes of Faydwer"}` for the update-numbered patches given."""
+    numbers = {n for p in patches if (n := gamewiki.live_update_number(p or ""))}
+    if not numbers:
+        return {}
+    return {lu: era for lu, date in lu_dates(numbers).items()
+            if (era := zones.expansion_on(date))}
+
+
+def _tier_page_belongs(patch, level, era: str, lu_eras: dict) -> bool:
+    """Does a page only the TIER index named belong to the era being crawled?
+
+    Two questions, and both have to be answered from the page itself.
+
+    LATER is disqualifying and is asked first. Rise of Kunark and The Shadow
+    Odyssey both cap at 80 and so share Tier 9 entirely; nothing about a level
+    can separate them, and the page's own patch is the only thing that can.
+
+    EARLIER is not disqualifying, which is the case that matters. `The Proof of
+    the Pudding` says `LU42` — an update that shipped before RoK — and rewards
+    a level-80 earring. The update is not wrong, it is just not the whole
+    story: the reward could not be worn until the cap moved, so the level
+    carries the page forward to the era that admitted it and the patch does
+    not drag it back."""
+    if wiki.declared_after(patch, era, lu_eras):
+        return False
+    return wiki.era_at_least(wiki.era_of_patch(patch, lu_eras), level) == era
+
+
 def crawl(era: str, fetch=gamewiki.fetch_wikitext,
-          members=gamewiki.category_members, progress=None) -> dict:
+          members=gamewiki.category_members, progress=None,
+          lu_dates=gamewiki.live_update_dates, handcrafted: bool = False) -> dict:
     """One expansion -> everything the catalog needs, parsed but not stored.
 
     `fetch` and `members` are parameters so tests drive this from recorded
@@ -96,17 +142,39 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
     mobs = [m for title, text in mob_pages.items()
             if (m := wiki.parse_named(title, text))]
 
-    quest_links = list(members(cats["quests"]))
+    # QUESTS COME FROM THREE INDEXES, and the expansion's own is the smallest.
+    # Its zones hold hundreds it never named, and neither reaches the case that
+    # started this: content added at the level cap inside an OLD zone. The
+    # Artisan Epic runs out of Rivervale, which is a Shattered Lands zone, and
+    # rewards a level-80 earring — no expansion category, no era zone, and a
+    # `patch` of `LU42`. Only `Category:Tier 9 Quests` names it.
+    #
+    # The tier index is wide, so what it alone names is filtered below rather
+    # than trusted: a tier is a level band shared by every expansion that did
+    # not move the cap.
+    solid_quests, tier_quests = _sweep(members, wiki.quest_categories(era))
     if era == "rok":
         # Four Mythical finales are absent from the expansion quest category,
         # just as their rewards are absent from the epic item category. Crawl
         # them explicitly so their hard prerequisites enter the Outline too.
-        quest_links += list(wiki.EPIC_WEAPON_EXTRA_QUESTS)
-    quest_titles = _titles(quest_links)
-    quest_pages = _fetch_all(quest_titles, fetch, progress, "quests")
+        solid_quests |= set(wiki.EPIC_WEAPON_EXTRA_QUESTS)
+        tier_quests -= solid_quests
+    quest_pages = _fetch_all(sorted(solid_quests | tier_quests), fetch,
+                             progress, "quests")
     pages_read += len(quest_pages)
     quests = [q for title, text in quest_pages.items()
               if (q := wiki.parse_quest(title, text))]
+
+    # Dating the live updates the tier sweep turned up, once, in one batch.
+    # `patch = LU42` is the only thing many of these pages say about when they
+    # shipped, and "which expansion was live that day" is already answerable —
+    # `zones.expansion_on` does the same job for zones.
+    lu_eras = _live_update_eras(
+        [q["era"] for q in quests if q["page_title"] in tier_quests], lu_dates)
+
+    quests = [q for q in quests
+              if q["page_title"] not in tier_quests
+              or _tier_page_belongs(q["era"], q["level"], era, lu_eras)]
 
     # link as WRITTEN -> the sources that named it. Kept by link rather than by
     # resolved item because a disambiguation resolves to several items and all
@@ -164,6 +232,31 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         if progress:
             progress("zones", i, len(drop_cats))
 
+    # --- 2c: the gear NOTHING points at -----------------------------------
+    #
+    # A recipe makes crafted gear. No monster links it, no quest rewards it and
+    # no zone drops it, so all three indexes above are structurally incapable
+    # of reaching one — the catalog held 1 of the 1,107 mastercrafted pages in
+    # RoK's band (measured 2026-08-19), and mastercrafted is what a raider
+    # wears in the slots the expansion has not dropped for them yet.
+    #
+    # The item side does index them, precisely: the crafted categories cut down
+    # to the era's tier band. Both halves are category listings, so the
+    # intersection costs a few lookups and no page reads, and only what
+    # survives it is fetched. Which era it lands in is decided from the RECIPE
+    # level once the page is read — `Blessed Brellium Great Spear` equips at 80
+    # and is made at Weaponsmith 88, past every cap this Planner serves.
+    band_equipment: set[str] = set()
+    for cat in wiki.tier_categories(era, wiki.TIER_EQUIPMENT_SUFFIX):
+        band_equipment |= set(_titles(members(cat)))
+    crafted_titles: set[str] = set()
+    for cat in wiki.crafted_categories(era, handcrafted):
+        crafted_titles |= set(_titles(members(cat))) & band_equipment
+    crafted_swept = 0
+    for link in sorted(crafted_titles - set(wanted)):
+        wanted[link] = [{"_crafted": True, "era": era}]
+        crafted_swept += 1
+
     # --- 3: the items, and the versions behind a disambiguation ---------
     item_pages = _fetch_all(_titles(wanted), fetch, progress, "items")
     pages_read += len(item_pages)
@@ -203,21 +296,56 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         origin.update(found)
         frontier = pages
 
+    parsed = {title: row for title, text in item_pages.items()
+              if (row := wiki.parse_equip(title, text))}
+
+    # **AN ITEM SWEPT IN BY CATEGORY HAS TO SAY WHERE IT CAME FROM**, and the
+    # `obtain` field is where it says it. That field is blank on more than half
+    # of item pages, which is why it cannot be the spine of the crawl — but on
+    # the pages that fill it in it is the most exact source claim the wiki
+    # holds, and it had never been read at all.
+    #
+    # `Earring of the Solstice` is the whole argument: swept in as
+    # mastercrafted, its `obtain` is `{{QuestReward|The Proof of the Pudding}}`
+    # and nothing else. Following that back gets the item a real quest source
+    # AND puts the quest in the Outline, from an item page that named it.
+    obtain_quests = _titles(
+        q for title, row in parsed.items()
+        if any(src.get("_crafted") for src in wanted.get(origin.get(title, title), []))
+        for q in row["obtain"]["quests"])
+    known_quests = {q["page_title"] for q in quests}
+    followed = [t for t in obtain_quests if t not in known_quests]
+    if followed:
+        pages = _fetch_all(followed, fetch, progress, "obtain")
+        pages_read += len(pages)
+        for title, text in pages.items():
+            q = wiki.parse_quest(title, text)
+            if q and _tier_page_belongs(q["era"], q["level"], era, lu_eras):
+                quests.append(q)
+    by_quest_page = {q["page_title"]: q for q in quests}
+
     items: dict[str, dict] = {}
     sources: list[dict] = []
     over_cap = 0
-    for title, text in item_pages.items():
-        row = wiki.parse_equip(title, text)
-        if not row:
-            continue                       # a pattern, a recipe, a pointer page
+    for title, row in parsed.items():
         named_by = wanted.get(origin.get(title, title))
         if not named_by:
             continue                       # a version nothing actually pointed at
-        named_by = [(_epic_source(quests, row) if src.get("_class_epic") else src)
+        named_by = [(_epic_source(quests, row) if src.get("_class_epic") else
+                     _crafted_sources(row, era, by_quest_page) if src.get("_crafted")
+                     else [src])
                     for src in named_by]
-        named_by = [src for src in named_by if src]
+        named_by = [src for group in named_by
+                    for src in (group if isinstance(group, list) else [group])
+                    if src]
         if not named_by:
             continue
+        # A source's era is a FLOOR, not a fact. A page that says `LU42` and
+        # rewards a level-80 item is telling the truth about the update and
+        # only half the story about the expansion: nobody wore it before the
+        # cap moved. See `wiki.era_at_least`.
+        named_by = [{**src, "era": wiki.era_at_least(src["era"], row["level"])}
+                    for src in named_by]
         # An item above an expansion's level cap cannot be equipped in it, so
         # that SOURCE is dropped rather than the item — a page rewritten for a
         # live revamp is the common cause, and the same item may still have an
@@ -271,7 +399,58 @@ def crawl(era: str, fetch=gamewiki.fetch_wikitext,
         # measure of what the two inversions cannot see, so it is reported
         # rather than folded into the item count.
         "zone_drops": zone_drops,
+        # And how many entered on the CRAFTED categories alone — gear no
+        # source page anywhere links, which no inversion can reach at all.
+        "crafted_swept": crafted_swept,
+        # Quests that only the tier index named. New content in an old zone:
+        # the number is the size of what filing by expansion and by zone both
+        # miss.
+        "tier_quests": len([q for q in quests if q["page_title"] in tier_quests]),
     }
+
+
+# `source_page` is NOT NULL and is half the primary key, so a crafted row needs
+# one even though a recipe is not a page you visit. The recipe BOOK is a real
+# wiki page and is used when `obtain` names it; the constant is the fallback,
+# and nothing links it — the Planner only builds a link for `kind == "quest"`.
+_CRAFTED_PAGE = "Crafted"
+
+
+def _crafted_sources(row: dict, era: str, by_quest_page: dict) -> list[dict]:
+    """A crafted-sweep item -> the sources its own page claims.
+
+    The sweep found it in a category, which is a claim about how it is MADE and
+    not about where it came from. `obtain` is asked first and wins: the Artisan
+    Epic earring is filed mastercrafted and is a quest reward, and "quest" is
+    the answer a reader planning for it needs.
+
+    The era is computed from BOTH levels, because a crafted item has two: what
+    you must be to wear it, and what the crafter must be to make it. The
+    expansion has to admit them both."""
+    obtain = row.get("obtain") or {}
+    from_quests = []
+    for title in obtain.get("quests") or []:
+        q = by_quest_page.get(title)
+        if not q:
+            continue
+        from_quests.append({
+            "source_page": q["page_title"], "source": q["name"], "kind": "quest",
+            "zone": q.get("zone"), "level": q.get("level"),
+            "detail": q.get("timeline"), "era": era})
+    if from_quests:
+        return from_quests
+
+    crafted = [c for c in obtain.get("crafted") or [] if c.get("level")]
+    # The EARLIEST recipe, when a page lists several: the first expansion that
+    # could make it is the one it belongs to.
+    made_at = min((c["level"] for c in crafted), default=0)
+    if wiki.era_of_level(max(made_at, row["level"] or 0)) != era:
+        return []
+    detail = next((c["ts_class"] for c in crafted if c.get("ts_class")), None)
+    book = next((c["book"] for c in crafted if c.get("book")), None)
+    return [{**wiki.crafted_source(era, detail),
+             "source_page": book or _CRAFTED_PAGE,
+             "source": f"{detail} {made_at}" if detail and made_at else "Crafted"}]
 
 
 def _epic_source(quests: list[dict], item: dict) -> dict | None:
@@ -503,7 +682,9 @@ def store(conn, crawled: dict, force: bool = False) -> dict:
             "edges": edge_report["edges"],
             "dangling": edge_report["dangling"],
             "over_cap": crawled["over_cap"],
-            "zone_drops": crawled["zone_drops"]}
+            "zone_drops": crawled["zone_drops"],
+            "crafted_swept": crawled["crafted_swept"],
+            "tier_quests": crawled["tier_quests"]}
 
 
 def _reconcile_edges(conn, era: str, claims: list[dict]) -> dict:
