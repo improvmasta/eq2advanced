@@ -468,6 +468,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-19 (codex): Polish Gear Planner catalog search
 - 2026-08-19 (codex): Match Planner item cards to in-game examines
 - 2026-08-19 (claude): Planner: find the gear three indexes and a crafted sweep were missing
 - 2026-08-19 (codex): Redesign character-scoped Planner gear sets
@@ -487,4 +488,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
 - 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
-- 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh

@@ -724,7 +724,15 @@ export default function Planner({ user }) {
   }, [erasParam, order, cls, slot, tier, kindParam, armor,
     levelMin, levelMax, q, carries, proc, mode, adornmentClass])
   const catalogKey = `${mode}:${query}`
-  const data = catalogResults[catalogKey] || null
+  const exactData = catalogResults[catalogKey] || null
+  /* A query must not replace a full results table with one line of loading
+     copy. Retain the last result for each catalog task until its exact
+     replacement arrives; mode separation prevents item rows ever standing in
+     for set rows (or vice versa). */
+  const retainedCatalog = useRef({ items: null, sets: null })
+  if (exactData) retainedCatalog.current[mode] = exactData
+  const data = exactData || retainedCatalog.current[mode]
+  const catalogUpdating = !exactData && !!data && !err
 
   /* Page titles can contain commas, so shortlist entries are repeated query
      parameters. The shortlist itself stays in localStorage and never enters
@@ -970,6 +978,15 @@ export default function Planner({ user }) {
   }, [setCls, setSlot, setArmor, setTier, setKind, setLevelMin, setLevelMax,
     setCarries, setProc])
 
+  const resetCatalogFilters = useCallback(() => {
+    if (mode === 'sets') {
+      setSetSearch('')
+      setShowAllSets(true)
+      return
+    }
+    clearCatalogFilters()
+  }, [mode, clearCatalogFilters])
+
   const useCurrentCharacterFilters = useCallback(() => {
     const current = planningCharacter?.character
     if (!current) return
@@ -1003,8 +1020,35 @@ export default function Planner({ user }) {
 
   const emptyEras = meta && meta.eras
     .filter((e) => eras.includes(e.key) && !e.items).map((e) => e.label)
-  const filterCount = [cls, slot, armor, tier, kindParam, levelMin, levelMax,
-    carries, proc, q].filter(Boolean).length
+  const filterCount = mode === 'sets'
+    ? [setSearch.trim(), !showAllSets].filter(Boolean).length
+    : [cls, slot, armor, tier, kindParam, levelMin, levelMax,
+      carries, proc, typed.trim()].filter(Boolean).length
+  /* The catalog head is its live scope, not a promise that every result is an
+     upgrade. Only active facets appear, in the same game-language the controls
+     use; the untouched catalog needs one quiet, honest name. */
+  const catalogScope = useMemo(() => {
+    if (mode === 'sets') {
+      const scope = []
+      if (!showAllSets) scope.push('Fits my gear')
+      if (setSearch.trim()) scope.push(`“${setSearch.trim()}”`)
+      return scope.length ? scope : ['All Set Adornments']
+    }
+    const scope = []
+    if (slot) scope.push(slot)
+    if (cls) scope.push(cls[0].toUpperCase() + cls.slice(1))
+    if (armor) scope.push(`${armor[0].toUpperCase() + armor.slice(1)} armor`)
+    if (tier) scope.push(TIER_LABEL(meta, tier))
+    if (levelMin && levelMax) scope.push(`Level ${levelMin}–${levelMax}`)
+    else if (levelMin) scope.push(`Level ${levelMin}+`)
+    else if (levelMax) scope.push(`Level ≤${levelMax}`)
+    kinds.forEach((kind) => scope.push(KIND_LABEL[kind] || kind))
+    if (carries) scope.push('Set pieces')
+    if (proc) scope.push('Has proc')
+    if (typed.trim()) scope.push(`“${typed.trim()}”`)
+    return scope.length ? scope : ['All equipment']
+  }, [mode, setSearch, showAllSets, slot, cls, armor, tier, meta, levelMin, levelMax,
+    kinds, carries, proc, typed])
   const visibleSets = useMemo(() => {
     const needle = setSearch.trim().toLowerCase()
     if (!needle) return data?.sets || []
@@ -1123,8 +1167,11 @@ export default function Planner({ user }) {
           <div className="plansearchhead">
             <div className="plansearchtitle">
               <span className="seclabel">Gear catalog</span>
-              <b>{mode === 'sets' ? 'Set Adornments'
-                : slot ? `${slot} upgrades` : 'Find equipment'}</b>
+              <strong className="plansearchscope" aria-label="Current catalog filters">
+                {catalogScope.map((part, index) => (
+                  <span key={`${part}:${index}`} title={part}>{part}</span>
+                ))}
+              </strong>
             </div>
             {/* THE EXPANSION CHOICE LIVES IN THE SEARCH BLOCK (Lindsay), on its
                 head rather than among the facets: it is not one narrowing
@@ -1138,14 +1185,16 @@ export default function Planner({ user }) {
               surface lets the reader do before its controls/results appear. */}
           <div className="planmodes" role="tablist" aria-label="Catalog view">
             <span>Search for</span>
-            <button className={mode !== 'sets' ? 'on' : ''} role="tab"
-                    aria-selected={mode !== 'sets'} onClick={() => setMode('items')}>
-              Equipment
-            </button>
-            <button className={mode === 'sets' ? 'on' : ''} role="tab"
-                    aria-selected={mode === 'sets'} onClick={() => setMode('sets')}>
-              Set adornments
-            </button>
+            <span className="planmodetabs" role="presentation">
+              <button className={mode !== 'sets' ? 'on' : ''} role="tab"
+                      aria-selected={mode !== 'sets'} onClick={() => setMode('items')}>
+                Equipment
+              </button>
+              <button className={mode === 'sets' ? 'on' : ''} role="tab"
+                      aria-selected={mode === 'sets'} onClick={() => setMode('sets')}>
+                Set Adornments
+              </button>
+            </span>
           </div>
 
           {mode === 'items' && (
@@ -1159,31 +1208,36 @@ export default function Planner({ user }) {
                   was the right one: it was all over the place. */}
               <div className="planbands">
                 <span className="planbandlabel">Search</span>
-                <div className="planbandrow">
+                <div className="planbandrow searchbandrow">
                   {/* A NAME SEARCH IS A NAME, so the box is the size of one. */}
                   <input type="search" className="planq" value={typed}
                          aria-label="Search item names" placeholder="Item name…"
                          onChange={(e) => setTyped(e.target.value)} />
-                  <button type="button" className="chip clearplanfilters"
+                  <button type="button" className="resetplanfilters"
                           disabled={filterCount === 0}
-                          onClick={clearCatalogFilters}>Clear filters</button>
+                          aria-label={filterCount
+                            ? `Reset ${filterCount} active filter${filterCount === 1 ? '' : 's'}`
+                            : 'No active filters to reset'}
+                          onClick={resetCatalogFilters}>
+                    Reset {filterCount} filter{filterCount === 1 ? '' : 's'}
+                  </button>
                 </div>
 
-                <span className="planbandlabel">Stat priority</span>
-                <div className="planbandrow">
-                  {Array.from({ length: PRIORITY_SLOTS }, (_, i) => (
-                    <span key={i} className={`prioritypick${order[i] ? ' on' : ''}`}>
-                      <i aria-hidden="true">{i + 1}</i>
-                      <Picker value={order[i] || ''} options={priorityOptions}
-                              label={`Priority ${i + 1}`} placeholder="Any"
-                              filterFrom={99}
-                              onChange={(v) => setPriority(i, v)} />
-                    </span>
-                  ))}
-                  <span className="bandnote">
-                    {order.length
-                      ? <>Items carrying all {ranked || order.length} lead the table.</>
-                      : 'Rank up to three stats; the table scores on them.'}
+                <span className="planbandlabel prioritybandlabel">
+                  <span>Stat priority</span>
+                  <small>Rank up to 3 stats</small>
+                </span>
+                <div className="planbandrow prioritybandrow">
+                  <span className="prioritysequence">
+                    {Array.from({ length: PRIORITY_SLOTS }, (_, i) => (
+                      <span key={i} className={`prioritypick${order[i] ? ' on' : ''}`}>
+                        <i aria-hidden="true">{i + 1}</i>
+                        <Picker value={order[i] || ''} options={priorityOptions}
+                                label={`Priority ${i + 1}`} placeholder="Any"
+                                filterFrom={99}
+                                onChange={(v) => setPriority(i, v)} />
+                      </span>
+                    ))}
                   </span>
                 </div>
 
@@ -1192,13 +1246,13 @@ export default function Planner({ user }) {
                     it is the one control most likely to be what emptied a
                     table (`EmptyTable` names it for exactly that reason). */}
                 <span className="planbandlabel filterbandlabel">
-                  Filter
+                  <span>Filters</span>
                   <button type="button" className="currentfilter"
                           disabled={!planningCharacter?.character}
                           title="Use this character's class and level, plus or minus 10"
-                          onClick={useCurrentCharacterFilters}>Current</button>
+                          onClick={useCurrentCharacterFilters}>Current Class/Level</button>
                 </span>
-                <div className="planbandrow">
+                <div className="planbandrow filterbandrow">
                   <Facet name="Class" value={cls} onChange={setCls}
                          options={meta?.classes}
                          format={(c) => c[0].toUpperCase() + c.slice(1)} />
@@ -1214,30 +1268,32 @@ export default function Planner({ user }) {
                   {/* One control, one label, one dash between two numbers —
                       the pair was a band of its own with its own heading and
                       the word "to", for a thing that is read as "70–80". */}
-                  <span className={`planfacet levelfacet${levelMin || levelMax ? ' selected' : ''}`}>
-                    <span className="facetlab">Level</span>
-                    <span className="levelinputs">
-                      <Picker value={levelMin || ''} options={LEVEL_OPTIONS}
-                              label="Minimum item level" placeholder="Any"
-                              filterFrom={8} filterHint="Minimum level…"
-                              onChange={setLevelMin} />
-                      <i>–</i>
-                      <Picker value={levelMax || ''} options={LEVEL_OPTIONS}
-                              label="Maximum item level" placeholder="Any"
-                              filterFrom={8} filterHint="Maximum level…"
-                              onChange={setLevelMax} />
+                  <span className="filterextras">
+                    <span className={`planfacet levelfacet${levelMin || levelMax ? ' selected' : ''}`}>
+                      <span className="facetlab">Level</span>
+                      <span className="levelinputs">
+                        <Picker value={levelMin || ''} options={LEVEL_OPTIONS}
+                                label="Minimum item level" placeholder="Any"
+                                filterFrom={8} filterHint="Minimum level…"
+                                onChange={setLevelMin} />
+                        <i>–</i>
+                        <Picker value={levelMax || ''} options={LEVEL_OPTIONS}
+                                label="Maximum item level" placeholder="Any"
+                                filterFrom={8} filterHint="Maximum level…"
+                                onChange={setLevelMax} />
+                      </span>
                     </span>
+                    <button className={`chip filterflag${carries ? ' on' : ''}`}
+                            title="Only items that ship with a set turquoise"
+                            onClick={() => setCarries(carries ? '' : '1')}>
+                      Set Pieces
+                    </button>
+                    <button className={`chip filterflag${proc ? ' on' : ''}`}
+                            title="Only items with an effect that can fire"
+                            onClick={() => setProc(proc ? '' : '1')}>
+                      Has Proc
+                    </button>
                   </span>
-                  <button className={`chip${carries ? ' on' : ''}`}
-                          title="Only items that ship with a set turquoise"
-                          onClick={() => setCarries(carries ? '' : '1')}>
-                    Set Pieces
-                  </button>
-                  <button className={`chip${proc ? ' on' : ''}`}
-                          title="Only items with an effect that can fire"
-                          onClick={() => setProc(proc ? '' : '1')}>
-                    Has Proc
-                  </button>
                 </div>
               </div>
 
@@ -1246,26 +1302,36 @@ export default function Planner({ user }) {
                   ? <><b>{data.items.length}</b> random items, just for fun</>
                   : data
                     ? <><b>{data.total}</b> matching item{data.total === 1 ? '' : 's'}</>
-                  : 'Loading matching items…'}</span>
-                <span>{data?.sampled
-                  ? 'Search, filter, or choose a stat priority for the full catalog'
-                  : order.length
-                  ? <>Scoring <b>{order.map(priorityLabel).join(' › ')}</b>
-                    {ranked > 1 && <> — items carrying all {ranked} first</>}</>
-                  : 'Choose a stat priority to score results'}</span>
+                    : 'Loading matching items…'}
+                  {catalogUpdating && <i className="catalogupdating">Updating…</i>}
+                </span>
+                {!!order.length && (
+                  <span>Scoring <b>{order.map(priorityLabel).join(' › ')}</b>
+                    {ranked > 1 && <> — items carrying all {ranked} first</>}</span>
+                )}
               </div>
             </>
           )}
           {mode === 'sets' && (
             <>
               <div className="plansetsearch">
-                <label>
+                <div className="plansetsearchfield">
                   <span className="planbandlabel">Search sets</span>
-                  <input type="search" className="planq" value={setSearch}
-                         aria-label="Search set adornments"
-                         placeholder="Set name or bonus…"
-                         onChange={(e) => setSetSearch(e.target.value)} />
-                </label>
+                  <span className="plansetsearchrow">
+                    <input type="search" className="planq" value={setSearch}
+                           aria-label="Search set adornments"
+                           placeholder="Set name or bonus…"
+                           onChange={(e) => setSetSearch(e.target.value)} />
+                    <button type="button" className="resetplanfilters"
+                            disabled={filterCount === 0}
+                            aria-label={filterCount
+                              ? `Reset ${filterCount} active filter${filterCount === 1 ? '' : 's'}`
+                              : 'No active filters to reset'}
+                            onClick={resetCatalogFilters}>
+                      Reset {filterCount} filter{filterCount === 1 ? '' : 's'}
+                    </button>
+                  </span>
+                </div>
                 {!!setSocketTargets.length && (
                   <span className="setscope" role="group"
                         aria-label="Which sets to list">
@@ -1280,7 +1346,9 @@ export default function Planner({ user }) {
               </div>
               <div className="plansearchfooter" aria-live="polite">
                 <span><b>{shownSets.length}</b> set{shownSets.length === 1 ? '' : 's'}
-                  {hiddenSets ? ` · ${hiddenSets} more don't fit this loadout` : ''}</span>
+                  {hiddenSets ? ` · ${hiddenSets} more don't fit this loadout` : ''}
+                  {catalogUpdating && <i className="catalogupdating">Updating…</i>}
+                </span>
                 <span>{setSocketTargets.length
                   ? 'Open a set to equip a piece or track where it drops'
                   : 'Load a character to see which sets fit its sockets'}</span>

@@ -907,9 +907,21 @@ support. Score is a number in a sortable column and nothing else.
 **Adding to the shortlist is a checkbox in the name column**, pinned with the
 name at `--fzleft`, matching every other checkable table in the app.
 
+The catalog header names the **scope currently on screen**, never calls every
+result an upgrade. It omits untouched facets and reads active ones in game terms
+(`Forearms · Assassin · Level 70–80`), falling back to `All equipment` or
+`All Set Adornments`. Search, priority and filters share one label gutter; the
+facets use a stable field grid with labels above their answers rather than a
+wrapping run of differently sized label/control pairs. Gold fill continues to
+mean a selected value. The counted `Reset N filters` sits beside the relevant
+search box; `Current Class/Level`, `Set Pieces`, and `Has Proc` retain compact
+dimensions but use complete button borders and surfaces so their actions are clear.
+The priority hint sits under its section label, and the compact Level range,
+Set Pieces and Has Proc controls occupy only their natural width.
+
 ### The set-adornment view
 
-A compact, labelled **Search for: Equipment / Set adornments** control switches
+A compact, labelled **Search for: Equipment / Set Adornments** control switches
 catalog tasks without masquerading as a page-wide pair of feature cards or a
 tiny unrelated filter. The set view ranks the bonuses themselves and searches
 only set names and bonus text. Results are automatically restricted to the
@@ -920,7 +932,9 @@ gear-window socket picker remains a separate compatibility surface, where a
 removable older adornment can still be useful on newer gear. Exact catalog
 queries are cached for the life of the page, so returning to Equipment restores
 its existing table immediately instead of collapsing the results and refetching
-the same data.
+the same data. A new uncached query also keeps that task's previous results
+mounted while its exact replacement loads; the footer says `Updating…` rather
+than collapsing a full table into a one-line loading state and shifting the page.
 
 **One line per set, opened for the work.** EoF and RoK hold 113 sets between
 them. The first build drew each as a card with its ladder open, seven piece

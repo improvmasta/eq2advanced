@@ -1125,7 +1125,7 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
                     <b>{item.name}</b></span>
                 </label>
               ))}
-              {!!contentSets.length && <span className="seclabel">Set adornments</span>}
+              {!!contentSets.length && <span className="seclabel">Set Adornments</span>}
               {contentSets.map((set) => (
                 <label key={set.name}>
                   <input type="checkbox" checked onChange={() => onToggleTrackedSet(set)} />
