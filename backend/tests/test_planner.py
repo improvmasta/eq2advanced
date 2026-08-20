@@ -1041,6 +1041,38 @@ def test_a_two_hander_says_so_in_the_slot(tmp_path):
     assert row["slot_label"] == "Feet" and row["two_handed"] is False
 
 
+def test_two_handers_have_a_narrower_slot_filter_without_changing_primary(tmp_path):
+    """Primary is the equipment position and still finds every primary weapon;
+    Primary/2H is the explicit subset for readers comparing hand cost."""
+    conn = loaded(tmp_path)
+    with conn:
+        conn.executemany(
+            "INSERT INTO plan_items (page_title, name, era, slot, level, tier, "
+            "dtype, stats_json, adorns_json, fetched_ts) "
+            "VALUES (?,?,?,?,?,?,?,?,?,0)",
+            [
+                ("Test Greatstaff", "Test Greatstaff", "rok", "Primary", 80,
+                 "FABLED", "Two-Handed Crushing", "{}", "{}"),
+                ("Test Dagger", "Test Dagger", "rok", "Primary", 80,
+                 "FABLED", "One-Handed Piercing", "{}", "{}"),
+            ])
+        conn.executemany(
+            "INSERT INTO plan_sources "
+            "(page_title, source_page, source, kind, era) VALUES (?,?,?,?,?)",
+            [
+                ("Test Greatstaff", "Greatstaff Source", "A named", "raid", "rok"),
+                ("Test Dagger", "Dagger Source", "A named", "raid", "rok"),
+            ])
+
+    slots = catalog.meta(conn, ["rok"])["slots"]
+    assert "Primary" in slots and "Primary/2H" in slots
+    two_handers = catalog.search(conn, eras=["rok"], slots=["Primary/2H"])
+    assert [row["page_title"] for row in two_handers["items"]] == ["Test Greatstaff"]
+    primaries = {row["page_title"] for row in
+                 catalog.search(conn, eras=["rok"], slots=["Primary"])["items"]}
+    assert {"Test Greatstaff", "Test Dagger"} <= primaries
+
+
 def test_naming_three_stats_shows_items_with_two_of_them(tmp_path):
     """EQ2 gear in these expansions is FOUR-STAT — potency and crit, which
     everything has, plus two more — so an item can carry at most about two of

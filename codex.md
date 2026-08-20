@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-20 (codex): Polish Gear Planner loadout and catalog UI
 - 2026-08-20 (claude): Count where visitors go and whether they are real (v51)
 - 2026-08-19 (codex): Polish Gear Planner catalog search
 - 2026-08-19 (codex): Match Planner item cards to in-game examines
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-16 (codex): Complete equipped item examine cards
 - 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
-- 2026-08-16 (codex): Polish planner vitals and project TLE health

@@ -671,7 +671,6 @@ function EquipmentSlot({ def, character, shortlist, active, focused, occupied,
           ×
         </button>
       )}
-      {!isCurrent && shown && <i className="plannedmark">planned</i>}
     </div>
   )
 }

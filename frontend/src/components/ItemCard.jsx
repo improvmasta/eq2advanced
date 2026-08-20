@@ -330,11 +330,17 @@ function Examine({ row, characterClass = null, tradeskillClass = null }) {
       (name) => all.filter((entry) => entry.name === name),
     )
     if (anchored.length) {
-      return [
-        [...anchored, ...installedEffects.filter(
-          (entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance')],
-        base.filter((entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance'),
-      ]
+      const left = [...anchored, ...installedEffects.filter(
+        (entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance')]
+      const right = base.filter(
+        (entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance')
+      /* RoK gear does not always carry Crit Chance. Fill that missing anchor
+         with the first remaining modifier rather than leaving Potency alone
+         opposite a long right column. */
+      if (anchored.length === 1 && left.length === 1 && right.length > 1) {
+        left.push(right.shift())
+      }
+      return [left, right]
     }
     const cut = Math.ceil(all.length / 2)
     return [all.slice(0, cut), all.slice(cut)]
@@ -374,8 +380,9 @@ function Examine({ row, characterClass = null, tradeskillClass = null }) {
       )}
 
       {/* Green attributes read across: Primary Attributes beside Stamina. The
-          blue modifier block below fills down so Crit Chance always follows
-          Potency in the left column, matching the in-game card. */}
+          blue modifier block below fills down; Potency and Crit Chance anchor
+          the left column when present, with another modifier filling a missing
+          second anchor. */}
       {(!!s?.stats.length || !!installedStats.length) && (
         <div className="ew-stats ew-cols">
           {[...(s?.stats || []), ...installedStats].map((r, i) => (

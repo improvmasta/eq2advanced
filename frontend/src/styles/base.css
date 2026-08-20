@@ -687,8 +687,8 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 }
 .ew-cols > div { min-width: 0; }
 /* The blue modifier block is filled DOWN, not across. ItemCard explicitly
-   anchors Potency then Crit Chance in the left column so browser balancing can
-   never move Crit to the right as other modifiers or adornments come and go. */
+   anchors Potency then Crit Chance in the left column; when only one exists,
+   the next modifier fills the second position rather than stranding the anchor. */
 .ew-effectlist .ew-cols { display: grid; }
 .ew-effectcol > div { min-width: 0; }
 .ew-facts { margin-top: 10px; border-collapse: collapse; width: 100%; }
@@ -6394,8 +6394,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   box-shadow: inset 3px 0 0 var(--gold), 0 0 0 1px rgba(var(--gold-rgb), 0.1);
 }
 .planslot.planned:not(.focused) {
-  border-color: rgba(var(--success-rgb), 0.55);
-  background: rgba(var(--success-rgb), 0.055);
+  border-color: rgba(var(--success-rgb), 0.62);
+  background: linear-gradient(90deg, rgba(var(--success-rgb), 0.1),
+    rgba(var(--success-rgb), 0.035) 42%);
+  box-shadow: inset 2px 0 0 rgba(var(--success-rgb), 0.72);
 }
 .planslot.occupied { opacity: 0.6; }
 .plansloticon {
@@ -6404,17 +6406,18 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   background: rgba(var(--bg-rgb), 0.55);
 }
 .plansloticon.multiple {
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.28),
-    inset 0 0 7px rgba(var(--gold-rgb), 0.2);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(var(--gold-rgb), 0.16),
+    inset 0 0 7px rgba(var(--gold-rgb), 0.12);
 }
 .plansloticoncycle {
-  position: absolute; z-index: 2; left: -8px; top: 6px;
-  width: 12px; height: 18px; padding: 0;
+  position: absolute; z-index: 2; left: -8px; top: 50%;
+  width: 16px; height: 16px; padding: 0;
   display: grid; place-items: center;
-  border: 1px solid var(--gold); border-radius: 3px;
+  border: 1px solid var(--gold); border-radius: 50%;
   background: #24251f; color: var(--gold-bright);
   font-size: 14px; line-height: 1; cursor: pointer;
+  transform: translateY(-50%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 .plansloticoncycle:hover, .plansloticoncycle:focus-visible {
@@ -6439,11 +6442,6 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planslotcopy .hoverbox > span {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--fs-label);
-}
-.plannedmark {
-  position: absolute; right: 4px; bottom: 1px; color: var(--success);
-  font-family: var(--font-data); font-size: 8px; font-style: normal;
-  text-transform: uppercase; letter-spacing: 0.05em;
 }
 /* A planned candidate can leave from the place it is visible. This removes
    the shortlist entry too, rather than disguising it behind a reset state. */
@@ -6885,9 +6883,10 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .currentfilter:disabled { opacity: 0.38; cursor: default; }
 .searchbandrow {
-  width: min(100%, 520px); display: grid;
-  grid-template-columns: minmax(240px, 380px) max-content; gap: 5px;
+  width: 100%; max-width: 520px; display: flex; align-items: center;
+  justify-content: flex-start; flex-wrap: nowrap; gap: 5px;
 }
+.searchbandrow .planq { min-width: 0; width: 380px; flex: 0 1 380px; }
 .prioritybandrow { display: flex; }
 .prioritysequence { display: flex; flex-wrap: wrap; gap: 6px; }
 /* A NAME SEARCH IS A NAME. Stretching the box across the band made the least
@@ -7037,21 +7036,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 
 @media (max-width: 480px) {
-  .searchbandrow, .plansetsearchrow {
+  .plansetsearchrow {
     grid-template-columns: minmax(0, 1fr) max-content;
   }
   .filterbandrow { grid-template-columns: minmax(0, 1fr); }
   .plansearchfooter { justify-content: flex-start; }
 }
 
-/* The score, and how many of the reader's stats the row actually carries. The
-   second is why the row is where it is — the table is tiered on it — so it
-   rides on the figure rather than spending a column. */
-.planscore { display: inline-flex; align-items: baseline; gap: 5px; justify-content: flex-end; }
-.planscore em {
-  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
-  font-variant-numeric: tabular-nums;
-}
 /* A row already in the window. Clicking the row is what puts it there, so the
    row has to be able to say it is in — the checkbox alone is a 12px answer to
    a question asked by a click on anything. */
@@ -7072,7 +7063,14 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planbadge.proc { color: var(--gold); }
 .plantable .lootitem a { font-weight: 750; }
 
-.plansource { display: inline-flex; align-items: baseline; gap: 6px; }
+.plansource {
+  min-width: 0; width: 27ch; max-width: 27ch;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.plansourcename {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plansource > .muted { flex: none; }
 .skind {
   font-style: normal; font-size: var(--fs-label); text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--text-muted);
@@ -7271,7 +7269,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   font: 700 10px/1 var(--font-data); text-decoration: none;
 }
 .questlinks a:hover { color: var(--gold-bright); border-color: var(--gold-dim); }
-.plansource .questlinks { margin-left: 4px; vertical-align: middle; }
+.plansource .questlinks {
+  flex: none; margin-left: -2px; visibility: hidden; pointer-events: none;
+}
+.plansource:hover .questlinks, .plansource:focus-within .questlinks {
+  visibility: visible; pointer-events: auto;
+}
 .outlineempty { margin-top: 8px; padding: 13px 15px; }
 .outlineitemheading {
   min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr);
@@ -7607,8 +7610,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
    the same tabular grid the heading sits over. */
 .plantable td { font-variant-numeric: tabular-nums; }
 
-/* "2 of 3" — how many of your priorities a row has to carry. It qualifies the
-   ORDER, so it sits with the order rather than among the slot/tier facets. */
+/* How many of your priorities a row has to carry qualifies the ORDER, so its
+   control sits with the order rather than among the slot/tier facets. */
 .matchpick { display: inline-flex; align-items: center; }
 .matchpick .pickerbtn { font-size: var(--fs-label); }
 

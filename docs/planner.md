@@ -216,6 +216,10 @@ moves to a different set.
 the third decimal place means something. The priority control is three ordinary
 dropdowns, numbered 1–3 and defaulting to Any.
 
+Priorities are active catalog filters, not a separate hidden ranking mode. Each
+chosen stat contributes to the Reset filter count, appears in the catalog's
+current-scope heading, and returns to Any with the other equipment filters.
+
 ### What can be prioritized, and what cannot
 
 **POTENCY AND CRIT CHANCE ARE NOT PRIORITY OPTIONS.** They are on essentially
@@ -307,7 +311,9 @@ take both hands**. The fact is in `dtype` ("Two-Handed Crushing"), so
 `wiki.slot_label` lifts it out the same way the armour weight is lifted, and
 the naming decision lives on the server so anything else showing a slot says
 the same thing. Two-handers still appear under a Primary filter, which is
-right: they are what you would be putting there.
+right: they are what you would be putting there. `Primary/2H` is also offered
+as a narrower slot facet when the reader specifically wants only weapons that
+consume both hands.
 
 `dtype` also separates "Main Hand" from "One-Handed" — a real difference, since
 a main-hand weapon cannot go in the off hand — and that claim is deliberately
@@ -538,12 +544,17 @@ Item Primary Attributes are normalized before projection: the wiki's legacy
 STR/AGI/WIS/INT field and Census's grouped `strength` storage both expand to
 Strength, Agility, Wisdom, and Intelligence by the same amount. Stamina remains
 its own stat. Catalog examine cards show that value once as Primary Attributes.
+Their blue modifier block anchors Potency and Crit Chance in the left column;
+RoK items without one of those stats promote the next modifier into the open
+position instead of leaving one short column opposite a long one.
 
 Clicking a slot filters the catalog to legal choices for that position. Adding
 an item puts it in that concrete slot and activates it. Multiple candidates stay
-in the slot; the item icon gains a highlighted frame and a small left-edge
-clicker that cycles them without taking width from the item name. **Current is
-always option one**. White and turquoise adornments belong to the concrete slot,
+in the slot; the item icon gains a subtly highlighted frame and a small circular
+left-edge carousel control that cycles them without taking width from the item
+name. Changed gear uses a restrained green border and wash rather than a status
+word inside the already dense row. **Current is always option one**. White and
+turquoise adornments belong to the concrete slot,
 not the candidate host: the first planned item inherits what the character is
 wearing there, and adding, cycling, or removing candidates carries the slot's
 current selections into matching sockets on the next item. A planned item carries
@@ -903,6 +914,13 @@ Loot tab.
 role among peers who did the same thing. A table of items has no roles and no
 peers, and borrowing the ramp would imply a comparison the data does not
 support. Score is a number in a sortable column and nothing else.
+
+The dense table uses `Lvl`, `Armor`, `Ab Mod`, and `Cast Speed` as its compact
+headings, and Score remains one number rather than repeating the matched-stat
+fraction on every row. Source names occupy a bounded column and ellipsize rather
+than being clipped by the viewport. Quest link buttons keep permanent space in
+that column—transparent until hover or focus—so revealing the shared wikQ2 and
+EQ2 Wiki actions never pushes either one beyond the table edge.
 
 **Adding to the shortlist is a checkbox in the name column**, pinned with the
 name at `--fzleft`, matching every other checkable table in the app.

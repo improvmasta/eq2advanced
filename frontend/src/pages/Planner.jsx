@@ -69,6 +69,7 @@ const TRACK_LABEL = {
   bchance: 'Block', hategain: 'Hate', mit: 'Mit', strike: 'Strike',
   maxhealth: 'Max HP',
 }
+const TABLE_STAT_LABEL = { abmod: 'Ab Mod', acspeed: 'Cast Speed' }
 
 /* The two set-bonus stats `/plan/meta` does not carry a label for — it lists
    what can be RANKED, and neither of these can be. */
@@ -972,11 +973,12 @@ export default function Planner({ user }) {
      was a rail control it read as a page-wide setting and Clear filters left
      it alone; a reader who presses Clear beside it means it. */
   const clearCatalogFilters = useCallback(() => {
+    setOrderLine(null)
     setCls(null); setSlot(null); setArmor(null); setTier(null); setKind(null)
     setLevelMin(null); setLevelMax(null)
     setCarries(null); setProc(null); setQ(''); setTyped('')
-  }, [setCls, setSlot, setArmor, setTier, setKind, setLevelMin, setLevelMax,
-    setCarries, setProc])
+  }, [setOrderLine, setCls, setSlot, setArmor, setTier, setKind, setLevelMin,
+    setLevelMax, setCarries, setProc])
 
   const resetCatalogFilters = useCallback(() => {
     if (mode === 'sets') {
@@ -1004,9 +1006,9 @@ export default function Planner({ user }) {
   const ranked = data?.ranked?.length ?? order.length
 
   const columns = useMemo(
-    () => itemColumns({ order, ranked, statLabel, statPct,
+    () => itemColumns({ order, statLabel, statPct,
       character: planningCharacter, shortlist, focusSlot }),
-    [order, ranked, statLabel, statPct, planningCharacter, shortlist, focusSlot])
+    [order, statLabel, statPct, planningCharacter, shortlist, focusSlot])
 
   /* Every rankable stat, grouped the way a raider already thinks about them
      ("Abilities", "Melee", "Tanking") — the groups are the server's
@@ -1022,7 +1024,7 @@ export default function Planner({ user }) {
     .filter((e) => eras.includes(e.key) && !e.items).map((e) => e.label)
   const filterCount = mode === 'sets'
     ? [setSearch.trim(), !showAllSets].filter(Boolean).length
-    : [cls, slot, armor, tier, kindParam, levelMin, levelMax,
+    : [...order, cls, slot, armor, tier, kindParam, levelMin, levelMax,
       carries, proc, typed.trim()].filter(Boolean).length
   /* The catalog head is its live scope, not a promise that every result is an
      upgrade. Only active facets appear, in the same game-language the controls
@@ -1046,9 +1048,10 @@ export default function Planner({ user }) {
     if (carries) scope.push('Set pieces')
     if (proc) scope.push('Has proc')
     if (typed.trim()) scope.push(`“${typed.trim()}”`)
+    if (order.length) scope.push(`Priority: ${order.map(priorityLabel).join(' › ')}`)
     return scope.length ? scope : ['All equipment']
   }, [mode, setSearch, showAllSets, slot, cls, armor, tier, meta, levelMin, levelMax,
-    kinds, carries, proc, typed])
+    kinds, carries, proc, typed, order, priorityLabel])
   const visibleSets = useMemo(() => {
     const needle = setSearch.trim().toLowerCase()
     if (!needle) return data?.sets || []
@@ -1582,12 +1585,12 @@ function TIER_LABEL(meta, key) {
   return (meta?.tiers || []).find((t) => t.key === key)?.label || key
 }
 
-function itemColumns({ order, ranked, statLabel, statPct,
+function itemColumns({ order, statLabel, statPct,
                        character, shortlist, focusSlot }) {
   const shown = order.slice(0, 4)
   const stat = (key) => ({
     key,
-    label: statLabel[key] || key,
+    label: TABLE_STAT_LABEL[key] || statLabel[key] || key,
     sortValue: (r) => r.stats[key] || 0,
     render: (r) => (r.stats[key]
       ? `${r.stats[key]}${statPct[key] ? '%' : ''}`
@@ -1613,23 +1616,12 @@ function itemColumns({ order, ranked, statLabel, statPct,
          HOW MANY OF YOUR STATS THE ROW CARRIES SORTS AHEAD OF THE SCORE, the
          same way the server ordered them (`catalog.search`) — a two-stat item
          with big numbers outscores a three-stat item with modest ones, and
-         the third choice was made to find the three-stat one. The "2/3"
-         beside the figure is what says the table is in two tiers. */
-      render: (r) => (r.score
-        ? (
-          <span className="planscore">
-            {r.score.toFixed(1)}
-            {ranked > 1 && (
-              <em title={`Carries ${r.matched} of your ${ranked} priority stats`}>
-                {r.matched}/{ranked}
-              </em>
-            )}
-          </span>
-        )
-        : <span className="muted">—</span>),
+         the third choice was made to find the three-stat one. The footer says
+         that tiering once; repeating it beside every score adds noise. */
+      render: (r) => (r.score ? r.score.toFixed(1) : <span className="muted">—</span>),
       sortValue: (r) => (r.matched || 0) * 1000 + (r.score || 0),
     },
-    { key: 'level', label: 'Lv', sortValue: (r) => r.level || 0 },
+    { key: 'level', label: 'Lvl', sortValue: (r) => r.level || 0 },
     {
       key: 'tier', label: 'Tier', align: 'l',
       render: (r) => <span className={rarityClass(r.tier)}>{(r.tier || '').toUpperCase()}</span>,
@@ -1648,7 +1640,7 @@ function itemColumns({ order, ranked, statLabel, statPct,
        matters: a plate tank cannot wear leather however good the numbers are.
        Blank for a weapon or a shield, which have a `dtype` and no weight. */
     {
-      key: 'armor', label: 'Armour', align: 'l',
+      key: 'armor', label: 'Armor', align: 'l',
       render: (r) => r.armor || <span className="muted">—</span>,
       sortValue: (r) => r.armor || '',
     },
@@ -1747,7 +1739,7 @@ function Sources({ row }) {
   if (!first) return <span className="muted">—</span>
   const more = row.sources.length - 1
   return (
-    <span className="plansource" title={row.sources
+    <span className={`plansource${first.kind === 'quest' ? ' quest' : ''}`} title={row.sources
       .map((s) => `${KIND_LABEL[s.kind]}: ${s.source}`
         // A world drop's source IS its zone, so the parenthetical would repeat
         // the name it just printed.
@@ -1755,7 +1747,7 @@ function Sources({ row }) {
         + (s.detail ? ` — ${s.detail}` : ''))
       .join('\n')}>
       <i className={`skind ${first.kind}`}>{KIND_LABEL[first.kind]}</i>
-      {first.source}
+      <span className="plansourcename">{first.source}</span>
       {more > 0 && <span className="muted"> +{more}</span>}
       {first.kind === 'quest' && <QuestLinks page={first.source_page} />}
     </span>

@@ -276,8 +276,14 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
     for row in rows:
         if want_classes and not want_classes & set(row["classes"]):
             continue
-        if want_slots and not ({(row["slot"] or "").lower(),
-                                (row["slot2"] or "").lower()} & want_slots):
+        row_slots = {(row["slot"] or "").lower(),
+                     (row["slot2"] or "").lower()}
+        if row["slot_label"]:
+            # Display distinctions are valid facet values too. Keep the raw
+            # Primary value so its existing broad meaning still includes both
+            # one- and two-handers; Primary/2H is the narrower choice.
+            row_slots.add(row["slot_label"].lower())
+        if want_slots and not row_slots & want_slots:
             continue
         if want_tiers and not want_tiers & {row["tier_bucket"] or "",
                                             (row["tier"] or "").lower()}:
@@ -638,6 +644,11 @@ def meta(conn, eras: list[str] | None = None) -> dict:
         for slot in (row["slot"], row["slot2"]):
             if slot:
                 slots[slot] = slots.get(slot, 0) + 1
+        if row["slot_label"] and row["slot_label"] not in {
+                row["slot"], row["slot2"]}:
+            # Primary remains the broad equipment position; Primary/2H is an
+            # additional filter for the subset that consumes both hands.
+            slots[row["slot_label"]] = slots.get(row["slot_label"], 0) + 1
         if row["tier_bucket"]:
             tiers[row["tier_bucket"]] = tiers.get(row["tier_bucket"], 0) + 1
         if row["armor"]:
