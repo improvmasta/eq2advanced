@@ -463,14 +463,57 @@ function compactWhiteName(adorn) {
     : (adorn?.name || 'Current socket')
 }
 
-function StaticAdornmentSocket({ adorn }) {
-  const card = adorn?.name ? {
+function adornmentCard(adorn) {
+  return adorn?.name ? {
     name: adorn.name,
-    rarity: adorn.tier ? String(adorn.tier).toLowerCase().replace(/^./, (c) => c.toUpperCase()) : null,
+    rarity: adorn.tier
+      ? String(adorn.tier).toLowerCase().replace(/^./, (c) => c.toUpperCase())
+      : null,
     icon: adorn.icon, type: adorn.type || `${adorn.color || ''} Adornment`,
     level: adorn.level, stats: adorn.stats, effects: adorn.effects,
     classes: adorn.classes, set_progress: adorn.set_progress,
   } : null
+}
+
+/* The picker deals in set rows rather than Census adornment rows, but the
+   reason to choose one is still its complete threshold ladder. Translate the
+   set into the shared examine-card contract so hovering its socket art shows
+   the same information as hovering an installed turquoise. */
+function setAdornmentCard(set) {
+  if (!set?.name) return null
+  return {
+    name: set.piece || set.name,
+    rarity: null,
+    icon: null,
+    type: 'Adornment',
+    level: set.level,
+    stats: {
+      stats: [], effects: [], flags: [], adornments: [],
+      adornment: {
+        color: 'turquoise', slots: [], predicate: null, requires_equip: true,
+        set_bonuses: (set.bonuses || []).map((bonus) => ({
+          required: bonus.pieces ?? bonus.required,
+          stat_lines: bonus.stat_lines || [],
+          effect: bonus.text || bonus.effect || null,
+          descriptions: bonus.detail || bonus.descriptions || [],
+        })),
+      },
+    },
+    effects: { names: [], desc: [], set: set.name },
+  }
+}
+
+function SocketTileHover({ card, adorn, color, empty = false }) {
+  const tile = <SocketTile adorn={adorn} color={color} empty={empty} />
+  return card ? (
+    <Hover className="examinecard" width={350} card={<Examine row={card} />}>
+      {tile}
+    </Hover>
+  ) : tile
+}
+
+function StaticAdornmentSocket({ adorn }) {
+  const card = adornmentCard(adorn)
   const button = (
     <button type="button" className={`planadornicon ${adorn.color || 'unknown'}`}
             aria-disabled="true" title={adornmentSummary(adorn)}>
@@ -536,7 +579,8 @@ function SetAdornmentSocket({ adorn, selection, sets, changed, onChange }) {
   const options = [{
     value: '__equipped__', label: currentName ? `Equipped: ${adorn.name}` : 'Equipped: empty',
     hint: 'Current socket', group: 'Current',
-    icon: <SocketTile adorn={adorn} color="turquoise" empty={!currentName} />,
+    icon: <SocketTileHover card={adornmentCard(adorn)} adorn={adorn}
+                           color="turquoise" empty={!currentName} />,
   }, {
     value: '__empty__', label: 'Empty socket', hint: 'Remove planned adornment',
     icon: <SocketTile color="turquoise" empty />,
@@ -545,7 +589,7 @@ function SetAdornmentSocket({ adorn, selection, sets, changed, onChange }) {
     hint: `Level ${candidate.level ?? '—'} · ${(candidate.bonuses || [])
       .map((bonus) => bonus.pieces).join('/')} pieces`,
     group: candidate.group, title: candidate.name,
-    icon: <SocketTile color="turquoise" />,
+    icon: <SocketTileHover card={setAdornmentCard(candidate)} color="turquoise" />,
   }))]
   return (
     <span onClick={(e) => e.stopPropagation()}>

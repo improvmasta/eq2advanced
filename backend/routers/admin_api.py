@@ -230,8 +230,18 @@ def visitor_timeline(days: int = 30, admin=Depends(require_admin)):
 
     Still a COUNT and nothing else, which is what keeps it inside this file's
     rule: there is no route here that turns a visit into a person, because the
-    table it reads threw that away the day after it was written."""
-    return visitors.timeline(get_db(), days)
+    table it reads threw that away the day after it was written.
+
+    WHERE and WHEN ride along in the same answer (v51). They come from
+    `visit_paths`, which has no visitor column at all, so they cannot be
+    crossed with the timeline above to single anybody out — "the Planner was
+    busy at 9pm" and "41 people came" are two counts of the same evening and
+    not two halves of a profile. One request because the page shows all three
+    together and a second round trip would buy nothing."""
+    conn = get_db()
+    return {**visitors.timeline(conn, days),
+            "destinations": visitors.destinations(conn, days),
+            "arrivals": visitors.arrivals(conn, days)}
 
 
 SORT_COLS = {"username": "u.username", "created_ts": "u.created_ts",
@@ -472,7 +482,13 @@ def dashboard(admin=Depends(require_admin)):
     now, since = int(time.time()), int(time.time()) - 30 * 86400
     visits = visitors.timeline(conn, 30)
     usage = {
+        # Both, because they answer different questions and the difference
+        # between them IS the finding: `visitor_days` is everything the
+        # user-agent filter let through, `browser_days` is what ran the app
+        # (v51, `visitors.py`). On this site the first has been mostly
+        # crawlers, so a dashboard that showed only it was reading as growth.
         "visitor_days": visits["totals"]["visitor_days"],
+        "browser_days": visits["totals"]["browser_days"],
         "signed_in_visitor_days": visits["totals"]["visitor_days"] - visits["totals"]["anon_days"],
         "uploads": conn.execute("SELECT COUNT(*) FROM sessions WHERE created_ts>=?", (since,)).fetchone()[0],
         "completed_raids": conn.execute("SELECT COUNT(*) FROM zone_runs WHERE started_ts>=?", (since,)).fetchone()[0],

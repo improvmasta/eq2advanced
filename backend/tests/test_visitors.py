@@ -12,6 +12,16 @@ Three things are being proved, and the first is the one that matters:
      with several hits.
   3. **The admin answer is a count, never a list.** There is no route from a
      visit to a person, because there is nothing in the row to be a person.
+
+v51 adds two more, and they are the two questions v37 could not answer:
+
+  4. **A route view says WHERE and WHEN, and never who.** `visit_paths` has no
+     visitor column, so a page count cannot be crossed with a visitor row. The
+     route is a PATTERN — a test below proves the id in `/zones/139710` is not
+     written down — and anything outside the app's routes is one `(other)`.
+  5. **A beacon proves a browser.** The user-agent filter is a guess about a
+     string anybody can set; running JS is not. `app` is that answer, and the
+     beacon must never inflate `hits`, which still means arrivals.
 """
 
 import sys
@@ -49,9 +59,12 @@ def clean(tmpdb):
     conn = dbmod.get_db()
     conn.execute("DELETE FROM visit_days")
     conn.execute("DELETE FROM visit_salts")
+    conn.execute("DELETE FROM visit_paths")
     conn.commit()
     visitors._salts.clear()
     visitors._swept = ""
+    visitors._views.clear()
+    visitors._views_day = ""
     yield
 
 
@@ -185,6 +198,140 @@ def test_the_timeline_is_days_newest_first(conn):
     assert len(visitors.timeline(conn, days=1)["days"]) == 1
 
 
+# --- where they went, and when (v51) ---------------------------------------
+
+def paths(conn):
+    return conn.execute(
+        "SELECT * FROM visit_paths ORDER BY route").fetchall()
+
+
+def test_the_route_is_a_pattern_and_the_id_is_not_stored(conn):
+    """A page count, not a browsing history. Which PAGE was read is the
+    question; WHICH RUN was read is a fact about one reader's evening, and the
+    table is not allowed to hold it."""
+    visitors.note_view(conn, "10.1.1.9", AGENT, "/zones/139710", True, False)
+    got = paths(conn)
+    assert len(got) == 1
+    assert got[0]["route"] == "/zones/:id"
+    assert "139710" not in " ".join(str(v) for v in tuple(got[0]))
+
+
+def test_a_scanner_cannot_grow_the_table(conn):
+    """The key space is the app's own routes. Two hundred WordPress probes are
+    one honest `(other)` row, not two hundred keys somebody else chose."""
+    for junk in ("/wp-admin/install.php", "/.env", "/xmlrpc.php",
+                 "/" + "a" * 500, "", "/nope?x=1#y"):
+        visitors.note_view(conn, "10.1.1.9", AGENT, junk, False, False)
+    got = paths(conn)
+    assert len(got) == 1
+    assert got[0]["route"] == visitors.OTHER
+    assert got[0]["views"] == 6
+
+
+def test_route_patterns_cover_the_app(conn):
+    assert visitors.route_of("/") == "/"
+    assert visitors.route_of("/plan?era=rok") == "/plan"
+    assert visitors.route_of("/plan/") == "/plan"
+    assert visitors.route_of("plan") == "/plan"            # no leading slash
+    assert visitors.route_of("/characters") == "/characters"
+    assert visitors.route_of("/characters/12") == "/characters/:id"
+    assert visitors.route_of("/guild/skill-issue") == "/guild/skill-issue"
+    # every admin screen is one row: the question is whether an admin was in
+    # there, not which tab they were on
+    assert visitors.route_of("/admin") == "/admin"
+    assert visitors.route_of("/admin/visitors") == "/admin"
+    assert visitors.route_of(None) == visitors.OTHER
+
+
+def test_the_beacon_says_browser_without_saying_who(conn):
+    """The valuable half. A user-agent is a string anybody can set and this one
+    claims Chrome throughout; running the beacon is the part a scraper does not
+    do, and it lands on the visit as a flag and nowhere else."""
+    visitors.note(conn, "10.1.1.9", AGENT, "", False)           # the page load
+    visitors.note_view(conn, "10.1.1.9", AGENT, "/", True, False)
+    got = rows(conn)
+    assert len(got) == 1 and got[0]["app"] == 1
+    # …and `visit_paths` still has nothing that could be a person in it
+    assert "visitor" not in paths(conn)[0].keys()
+
+
+def test_a_crawler_that_never_runs_js_stays_visible_but_unconfirmed(conn):
+    """The point of the column. The page load is still counted — that is what
+    it always was — and it simply never gets its `app` flag, so the admin page
+    shows the gap instead of a number nobody can read."""
+    visitors.note(conn, "203.0.113.7", AGENT, "", False)
+    got = rows(conn)
+    assert len(got) == 1 and got[0]["hits"] == 1 and got[0]["app"] == 0
+    assert paths(conn) == []
+
+
+def test_the_beacon_never_inflates_arrivals(conn):
+    """`hits` means somebody arrived. A person who lands once and then clicks
+    through four tabs is ONE arrival and five route views, and confusing the
+    two would undo the distinction the whole module is built on."""
+    visitors.note(conn, "10.1.1.9", AGENT, "", False)
+    for route in ("/", "/plan", "/compare", "/chat", "/plan"):
+        visitors.note_view(conn, "10.1.1.9", AGENT, route, route == "/", False)
+    got = rows(conn)
+    assert len(got) == 1
+    assert got[0]["hits"] == 1
+    assert sum(r["views"] for r in paths(conn)) == 5
+    assert sum(r["entries"] for r in paths(conn)) == 1
+    # navigating to /chat inside the app counts as opening it, which a page
+    # load alone could never see
+    assert got[0]["chat"] == 1
+
+
+def test_a_beacon_flood_is_bounded(conn):
+    for _ in range(visitors.VIEW_CAP + 50):
+        visitors.note_view(conn, "10.1.1.9", AGENT, "/plan", False, False)
+    assert sum(r["views"] for r in paths(conn)) == visitors.VIEW_CAP
+
+
+def test_an_overlay_beacon_is_not_a_reader(conn):
+    visitors.note_view(conn, "10.1.1.9", AGENT, "/overlay/abc123", True, False)
+    visitors.note_view(conn, "10.1.1.9", AGENT, "/ingame/abc123", True, False)
+    assert paths(conn) == []
+    assert rows(conn) == []
+
+
+def test_bots_do_not_get_a_route_either(conn):
+    visitors.note_view(conn, "10.1.1.9", "Googlebot/2.1", "/plan", True, False)
+    assert paths(conn) == []
+
+
+def test_the_beacon_never_breaks_a_page(conn):
+    visitors.note_view(None, "10.1.1.9", AGENT, "/plan", True, False)
+    assert paths(conn) == []
+
+
+def test_destinations_are_busiest_first(conn):
+    for route, n in (("/plan", 5), ("/", 9), ("/chat", 2)):
+        for _ in range(n):
+            visitors.note_view(conn, "10.1.1.9", AGENT, route, False, False)
+    d = visitors.destinations(conn, days=7)
+    assert [r["route"] for r in d["routes"]] == ["/", "/plan", "/chat"]
+    assert d["totals"]["views"] == 16
+
+
+def test_arrivals_keep_the_empty_hours(conn):
+    """A missing 4am is not the same as a quiet one, and a reader comparing the
+    shape of a day needs the difference."""
+    visitors.note_view(conn, "10.1.1.9", AGENT, "/", True, False)
+    d = visitors.arrivals(conn, days=7)
+    assert [h["hour"] for h in d["hours"]] == list(range(24))
+    assert sum(h["entries"] for h in d["hours"]) == 1
+
+
+def test_the_sweep_takes_the_old_counters_too(conn):
+    old_day = visitors.today(time.time() - (visitors.KEEP_DAYS + 5) * 86400)
+    conn.execute("INSERT INTO visit_paths (day, hour, route, views, entries) "
+                 "VALUES (?, 20, '/plan', 40, 3)", (old_day,))
+    conn.commit()
+    visitors.sweep(conn)
+    assert paths(conn) == []
+
+
 # --- the API ---------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -196,3 +343,27 @@ def client(tmpdb):
 
 def test_the_timeline_is_admin_only(client):
     assert client.get("/api/admin/visitors").status_code in (401, 403)
+
+
+def test_the_beacon_needs_no_account(client, conn):
+    """The stranger is the thing worth counting, so the endpoint is public. It
+    answers 204 with no body: `sendBeacon` cannot read a reply and there is
+    nothing a caller should learn from this."""
+    r = client.post("/api/visit", json={"path": "/plan", "entry": True},
+                    headers={"user-agent": AGENT})
+    assert r.status_code == 204 and r.content == b""
+    got = paths(conn)
+    assert len(got) == 1 and got[0]["route"] == "/plan"
+
+
+def test_the_beacon_refuses_to_be_a_write_primitive(client, conn):
+    """Nothing in the body chooses a key. A path the app does not have becomes
+    `(other)`, an oversized one is refused by the model before it arrives, and
+    neither can add a row somebody else named."""
+    assert client.post("/api/visit", json={"path": "/wp-admin/setup.php"},
+                       headers={"user-agent": AGENT}).status_code == 204
+    assert client.post("/api/visit", json={"path": "/" + "x" * 400},
+                       headers={"user-agent": AGENT}).status_code == 422
+    assert client.post("/api/visit", json={},
+                       headers={"user-agent": AGENT}).status_code == 204
+    assert {r["route"] for r in paths(conn)} == {visitors.OTHER, "/"}

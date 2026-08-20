@@ -1532,18 +1532,16 @@ function SourceFacet({ kinds, available, onToggle }) {
   return (
     <span className={`planfacet sourcemultifacet${kinds.length ? ' selected' : ''}`}>
       <span className="facetlab">Source</span>
-      <details className="sourcepicker">
-        <summary>{kinds.length ? `${kinds.length} selected` : 'Any'}</summary>
-        <span className="sourcepickermenu">
-          {shown.map((kind) => (
-            <label key={kind} className={`sourcebox${kinds.includes(kind) ? ' on' : ''}`}>
-              <input type="checkbox" checked={kinds.includes(kind)}
-                     onChange={() => onToggle(kind)} />
-              <span>{KIND_LABEL[kind] || kind}</span>
-            </label>
-          ))}
-        </span>
-      </details>
+      <Picker className="sourcepicker" value={kinds} onChange={onToggle}
+              options={shown.map((kind) => ({
+                value: kind, label: KIND_LABEL[kind] || kind,
+                icon: <input type="checkbox" tabIndex="-1" aria-hidden="true"
+                             readOnly checked={kinds.includes(kind)} />,
+              }))}
+              label="Source" placeholder="Any" multiple
+              buttonLabel={kinds.length ? `${kinds.length} selected` : 'Any'}
+              filterFrom={Number.MAX_SAFE_INTEGER} maxMenuWidth={220}
+              menuClassName="sourcefacetmenu" />
     </span>
   )
 }

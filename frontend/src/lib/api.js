@@ -376,8 +376,9 @@ export const api = {
   adminAudit: ({ limit = 200, offset = 0, q = '', actor = '', family = '' } = {}) =>
     req(`/api/admin/audit?limit=${limit}&offset=${offset}&q=${encodeURIComponent(q)}`
       + `&actor=${encodeURIComponent(actor)}&family=${encodeURIComponent(family)}`),
-  /* How many people came, by day. A count of visits, never a list of them —
-     the table behind this cannot name anybody (`backend/visitors.py`). */
+  /* How many people came, by day, plus where they went and when they arrived.
+     A count of visits, never a list of them — the tables behind this cannot
+     name anybody (`backend/visitors.py`). */
   adminVisitors: (days = 30) => req(`/api/admin/visitors?days=${days}`),
   adminPublicRuns: () => req('/api/admin/public-runs'),
   // bug reports and suggestions: anyone signed in files them, an admin triages
@@ -521,4 +522,40 @@ export function sessionLabel(s) {
     return extra > 0 ? `${s.last_zone} +${extra} zone${extra > 1 ? 's' : ''}` : s.last_zone
   }
   return `session ${s.id}`
+}
+
+/* Tell the server which page this is (`backend/routers/visits_api.py`).
+
+   THE SERVER CANNOT SEE THIS. A page load is the last thing it hears from a
+   reader: everything after that is client-side routing, so an arrival on `/`
+   and an hour in the Planner look identical from the outside. This is the only
+   place that knows, so this is the place that says.
+
+   It also says something it cannot help saying — that a browser ran JS. The
+   count on the other side filters bots by user-agent, which anything can lie
+   about, and a beacon that arrives is worth more than a string that claims.
+
+   `sendBeacon` first: it is fire-and-forget, it survives the page being closed
+   in the same tick, and it cannot delay a render. `keepalive` fetch is the
+   fallback for browsers without it. Nothing awaits either, and a failure is
+   swallowed whole — a page that broke because its telemetry did would be a
+   worse trade than never counting anybody. */
+export function recordVisit(path, entry = false) {
+  const body = JSON.stringify({ path, entry })
+  try {
+    if (navigator.sendBeacon) {
+      // A Blob, so it arrives as JSON. A bare string would be sent as
+      // text/plain and rejected by the endpoint's model.
+      navigator.sendBeacon('/api/visit', new Blob([body], { type: 'application/json' }))
+      return
+    }
+  } catch { /* no beacon, or it refused the payload — fall through */ }
+  try {
+    fetch('/api/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {})
+  } catch { /* offline, blocked, or a page mid-unload */ }
 }

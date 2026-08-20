@@ -129,7 +129,12 @@ function OverviewTab({ me }) {
           <section className="adminpanel">
             <div className="adminpanelhead"><div><h2>Last 30 days</h2><span>Usage and growth</span></div><Link to="/admin/visitors">Details</Link></div>
             <dl className="adminmetrics">
-              <div><dt>Visitor-days</dt><dd>{d.dashboard.usage.visitor_days}</dd></div>
+              {/* Browsers first and counted beneath it: the second number is
+                  every user-agent that got past the bot filter, and on this
+                  site most of that has been automated (v51). Showing only it
+                  read as growth that was not there. */}
+              <div><dt>Browser-days</dt><dd>{d.dashboard.usage.browser_days}</dd></div>
+              <div><dt>Counted, bots included</dt><dd>{d.dashboard.usage.visitor_days}</dd></div>
               <div><dt>Uploads</dt><dd>{d.dashboard.usage.uploads}</dd></div>
               <div><dt>Completed raids</dt><dd>{d.dashboard.usage.completed_raids}</dd></div>
               <div><dt>Active accounts</dt><dd>{d.dashboard.usage.active_accounts}</dd></div>
@@ -639,18 +644,30 @@ function FeedbackTab() {
 
 const AUDIT_PAGE = 100
 
-/* Who came to look.
+/* Who came to look, where they went, and when.
 
    A TIMELINE OF DAYS, WRITTEN OUT (the request: no chart). One row per day,
    newest first, and the columns are the whole question: how many distinct
-   people, how many of them had no account, how many opened /chat, and how many
-   page loads it all came to.
+   people, how many of those were real browsers, how many had no account, how
+   many opened /chat, and how many page loads it all came to.
+
+   READ `Browsers`, NOT `Counted` (v51). `Counted` is every visitor that got
+   past the user-agent filter, and a user-agent is a string a crawler can set
+   to anything — on this site most of that column was automated. `Browsers` is
+   the ones that ran the app's beacon, which a scraper does not. The wide gap
+   between the two columns is not a bug in either; it is the honest size of the
+   bot traffic, and it was there before it was visible.
 
    THE ONE FIGURE THAT IS NOT HERE is "unique visitors this month". It cannot be
    computed and must not be faked: a visitor id belongs to ONE day by design
    (`backend/visitors.py` — the salt behind it is deleted two days later), so
    the same person on Tuesday and Friday is two rows with nothing in common.
-   Summing the column gives visitor-DAYS, which is what the footer calls it. */
+   Summing the column gives visitor-DAYS, which is what the footer calls it.
+
+   WHERE and WHEN are VIEW counts and never people counts, and the tables say
+   so rather than leaving it to be assumed. `visit_paths` has no visitor column
+   at all, so two hundred Planner views may be four raiders on a Tuesday and
+   there is deliberately no way to tell from here. */
 const SPANS = [7, 30, 90]
 
 function VisitorsTab() {
@@ -665,6 +682,8 @@ function VisitorsTab() {
   }, [span])
 
   const rows = d?.days ?? []
+  const dest = d?.destinations?.routes ?? []
+  const hours = d?.arrivals?.hours ?? []
 
   return (
     <><div className="adminpagehead compact"><div><p className="adminkicker">Analytics</p><h1>Visitors</h1><p>Arrival trends measured in visitor-days.</p></div></div><div className="adminpanel">
@@ -693,7 +712,12 @@ function VisitorsTab() {
             <thead>
               <tr>
                 <th className="l">Day</th>
-                <th>Visitors</th>
+                <th title="Ran the app's beacon, so a browser rendered the page">
+                  Browsers
+                </th>
+                <th title="Everything that got past the user-agent filter — crawlers included">
+                  Counted
+                </th>
                 <th>Signed out</th>
                 <th>Opened /chat</th>
                 <th>Page loads</th>
@@ -703,24 +727,99 @@ function VisitorsTab() {
               {rows.map((r) => (
                 <tr key={r.day}>
                   <td className="l">{r.day}</td>
-                  <td>{fmt.num(r.visitors)}</td>
-                  <td>{fmt.num(r.anon)}</td>
-                  <td>{fmt.num(r.chat)}</td>
+                  <td>{fmt.num(r.browsers)}</td>
+                  <td className="muted">{fmt.num(r.visitors)}</td>
+                  <td className="muted">{fmt.num(r.anon)}</td>
+                  <td className="muted">{fmt.num(r.chat)}</td>
                   <td className="muted">{fmt.num(r.hits)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="muted small">
-            {fmt.num(d.totals.visitor_days)} visitor-days over{' '}
+            {fmt.num(d.totals.browser_days)} browser-days of{' '}
+            {fmt.num(d.totals.visitor_days)} counted, over{' '}
             {fmt.num(d.totals.days_counted)} days ·{' '}
             {fmt.num(d.totals.anon_days)} signed out ·{' '}
             {fmt.num(d.totals.chat_days)} opened /chat ·{' '}
             {fmt.num(d.totals.hits)} page loads. Visitor-days, not people: a
             visitor id is scoped to its day on purpose, so the same person on two
-            days counts twice and cannot be matched up. Bots are filtered by
-            user-agent, and a page load is somebody arriving — moving between
-            tabs inside the app never touches the server.
+            days counts twice and cannot be matched up. `Counted` is filtered by
+            user-agent only, which anything can set; `Browsers` ran the app's
+            beacon, which is the closest thing here to proof of a person. Days
+            before this build have no beacon to have run, so their Browsers
+            column reads 0 and means "never asked".
+          </p>
+        </>
+      )}
+
+      {/* WHERE. Views, not people — see the tab comment. `Entries` is the route
+          a visit started on, and the gap between the two columns is the useful
+          part: entries with no further views is a link people bounce off, and
+          views far above entries is where the app sends people once they are
+          inside it. */}
+      {dest.length > 0 && (
+        <>
+          <div className="adminpanelhead section"><div><h2>Where they went</h2>
+            <span>Route views, not people</span></div></div>
+          <table className="data mid">
+            <thead>
+              <tr>
+                <th className="l">Route</th>
+                <th title="Every time the route was opened, in-app moves included">
+                  Views
+                </th>
+                <th title="Views that were the first route of a visit">Entries</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dest.map((r) => (
+                <tr key={r.route}>
+                  <td className="l">{r.route}</td>
+                  <td>{fmt.num(r.views)}</td>
+                  <td className="muted">{fmt.num(r.entries)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted small">
+            {fmt.num(d.destinations.totals.views)} views ·{' '}
+            {fmt.num(d.destinations.totals.entries)} entries. Route patterns, not
+            URLs: `/zones/:id` is every zone run and the id is never stored.
+            Anything outside the app's own routes — scanners looking for
+            WordPress, mostly — is one `(other)` row. These are counts of page
+            views with no visitor attached to them at all, so they cannot be
+            crossed with the days above to follow anybody.
+          </p>
+        </>
+      )}
+
+      {/* WHEN. The server's clock, every hour present including the empty ones:
+          a reader is comparing the shape of a day, and a missing 4am is not the
+          same as a quiet one. */}
+      {hours.some((h) => h.views > 0) && (
+        <>
+          <div className="adminpanelhead section"><div><h2>When they came</h2>
+            <span>The server's hours</span></div></div>
+          <table className="data mid">
+            <thead>
+              <tr>
+                <th className="l">Hour</th><th>Views</th><th>Entries</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hours.map((h) => (
+                <tr key={h.hour}>
+                  <td className="l">{String(h.hour).padStart(2, '0')}:00</td>
+                  <td>{fmt.num(h.views)}</td>
+                  <td className="muted">{fmt.num(h.entries)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted small">
+            The server's hours, not each reader's — this is when the site is
+            busy in local terms, and says nothing about where anybody is.
           </p>
         </>
       )}

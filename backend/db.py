@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 50
+SCHEMA_VERSION = 51
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -953,8 +953,9 @@ CREATE TABLE IF NOT EXISTS visit_days (
   day TEXT NOT NULL,                    -- YYYY-MM-DD, the SERVER's day
   visitor TEXT NOT NULL,                -- sha256(day salt + address + agent)
   signed_in INTEGER NOT NULL DEFAULT 0, -- had a live session at some point today
-  chat INTEGER NOT NULL DEFAULT 0,      -- landed on /chat at some point today
+  chat INTEGER NOT NULL DEFAULT 0,      -- opened /chat at some point today
   hits INTEGER NOT NULL DEFAULT 0,      -- page loads, not requests
+  app INTEGER NOT NULL DEFAULT 0,       -- v51: a BROWSER, proven by running JS
   first_ts INTEGER NOT NULL,
   last_ts INTEGER NOT NULL,
   PRIMARY KEY (day, visitor)
@@ -966,6 +967,44 @@ CREATE TABLE IF NOT EXISTS visit_days (
 CREATE TABLE IF NOT EXISTS visit_salts (
   day TEXT PRIMARY KEY,
   salt TEXT NOT NULL
+);
+
+-- v51: WHERE the counted people went, and WHEN they arrived (`visitors.py`,
+-- `POST /api/visit`). v37 could answer neither, for two separate reasons, and
+-- this table plus `visit_days.app` fixes both.
+--
+-- WHY THE SERVER COULD NOT SEE IT. A visit is counted where index.html goes
+-- out (`spa.py`), and after that the SPA routes itself: somebody who lands on
+-- `/` and spends an hour in the Planner never asks this server for a page
+-- again. So the arrival was counted and the destination was invisible. The fix
+-- is the only one available — the CLIENT says where it went, once per route.
+--
+-- AND WHY THAT ALSO FIXES THE COUNT. Only a real browser runs the beacon. The
+-- user-agent filter in front of `visit_days` is a guess about a string anyone
+-- can set, and a crawler that claims to be Chrome walks straight past it — on
+-- this site that was most of the traffic. `app` is the harder question
+-- answered: JS ran, so somebody's browser rendered the page.
+--
+-- NO VISITOR COLUMN, ON PURPOSE, and this table is stricter than `visit_days`
+-- about it. `visit_days` collapses a person's day into one row, which means
+-- that for two days a live salt could in principle re-derive it. Here there is
+-- nothing to re-derive: a view is added to a counter keyed by day, hour and
+-- route, and the person it came from is not written down at all. So this can
+-- say "the Planner had 90 views on Tuesday evening" and can never say who was
+-- reading it, or that the Planner reader was also the /chat reader.
+--
+-- THE ROUTE IS A PATTERN, NEVER A URL (`visitors.route_of`). `/zones/:id`, not
+-- `/zones/139710`: which PAGE is being read is the question, and a table of
+-- exact URLs is a browsing history with extra steps. Anything not in the SPA's
+-- route table lands under `(other)`, which also means a scanner cannot grow
+-- this table one junk key at a time — the key space is the app's own routes.
+CREATE TABLE IF NOT EXISTS visit_paths (
+  day TEXT NOT NULL,                    -- YYYY-MM-DD, the SERVER's day
+  hour INTEGER NOT NULL,                -- 0-23, the SERVER's hour: WHEN
+  route TEXT NOT NULL,                  -- SPA route pattern: WHERE
+  views INTEGER NOT NULL DEFAULT 0,     -- route views, in-app moves included
+  entries INTEGER NOT NULL DEFAULT 0,   -- views that were the first of a visit
+  PRIMARY KEY (day, hour, route)
 );
 
 -- v40: the Planner's catalog (`backend/planner/`, docs/planner.md). Reference
@@ -1901,6 +1940,18 @@ def init_db() -> None:
             "PRAGMA table_info(loot_bid_items)")}
         if bid_item_cols and "confirmed_qty" not in bid_item_cols:
             conn.execute("ALTER TABLE loot_bid_items ADD COLUMN confirmed_qty "
+                         "INTEGER NOT NULL DEFAULT 0")
+        # v51: `visit_paths` answers WHERE and WHEN, and `visit_days.app`
+        # marks the visits a browser actually rendered. The table arrives empty
+        # from SCHEMA and cannot be backfilled — nothing before this build ever
+        # recorded a destination, and the `app` flag is a question that was
+        # never asked of an old row. So an upgraded database starts both at the
+        # upgrade, and every existing day keeps `app = 0`, which reads as "not
+        # known" rather than "not a browser". The admin page says so instead of
+        # letting the gap look like a cliff.
+        visit_cols = {r[1] for r in conn.execute("PRAGMA table_info(visit_days)")}
+        if visit_cols and "app" not in visit_cols:
+            conn.execute("ALTER TABLE visit_days ADD COLUMN app "
                          "INTEGER NOT NULL DEFAULT 0")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version < SCHEMA_VERSION:

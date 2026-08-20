@@ -24,7 +24,7 @@ import AdminAbilities from './pages/AdminAbilities.jsx'
 import AdminTimers from './pages/AdminTimers.jsx'
 import JoinGroup from './pages/JoinGroup.jsx'
 import Login from './pages/Login.jsx'
-import { api } from './lib/api.js'
+import { api, recordVisit } from './lib/api.js'
 import { syncMarks } from './lib/marks.js'
 import { LEXICON } from './lib/raids.js'
 import { SessionContext } from './lib/session.jsx'
@@ -259,6 +259,31 @@ export default function App() {
     const t = setInterval(check, 60_000)
     return () => { dead = true; clearInterval(t) }
   }, [])
+
+  /* Tell the server which page this is (`lib/api.js: recordVisit`).
+
+     THIS IS THE ONLY PLACE THAT KNOWS. A page load is the last the server
+     hears from a reader — `spa.py` counts the arrival and then the app routes
+     itself, so an hour in the Planner is invisible from the outside. One
+     beacon per route change closes that, and being a beacon at all is what
+     proves the reader was a browser rather than a crawler with a borrowed
+     user-agent.
+
+     The FIRST fire of the session is the entry, and that distinction is the
+     client's to make: the page load and the beacon are two unrelated requests
+     on the server. A ref rather than state — flipping it must not re-render,
+     and it deliberately survives every route change for the life of the tab.
+
+     Overlay and in-game URLs are skipped here as they are skipped in the
+     count: a token URL is a meter on somebody's stream, and OBS reloading its
+     browser source on a scene change is not a person opening a page. */
+  const entered = useRef(false)
+  useEffect(() => {
+    const path = location.pathname
+    if (path.startsWith('/overlay/') || path.startsWith('/ingame/')) return
+    recordVisit(path, !entered.current)
+    entered.current = true
+  }, [location.pathname])
 
   /* The token-authorized screens render BEFORE the shell, not inside it.
      Everything the shell provides — nav, theme toggle, account icon, the

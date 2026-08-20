@@ -12,7 +12,8 @@ from routers import (admin_api, auth_api, census_api, characters_api, chat_api,
                      coach_api, discord_api, encounters_api, feedback_api, groups_api,
                      ingest_api, loot_bids_api, marks_api, notes_api, overlay_api,
                      parseshots_api, planner_api, plugin_api, replay_api,
-                     sessions_api, tokens_api, uploads_api, zoneruns_api)
+                     sessions_api, tokens_api, uploads_api, visits_api,
+                     zoneruns_api)
 from spa import mount_spa
 
 CENSUS_REFRESH_INTERVAL_S = 3600  # check hourly; each character syncs when >24h stale
@@ -208,5 +209,6 @@ app.include_router(chat_api.router, prefix="/api")
 app.include_router(discord_api.router, prefix="/api")
 app.include_router(planner_api.router, prefix="/api")
 app.include_router(loot_bids_api.router, prefix="/api")
+app.include_router(visits_api.router, prefix="/api")
 
 mount_spa(app)

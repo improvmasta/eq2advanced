@@ -3359,6 +3359,9 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
   min-width: 0; padding: 14px 16px; border: 1px solid var(--border);
   border-radius: var(--radius-md); background: var(--surface);
 }
+/* A second and third heading inside one panel — the Visitors tab stacks the
+   timeline, where they went and when they came in a single card. */
+.adminpanelhead.section { margin-top: 26px; }
 .adminpanelhead { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin-bottom: 8px; }
 .adminpanelhead h2 { margin: 0; color: var(--text); font-family: var(--font-body); font-size: .94rem; }
 .adminpanelhead > div { display: flex; flex-direction: column; }
@@ -6827,7 +6830,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .plansetsearchfield > .planbandlabel { padding-top: 0; }
 .plansetsearchrow {
   width: min(100%, 520px); display: grid;
-  grid-template-columns: minmax(240px, 380px) max-content; gap: 10px;
+  grid-template-columns: minmax(240px, 380px) max-content; gap: 5px;
 }
 .setscope { display: inline-flex; gap: 4px; }
 .setscope > button {
@@ -6883,7 +6886,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .currentfilter:disabled { opacity: 0.38; cursor: default; }
 .searchbandrow {
   width: min(100%, 520px); display: grid;
-  grid-template-columns: minmax(240px, 380px) max-content; gap: 10px;
+  grid-template-columns: minmax(240px, 380px) max-content; gap: 5px;
 }
 .prioritybandrow { display: flex; }
 .prioritysequence { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -6954,8 +6957,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .filterbandrow .planfacet > .picker,
 .filterbandrow .planfacet > .sourcepicker { width: 100%; }
-.filterbandrow .planfacet .pickerbtn,
-.filterbandrow .sourcepicker > summary { width: 100%; }
+.filterbandrow .planfacet .pickerbtn { width: 100%; }
 .filterextras {
   grid-column: 1 / -1; display: flex; align-items: end; flex-wrap: wrap; gap: 8px;
 }
@@ -6986,43 +6988,13 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-color: var(--gold); background: rgba(var(--gold-rgb), 0.13);
 }
 /* Source is one compact multi-select facet. It keeps the normal "group or
-   raid" choice without spending a full line on six checkboxes. */
-.sourcepicker { position: relative; }
-.sourcepicker > summary {
-  min-width: 92px; min-height: 29px; padding: 5px 24px 4px 9px;
-  position: relative; display: flex; align-items: center;
-  border: 1px solid var(--border); border-radius: 3px;
-  background: var(--surface); color: var(--text);
-  font: 600 var(--fs-label)/1 var(--font-data); cursor: pointer; list-style: none;
-}
-.sourcepicker > summary::-webkit-details-marker { display: none; }
-.sourcepicker > summary::after {
-  content: '▾'; position: absolute; right: 8px; color: var(--text-muted);
-  font-size: 0.58rem;
-}
-.sourcepicker[open] > summary,
-.sourcemultifacet.selected .sourcepicker > summary {
-  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
-  color: var(--gold-bright); font-weight: 700;
-}
-.sourcepickermenu {
-  position: absolute; z-index: 40; left: 0; top: calc(100% + 4px);
-  min-width: 155px; padding: 5px; display: grid; gap: 3px;
-  border: 1px solid var(--gold-dim); border-radius: 4px;
-  background: var(--surface-raised); box-shadow: 0 10px 24px var(--shadow-color);
-}
-.sourcebox {
-  display: inline-flex; align-items: center; gap: 4px;
-  min-height: 29px; padding: 2px 8px 2px 6px;
-  border: 1px solid var(--border); border-radius: 3px;
-  background: var(--surface); color: var(--text);
-  font-size: var(--fs-label); cursor: pointer;
-}
-.sourcebox:hover { border-color: var(--gold); color: var(--gold-bright); }
-.sourcebox input { margin: 0; accent-color: var(--gold); cursor: pointer; }
-.sourcebox.on {
-  border-color: var(--gold); background: rgba(var(--gold-rgb), 0.20);
-  color: var(--gold-bright); font-weight: 700;
+   raid" choice without spending a full line on six checkboxes. It is a
+   Picker so the panel is portaled out of the search card's stacking context. */
+.sourcepicker .pickerbtn { min-width: 92px; }
+.sourcefacetmenu { min-width: 155px; }
+.sourcefacetmenu .pickeropt { min-height: 29px; }
+.sourcefacetmenu input {
+  margin: 0; accent-color: var(--gold); pointer-events: none;
 }
 .plansearchfooter {
   display: flex; align-items: baseline; justify-content: space-between;

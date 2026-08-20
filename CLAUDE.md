@@ -107,6 +107,16 @@ paragraph here has outgrown this file: move the reasoning to `docs/`.
 - **A visit is counted where index.html goes out** (`spa.py`) — somebody
   ARRIVING, never an API call, asset or in-SPA tab change. Bots dropped on
   user-agent; counting NEVER raises.
+- **WHERE and WHEN come from the CLIENT** (`visit_paths` v51, `POST /api/visit`,
+  `App.jsx` beacon) — the server sees an arrival and never a destination, because
+  the SPA routes itself. The route is stored as a PATTERN (`/zones/:id`), unknown
+  paths collapse to `(other)`, and the table has **no visitor column at all**, so
+  a page count can never be crossed with a visitor row. The beacon must never
+  touch `hits`; a hit is still an arrival.
+- **`app` is the honest people number, `visitors` is not** — a user-agent is a
+  string anything can set and most of this site's counted traffic was crawlers.
+  Running the beacon proves a browser rendered the page. Days before v51 read 0
+  and mean "never asked", not "not a browser".
 - **`/chat` needs NO account to read.** An account is what lets you FILL it.
 - **Discord chat alerts are USER-INSTALLED private DMs** (`discord_alerts.py`,
   v39) — site login + one-time `/link` code, never Discord login or OAuth.
@@ -468,6 +478,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-20 (claude): Count where visitors go and whether they are real (v51)
 - 2026-08-19 (codex): Polish Gear Planner catalog search
 - 2026-08-19 (codex): Match Planner item cards to in-game examines
 - 2026-08-19 (claude): Planner: find the gear three indexes and a crafted sweep were missing
@@ -487,4 +498,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Improve planner adornments and gear planning
 - 2026-08-16 (codex): Improve planner sets, adornments, and gear comparison
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
-- 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection

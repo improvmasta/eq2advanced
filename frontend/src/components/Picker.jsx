@@ -46,7 +46,7 @@ import { createPortal } from 'react-dom'
 export default function Picker({
   value, onChange, options, label, placeholder = 'Choose…', disabled = false,
   className = '', filterFrom = 10, filterHint = 'Filter…', maxMenuWidth = 340,
-  menuClassName = '',
+  menuClassName = '', multiple = false, buttonLabel = null,
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -56,7 +56,8 @@ export default function Picker({
   const menu = useRef(null)
   const keyboardScroll = useRef(false)
 
-  const current = options.find((o) => o.value === value) || null
+  const selected = multiple ? new Set(value || []) : null
+  const current = multiple ? null : options.find((o) => o.value === value) || null
   const ql = q.trim().toLowerCase()
   const shown = useMemo(() => (ql
     ? options.filter((o) => `${o.label} ${o.hint || ''}`.toLowerCase().includes(ql))
@@ -115,10 +116,14 @@ export default function Picker({
   // usually opened to move ONE step from where you are
   useEffect(() => {
     if (!open) { setQ(''); keyboardScroll.current = false; return }
-    setActive(Math.max(0, options.findIndex((o) => o.value === value)))
+    setActive(Math.max(0, options.findIndex((o) => multiple
+      ? selected.has(o.value) : o.value === value)))
   }, [open])
 
-  const pick = (v) => { onChange(v); setOpen(false) }
+  const pick = (v) => {
+    onChange(v)
+    if (!multiple) setOpen(false)
+  }
   const move = (d) => {
     keyboardScroll.current = true
     setActive((i) => {
@@ -154,12 +159,14 @@ export default function Picker({
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={current ? `${current.label}${current.hint ? ` — ${current.hint}` : ''}` : placeholder}
+        title={buttonLabel || (current
+          ? `${current.label}${current.hint ? ` — ${current.hint}` : ''}`
+          : placeholder)}
         onClick={() => !disabled && setOpen((v) => !v)}
         onKeyDown={onKey}
       >
         {current?.icon}
-        <span className="pv">{current ? current.label : placeholder}</span>
+        <span className="pv">{buttonLabel || (current ? current.label : placeholder)}</span>
         {current?.hint && <span className="ph">{current.hint}</span>}
         <span className="caret" aria-hidden="true">▾</span>
       </button>
@@ -168,6 +175,7 @@ export default function Picker({
           className={`pickermenu${menuClassName ? ` ${menuClassName}` : ''}`}
           role="listbox"
           aria-label={label}
+          aria-multiselectable={multiple || undefined}
           ref={menu}
           style={{
             left: at.left,
@@ -202,8 +210,8 @@ export default function Picker({
                   {head && <div className="pickergroup">{head}</div>}
                   <div
                     role="option"
-                    aria-selected={o.value === value}
-                    className={`pickeropt${o.value === value ? ' on' : ''}`
+                    aria-selected={multiple ? selected.has(o.value) : o.value === value}
+                    className={`pickeropt${(multiple ? selected.has(o.value) : o.value === value) ? ' on' : ''}`
                       + `${i === active ? ' active' : ''}`}
                     title={o.title || undefined}
                     ref={i === active && keyboardScroll.current ? (el) => {
