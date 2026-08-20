@@ -620,10 +620,31 @@ def test_a_turquoise_adornment_keeps_its_slot_predicate_and_set_bonus():
         "color": "turquoise", "slots": ["Ear"], "requires_equip": True,
         "predicate": "In Rise of Kunark or previous expansion zones",
         "set_bonuses": [{"required": 2,
+                         "stat_lines": [],
                          "effect": "Applies Abomination Anihiliation.",
                          "descriptions": ["On any combat or spell hit...",
                                           "Inflicts 2,861 divine damage."]}],
     }
+
+
+def test_census_set_thresholds_keep_the_stats_the_game_prints():
+    """Stat-only thresholds must survive; otherwise the six-piece tier vanishes."""
+    assert items.set_bonus_stat_lines({
+        "basemodifier": 4.0, "all": 100, "requireditems": 6,
+        "critchance": 5.0,
+    }) == ["4 Potency", "100 Ability Mod", "5 Crit Chance"]
+    assert items.set_bonus_stat_lines({
+        "combatskills": 10, "requireditems": 4,
+        "effect": "Applies Focus: Knockout Combination II.",
+    }) == ["10 Combat Skills"]
+    assert items.set_bonus_stat_lines({
+        "flurry": 2, "spelltimereusepct": 2,
+        "itemhpregenppt": 1, "ripostechance": 5,
+    }) == ["2 Flurry", "2 Reuse Speed",
+           "1 In-Combat Health Regeneration", "5 Riposte Chance"]
+    # Crit Bonus is a live-era stat Wuoshi does not expose; typed does not mean
+    # appropriate for this server.
+    assert items.set_bonus_stat_lines({"critbonus": 3}) == []
 
 
 def test_an_adornment_page_supplies_its_set_name():

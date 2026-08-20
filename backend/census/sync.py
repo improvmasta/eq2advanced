@@ -505,6 +505,7 @@ def _snapshot_doc(conn, character_id: int, snapshot_id: int | None = None):
 def _gear(conn, doc: dict) -> list[dict]:
     from items import stat_block
     from census.lexicon import as_census_item
+    from planner.wiki import class_restriction
 
     slots = doc.get("equipmentslot_list") or []
     ids = _equipped_item_ids(doc)
@@ -530,6 +531,14 @@ def _gear(conn, doc: dict) -> list[dict]:
                      lcached["name"] if lcached else None)
         item_tier = cached["tier"] if cached else lcached["tier"] if lcached else None
         host_stats = stat_block(rec) if rec else None
+        if host_stats and "Attuneable" in host_stats.get("flags", []):
+            # This record is being rendered from an EQUIPPED slot, so its
+            # pristine broker flags are no longer the in-game state. Equipping
+            # attunes it: Attuneable/Heirloom become Attuned/No-Trade.
+            flags = set(host_stats["flags"])
+            flags -= {"Attuneable", "Heirloom"}
+            flags |= {"Attuned", "No-Trade"}
+            host_stats["flags"] = sorted(flags)
         adornments = []
         for adorn in item.get("adornment_list") or []:
             arow = names.get(adorn.get("id"))
@@ -560,6 +569,12 @@ def _gear(conn, doc: dict) -> list[dict]:
                           fallback["level"] if fallback else None),
                 "type": (arec.get("type") if arec else
                          fallback["type"] if fallback else None),
+                "classes": class_restriction([
+                    value.get("displayname") or key
+                    for key, value in (
+                        ((arec.get("typeinfo") or {}).get("classes") or {}).items()
+                    )
+                ]) or [],
                 "planner_stats": planner_item_stats(arec),
                 "stats": display_stats,
                 "effects": item_effects(arec),
@@ -593,11 +608,52 @@ def _gear(conn, doc: dict) -> list[dict]:
                     "icon": adorn.get("icon"), "type": adorn.get("type"),
                     "level": adorn.get("level"), "stats": adorn.get("stats"),
                     "effects": adorn.get("effects"),
+                    "classes": adorn.get("classes"),
                 } for adorn in adornments if adorn.get("name")],
             } if item_name else None),
             "adornments": adornments,
             "adorns": sum(1 for a in item.get("adornment_list") or [] if a.get("id")),
         })
+
+    # The ARMOUR examine shows only `Set Name [worn/total]`; the detailed
+    # threshold ladder belongs to the turquoise adornment's own examine. Count
+    # the character's installed pieces once across the whole loadout and attach
+    # that compact fact to each host card carrying the set.
+    set_counts: dict[str, int] = {}
+    for gear in out:
+        for adorn in gear["adornments"]:
+            name = adorn.get("set_name") if adorn.get("color") == "turquoise" else None
+            if name:
+                set_counts[name] = set_counts.get(name, 0) + 1
+    set_totals = {}
+    if set_counts:
+        for row in conn.execute(
+                "SELECT name, pieces_json FROM plan_sets WHERE name IN "
+                f"({','.join('?' * len(set_counts))})", list(set_counts)):
+            set_totals[row["name"]] = len(json.loads(row["pieces_json"] or "[]"))
+    for gear in out:
+        names_on_item = list(dict.fromkeys(
+            adorn.get("set_name") for adorn in gear["adornments"]
+            if adorn.get("color") == "turquoise" and adorn.get("set_name")))
+        for adorn in gear["adornments"]:
+            name = adorn.get("set_name")
+            if adorn.get("color") == "turquoise" and name:
+                adorn["set_progress"] = [{
+                    "name": name, "count": set_counts[name],
+                    "total": set_totals.get(name),
+                }]
+        if gear.get("card") and names_on_item:
+            gear["card"]["set_progress"] = [{
+                "name": name, "count": set_counts[name],
+                "total": set_totals.get(name),
+            } for name in names_on_item]
+            for installed in gear["card"].get("installed_adornments", []):
+                name = installed.get("set_name")
+                if name:
+                    installed["set_progress"] = [{
+                        "name": name, "count": set_counts[name],
+                        "total": set_totals.get(name),
+                    }]
     return out
 
 

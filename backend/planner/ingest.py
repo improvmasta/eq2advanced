@@ -513,18 +513,21 @@ def _quest_edges(quests: list[dict]) -> list[dict]:
 
 ITEM_UPSERT = (
     "INSERT INTO plan_items (page_title, name, census_id, era, slot, slot2, "
-    "level, tier, dtype, wtype, classes, flags, adorns_json, set_name, "
-    "stats_json, effects, effect_desc, icon, fetched_ts) VALUES "
+    "level, tier, dtype, wtype, classes, tradeskill_classes, flags, "
+    "adorns_json, set_name, stats_json, description, effects, effect_desc, "
+    "icon, fetched_ts) VALUES "
     "(:page_title,:name,:census_id,:era,:slot,:slot2,:level,:tier,:dtype,"
-    ":wtype,:classes,:flags,:adorns_json,:set_name,:stats_json,:effects,"
-    ":effect_desc,:icon,:fetched_ts) "
+    ":wtype,:classes,:tradeskill_classes,:flags,:adorns_json,:set_name,"
+    ":stats_json,:description,:effects,:effect_desc,:icon,:fetched_ts) "
     "ON CONFLICT(page_title) DO UPDATE SET name=excluded.name, "
     "census_id=excluded.census_id, era=excluded.era, slot=excluded.slot, "
     "slot2=excluded.slot2, level=excluded.level, tier=excluded.tier, "
     "dtype=excluded.dtype, wtype=excluded.wtype, classes=excluded.classes, "
+    "tradeskill_classes=excluded.tradeskill_classes, "
     "flags=excluded.flags, adorns_json=excluded.adorns_json, "
     "set_name=excluded.set_name, stats_json=excluded.stats_json, "
-    "effects=excluded.effects, effect_desc=excluded.effect_desc, "
+    "description=excluded.description, effects=excluded.effects, "
+    "effect_desc=excluded.effect_desc, "
     "icon=excluded.icon, fetched_ts=excluded.fetched_ts")
 
 SOURCE_UPSERT = (
@@ -606,10 +609,12 @@ def store(conn, crawled: dict, force: bool = False) -> dict:
             "slot": row["slot"], "slot2": row["slot2"], "level": row["level"],
             "tier": row["tier"], "dtype": row["dtype"], "wtype": row["wtype"],
             "classes": ",".join(row["classes"]) or None, "flags": row["flags"],
+            "tradeskill_classes": ",".join(row["tradeskill_classes"]) or None,
             "adorns_json": json.dumps(row["adorns"], separators=(",", ":")),
             "set_name": row["set_name"],
             "stats_json": json.dumps(row["stats"], separators=(",", ":")),
-            "effects": row["effects"], "effect_desc": row["effect_desc"],
+            "description": row["description"], "effects": row["effects"],
+            "effect_desc": row["effect_desc"],
             "icon": row["icon"], "fetched_ts": now,
         })
     prev = conn.execute("SELECT items FROM plan_syncs WHERE era=?",
@@ -782,6 +787,88 @@ def fetch_icons(conn, progress=None) -> int:
         if i + items.WIKI_BATCH < len(need):
             time.sleep(gamewiki.PAUSE_S)
     return got
+
+
+def enrich_sets_from_census(conn, client, eras: list[str] | None = None) -> dict:
+    """Replace wiki set ladders with the exact companion-adornment record.
+
+    The wiki is the reverse index that tells the catalog WHICH sets exist, but
+    Census is authoritative once a concrete `Set: Slot` item name is known.
+    This matters in real data: Abrupt Persuasion's wiki page repeats a wrong
+    `20 Ability Modifier` line, while Census says the actual four-piece bonus
+    is `10 Combat Skills`. Run only from the offline sync tool; no request
+    handler reaches the network.
+    """
+    import items
+    from census.client import CensusError
+
+    params: list[str] = []
+    where = ""
+    if eras:
+        params = [era for era in eras if era in wiki.ERAS]
+        if params:
+            where = f" WHERE era IN ({','.join('?' * len(params))})"
+    rows = conn.execute(
+        "SELECT name, pieces_json, bonuses_json FROM plan_sets" + where,
+        params).fetchall()
+    # The real client can fetch the typed turquoise index in two pages. Keep a
+    # point-lookup fallback for fixture clients and older integrations, but do
+    # not issue a burst of one Census request per set in production.
+    bulk_cards = None
+    bulk_fetch = getattr(client, "set_adornment_cards", None)
+    if bulk_fetch:
+        cap_eras = params or list(wiki.ERAS)
+        max_level = max(wiki.ERA_CAP[era] for era in cap_eras)
+        try:
+            bulk_cards = {
+                record.get("displayname"): record
+                for record in bulk_fetch(max_level)
+                if record.get("displayname")
+            }
+        except CensusError:
+            # The wiki crawl is still complete and the previous corrected
+            # ladders are better than replacing them during an outage.
+            return {"checked": len(rows), "found": 0, "updated": 0}
+    checked = found = updated = 0
+    for row in rows:
+        pieces = json.loads(row["pieces_json"] or "[]")
+        if not pieces:
+            continue
+        checked += 1
+        record = next((bulk_cards.get(piece) for piece in pieces
+                       if bulk_cards and bulk_cards.get(piece)), None)
+        if bulk_cards is None:
+            try:
+                record = next((found_record for piece in pieces
+                               if (found_record := client.item_card_by_name(piece))),
+                              None)
+            except CensusError:
+                # Census intermittency must not invalidate an otherwise
+                # complete wiki crawl. Leave this ladder in place.
+                continue
+        raw = (record or {}).get("setbonus_list") or []
+        if not raw:
+            continue
+        found += 1
+        bonuses = []
+        for bonus in raw:
+            descriptions = [
+                bonus.get(f"descriptiontag_{i}") for i in range(1, 10)
+                if bonus.get(f"descriptiontag_{i}")]
+            bonuses.append({
+                "pieces": bonus.get("requireditems"),
+                "text": bonus.get("effect") or "",
+                "stat_lines": items.set_bonus_stat_lines(bonus),
+                "detail": descriptions,
+            })
+        encoded = json.dumps(bonuses, separators=(",", ":"))
+        if encoded == row["bonuses_json"]:
+            continue
+        with conn:
+            conn.execute("UPDATE plan_sets SET bonuses_json=? WHERE name=?",
+                         (encoded, row["name"]))
+        updated += 1
+    return {"checked": checked, "found": found, "updated": updated}
 
 
 def _era_rank(era: str) -> int:

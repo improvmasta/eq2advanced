@@ -64,6 +64,41 @@ def test_the_turquoise_and_the_set_are_read_separately_from_the_stats():
     assert row["adorns"] == {"white": 1, "orange": 1, "turquoise": 1}
 
 
+def test_the_examine_card_parses_description_proc_bullets_and_artisan_classes():
+    """The wiki field is markup, while the card contract is display text.
+
+    This real page caught all three failures at once: `{{EquipmentEffect}}`
+    leaked into the card, leading stars printed literally, and `desc` plus the
+    tradeskill-only class list were discarded.
+    """
+    row = wiki.parse_equip("Earring of the Solstice",
+                           PAGES["Earring of the Solstice"])
+    assert row["description"].startswith(
+        "Allows the wearer to see expert collections")
+    assert row["effects"] == "Earring of the Solstice"
+    assert row["tradeskill_classes"] == list(wiki.TRADESKILL_CLASSES)
+
+    row.update(icon=None, slot_label=row["slot"], _set_bonuses=[])
+    card = catalog.card(row)
+    assert card["effects"]["names"] == ["Earring of the Solstice"]
+    assert card["effects"]["desc"][:2] == [
+        {"depth": 1,
+         "text": "Applies Earring of the Solstice when Activated. Lasts for 1 day."},
+        {"depth": 2, "text": "Increases speed of caster by 45.0%."},
+    ]
+    assert card["tradeskill_classes"] == [c.title()
+                                           for c in wiki.TRADESKILL_CLASSES]
+    assert [line for line in card["stats"]["stats"]
+            if line["name"] == "Resistances"] == [
+                {"name": "Resistances", "value": 360.0, "pct": False}]
+    assert not any(line["name"] == "Elemental Resist"
+                   for line in card["stats"]["stats"])
+    assert wiki.effect_names(
+        "{{Mount|effect=Hotwired Gnomish Hoverpad}}") == [
+            "Hotwired Gnomish Hoverpad"]
+    assert wiki.effect_names("{{UnknownEffect|do not print me}}") == []
+
+
 def test_class_templates_expand_to_subclasses_the_class_tree_knows():
     """`{{AllShamanCats|Equipment|yes}}` is the shaman TIER, and `classtree` is
     the one translation from a tier to the classes it reaches."""
@@ -210,11 +245,48 @@ def test_a_set_tier_reaches_the_examine_card_the_way_the_game_draws_it(tmp_path)
                _set_bonuses=parsed["bonuses"])
     tiers = catalog.card(row)["stats"]["included_adornment"]["set_bonuses"]
     assert [t["required"] for t in tiers] == [2, 6]
-    assert tiers[0]["effect"] == "3 Potency"
-    assert tiers[0]["descriptions"] == [
-        "Applies Focus: Lifetap IV.",
-        "Reduces power cost of Lifetap IV by 200."]
-    assert tiers[1]["effect"] == "4 Potency, 100 Ability Modifier, 5 Crit Chance"
+    assert tiers[0] == {
+        "required": 2, "stat_lines": ["3 Potency"],
+        "effect": "Applies Focus: Lifetap IV.",
+        "descriptions": ["Reduces power cost of Lifetap IV by 200."],
+    }
+    assert tiers[1]["stat_lines"] == [
+        "4 Potency", "100 Ability Modifier", "5 Crit Chance"]
+    assert tiers[1]["effect"] is None
+
+
+def test_census_replaces_a_bad_wiki_set_ladder_offline(tmp_path):
+    """The wiki repeats 20 Ability Modifier; the concrete adornment says 10 Skills."""
+    conn = fresh_db(tmp_path)
+    conn.execute(
+        "INSERT INTO plan_sets VALUES (?,?,?,?,?,?,?)",
+        ("Abrupt Persuasion Set", "Abrupt Persuasion Set (Adornment Set)",
+         "rok", 80, json.dumps(["Abrupt Persuasion Set: Forearms"]),
+         json.dumps([{"pieces": 4, "text": "",
+                      "stat_lines": ["20 Ability Modifier",
+                                     "20 Ability Modifier"], "detail": []}]), 1))
+
+    class FakeCensus:
+        def set_adornment_cards(self, max_level):
+            assert max_level == 80
+            return [{"displayname": "Abrupt Persuasion Set: Forearms",
+                     "setbonus_list": [{
+                "requireditems": 4, "combatskills": 10,
+                "effect": "Applies Focus: Knockout Combination II.",
+                "descriptiontag_1":
+                    "Increases damage of Knockout Combination II by 175.",
+            }]}]
+
+    assert ingest.enrich_sets_from_census(conn, FakeCensus(), ["rok"]) == {
+        "checked": 1, "found": 1, "updated": 1}
+    bonuses = json.loads(conn.execute(
+        "SELECT bonuses_json FROM plan_sets").fetchone()[0])
+    assert bonuses == [{
+        "pieces": 4,
+        "text": "Applies Focus: Knockout Combination II.",
+        "stat_lines": ["10 Combat Skills"],
+        "detail": ["Increases damage of Knockout Combination II by 175."],
+    }]
 
 
 # ---------- Phase 2: quest chains ----------

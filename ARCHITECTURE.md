@@ -20,7 +20,7 @@ the matching file rather than here.
 | `docs/census-abilities.md` | Census sync, guild vote, proc exposure, pet/proc rulings and the Abilities console, provenance, the class tree, the wiki as reference data, why gear procs are wontfix |
 | `docs/coach.md` | Coach engine (descriptive, fit, replay, calibration), the five correctness rules, ability catalog, raid report |
 | `docs/admin-redesign.md` | Implemented Admin operations workspace: dashboard, incidents, support workflows, ability review, and database-backed AoE timer curation |
-| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions, Census/Lexicon current gear, five named local/account-backed equipment sets per public character with linked Outline/adornment snapshots, remembered searches, slot-aware candidates and adornments, projected stats, gear search, explicit Fabled→Mythical class-epic suggestions, and a contextual zone→mob/quest prerequisite list. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v49) |
+| `docs/planner.md` | The Gear Planner (`/plan`, in the nav, signed-out) — reader-chosen expansions, Census/Lexicon current gear, five named local/account-backed equipment sets per public character with linked Outline/adornment snapshots, remembered searches, slot-aware candidates and adornments, projected stats, gear search, explicit Fabled→Mythical class-epic suggestions, and a contextual zone→mob/quest prerequisite list. **Phases 0-2 COMPLETE** (`backend/planner/`, schema v50) |
 
 `docs/skillissue-proposal.md` is an outbound proposal to another project, not
 reference material.

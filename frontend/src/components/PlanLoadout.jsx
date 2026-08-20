@@ -469,6 +469,7 @@ function StaticAdornmentSocket({ adorn }) {
     rarity: adorn.tier ? String(adorn.tier).toLowerCase().replace(/^./, (c) => c.toUpperCase()) : null,
     icon: adorn.icon, type: adorn.type || `${adorn.color || ''} Adornment`,
     level: adorn.level, stats: adorn.stats, effects: adorn.effects,
+    classes: adorn.classes, set_progress: adorn.set_progress,
   } : null
   const button = (
     <button type="button" className={`planadornicon ${adorn.color || 'unknown'}`}

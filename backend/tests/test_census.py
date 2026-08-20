@@ -248,7 +248,7 @@ def test_lexicon_fills_missing_worn_item_and_set_details(client):
                     "lines": [{"indentation": 1,
                                "text": "Improves Lifetap."}],
                 }], "adornment_slots": ["Turquoise"],
-                "flags": [], "set_bonuses": [],
+                "flags": ["ATTUNABLE", "HEIRLOOM"], "set_bonuses": [],
             }, {
                 "id": str(adorn_id), "name": "Spirit Siphoning Set: Head",
                 "quality": "fabled", "icon_id": "4254", "item_level": 70,
@@ -269,7 +269,7 @@ def test_lexicon_fills_missing_worn_item_and_set_details(client):
     assert adorn["name"] == "Spirit Siphoning Set: Head"
     assert adorn["set_name"] == "Spirit Siphoning Set"
     assert adorn["stats"]["adornment"]["set_bonuses"][0] == {
-        "required": 2, "effect": "+3 Potency",
+        "required": 2, "stat_lines": [], "effect": "+3 Potency",
         "descriptions": ["Applies Focus: Lifetap IV.",
                          "Reduces power cost of Lifetap IV by 200."],
     }
@@ -277,9 +277,12 @@ def test_lexicon_fills_missing_worn_item_and_set_details(client):
         {"depth": 1, "text": "When Equipped:"},
         {"depth": 2, "text": "Improves Lifetap."},
     ]
+    assert gear[0]["card"]["stats"]["flags"] == ["Attuned", "No-Trade"]
     installed = gear[0]["card"]["installed_adornments"]
     assert len(installed) == 1 and installed[0]["name"] == adorn["name"]
     assert installed[0]["stats"]["adornment"]["set_bonuses"][0]["required"] == 2
+    assert gear[0]["card"]["set_progress"] == [{
+        "name": "Spirit Siphoning Set", "count": 1, "total": None}]
     # Complete fallback rows are durable and make the next render a local read.
     assert lexicon.enrich_equipment(conn, "Bobby", doc, fallback, now=2000) == 0
     assert fallback.character_calls == 1

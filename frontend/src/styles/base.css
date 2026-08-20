@@ -607,8 +607,9 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 
    It does NOT use the site's tokens and it does NOT theme. An examine window
    is black in a light client too — this is a quotation of the game's UI, and
-   recolouring it is the one change that would stop it looking like the thing
-   it is. The frame is the wiki's grey `ew-extras` border around a black box.
+   recolouring it with the site theme would stop it looking like the thing it
+   is. The frame and subtly blue-black field follow the game window rather than
+   the surrounding page.
 
    Positioned fixed and in `document.body`, placed from the item name's rect —
    same reason as `.pickermenu`: the table scrolls sideways inside
@@ -618,25 +619,33 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .examinecard {
   position: fixed; z-index: 58; pointer-events: none;
   width: 350px; max-width: calc(100vw - 16px);
-  padding: 3px; background: #dddddd;
+  padding: 3px; background: linear-gradient(135deg, #d2c18a, #67542b 48%, #c7af6d);
+  border: 1px solid #322b1b;
   box-shadow: 0 8px 24px #00000088;
 }
 .examinewindow {
-  background: #000; color: #fff;
+  background:
+    radial-gradient(circle at 28% 12%, rgba(48, 89, 105, 0.22), transparent 43%),
+    linear-gradient(145deg, #07131a, #02070a 58%, #071219);
+  color: #fff;
   font-family: Times, "Times New Roman", serif;
   font-size: 13px; line-height: 16px;
-  border: 4px solid #000; padding: 4px 6px;
+  border: 3px solid #020608; padding: 5px 7px 7px;
 }
 .ew-top { display: flex; gap: 6px; align-items: flex-start; }
 .ew-titles { flex: 1 1 auto; min-width: 0; }
 .ew-icon { flex: 0 0 42px; }
 .ew-title { font-size: 150%; font-weight: bold; line-height: 1.15; }
 .ew-title.ew-unusable { color: #ff3333; }
+.ew-description {
+  margin-top: 4px; max-width: 265px; color: #f3f3ed;
+  font-size: 95%; font-weight: 600; line-height: 1.2;
+}
 /* The glow is the wiki's four-way black outline plus a triple coloured
    shadow. It is what makes a Fabled name read as Fabled at a glance. */
 .itemquality {
   font-weight: bold; font-size: 130%; font-family: Times, serif;
-  margin-top: 2px;
+  margin-top: 7px;
 }
 .xqc-fabled { color: #ff939d; }
 .xqc-legendary, .xqc-mastercrafted { color: #ffc993; }
@@ -671,31 +680,54 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
    the wiki's `.ew-stats` and `.ew-effectlist`. */
 .ew-stats { color: #33cc00; font-weight: bold; margin-top: 8px; }
 .ew-effectlist { color: #99ccff; font-weight: bold; margin-top: 6px; }
-/* The game lays both blocks out in TWO COLUMNS filled top-to-bottom and then
-   across — Potency above Crit Chance on the left, the rest down the right with
-   Ability Mod at the bottom. Multi-column does exactly that and balances the
-   halves itself, so an odd count puts the extra line on the left the way the
-   window does; a grid would need the row count computed in JS to fill the same
-   direction. `break-inside` because a stat line must never split across the
-   fold. */
-.ew-cols { columns: 2; column-gap: 16px; }
-.ew-cols > div { break-inside: avoid; }
+/* Green attributes read ACROSS each row: Primary Attributes beside Stamina. */
+.ew-cols {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 14px;
+}
+.ew-cols > div { min-width: 0; }
+/* The blue modifier block is filled DOWN, not across. ItemCard explicitly
+   anchors Potency then Crit Chance in the left column so browser balancing can
+   never move Crit to the right as other modifiers or adornments come and go. */
+.ew-effectlist .ew-cols { display: grid; }
+.ew-effectcol > div { min-width: 0; }
 .ew-facts { margin-top: 10px; border-collapse: collapse; width: 100%; }
 .ew-facts td { padding: 0 6px 0 0; vertical-align: top; }
-.ew-low { color: #bbbbbb; width: 34%; }
+.ew-low { color: #dddddd; width: 1%; white-space: nowrap; }
 .ew-high { font-weight: bold; color: #ffffff; }
 .ew-high.ew-adorn-turquoise { color: #43f2ee; }
 .ew-facts sup { font-size: 78%; }
+.ew-setprogress {
+  margin-top: 8px; color: #ff30e9; font-weight: bold;
+  text-shadow: 0 1px #000;
+}
 .ew-set { margin-top: 10px; color: #fff; }
+.ew-adornsetprogress { color: #ffff00; font-weight: bold; margin-bottom: 3px; }
 .ew-set-name { color: #ffff00; font-weight: bold; margin-bottom: 8px; }
-.ew-set-bonus > div:first-child { color: #ffff00; font-weight: bold; }
-.ew-set-bonus ul { margin: 2px 0 0 18px; padding: 0; }
-.ew-set-bonus li { padding-left: 2px; }
+.ew-set-bonus { margin-top: 3px; }
+.ew-set-tierhead { display: flex; gap: 6px; color: #fff; font-weight: bold; }
+.ew-set-required { color: #25f12f; }
+.ew-set-details > div {
+  display: flex; align-items: flex-start; gap: 6px; margin-left: 15px;
+}
+.ew-set-details > div.nested { margin-left: 29px; }
+.ew-set-details > div > span:first-child { color: #e4c447; flex: none; }
 .ew-included { margin-top: 12px; padding-top: 8px; border-top: 1px solid #666; }
 .ew-included-label { color: #bbbbbb; font-weight: bold; margin-bottom: 3px; }
 /* The proc: a yellow header and the wiki's indented description under it. */
+.ew-procnames { margin-top: 8px; }
+.ew-procname {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  color: #ead9a0; font-weight: bold; text-align: center;
+  text-shadow: 0 1px #000, 0 0 4px #a98232;
+}
+.ew-procname::before, .ew-procname::after {
+  content: "◆"; color: #c9a94f; font-size: 70%;
+}
 .ew-effects { color: #ffff00; font-weight: bold; margin-top: 10px; }
 .ew-effectdesc { color: #ffffff; }
+.ew-effectline { display: flex; align-items: flex-start; gap: 5px; }
+.ew-effectbullet { color: #e4c447; flex: 0 0 auto; }
 .ew-none { color: #bbbbbb; margin-top: 8px; font-size: 92%; }
 /* The class restriction, in the examine window's own white — it is a fact
    about the item like the Slot and Level rows above it, not a warning. Wrapped
@@ -704,6 +736,8 @@ button.linklike:hover { color: var(--gold-bright); background: none; }
 .ew-classes {
   color: #ffffff; margin-top: 8px; font-size: 92%; line-height: 1.35;
 }
+.ew-classes.ew-adornclasses { color: #25f12f; font-weight: bold; }
+.ew-artisan b { color: #ffffff; }
 .ew-class-unusable { color: #ff3333; }
 
 /* The roll list behind a contested drop. This one IS site chrome, not a
@@ -6974,6 +7008,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planbadge { font-size: 12px; line-height: 1; }
 .planbadge.set { color: var(--rarity-treasured); }
 .planbadge.proc { color: var(--gold); }
+.plantable .lootitem a { font-weight: 750; }
 
 .plansource { display: inline-flex; align-items: baseline; gap: 6px; }
 .skind {

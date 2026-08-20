@@ -60,8 +60,12 @@ def normalize_set_bonuses(bonuses: list[dict], *, typed: bool = False) -> list[d
     for source in bonuses:
         bonus = dict(source)
         bonus["text"] = normalize_set_bonus_line(bonus.get("text") or "")
-        bonus["stat_lines"] = [normalize_set_bonus_line(line)
-                                for line in bonus.get("stat_lines") or []]
+        # Some wiki set pages repeat a bare stat line verbatim. It is one
+        # threshold, not two grants; preserve order while refusing the exact
+        # duplicate even when Census enrichment is temporarily unavailable.
+        bonus["stat_lines"] = list(dict.fromkeys(
+            normalize_set_bonus_line(line)
+            for line in bonus.get("stat_lines") or []))
         if typed:
             bonus["stats"] = bonus_stats(bonus)
         out.append(bonus)
@@ -135,6 +139,8 @@ def _rows(conn, eras: list[str]) -> list[dict]:
             json.loads(row.pop("stats_json") or "{}"))
         row["adorns"] = json.loads(row.pop("adorns_json") or "{}")
         row["classes"] = [c for c in (row["classes"] or "").split(",") if c]
+        row["tradeskill_classes"] = [
+            c for c in (row.get("tradeskill_classes") or "").split(",") if c]
         # Lifted out of `dtype` rather than stored beside it — one string op
         # per row, and no migration or re-crawl to start filtering on it.
         row["armor"] = wiki.armor_of(row["dtype"])
@@ -326,14 +332,19 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
     set_hover = {}
     if set_names:
         for set_row in conn.execute(
-                "SELECT name, bonuses_json FROM plan_sets WHERE name IN "
+                "SELECT name, pieces_json, bonuses_json FROM plan_sets WHERE name IN "
                 f"({','.join('?' * len(set_names))})", set_names):
-            set_hover[set_row["name"]] = normalize_set_bonuses(
-                json.loads(set_row["bonuses_json"] or "[]"))
+            set_hover[set_row["name"]] = {
+                "bonuses": normalize_set_bonuses(
+                    json.loads(set_row["bonuses_json"] or "[]")),
+                "total": len(json.loads(set_row["pieces_json"] or "[]")),
+            }
     sampled = random.sample(kept, min(sample, len(kept))) if sample else None
     returned = sampled if sampled is not None else kept[:limit]
     for row in returned:
-        row["_set_bonuses"] = set_hover.get(row.get("set_name"), [])
+        hovered = set_hover.get(row.get("set_name"), {})
+        row["_set_bonuses"] = hovered.get("bonuses", [])
+        row["_set_total"] = hovered.get("total")
     return {
         "total": len(kept),
         "items": [_item_out(r) for r in returned],
@@ -368,6 +379,14 @@ _BLUE = ("potency", "crit", "multi", "dps", "aspeed", "acspeed",
          "arspeed", "flurry", "aeauto", "dblcast", "strike", "bchance",
          "maxhealth", "mitinc", "accuracy", "abmod")
 
+# The green block is read ACROSS the game's two columns: attributes first,
+# then resistances, then skills/defences.  Together with the grid in
+# `ItemCard.jsx`, `[Primary, Stamina, Resist, Combat Skills]` becomes the same
+# two rows the client draws instead of putting both attributes down the left.
+_GREEN = ("Primary Attributes", "Stamina", "Elemental Resist", "Arcane Resist",
+          "Noxious Resist", "Resistances", "Combat Skills", "Mitigation",
+          "Protection")
+
 
 def card(row: dict) -> dict:
     """A catalog row in `items.display`'s shape, so the EXISTING examine card
@@ -389,21 +408,34 @@ def card(row: dict) -> dict:
     if primary:
         stats.append({"name": "Primary Attributes", "value": max(primary),
                       "pct": False})
+    resist_keys = ("vselemental", "vsarcane", "vsnoxious")
+    resist_values = [row["stats"].get(key) for key in resist_keys
+                     if row["stats"].get(key)]
+    collapse_resists = bool(resist_values) and len(set(resist_values)) == 1
+    if collapse_resists:
+        # Census and the TLE client call the lone/equal AC field Resistances.
+        # The wiki stores Earring of the Solstice's 360 in `vselemental`, but
+        # the in-game examine does not call it Elemental Resist.
+        stats.append({"name": "Resistances", "value": resist_values[0],
+                      "pct": False})
     for key, value in row["stats"].items():
-        if key in wiki.PRIMARY_ATTRIBUTE_KEYS:
+        if key in wiki.PRIMARY_ATTRIBUTE_KEYS or collapse_resists and key in resist_keys:
             continue
         line = {"name": wiki.STAT_LABEL.get(key, key), "value": value,
                 "pct": key in wiki.STAT_PCT}
         (effects if key in _BLUE else stats).append(line)
     effects.sort(key=lambda r: _BLUE.index(_key_of(r["name"])))
-    stats.sort(key=lambda r: (-float(r["value"]), r["name"]))
+    stats.sort(key=lambda r: (
+        _GREEN.index(r["name"]) if r["name"] in _GREEN else len(_GREEN),
+        -float(r["value"]), r["name"]))
     icon = row["icon"] if row["icon"] and icon_path(row["icon"]).exists() else None
-    names = [n.strip() for n in (row["effects"] or "").split(",") if n.strip()]
+    names = wiki.effect_names(row["effects"])
     included = None
     if row.get("set_name"):
         included = {
             "name": row["set_name"], "color": "turquoise", "predicate": None,
             "flags": [], "requires_equip": True,
+            "total": row.get("_set_total"),
             # THE TIER LINE IS THE STATS, the way the game draws it — "(6) 4
             # Potency, 100 Ability Mod, 5 Crit Chance" — with the proc and its
             # explanation as the bullets under it. A tier whose own line is
@@ -411,16 +443,16 @@ def card(row: dict) -> dict:
             # the largest bonus on the set.
             "set_bonuses": [{
                 "required": bonus.get("pieces"),
-                "effect": ", ".join(bonus.get("stat_lines") or []) or None,
-                "descriptions": [line for line in
-                                 [bonus.get("text", "").replace("|", "").strip(),
-                                  *(bonus.get("detail") or [])] if line],
+                "stat_lines": bonus.get("stat_lines") or [],
+                "effect": bonus.get("text", "").replace("|", "").strip() or None,
+                "descriptions": [line for line in bonus.get("detail") or [] if line],
             } for bonus in row.get("_set_bonuses", [])
                 if bonus.get("text") or bonus.get("stat_lines")],
         }
     return {
         "name": row["name"],
         "rarity": (row["tier"] or "").title() or None,
+        "description": row.get("description"),
         "icon": icon,
         "wiki": f"https://eq2.fandom.com/wiki/{row['page_title'].replace(' ', '_')}",
         "type": row.get("dtype") or row.get("wtype"),
@@ -430,6 +462,8 @@ def card(row: dict) -> dict:
         # before any number on it matters. Silence when it is not a restriction
         # — see `wiki.class_restriction`, which the loot card asks too.
         "classes": wiki.class_restriction(row.get("classes")),
+        "tradeskill_classes": [c.title() for c in
+                               row.get("tradeskill_classes") or []] or None,
         "stats": {
             "stats": stats, "effects": effects,
             "flags": [f.strip().title() for f in (row["flags"] or "").split()
@@ -439,8 +473,7 @@ def card(row: dict) -> dict:
             "included_adornment": included,
         },
         "effects": {"names": names,
-                    "desc": [{"depth": 1, "text": t} for t in
-                             (row["effect_desc"] or "").splitlines() if t.strip()],
+                    "desc": wiki.effect_lines(row["effect_desc"]),
                     "set": row["set_name"]},
     }
 
@@ -460,10 +493,13 @@ def _item_out(row: dict) -> dict:
         "slot": row["slot"], "slot2": row["slot2"], "level": row["level"],
         "slot_label": row["slot_label"], "two_handed": row["two_handed"],
         "tier": row["tier"], "dtype": row["dtype"], "wtype": row["wtype"],
-        "classes": row["classes"], "flags": row["flags"],
+        "classes": row["classes"],
+        "tradeskill_classes": row.get("tradeskill_classes", []),
+        "flags": row["flags"],
         "armor": row["armor"],
         "adorns": row["adorns"], "set_name": row["set_name"],
-        "stats": row["stats"], "effects": row["effects"],
+        "stats": row["stats"], "description": row.get("description"),
+        "effects": row["effects"],
         "effect_desc": row["effect_desc"], "icon": row["icon"],
         "score": row.get("score", 0.0), "matched": row.get("matched", 0),
         "tier_bucket": row.get("tier_bucket"),

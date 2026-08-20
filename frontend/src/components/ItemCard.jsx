@@ -233,9 +233,37 @@ function Hover({ className, width, card, onOpen, children, block = false }) {
    It does NOT theme. An examine window is black in a light client too — this
    is a quotation of the game's own UI, and recolouring it would be the one
    change that stops it looking like the thing it is. */
-const num = (r) => `${r.value}${r.pct ? '%' : ''}`
+const num = (r, showPercent = true) => `${r.value}${showPercent && r.pct ? '%' : ''}`
 
-function Examine({ row, characterClass = null }) {
+function SetBonusLadder({ bonuses }) {
+  return (bonuses || []).map((bonus, index) => {
+    const stats = (bonus.stat_lines || []).filter(Boolean)
+    const headline = stats.join(', ')
+    const details = [
+      ...(bonus.effect ? [bonus.effect] : []),
+      ...(bonus.descriptions || []),
+    ]
+    return (
+      <div className="ew-set-bonus" key={`${bonus.required}-${index}`}>
+        <div className="ew-set-tierhead">
+          <span className="ew-set-required">({bonus.required})</span>
+          {headline && <span>{headline}</span>}
+        </div>
+        {!!details.length && (
+          <div className="ew-set-details">
+            {details.map((line, detailIndex) => (
+              <div key={detailIndex} className={detailIndex ? 'nested' : ''}>
+                <span aria-hidden="true">•</span><span>{line}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  })
+}
+
+function Examine({ row, characterClass = null, tradeskillClass = null }) {
   const s = row.stats
   const w = s?.weapon
   const fx = row.effects
@@ -244,8 +272,15 @@ function Examine({ row, characterClass = null }) {
   const allowedClasses = (row.classes || []).map((name) => ({
     name, matches: String(name).trim().toLowerCase() === normalizedClass,
   }))
-  const unusable = !!normalizedClass && !!allowedClasses.length
+  const normalizedTradeskill = String(tradeskillClass || '').trim().toLowerCase()
+  const allowedTradeskills = (row.tradeskill_classes || []).map((name) => ({
+    name, matches: String(name).trim().toLowerCase() === normalizedTradeskill,
+  }))
+  const unusableByClass = !!normalizedClass && !!allowedClasses.length
     && !allowedClasses.some((entry) => entry.matches)
+  const unusableByTradeskill = !!normalizedTradeskill && !!allowedTradeskills.length
+    && !allowedTradeskills.some((entry) => entry.matches)
+  const unusable = unusableByClass || unusableByTradeskill
   const adorn = s?.adornment
   const included = s?.included_adornment
   const installed = row.installed_adornments || []
@@ -259,6 +294,7 @@ function Examine({ row, characterClass = null }) {
   const installedStats = installed.flatMap((item) => item.stats?.stats || [])
   const installedEffects = installed.flatMap((item) => item.stats?.effects || [])
   const installedNames = installed.flatMap((item) => item.effects?.names || [])
+  const procNames = [...(fx?.names || []), ...installedNames]
   const effectDesc = [
     ...(fx?.desc || []),
     ...installed.flatMap((item) => item.effects?.desc || []),
@@ -266,11 +302,49 @@ function Examine({ row, characterClass = null }) {
   const installedSets = installed.filter(
     (item) => item.stats?.adornment?.set_bonuses?.length,
   )
+  const installedSetFlags = installedSets.flatMap((item) => item.stats?.flags || [])
+  const hostRequiresEquip = !adorn && (
+    included?.requires_equip
+    || installedSets.some((item) => item.stats?.adornment?.requires_equip))
+  const bottomFlags = Array.from(new Set(adorn
+    ? [...(s?.flags || []), ...(adorn.requires_equip ? ['Requires-Equip'] : [])]
+    : [...(s?.flags || []), ...installedSetFlags,
+        ...(hostRequiresEquip ? ['Requires-Equip'] : [])]))
+  const compactSets = (() => {
+    if (adorn) return []
+    const rows = row.set_progress?.length
+      ? row.set_progress
+      : [
+          ...installedSets.map((item) => ({
+            name: item.set_name || item.name.replace(/:\s*[^:]+$/, ''),
+          })),
+          ...(included ? [{ name: included.name, total: included.total }] : []),
+        ]
+    const seen = new Set()
+    return rows.filter((set) => set?.name && !seen.has(set.name) && seen.add(set.name))
+  })()
+  const modifierColumns = (() => {
+    const base = s?.effects || []
+    const all = [...base, ...installedEffects]
+    const anchored = ['Potency', 'Crit Chance'].flatMap(
+      (name) => all.filter((entry) => entry.name === name),
+    )
+    if (anchored.length) {
+      return [
+        [...anchored, ...installedEffects.filter(
+          (entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance')],
+        base.filter((entry) => entry.name !== 'Potency' && entry.name !== 'Crit Chance'),
+      ]
+    }
+    const cut = Math.ceil(all.length / 2)
+    return [all.slice(0, cut), all.slice(cut)]
+  })()
   return (
     <div className="examinewindow">
       <div className="ew-top">
         <div className="ew-titles">
           <div className={`ew-title${unusable ? ' ew-unusable' : ''}`}>{row.name}</div>
+          {row.description && <div className="ew-description">{row.description}</div>}
           {row.rarity && (
             <div className={`itemquality xqc-${quality}`}>
               {row.rarity.toUpperCase()}
@@ -283,7 +357,6 @@ function Examine({ row, characterClass = null }) {
         )}
       </div>
 
-      {!!s?.flags.length && !adorn && <div className="ew-flags">{s.flags.join(',  ')}</div>}
       {!!s?.adornments.length && (
         <div className="ew-adorn">
           {s.adornments.map((c, i) => {
@@ -300,12 +373,9 @@ function Examine({ row, characterClass = null }) {
         </div>
       )}
 
-      {/* TWO COLUMNS, FILLED DOWN THEN ACROSS — the game's own arrangement.
-          Potency sits above Crit Chance on the left and the rest run down the
-          right with Ability Mod last, which is a property of the ORDER plus a
-          column fill rather than of any per-stat placement: `items.py` and
-          `planner/catalog.py` both hand these over already sorted, so the
-          layout never has to know what a stat is. */}
+      {/* Green attributes read across: Primary Attributes beside Stamina. The
+          blue modifier block below fills down so Crit Chance always follows
+          Potency in the left column, matching the in-game card. */}
       {(!!s?.stats.length || !!installedStats.length) && (
         <div className="ew-stats ew-cols">
           {[...(s?.stats || []), ...installedStats].map((r, i) => (
@@ -313,21 +383,30 @@ function Examine({ row, characterClass = null }) {
           ))}
         </div>
       )}
-      {/* The proc's NAME sits with the modifiers, in the same light blue, and
-          its description gets its own block below — EQ2i's own arrangement.
-          The name is NOT columnised: it is a sentence, not a figure. */}
-      {(!!s?.effects.length || !!fx?.names.length || !!installedEffects.length
-          || !!installedNames.length) && (
+      {/* Numeric modifiers stay in the blue block. Proc names are item facts,
+          not figures, and appear in the centered game-style heading below. */}
+      {(!!s?.effects.length || !!installedEffects.length) && (
         <div className="ew-effectlist">
-          {(!!s?.effects.length || !!installedEffects.length) && (
-            <div className="ew-cols">
-              {[...(s?.effects || []), ...installedEffects].map((r, i) => (
-                <div key={`${r.name}-${i}`}>{num(r)}&nbsp;{r.name}</div>
-              ))}
+          <div className="ew-cols">
+            {modifierColumns.map((column, columnIndex) => (
+              <div className="ew-effectcol" key={columnIndex}>
+                {column.map((r, i) => (
+                  <div key={`${r.name}-${i}`}>{num(r, false)}&nbsp;{r.name}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!!compactSets.length && (
+        <div className="ew-setprogress">
+          {compactSets.map((set) => (
+            <div key={set.name}>
+              {set.name}
+              {set.count != null && set.total ? ` [${set.count}/${set.total}]` : ''}
             </div>
-          )}
-          {fx?.names.map((n) => <div key={n}>{n}</div>)}
-          {installedNames.map((n, i) => <div key={`${n}-${i}`}>{n}</div>)}
+          ))}
         </div>
       )}
 
@@ -398,7 +477,7 @@ function Examine({ row, characterClass = null }) {
           is a RESTRICTION: the source sends nothing when every class on the
           server can equip it, the same silence the game keeps. */}
       {!!row.classes?.length && (
-        <div className="ew-classes">
+        <div className={`ew-classes${adorn ? ' ew-adornclasses' : ''}`}>
           {allowedClasses.map((entry, index) => (
             <span key={entry.name}
                   className={normalizedClass && !entry.matches ? 'ew-class-unusable' : ''}>
@@ -408,54 +487,43 @@ function Examine({ row, characterClass = null }) {
         </div>
       )}
 
-      {installedSets.map((item, i) => (
-        <div className="ew-set" key={`${item.name}-${i}`}>
-          <div className="ew-set-name">{item.set_name || item.name}</div>
-          {item.stats.adornment.set_bonuses.map((bonus, j) => (
-            <div className="ew-set-bonus" key={j}>
-              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
-              <ul>{bonus.descriptions.map((d, k) => <li key={k}>{d}</li>)}</ul>
-            </div>
+      {!!allowedTradeskills.length && (
+        <div className="ew-classes ew-artisan">
+          <b>Artisan:</b>{' '}
+          {allowedTradeskills.map((entry, index) => (
+            <span key={entry.name}
+                  className={normalizedTradeskill && !entry.matches
+                    ? 'ew-class-unusable' : ''}>
+              {index ? ', ' : ''}{entry.name}
+            </span>
           ))}
         </div>
-      ))}
+      )}
+
+      {!!procNames.length && (
+        <div className="ew-procnames">
+          {procNames.map((name, index) => (
+            <div className="ew-procname" key={`${name}-${index}`}>{name}</div>
+          ))}
+        </div>
+      )}
 
       {!!adorn?.set_bonuses.length && (
         <div className="ew-set">
+          {!!row.set_progress?.length && (
+            <div className="ew-adornsetprogress">
+              {row.set_progress.map((set) => (
+                <div key={set.name}>
+                  {set.name}
+                  {set.count != null && set.total ? ` ${set.count}/${set.total}` : ''}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="ew-set-name">
-            {fx?.set || row.name.replace(/:\s*[^:]+$/, '')}
-            {adorn.set_bonuses[0].required != null && <> &nbsp;({adorn.set_bonuses[0].required}-piece bonus)</>}
+            {fx?.set || row.name.replace(/:\s*[^:]+$/, '')}:
           </div>
-          {adorn.set_bonuses.map((bonus, i) => (
-            <div className="ew-set-bonus" key={i}>
-              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
-              <ul>{bonus.descriptions.map((d, j) => <li key={j}>{d}</li>)}</ul>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {included && (
-        <div className="ew-included">
-          <div className="ew-included-label">Included adornment</div>
-          <div className="ew-set-name">{included.name}</div>
-          <table className="ew-facts"><tbody>
-            <tr><td className="ew-low">Slot Type</td><td className={`ew-high ew-adorn-${included.color}`}>{included.color[0].toUpperCase() + included.color.slice(1)} Adornment Slot</td></tr>
-            {included.predicate && <tr><td className="ew-low">Predicates</td><td className="ew-high">{included.predicate}</td></tr>}
-          </tbody></table>
-          {included.set_bonuses.map((bonus, i) => (
-            <div className="ew-set-bonus" key={i}>
-              {bonus.effect && <div>({bonus.required}) {bonus.effect}</div>}
-              <ul>{bonus.descriptions.map((d, j) => <li key={j}>{d}</li>)}</ul>
-            </div>
-          ))}
-          {(!!included.flags.length || included.requires_equip) && <div className="ew-flags">{[...included.flags, ...(included.requires_equip ? ['Requires-Equip'] : [])].join(',  ')}</div>}
-        </div>
-      )}
-
-      {adorn && (!!s?.flags.length || adorn.requires_equip) && (
-        <div className="ew-flags">
-          {[...(s?.flags || []), ...(adorn.requires_equip ? ['Requires-Equip'] : [])].join(',  ')}
+          <SetBonusLadder bonuses={adorn.set_bonuses} />
         </div>
       )}
 
@@ -464,13 +532,17 @@ function Examine({ row, characterClass = null }) {
           <div className="ew-effects">Effects:</div>
           <div className="ew-effectdesc">
             {effectDesc.map((d, i) => (
-              <div key={i} style={{ paddingLeft: `${(d.depth - 1) * 12}px` }}>
-                {d.text}
+              <div className="ew-effectline" key={i}
+                   style={{ marginLeft: `${Math.max(0, d.depth - 1) * 12}px` }}>
+                <span className="ew-effectbullet" aria-hidden="true">•</span>
+                <span>{d.text}</span>
               </div>
             ))}
           </div>
         </>
       )}
+
+      {!!bottomFlags.length && <div className="ew-flags">{bottomFlags.join(',  ')}</div>}
 
       {!s && (
         <div className="ew-none">

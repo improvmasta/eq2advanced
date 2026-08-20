@@ -106,6 +106,12 @@ def main() -> int:
             report.update(ingest.reconcile_edges(
                 conn, crawled["era"], crawled["edges"]))
 
+    # The wiki discovers the set and Census supplies the exact threshold
+    # numbers once one concrete companion-adornment name is known. This is the
+    # same offline boundary as the icon pass below; page/API reads stay local.
+    from census.client import shared_client
+    set_report = ingest.enrich_sets_from_census(conn, shared_client(), eras)
+
     if epic_data is not None:
         print(f"  {epic_timelines.store(conn, epic_data)} structured epic timelines imported")
 
@@ -145,6 +151,10 @@ def main() -> int:
             print(f"  {report['over_cap']} items dropped above the era's "
                   f"level cap ({wiki.ERA_CAP[report['era']]})")
 
+    if set_report["checked"]:
+        print(f"  {set_report['found']}/{set_report['checked']} adornment-set "
+              f"ladders resolved from Census ({set_report['updated']} updated)")
+
     got = ingest.fetch_icons(conn, progress)
     print(f"\r  {got} item icons cached                    ")
 
@@ -172,6 +182,7 @@ if __name__ == "__main__":
     # Deliberately NOT setting CENSUS_AUTO_REFRESH=0 the way `sync_wiki.py`
     # does. That switch is `items.network_allowed`, which gates the ICON
     # downloads as well as Census, and this tool's whole job is to reach the
-    # network — with it set, the icon pass silently caches nothing. Nothing
-    # here calls Census at all, so there is no refresh to suppress.
+    # network — with it set, the icon pass silently caches nothing. The
+    # bounded set-ladder enrichment above also intentionally calls Census;
+    # request-time Planner reads still remain wholly local.
     raise SystemExit(main())

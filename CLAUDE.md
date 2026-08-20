@@ -357,6 +357,10 @@ segmentation)
   under the item name, `EquipmentEffect` becomes the centered proc name,
   asterisk depth becomes effect bullets, and artisan restrictions stay
   separate from adventure-class filtering. Do not add `Requires Expansion`.
+- **Set armor shows compact `Set [worn/total]`; the turquoise adornment owns the
+  ladder.** Preserve Census threshold stats, and keep Crit Chance directly under
+  Potency in the blue block. Equipped Attuneable/Heirloom renders as
+  Attuned/No-Trade. Search names are bold and tiers uppercase.
 - **`/plan` is IN the nav as `Gear Planner`**, useful signed out; only the five
   saved-set routes need an account. **PLAYER-NAME LINKS GO TO
   `/plan?character=<name>`**, never the external Lexicon profile.
@@ -464,6 +468,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-19 (codex): Match Planner item cards to in-game examines
 - 2026-08-19 (claude): Planner: find the gear three indexes and a crafted sweep were missing
 - 2026-08-19 (codex): Redesign character-scoped Planner gear sets
 - 2026-08-19 (codex): Add private Skill Issue loot portal
@@ -483,4 +488,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Polish planner vitals and project TLE health
 - 2026-08-16 (codex): Gear Planner: compact outline workspace and TLE stat projection
 - 2026-08-16 (claude): Gear Planner: published to the nav, full-width layout, stat-priority dropdowns, worn set bonuses, cached-lookup refresh
-- 2026-08-16 (claude): Planner: crawl by zone, world drops and set crates; signed-out character lookup

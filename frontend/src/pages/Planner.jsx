@@ -1566,7 +1566,7 @@ function itemColumns({ order, ranked, statLabel, statPct,
     { key: 'level', label: 'Lv', sortValue: (r) => r.level || 0 },
     {
       key: 'tier', label: 'Tier', align: 'l',
-      render: (r) => <span className={rarityClass(r.tier)}>{(r.tier || '').toLowerCase()}</span>,
+      render: (r) => <span className={rarityClass(r.tier)}>{(r.tier || '').toUpperCase()}</span>,
     },
     /* A two-hander reads `Primary/2H`. The wiki files a greatsword and a
        dagger under the same `slot = Primary`, which invites comparing them as
@@ -1633,13 +1633,14 @@ function comparisonCards(row, character, shortlist, focusSlot) {
   ]
 }
 
-function ItemComparison({ cards, characterClass }) {
+function ItemComparison({ cards, characterClass, tradeskillClass }) {
   return (
     <div className="planitemcompare">
       {cards.map(({ label, card }) => (
         <section key={`${label}-${card.name}`}>
           <div className="plancomparelabel">{label}</div>
-          <Examine row={card} characterClass={characterClass} />
+          <Examine row={card} characterClass={characterClass}
+                   tradeskillClass={tradeskillClass} />
         </section>
       ))}
     </div>
@@ -1650,6 +1651,7 @@ function ItemName({ row, character, shortlist, focusSlot }) {
   const label = <span className={rarityClass(row.tier)}>{row.name}</span>
   const cards = comparisonCards(row, character, shortlist, focusSlot)
   const characterClass = character?.character?.class || null
+  const tradeskillClass = character?.character?.ts_class || null
   const width = cards.length * 350 + Math.max(0, cards.length - 1) * 5 + 6
   return (
     <span className="lootitem">
@@ -1660,7 +1662,8 @@ function ItemName({ row, character, shortlist, focusSlot }) {
         )}
       </span>
       <Hover className="examinecard plancomparecard" width={width}
-             card={<ItemComparison cards={cards} characterClass={characterClass} />}>
+             card={<ItemComparison cards={cards} characterClass={characterClass}
+                                   tradeskillClass={tradeskillClass} />}>
         {/* The row equips the item; the NAME still goes to the wiki, so its
             click must not also do the row's job. */}
         <a href={row.card.wiki} target="_blank" rel="noreferrer noopener"

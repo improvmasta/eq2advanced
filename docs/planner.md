@@ -608,10 +608,23 @@ An equipped item's examine window is complete from the same cached record: its
 Census `effect_list` is rendered with the original indentation, and each socket
 at the top shows the actual installed adornment icon rather than a generic gem.
 Adornment stats and proc text fold into the host's normal blocks, as they do in
-game, while set thresholds retain their ladder. The adornment ids still come
-from the character equipment snapshot; Census item rows win, with the existing
-bounded Lexicon item fallback supplying the same fields when Census's item
-collection is down.
+game. Set armor itself shows the compact magenta `Set Name [worn/total]` line;
+the complete threshold ladder remains on the turquoise adornment's own examine.
+Because the source is a concrete equipped slot, `Attuneable, Heirloom` is shown
+in its actual equipped state as `Attuned, No-Trade`; installed adornment flags
+such as `No-Value` join the host's final flag line.
+The adornment ids still come from the character equipment snapshot; Census item
+rows win, with the existing bounded Lexicon item fallback supplying the same
+fields when Census's item collection is down.
+
+Catalog cards translate the wiki's examine fields into the same contract rather
+than showing the template syntax: `desc` sits beneath the item name,
+`{{EquipmentEffect}}` becomes a centered proc name, and the leading stars in
+`effectdesc` become nested effect bullets. Green attributes read across like
+the client; blue modifiers fill down so Crit Chance stays beneath Potency.
+Facts keep their values beside their labels, artisan classes remain distinct
+from adventure-class filtering, and flags close the card after the effects.
+`Requires Expansion` is deliberately omitted.
 
 The projection is explicit arithmetic over cached data:
 
@@ -835,8 +848,8 @@ name cell stops the click**: it is a link to the wiki and still goes there.
 The name, slot, armour, tier, source and **minimum/maximum item level** filters
 are independent of scoring. The name hover uses the full examine shape: item
 level, slot/type, additive stats, effects, socket colors, **class restriction**,
-included set adornment and every known threshold—not merely the small table
-columns.
+and compact set progress—not merely the small table columns. The socket's own
+hover carries every known set threshold.
 
 **The card names who can wear it, and stays quiet when everyone can.** It is
 the one property that rules an item out before any number on it matters, and
@@ -882,7 +895,7 @@ catalog is a crawl either way.
 either opens `ItemCard` — the existing EQ2i-replica examine card, which already
 folds in the companion adornment.
 
-**`ItemCard` is reused unchanged and still does not theme.** It is a replica of
+**`ItemCard` is reused and still does not theme.** It is a replica of
 EQ2's item box; it wears EQ2's colors, not the site's, exactly as it does on the
 Loot tab.
 
@@ -1118,13 +1131,13 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 Catalog tables are reference data and touch no parse or visibility predicate.
 `planner_saved_sets` is the one account-owned Planner table: five bounded JSON
 loadouts per `(user, public character key)`. The key is private organization,
-not character ownership. Current schema is v49, guarded by table shape like
+not character ownership. Current schema is v50, guarded by table shape like
 every other migration in `db.py`; v45 rows migrate under the owner embedded in
 their payload and the original table remains as a recovery copy.
 
 | Table | Holds |
 | --- | --- |
-| `plan_items` | Catalog: census id, name, slot, level, tier, classes, armor type, stats, effect text, `set`, adornment slots, era |
+| `plan_items` | Catalog: census id, name, description, slot, level, tier, adventure/artisan classes, armor type, stats, effect text, `set`, adornment slots, era |
 | `plan_effects` *(planned)* | Classified proc/effect rows keyed to `plan_items`, with the source sentence |
 | `plan_sets` | Adornment sets, their tiers, their pieces |
 | `plan_sources` | item → source (mob / quest / merchant), with kind raid / group / solo / quest |
@@ -1515,7 +1528,7 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
 | The outline read side: selected-item sources and prerequisite walk | `backend/planner/outline.py` |
 | Public catalog/outline/character GETs plus authenticated saved-set GET/PUT | `backend/routers/planner_api.py` |
-| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots per public character (schema v49) | `backend/db.py` |
+| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots per public character (schema v50) | `backend/db.py` |
 | The page: game-grouped concrete slots, named saved sets, Fabled→Mythical epic suggestion, adornment choices, projected stats, gear/set search, and zone-grouped source list | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
 | The monthly sync, including wikq2's offline epic export | `backend/tools/sync_planner.py`, `backend/planner/epic_timelines.py` |
@@ -1604,15 +1617,23 @@ not changed underneath them without asking.
   The cost is that a slot-limited view tops out below 100, which is honest:
   boots really do carry a third of a two-hander's ability mod.
 - **The examine card is built server-side in `items.display`'s shape**
-  (`catalog.card`), so `components/ItemCard.jsx` is reused unchanged. There are
-  now three ways to meet an item and all three open the same window.
+  (`catalog.card`), so `components/ItemCard.jsx` is reused. There are
+  now three ways to meet an item and all three open the same window. Search
+  names use the broker's heavier item-name weight and tier labels are uppercase.
+  Its green stat grid reads across, while its blue modifier columns fill down:
+  **Crit Chance always sits directly beneath Potency** as it does in game.
+- **Set armor and set adornments have different examine views.** The armor
+  card shows only the compact magenta `Set Name [worn/total]` line. Opening the
+  turquoise adornment shows its class, yellow set progress, and the complete
+  threshold ladder. Numeric Census `setbonus_list` fields are preserved, so a
+  stat-only threshold cannot vanish and a proc tier does not lose its stats.
 - **A re-sync RECONCILES its era** — upsert, then delete that era's sources the
   crawl did not produce, then delete items left with no source. A drop removed
   from a mob page has to be able to leave; the other era's rows must not.
 - **`sync_planner.py` deliberately does not set `CENSUS_AUTO_REFRESH=0`** the
   way `sync_wiki.py` does. That switch is `items.network_allowed`, which gates
-  the icon downloads too, and with it set the icon pass silently caches
-  nothing. Nothing in this ingest calls Census.
+  the icon downloads and the bounded Census set-ladder correction pass; with
+  it set both silently do nothing. Request-time Planner reads remain local.
 
 ### Still not built
 

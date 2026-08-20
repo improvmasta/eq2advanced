@@ -322,6 +322,58 @@ def stat_block(row: dict) -> dict | None:
             "flags": sorted(flags), "adornments": adorn, "adornment": adornment}
 
 
+_SET_BONUS_LABELS = {
+    "basemodifier": ("Potency", False),
+    "all": ("Ability Mod", False),
+    "critchance": ("Crit Chance", False),
+    "combatskills": ("Combat Skills", False),
+    "sta": ("Sta", False),
+    "str": ("Str", False),
+    "agi": ("Agi", False),
+    "wis": ("Wis", False),
+    "int": ("Int", False),
+    "mana": ("Power", False),
+    "health": ("Health", False),
+    "itemhpregenppt": ("In-Combat Health Regeneration", False),
+    "combatmanaregen": ("In-Combat Power Regeneration", False),
+    "dps": ("DPS", False),
+    "doubleattackchance": ("Multi Attack Chance", False),
+    "spelltimereusepct": ("Reuse Speed", False),
+    "spelltimecastpct": ("Casting Speed", False),
+    "offensivespeed": ("In Combat Run Speed", False),
+    "attackspeed": ("Haste", False),
+    "armormitigationincrease": ("Mitigation Increase", False),
+    "flurry": ("Flurry", False),
+    "ripostechance": ("Riposte Chance", False),
+    "healreceiveperc": ("Heal Received", True),
+    "strikethrough": ("Strikethrough", False),
+    "abilitydoubleattackchance": ("Doublecast Chance", False),
+    "accuracy": ("Accuracy", False),
+    "blockchance": ("Block Chance", False),
+    "maxhpperc": ("Max Health", True),
+}
+
+
+def set_bonus_stat_lines(bonus: dict) -> list[str]:
+    """One Census set threshold's numeric fields in the client's order.
+
+    `setbonus_list` is the authoritative copy of the set ladder. Its numbers
+    are direct fields rather than ordinary `modifiers`, and dropping those
+    fields is what made equipped adornments show only the proc text and omit
+    the stat-only six-piece tier entirely.
+    """
+    out = []
+    for key, value in bonus.items():
+        spec = _SET_BONUS_LABELS.get(key)
+        if not spec or value in (None, 0):
+            continue
+        label, percent = spec
+        number = float(value)
+        shown = str(int(number)) if number.is_integer() else f"{number:g}"
+        out.append(f"{shown}{'%' if percent else ''} {label}")
+    return out
+
+
 def _adornment(info: dict, bonuses: list[dict]) -> dict | None:
     """The facts that make an adornment an item rather than an empty gear card.
 
@@ -341,6 +393,7 @@ def _adornment(info: dict, bonuses: list[dict]) -> dict | None:
                         if bonus.get(f"descriptiontag_{i}")]
         set_bonuses.append({
             "required": bonus.get("requireditems"),
+            "stat_lines": set_bonus_stat_lines(bonus),
             "effect": bonus.get("effect"),
             "descriptions": descriptions,
         })
@@ -696,9 +749,9 @@ def fetch_wiki(conn: sqlite3.Connection, ids: list[int]) -> int:
 
     # Old set armour now drops with a same-slot turquoise adornment. The wiki
     # supplies the set name and Census supplies the exact companion item under
-    # `<set>: <slot>`, so fold that item's complete bonus block into the gear
-    # card. It remains one popup; the reader never has to know or chase a
-    # second item link.
+    # `<set>: <slot>`, so retain that item's complete bonus block with the gear.
+    # The host examine uses only compact set progress; the socket's own examine
+    # uses this ladder, and the reader never has to chase a second item link.
     client = None
     included = {}
     for r in rows:

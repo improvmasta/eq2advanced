@@ -323,6 +323,23 @@ def zone_source(zone_row: dict, era: str) -> dict:
 LATER_SUBCLASSES = frozenset({"beastlord", "channeler"})
 SUBCLASSES = tuple(c for c in classtree.SUBCLASSES if c not in LATER_SUBCLASSES)
 
+# Tradeskill-only equipment uses the same `classes` field but a different
+# class tree.  Keeping it separate is important: an Artisan earring is not
+# restricted to (or unusable by) one ADVENTURE class, so folding these names
+# into `classes` would make the Planner's adventure-class filter lie.
+TRADESKILL_CLASSES = (
+    "alchemist", "armorer", "carpenter", "jeweler", "provisioner", "sage",
+    "tailor", "weaponsmith", "woodworker",
+)
+_TRADESKILL_TIERS = {
+    "art": TRADESKILL_CLASSES,
+    "artisan": TRADESKILL_CLASSES,
+    "tradeskill": TRADESKILL_CLASSES,
+    "craftsman": ("carpenter", "provisioner", "woodworker"),
+    "outfitter": ("armorer", "tailor", "weaponsmith"),
+    "scholar": ("alchemist", "jeweler", "sage"),
+}
+
 _COMMENT = re.compile(r"<!--.*?-->", re.S)
 
 
@@ -424,6 +441,29 @@ def classes_of(value: str) -> list[str]:
         for m in _PLAIN_LINK.finditer(text):
             found |= classtree.expand(m.group(1))
     return sorted(found - LATER_SUBCLASSES)
+
+
+def tradeskill_classes_of(value: str) -> list[str]:
+    """The same equipment field, restricted to EQ2's artisan class tree.
+
+    `{{AllArtCats}}` is the common form; tier templates and specific class
+    links occur on specialist tools.  This deliberately does not feed the
+    adventure-class filter — it is display/eligibility information of its own.
+    """
+    found: set[str] = set()
+    text = value or ""
+    for match in _ALL_CATS.finditer(text):
+        found.update(_TRADESKILL_TIERS.get(match.group(1).strip().lower(), ()))
+    for match in _SUBCLASS_LINK.finditer(text):
+        name = match.group(1).strip().lower()
+        if name in TRADESKILL_CLASSES:
+            found.add(name)
+    if not found:
+        for match in _PLAIN_LINK.finditer(text):
+            name = match.group(1).strip().lower()
+            if name in TRADESKILL_CLASSES:
+                found.add(name)
+    return sorted(found)
 
 
 # ---------- what it gives you ----------
@@ -756,12 +796,14 @@ def parse_equip(page_title: str, wikitext: str) -> dict | None:
     m = _ITEMLINK.search(text)
     if m:
         census_id = _unsign(int(m.group(1)))
-    # `effectlist` is the proc's NAME and `effectdesc` is what it does. Kept as
-    # written: whether a proc is worth anything is a class question, and a class
-    # question is answered from the game and by a person (docs/planner.md,
-    # layer 2), never by this parser.
+    # `effectlist` is the proc's NAME and `effectdesc` is what it does.  The
+    # former is a wiki TEMPLATE, not display text; keeping it verbatim is what
+    # produced `{{EquipmentEffect|...}}` in the examine window.  The bullets in
+    # the latter retain their stars because those are meaningful indentation
+    # and `effect_lines` translates them into structured depth at read time.
     effects = _field(text, "effectlist")
     effect_desc = _block(text, "effectdesc")
+    classes = _field(text, "classes")
     return {
         "page_title": page_title,
         "name": _field(text, "altname") or gamewiki.log_name(page_title),
@@ -772,12 +814,14 @@ def parse_equip(page_title: str, wikitext: str) -> dict | None:
         "tier": (_field(text, "icat") or "").upper() or None,
         "dtype": _field(text, "dtype") or None,
         "wtype": _field(text, "wtype") or None,
-        "classes": classes_of(_field(text, "classes")),
+        "classes": classes_of(classes),
+        "tradeskill_classes": tradeskill_classes_of(classes),
         "flags": _field(text, "flags") or None,
         "adorns": adorns,
         "set_name": _field(text, "set") or None,
         "stats": stats,
-        "effects": re.sub(r"<br\s*/?>", ", ", effects).strip() or None,
+        "description": _strip_markup(_field(text, "desc")) or None,
+        "effects": ", ".join(effect_names(effects)) or None,
         "effect_desc": _strip_markup(effect_desc) or None,
         "icon": _int(_field(text, "iconnum")),
         # Not a stored column — the crawl reads it to decide where the item
@@ -822,6 +866,53 @@ _MARKUP = re.compile(r"'''''|'''|''|\[\[([^\]|]*\|)?|\]\]|\{\{[^}]*\}\}")
 
 def _strip_markup(text: str) -> str:
     return re.sub(r"[ \t]+", " ", _MARKUP.sub("", text or "")).strip()
+
+
+_EQUIPMENT_EFFECT = re.compile(
+    r"\{\{\s*EquipmentEffect\s*\|([^|}]+)(?:\|([^|}]*))?", re.I)
+_MOUNT_EFFECT = re.compile(
+    r"\{\{\s*Mount\b[^}]*?\beffect\s*=\s*([^|}]+)", re.I)
+
+
+def effect_names(value: str | None) -> list[str]:
+    """An `effectlist` field -> the names the game prints above Effects.
+
+    Existing databases may still contain the raw template, while new crawls
+    store the clean comma list.  Accepting both makes the parser repair visible
+    immediately rather than requiring a destructive catalog refresh first.
+    """
+    text = value or ""
+    templated = [
+        " ".join(part.strip() for part in (m.group(1), m.group(2) or "")
+                 if part.strip())
+        for m in _EQUIPMENT_EFFECT.finditer(text)
+    ]
+    if templated:
+        return templated
+    mount = _MOUNT_EFFECT.search(text)
+    if mount:
+        return [mount.group(1).strip()]
+    # An unknown template is not display text. Fail quiet instead of leaking
+    # braces and pipes into the game-style window; the description remains
+    # available below it and the next recorded shape can earn a named parser.
+    if "{{" in text or "}}" in text:
+        return []
+    return [part.strip() for part in re.split(r",|<br\s*/?>", text, flags=re.I)
+            if part.strip()]
+
+
+def effect_lines(value: str | None) -> list[dict]:
+    """A stored `effectdesc` block -> display text with one-based depth."""
+    out = []
+    for raw in (value or "").splitlines():
+        line = raw.strip().strip("|").strip()
+        if not line:
+            continue
+        depth = len(line) - len(line.lstrip("*"))
+        text = line.lstrip("*").strip()
+        if text:
+            out.append({"depth": max(1, depth), "text": text})
+    return out
 
 
 # ---------- where it comes from ----------

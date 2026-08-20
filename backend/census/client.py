@@ -129,6 +129,26 @@ class CensusClient:
             "item_list")
         return next((r for r in rows if r.get("displayname") == name), None)
 
+    def set_adornment_cards(self, max_level: int) -> list[dict]:
+        """All turquoise set companions through a TLE level cap.
+
+        Set-by-set display-name reads trip Census's burst throttle. The typed
+        turquoise index is only about 1,600 records through level 80, so two
+        paged reads are both faster and kinder to the service.
+        """
+        out = []
+        start = 0
+        while True:
+            rows = self._get(
+                "item/?typeinfo.color=turquoise"
+                f"&itemlevel=%5B{int(max_level)}&c:limit={self.PAGE}"
+                f"&c:start={start}&c:show={self.CARD_SHOW}", "item_list")
+            out += [row for row in rows if row.get("setbonus_list")]
+            if len(rows) < self.PAGE:
+                break
+            start += len(rows)
+        return out
+
 
 _shared: CensusClient | None = None
 

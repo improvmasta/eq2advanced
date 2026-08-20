@@ -27,7 +27,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 49
+SCHEMA_VERSION = 50
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -998,10 +998,12 @@ CREATE TABLE IF NOT EXISTS plan_items (
   dtype TEXT,                             -- armour type (Chain Armor, Cloth Armor)
   wtype TEXT,                             -- weapon type, when it is one
   classes TEXT,                           -- comma list of SUBCLASSES, era-filtered
+  tradeskill_classes TEXT,                -- separate artisan restrictions, era-filtered
   flags TEXT,                             -- lore, no-trade, heirloom…
   adorns_json TEXT,                       -- {"turquoise":1,"white":1} — capacity to HOST
   set_name TEXT,                          -- the adornment set its turquoise belongs to
   stats_json TEXT NOT NULL,               -- {stat key: value}, era-hidden stats dropped
+  description TEXT,                       -- short in-game item description
   effects TEXT,                           -- the proc's NAME (layer 2 — nothing rules on it)
   effect_desc TEXT,
   icon INTEGER,
@@ -1504,6 +1506,16 @@ def init_db() -> None:
                           "loot_bid_participants", "loot_bid_rooms"):
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
         conn.executescript(SCHEMA)
+        # v50: Preserve the two examine-window facts the wiki already gave us
+        # but the catalog used to discard.  Both are nullable so the existing
+        # cache remains readable immediately; the next ordinary Planner sync
+        # fills them without rewriting anything user-owned.
+        plan_item_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(plan_items)")}
+        if plan_item_cols and "description" not in plan_item_cols:
+            conn.execute("ALTER TABLE plan_items ADD COLUMN description TEXT")
+        if plan_item_cols and "tradeskill_classes" not in plan_item_cols:
+            conn.execute("ALTER TABLE plan_items ADD COLUMN tradeskill_classes TEXT")
         legacy_saved = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' "
             "AND name='planner_saved_sets_v45'").fetchone()
