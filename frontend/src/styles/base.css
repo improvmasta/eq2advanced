@@ -6589,16 +6589,20 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 .planstats .upgrade { color: var(--joust); }
 .planstats .downgrade { color: var(--danger); }
 .examinecard.plancomparecard {
-  width: max-content; max-width: calc(100vw - 16px); padding: 3px;
+  width: max-content; max-width: calc(100vw - 16px); padding: 0;
+  background: transparent; border: 0; box-shadow: none;
 }
-.planitemcompare { display: flex; align-items: stretch; gap: 5px; }
-.planitemcompare > section { width: 350px; display: flex; flex-direction: column; }
+.planitemcompare { display: flex; align-items: flex-start; gap: 5px; }
+.planitemcompare > section {
+  width: 350px; padding: 3px;
+  background: linear-gradient(135deg, #d2c18a, #67542b 48%, #c7af6d);
+  border: 1px solid #322b1b; box-shadow: 0 8px 24px #00000088;
+}
 .plancomparelabel {
   padding: 2px 7px 3px; background: #252525; color: #d8cfb4;
   font-family: var(--font-data); font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.08em;
 }
-.planitemcompare .examinewindow { flex: 1 1 auto; }
 /* WORN SETS, UNDER THE WHOLE GEAR + STATS ROW. The page only needs the set,
    concrete gear positions, and count; the complete bonus ladder lives in the
    hover. Compact summaries fill horizontally before consuming another row. */

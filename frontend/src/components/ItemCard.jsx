@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { setBonusPresentation } from '../lib/itemExamine.js'
 
 /* The item card, and the thing it hangs off.
 
@@ -237,12 +238,7 @@ const num = (r, showPercent = true) => `${r.value}${showPercent && r.pct ? '%' :
 
 function SetBonusLadder({ bonuses }) {
   return (bonuses || []).map((bonus, index) => {
-    const stats = (bonus.stat_lines || []).filter(Boolean)
-    const headline = stats.join(', ')
-    const details = [
-      ...(bonus.effect ? [bonus.effect] : []),
-      ...(bonus.descriptions || []),
-    ]
+    const { headline, details } = setBonusPresentation(bonus)
     return (
       <div className="ew-set-bonus" key={`${bonus.required}-${index}`}>
         <div className="ew-set-tierhead">
@@ -318,7 +314,11 @@ function Examine({ row, characterClass = null, tradeskillClass = null }) {
           ...installedSets.map((item) => ({
             name: item.set_name || item.name.replace(/:\s*[^:]+$/, ''),
           })),
-          ...(included ? [{ name: included.name, total: included.total }] : []),
+          // When the included turquoise carries its ladder, the full set block
+          // below names it. Keep this compact fallback only for card sources
+          // that know the set identity but do not have its bonus data.
+          ...(included && !included.set_bonuses?.length
+            ? [{ name: included.name, total: included.total }] : []),
         ]
     const seen = new Set()
     return rows.filter((set) => set?.name && !seen.has(set.name) && seen.add(set.name))
@@ -531,6 +531,13 @@ function Examine({ row, characterClass = null, tradeskillClass = null }) {
             {fx?.set || row.name.replace(/:\s*[^:]+$/, '')}:
           </div>
           <SetBonusLadder bonuses={adorn.set_bonuses} />
+        </div>
+      )}
+
+      {!!included?.set_bonuses?.length && (
+        <div className="ew-set">
+          <div className="ew-set-name">{included.name}:</div>
+          <SetBonusLadder bonuses={included.set_bonuses} />
         </div>
       )}
 

@@ -561,12 +561,23 @@ def sets(conn, *, eras: list[str], order: list[str] | None = None,
             key=lambda x: (-x["score"], x["name"]))
         bonuses = normalize_set_bonuses(
             json.loads(r["bonuses_json"] or "[]"), typed=True)
+        pieces = json.loads(r["pieces_json"] or "[]")
+        # Carrier cards are opened from inside the set view, where the reason
+        # to inspect the armour is the detachable turquoise it contains.  The
+        # ordinary item search enriches this card before serializing it; do the
+        # same here instead of sending an included adornment with an empty
+        # ladder.  Copy the row so a carrier's set context cannot leak into the
+        # generic host cards below.
+        carrier_rows = [
+            {**row, "_set_bonuses": bonuses, "_set_total": len(pieces)}
+            for row in mine
+        ]
         out.append({
             "name": r["name"], "page_title": r["page_title"], "era": r["era"],
             "level": r["level"],
-            "pieces": json.loads(r["pieces_json"] or "[]"),
+            "pieces": pieces,
             "bonuses": bonuses,
-            "carriers": [_piece_out(x) for x in mine],
+            "carriers": [_piece_out(x) for x in carrier_rows],
             "hosts": [_piece_out(x) for x in can_host[:12]],
             "host_count": len(can_host),
             # The best score among the armour that carries a piece. A real

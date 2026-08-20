@@ -613,7 +613,8 @@ Hovering an item name in search shows its candidate examine window beside the
 currently equipped item for that concrete slot and, when different, the active
 planned item already in the slot. This comparison follows the focused slot for
 paired jewelry positions, so a ring search does not silently compare the wrong
-finger.
+finger. The windows top-align but each keeps its natural height; a short
+candidate card does not grow an empty body to match a longer equipped card.
 
 An equipped item's examine window is complete from the same cached record: its
 Census `effect_list` is rendered with the original indentation, and each socket
@@ -860,7 +861,8 @@ The name, slot, armour, tier, source and **minimum/maximum item level** filters
 are independent of scoring. The name hover uses the full examine shape: item
 level, slot/type, additive stats, effects, socket colors, **class restriction**,
 and compact set progress—not merely the small table columns. The socket's own
-hover carries every known set threshold.
+hover carries every known set threshold. A proc-only threshold puts its named
+effect on the threshold line instead of leaving a bare `(N)` above the effect.
 
 **The card names who can wear it, and stays quiet when everyone can.** It is
 the one property that rules an item out before any number on it matters, and
@@ -991,7 +993,8 @@ changed what it was showing while the reader was narrowing it.
 
 Trying a set on and tracking how to acquire it are separate actions. Every
 slot-specific turquoise (`: Head`, `: Feet`, `: Fingers`, etc.) is its own
-trackable carrier-item icon; its full examine card opens on hover/focus, and
+trackable carrier-item icon; its full examine card, including the complete set
+bonus ladder carried by its turquoise, opens on hover/focus, and
 tracking Head never adds all seven armour pieces. The set's
 complete bonus ladder sits above those chips in the opened row and is also
 present when the tracked piece is hovered in the Outline. Stopping source

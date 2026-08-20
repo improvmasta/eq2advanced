@@ -1198,7 +1198,8 @@ def test_the_card_is_items_display_shape_so_ItemCard_is_reused(tmp_path):
     conn.execute(
         "INSERT INTO plan_sets VALUES (?,?,?,?,?,?,?)",
         ("Mist Covered Set", "Mist Covered Set (Adornment Set)", "rok", 80,
-         "[]", json.dumps([{"pieces": 2, "text": "100 Ability Modifier"},
+         json.dumps(["Mist Covered Set: Feet"]),
+         json.dumps([{"pieces": 2, "text": "100 Ability Modifier"},
                             {"pieces": 4, "text": "2 Crit Chance"}]), 1))
     row = catalog.search(conn, eras=["rok"])["items"][0]
     card = row["card"]
@@ -1214,6 +1215,15 @@ def test_the_card_is_items_display_shape_so_ItemCard_is_reused(tmp_path):
     included = card["stats"]["included_adornment"]
     assert included["name"] == "Mist Covered Set" and included["color"] == "turquoise"
     assert [b["required"] for b in included["set_bonuses"]] == [2, 4]
+    # The set catalog serializes the same item through its carrier list.  That
+    # path must carry the ladder too; otherwise hovering a piece inside an open
+    # set row shows the armour examine but omits the reason the piece matters.
+    set_row = next(row for row in catalog.sets(conn, eras=["rok"])["sets"]
+                   if row["name"] == "Mist Covered Set")
+    carrier_card = set_row["carriers"][0]["card"]
+    carrier_adorn = carrier_card["stats"]["included_adornment"]
+    assert carrier_adorn["total"] == 1
+    assert [b["required"] for b in carrier_adorn["set_bonuses"]] == [2, 4]
     # the blue block, in the examine window's own order
     assert [e["name"] for e in card["stats"]["effects"]][:2] == ["Potency", "Crit Chance"]
     assert card["effects"]["set"] == "Mist Covered Set"
