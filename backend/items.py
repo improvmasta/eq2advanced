@@ -347,7 +347,7 @@ _SET_BONUS_LABELS = {
     "ripostechance": ("Riposte Chance", False),
     "healreceiveperc": ("Heal Received", True),
     "strikethrough": ("Strikethrough", False),
-    "abilitydoubleattackchance": ("Doublecast Chance", False),
+    "abilitydoubleattackchance": ("Ability Doublecast", False),
     "accuracy": ("Accuracy", False),
     "blockchance": ("Block Chance", False),
     "maxhpperc": ("Max Health", True),

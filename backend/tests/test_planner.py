@@ -23,6 +23,21 @@ PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
 
 BOOTS = "Mist Covered Boots (Level 80)"
+INSANITYS_RAPTURE = r"""{{EquipInformation|
+ iconnum = 3728|
+ icat = FABLED|
+ sta = +48|
+ int = +48|
+ comskills = +19|
+ crit = 2.6|
+ potency = 3.9|
+ critbonus = 0.9|
+ abdblcast = 2.3|
+ slot = Primary|
+ level = 80|
+ classes = {{SubclassLink|Necromancer|Equipment}}|
+ itemlink = \aITEM 34743695 211607607:Insanity's Rapture\/a|
+}}"""
 
 
 # ---------- layer 1: what the templates say ----------
@@ -54,6 +69,18 @@ def test_a_live_era_stat_is_dropped_the_way_items_py_drops_it():
     row = wiki.parse_equip(BOOTS, PAGES[BOOTS])
     assert "critbonus" in PAGES[BOOTS]          # the page really does carry it
     assert "critbonus" not in row["stats"]
+
+
+def test_insanitys_rapture_keeps_its_tle_ability_doublecast():
+    """The in-game level-80 Fabled examine window is the counterexample to
+    the old assumption that EQ2i's ``abdblcast`` field was live-only."""
+    row = wiki.parse_equip("Insanity's Rapture", INSANITYS_RAPTURE)
+    assert row["stats"]["abdblcast"] == 2.3
+    assert "critbonus" not in row["stats"]
+    row.update(icon=None, slot_label=row["slot"], _set_bonuses=[])
+    effects = catalog.card(row)["stats"]["effects"]
+    assert {line["name"]: line["value"] for line in effects} == {
+        "Potency": 3.9, "Crit Chance": 2.6, "Ability Doublecast": 2.3}
 
 
 def test_the_turquoise_and_the_set_are_read_separately_from_the_stats():
@@ -945,11 +972,11 @@ def test_potency_and_crit_cannot_be_ranked_by(tmp_path):
     assert any(e["name"] == "Potency" for e in out["items"][0]["card"]["stats"]["effects"])
 
 
-def test_the_priority_options_are_the_thirteen_that_separate_items(tmp_path):
+def test_the_priority_options_are_the_fourteen_that_separate_items(tmp_path):
     """Lindsay's list, from the game. Crit Bonus is absent for a third reason
     again — TLE does not have the stat at all."""
     assert wiki.PRIORITY_STATS == (
-        "abmod", "acspeed", "arspeed",
+        "abmod", "acspeed", "arspeed", "abdblcast",
         "aspeed", "dps", "multi", "flurry", "aeauto",
         "bchance", "hategain", "mit", "strike",
         "maxhealth")

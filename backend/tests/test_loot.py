@@ -640,8 +640,10 @@ def test_census_set_thresholds_keep_the_stats_the_game_prints():
     assert items.set_bonus_stat_lines({
         "flurry": 2, "spelltimereusepct": 2,
         "itemhpregenppt": 1, "ripostechance": 5,
+        "abilitydoubleattackchance": 2.3,
     }) == ["2 Flurry", "2 Reuse Speed",
-           "1 In-Combat Health Regeneration", "5 Riposte Chance"]
+           "1 In-Combat Health Regeneration", "5 Riposte Chance",
+           "2.3 Ability Doublecast"]
     # Crit Bonus is a live-era stat Wuoshi does not expose; typed does not mean
     # appropriate for this server.
     assert items.set_bonus_stat_lines({"critbonus": 3}) == []

@@ -34,7 +34,7 @@ const RECENT_CHARACTERS_KEY = 'eq2adv:plan:recent-characters:v1'
 const SAVED_SET_COUNT = 5
 /* THREE CHOICES, EACH DEFAULTING TO ANY. The priority list is still an ORDER
    and still never shows a weight — what changed is only how you say it. A
-   draggable track of thirteen tokens made the reader arrange every stat in the
+   draggable track of fourteen tokens made the reader arrange every stat in the
    game to name two, and the boundary between "ranked" and "the rest" had to be
    set with a separate control ("Score top"); three ordinary dropdowns say the
    same thing and the number of them IS the boundary.

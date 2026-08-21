@@ -234,7 +234,7 @@ available as table columns; they are simply not something to rank by.
 does not have the stat at all, so it is dropped at parse time
 (`ERA_HIDDEN_FIELDS`) and never reaches a card either.
 
-The options are these thirteen, grouped the way a raider already thinks about
+The options are these fourteen, grouped the way a raider already thinks about
 them (`wiki.STAT_GROUPS`). The first group reaches every class, because every
 class casts abilities; the next two are what a melee and a tank are actually
 shopping for. Max Health stands alone — wanted by more than one of them,
@@ -242,10 +242,15 @@ belonging to none.
 
 | Group | Stats |
 | --- | --- |
-| **Abilities** | Ability Mod, Casting Speed, Reuse Speed |
+| **Abilities** | Ability Mod, Casting Speed, Reuse Speed, Ability Doublecast |
 | **Melee** | Haste, DPS, Multi Attack, Flurry, AE Autoattack |
 | **Tanking** | Block Chance, Hate Gain, Mitigation, Strikethrough |
 | **Also** | Max Health |
+
+**Ability Doublecast is a TLE stat, not live-era contamination.** The level-80
+Fabled `Insanity's Rapture` shows `2.3 Ability Doublecast` in game and EQ2i
+stores that exact number in `abdblcast`; its adjacent `0.9 Crit Bonus` remains
+live-only and hidden. The two fields must therefore be decided independently.
 
 The page opens on the first group, because it is the one that applies whatever
 you play. That is a starting point and not a recommendation — an empty order
@@ -787,7 +792,7 @@ The most novel control on the page, and the easiest to get wrong.
 
 **Three dropdowns, numbered 1–3, each defaulting to Any** (Lindsay, 2026-08-16).
 The list is still an ORDER and still shows no weight — what changed is only how
-you say it. The first build was a draggable track carrying all thirteen
+you say it. The first build was a draggable track carrying all fourteen
 rankable stats, with a "Score top 1/2/3" control setting the boundary between
 the ranked left edge and the rest. It made a reader arrange every stat in the
 game in order to name two, and it needed a second control to say where the

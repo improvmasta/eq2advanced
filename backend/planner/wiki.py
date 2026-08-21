@@ -496,6 +496,7 @@ STAT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     # because a tank wanting it wants to know which 11.
     ("hategain", "hategain", "Hate Gain", True),
     ("dblcast", "dblcast", "Doublecast", True),
+    ("abdblcast", "abdblcast", "Ability Doublecast", True),
     ("strike", "strike", "Strikethrough", True),
     ("bchance", "bchance", "Block Chance", True),
     ("maxhealth", "maxhealth", "Max Health", True),
@@ -560,7 +561,7 @@ def expand_primary_attributes(stats: dict[str, float]) -> dict[str, float]:
 # stands alone on purpose — it is wanted by more than one of them and belongs
 # to none.
 STAT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Abilities", ("abmod", "acspeed", "arspeed")),
+    ("Abilities", ("abmod", "acspeed", "arspeed", "abdblcast")),
     ("Melee", ("aspeed", "dps", "multi", "flurry", "aeauto")),
     ("Tanking", ("bchance", "hategain", "mit", "strike")),
     ("Also", ("maxhealth",)),
@@ -577,7 +578,7 @@ OPENING_ORDER = ("abmod", "acspeed", "arspeed")
 # than showing nothing — the same call `items.ERA_HIDDEN` makes for Census
 # records, made again here because this data has its own field names. Crit
 # Bonus is on 90% of RoK item pages and belongs to none of them.
-ERA_HIDDEN_FIELDS = frozenset({"critbonus", "cbovercap", "wdbonus", "abdblcast",
+ERA_HIDDEN_FIELDS = frozenset({"critbonus", "cbovercap", "wdbonus",
                                "flurrymulti", "critfail", "critsuccess",
                                "swaspeed", "swaeauto", "swmulti", "swdbonus"})
 

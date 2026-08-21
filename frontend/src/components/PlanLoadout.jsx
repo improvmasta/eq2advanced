@@ -55,7 +55,7 @@ export function eligiblePlanSlots(item) {
 const STAT_GROUPS = [
   ['Attributes', ['str', 'agi', 'sta', 'int', 'wis']],
   ['Defense', ['mit', 'vselemental', 'vsnoxious', 'vsarcane', 'bchance']],
-  ['Offense', ['crit', 'potency', 'abmod', 'acspeed', 'arspeed']],
+  ['Offense', ['crit', 'potency', 'abmod', 'acspeed', 'arspeed', 'abdblcast']],
   ['Autoattack', ['dps', 'aspeed', 'multi', 'aeauto', 'strike', 'accuracy',
     'flurry']],
 ]
@@ -67,7 +67,7 @@ const FALLBACK_LABEL = {
   bchance: 'Block Chance', crit: 'Crit Chance', potency: 'Potency', abmod: 'Ability Mod',
   dps: 'DPS', aspeed: 'Haste', multi: 'Multi Attack', aeauto: 'AE Autoattack',
   flurry: 'Flurry', strike: 'Strikethrough', accuracy: 'Accuracy',
-  acspeed: 'Casting Speed', arspeed: 'Reuse Speed',
+  acspeed: 'Casting Speed', arspeed: 'Reuse Speed', abdblcast: 'Ability Doublecast',
 }
 
 /* EQ2's stat window shows these as ratings, not percentages. Census metadata

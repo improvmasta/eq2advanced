@@ -91,7 +91,7 @@ def plan_items(
     # the four-stat floor (`catalog.default_match_min`), which is what makes
     # naming three stats show items with two of them rather than everything
     # with one.
-    match_min: int | None = Query(None, ge=0, le=13),
+    match_min: int | None = Query(None, ge=0, le=14),
     limit: int = Query(200, ge=1, le=MAX_LIMIT),
     sample: int | None = Query(None, ge=1, le=50),
 ):

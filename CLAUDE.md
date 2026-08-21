@@ -304,8 +304,9 @@ segmentation)
 - **POTENCY AND CRIT ARE NOT PRIORITY OPTIONS** — 80% and 72% of the catalog, so
   ordering by them orders by nothing; they stay on the card and as columns.
   **Crit Bonus: TLE does not have it** (`ERA_HIDDEN_FIELDS`) — never on a card.
-- **The thirteen that can be ranked, in `wiki.STAT_GROUPS` order** (game knowledge,
-  from Lindsay): Abilities — abmod, casting speed, reuse speed; Melee — haste, dps,
+- **The fourteen that can be ranked, in `wiki.STAT_GROUPS` order** (game knowledge,
+  from Lindsay): Abilities — abmod, casting speed, reuse speed, ability
+  doublecast; Melee — haste, dps,
   multi attack, flurry, AE autoattack; Tanking — block, hate gain, mitigation,
   strikethrough; then max health alone.
 - **Scores normalise against the whole selected-era catalog, not the filtered
@@ -478,6 +479,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-21 (codex): Show Ability Doublecast in Gear Planner
 - 2026-08-20 (codex): Fix Planner set bonus and comparison hovers
 - 2026-08-20 (codex): Polish Gear Planner loadout and catalog UI
 - 2026-08-20 (claude): Count where visitors go and whether they are real (v51)
@@ -497,4 +499,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
 - 2026-08-16 (codex): Complete equipped item examine cards
-- 2026-08-16 (codex): Improve planner adornments and gear planning

@@ -181,13 +181,14 @@ def test_planner_stats_translate_census_items_and_character_totals():
         "all": {"value": 98},
         "basemodifier": {"value": 3.7},
         "spelltimecastpct": {"value": 2.1},
+        "abilitydoubleattackchance": {"value": 2.3},
         "arcane": {"value": 280},
         "strength": {"value": 46},   # Census storage for Primary Attributes
         "stamina": {"value": 46},
         "critbonus": {"value": 9},       # live-only and deliberately absent
     }, "typeinfo": {"maxarmorclass": 42}}
     assert planner_item_stats(item) == {
-        "abmod": 98.0, "potency": 3.7, "acspeed": 2.1,
+        "abmod": 98.0, "potency": 3.7, "acspeed": 2.1, "abdblcast": 2.3,
         "vsarcane": 280.0, "mit": 42.0,
         "str": 46.0, "agi": 46.0, "wis": 46.0, "int": 46.0,
         "sta": 46.0,
@@ -197,6 +198,7 @@ def test_planner_stats_translate_census_items_and_character_totals():
     assert totals["abmod"] == 1442
     assert totals["potency"] == 68.1
     assert totals["crit"] == 53.48
+    assert totals["abdblcast"] == 0
     assert totals["int"] == doc["stats"]["int"]["effective"]
 
 
@@ -569,7 +571,8 @@ def test_a_first_lookup_uses_lexicon_when_census_is_unreachable(client):
             "fetched_at": 1234, "spell_ids": [111, 222],
             "stats": {"health_max": 9000, "power_max": 8000,
                       "int_eff": 777, "potency": 44.5,
-                      "ability_mod": 321, "casting_speed": 25},
+                      "ability_mod": 321, "casting_speed": 25,
+                      "ability_doublecast": 2.3},
             "equipment": [
                 {"slot": "Finger", "name": "First Ring", "item_id": "7001",
                  "tier": "FABLED", "icon_id": "10", "adorn_slots": []},
@@ -599,6 +602,7 @@ def test_a_first_lookup_uses_lexicon_when_census_is_unreachable(client):
     assert out["character"]["last_census_ts"] is None
     assert out["character"]["class"] == "Illusionist"
     assert out["planner_stats"]["potency"] == 44.5
+    assert out["planner_stats"]["abdblcast"] == 2.3
     assert [row["key"] for row in out["gear"]] == ["left_ring", "right_ring"]
     assert [row["item_id"] for row in out["gear"]] == [7001, 7002]
 

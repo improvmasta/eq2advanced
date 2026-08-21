@@ -40,7 +40,8 @@ DECAY = 0.6
 _SET_STAT_LABELS = {
     "potency": "potency", "crit chance": "crit",
     "ability modifier": "abmod", "ability mod": "abmod", "all": "abmod",
-    "casting speed": "acspeed", "flurry": "flurry",
+    "casting speed": "acspeed", "ability doublecast": "abdblcast",
+    "flurry": "flurry",
     "wis": "wis", "sta": "sta",
     "in-combat health regeneration": "hregen",
     "health": "health", "power": "power",
@@ -382,8 +383,8 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
 # cards agree. It is one of the two numbers a raider compares items on and is
 # still not what the window leads with.
 _BLUE = ("potency", "crit", "multi", "dps", "aspeed", "acspeed",
-         "arspeed", "flurry", "aeauto", "dblcast", "strike", "bchance",
-         "maxhealth", "mitinc", "accuracy", "abmod")
+         "arspeed", "flurry", "aeauto", "dblcast", "abdblcast", "strike",
+         "bchance", "maxhealth", "mitinc", "accuracy", "abmod")
 
 # The green block is read ACROSS the game's two columns: attributes first,
 # then resistances, then skills/defences.  Together with the grid in
