@@ -293,16 +293,26 @@ segmentation)
 
 *Ranking*
 
-- **The priority list is an ORDER, not numbers, and no weight is ever shown** —
-  three dropdowns numbered 1-3, defaulting to Any. No sliders, no cap math, no set
-  optimizer. `required` is a server parameter with no control on the page.
+- **The Equipment priority list is an ORDER, not numbers, and no weight is ever
+  shown** — three dropdowns numbered 1-3, defaulting to Any. No sliders or cap
+  math; its `required` parameter has no control. **Quick Equip is separate**:
+  lexicographic whole-loadout base-stat targets, up to five priorities with
+  coarse rounded sliders bracketing feasible filtered min/max totals and inline
+  per-item Required checks, and no
+  proc/adornment/set-bonus valuation. A target is reader intent, not a game cap;
+  surplus above it stops outranking the next priority. `Require Crit Chance` is
+  also a separate, default-off rule in the left Stat priorities gutter and
+  survives removing Crit from the priority order. Maximum Gear Level descends
+  from the live catalog cap and has an adjacent `Max Lvl` reset action.
 - **The rows carrying ALL your stats lead the table**, then partial ones in score
   order — a TIER, not a filter, sorted on the SERVER.
 - **EQ2 GEAR IS FOUR-STAT, so ranking N stats shows items with min(2, N) of them**
   (`FOUR_STAT_FLOOR`), counted over the stats that RANK and answered back so the
   page says "2 of 3". **Not the same control as `required`**; both apply.
-- **POTENCY AND CRIT ARE NOT PRIORITY OPTIONS** — 80% and 72% of the catalog, so
-  ordering by them orders by nothing; they stay on the card and as columns.
+- **POTENCY AND CRIT ARE NOT EQUIPMENT-SEARCH PRIORITY OPTIONS** — 80% and 72%
+  of the catalog, so ordering individual rows by them orders by nothing; they
+  stay on the card and as columns. Quick Equip may total/require both across a
+  complete loadout.
   **Crit Bonus: TLE does not have it** (`ERA_HIDDEN_FIELDS`) — never on a card.
 - **The fourteen that can be ranked, in `wiki.STAT_GROUPS` order** (game knowledge,
   from Lindsay): Abilities — abmod, casting speed, reuse speed, ability
@@ -326,6 +336,15 @@ segmentation)
 - **`/plan` HAS NO PERMANENT RAIL** — expansion toggles live in the item-search
   header, class is a FACET, and the right Outline is contextual: closed for an
   empty plan, opens on a pick, collapsible.
+- **Equipment / Set Adorns / Quick Equip are compact PRIMARY TOP TABS** on the
+  search block, content-width rather than stretched across it; the active tab
+  is raised and gold. Quick Equip inherits editable character class/level, filters allowed
+  sources and wearable armor weights, lists maximum gear level downward from
+  the selected catalog cap, compares 2H against Primary+Secondary,
+  scales stat targets to achievable filtered full-loadout minima/maxima, offers
+  three duplicate-free choices per slot, and copies gear-only results to a new
+  or explicitly overwritten character-scoped Gear Set without replacing unsaved
+  working gear.
 - **An empty item table says WHICH CONTROL emptied it** (`before_priorities`) and
   that the catalog is a crawl. Loading a character must NOT set the class filter.
 - **Clicking an item's ROW puts it in the window**; the name cell stops the click
@@ -443,8 +462,9 @@ One line per area; the detail is in the `docs/` file named beside it.
 - **The Gear Planner** `/plan` — what to chase in an expansion: pick the expansions,
   declare the stats you are pushing as an ORDER, read a ranked era-filtered catalog
   of every drop, quest reward and crafted piece with where it comes from, plus set
-  adornments on their own axis. Load a Census character and the window projects a
-  swap, keeps five named builds, and leads Primary through the class epic.
+  adornments on their own axis, or generate a filtered whole-loadout Quick Equip
+  draft. Load a Census character and the window projects a swap, keeps five named
+  builds, and leads Primary through the class epic.
 - **Coach and Census** (`docs/coach.md`) — intact behind `coach_api` and the hidden
   Insights tab.
 
@@ -479,6 +499,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-21 (codex): Add targeted Quick Equip loadout builder
 - 2026-08-21 (codex): Show Ability Doublecast in Gear Planner
 - 2026-08-20 (codex): Fix Planner set bonus and comparison hovers
 - 2026-08-20 (codex): Polish Gear Planner loadout and catalog UI
@@ -498,4 +519,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
-- 2026-08-16 (codex): Complete equipped item examine cards

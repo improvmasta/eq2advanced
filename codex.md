@@ -6,6 +6,7 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 
 ## Ship log
 
+- 2026-08-21 (codex): Add targeted Quick Equip loadout builder
 - 2026-08-21 (codex): Show Ability Doublecast in Gear Planner
 - 2026-08-20 (codex): Fix Planner set bonus and comparison hovers
 - 2026-08-20 (codex): Polish Gear Planner loadout and catalog UI
@@ -25,4 +26,3 @@ All context lives in `CLAUDE.md` — read that file; it applies to Codex verbati
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
 - 2026-08-16 (codex): Complete Planner gear sets, epics, and route list
-- 2026-08-16 (codex): Complete equipped item examine cards

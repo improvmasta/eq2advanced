@@ -13,7 +13,7 @@ import { api } from '../lib/api.js'
 import { inheritSlotAdornments, itemSockets, setFitsHost,
   setPieceForSlot } from '../lib/planAdornments.js'
 import { defaultSavedSetName, hasPlannedEquipment, savedSetInUse,
-  savedSetPayloadEqual, savedSetSnapshot } from '../lib/planSavedSets.js'
+  firstAvailableSavedSet, savedSetPayloadEqual, savedSetSnapshot } from '../lib/planSavedSets.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
 /* The Planner — what to chase in an expansion. See docs/planner.md.
@@ -44,6 +44,7 @@ const SAVED_SET_COUNT = 5
    them too, so a hand-built URL cannot put them back (`catalog.weights`). They
    remain on the examine card and are available as table columns. */
 const PRIORITY_SLOTS = 3
+const QUICK_PRIORITY_SLOTS = 5
 const ERA_DISPLAY_ORDER = ['eof', 'rok']
 const DISCOVERY_SAMPLE_SIZE = 15
 
@@ -53,13 +54,13 @@ const DISCOVERY_SAMPLE_SIZE = 15
    and none of it was reachable by inverting named monsters. */
 const KIND_LABEL = {
   raid: 'Raid', group: 'Group', solo: 'Solo', quest: 'Quest',
-  zone: 'World drop', unknown: 'Unknown',
+  crafted: 'Crafted', zone: 'World drop', unknown: 'Unknown',
 }
 /* Source is the one facet where a reader routinely wants TWO answers — "group
    or raid", "quest or solo" — and a single-choice dropdown made that two
    searches. Checkboxes say it in one, and they show the whole list without
    being opened, which four short words can afford. */
-const KIND_ORDER = ['raid', 'group', 'solo', 'quest', 'zone', 'unknown']
+const KIND_ORDER = ['raid', 'group', 'solo', 'quest', 'crafted', 'zone', 'unknown']
 const LEVEL_OPTIONS = [{ value: '', label: 'Any' }, ...Array.from({ length: 200 }, (_, i) => ({
   value: String(i + 1), label: String(i + 1),
 }))]
@@ -78,6 +79,12 @@ const SET_STAT_FALLBACK = { health: 'Health', power: 'Power' }
 const precise = (value) => Number(value).toLocaleString(undefined, {
   maximumFractionDigits: 2,
 })
+const targetFloor = (range) => Number(range?.slider_min ?? range?.min ?? 0)
+const targetCeiling = (range) => Number(range?.slider_max ?? range?.max ?? 0)
+const snapTarget = (value, floor, step) => {
+  const snapped = floor + Math.round((value - floor) / step) * step
+  return Number(snapped.toFixed(4))
+}
 
 const emptyShortlist = () => ({
   owner: null, items: [], sets: [], active: {}, set_slots: {}, adorn_slots: {},
@@ -281,6 +288,19 @@ export default function Planner({ user }) {
   const [q, setQ] = useState('')
   const [setSearch, setSetSearch] = useState('')
   const [showAllSets, setShowAllSets] = useState(true)
+  const [quickClass, setQuickClass] = useState('')
+  const [quickMaxLevel, setQuickMaxLevel] = useState('')
+  const [quickOrder, setQuickOrder] = useState([])
+  const [quickRequired, setQuickRequired] = useState([])
+  const [quickKinds, setQuickKinds] = useState([])
+  const [quickArmor, setQuickArmor] = useState([])
+  const [quickRanges, setQuickRanges] = useState(null)
+  const [quickRangesBusy, setQuickRangesBusy] = useState(false)
+  const [quickRangeErr, setQuickRangeErr] = useState('')
+  const [quickTargets, setQuickTargets] = useState({})
+  const [quickResult, setQuickResult] = useState(null)
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickErr, setQuickErr] = useState('')
   useEffect(() => {
     if (typed === q) return undefined
     const t = setTimeout(() => setQ(typed), 250)
@@ -454,6 +474,105 @@ export default function Planner({ user }) {
 
   const planningCharacter = lookedUp || character
   const planningOwner = useMemo(() => ownerOf(planningCharacter), [planningCharacter])
+  const quickMeta = meta?.quick_equip
+  const quickWearableArmor = quickMeta?.class_armor?.[quickClass] || []
+  const quickLevelOptions = useMemo(() => {
+    const maximum = Math.max(1, Math.min(200, Number(meta?.level_max) || 80))
+    return Array.from({ length: maximum }, (_, index) => {
+      const level = String(maximum - index)
+      return { value: level, label: level }
+    })
+  }, [meta?.level_max])
+
+  /* Quick Equip starts from the public character facts but keeps them as
+     ordinary controls. Changing the class or level here never rewrites the
+     character snapshot or the Equipment catalog filters. */
+  useEffect(() => {
+    const current = planningCharacter?.character
+    if (!current?.class || !current?.level) return
+    setQuickClass(String(current.class).toLowerCase())
+    setQuickMaxLevel(String(current.level))
+  }, [planningOwner?.key])
+
+  useEffect(() => {
+    if (!quickClass || !quickMeta) return
+    const allowed = quickMeta.class_armor?.[quickClass] || []
+    setQuickArmor((current) => {
+      const retained = current.filter((name) => allowed.includes(name))
+      return retained.length ? retained : [...allowed]
+    })
+  }, [quickClass, quickMeta])
+
+  useEffect(() => {
+    if (!quickKinds.length && quickMeta?.source_kinds?.length) {
+      setQuickKinds([...quickMeta.source_kinds])
+    }
+    if (!quickMaxLevel && meta?.level_max) setQuickMaxLevel(String(meta.level_max))
+  }, [quickMeta, meta?.level_max])
+
+  useEffect(() => {
+    if (mode === 'quick' && !quickOrder.length && order.length) {
+      setQuickOrder(order.slice(0, QUICK_PRIORITY_SLOTS))
+    }
+  }, [mode])
+
+  useEffect(() => {
+    setQuickResult(null)
+    setQuickErr('')
+  }, [erasParam, quickClass, quickMaxLevel, quickOrder, quickRequired,
+    quickKinds, quickArmor, quickTargets])
+
+  /* A target's scale belongs to the complete filtered loadout, not to a
+     generic stat dictionary. Recalculate it when any eligibility control
+     changes, debounce rapid picker work, and discard responses for criteria
+     the reader has already left. */
+  useEffect(() => {
+    if (mode !== 'quick') {
+      setQuickRangesBusy(false)
+      return undefined
+    }
+    const previousRanges = quickRanges?.ranges || {}
+    setQuickRanges(null)
+    setQuickRangeErr('')
+    if (!quickClass || !quickMaxLevel || !quickOrder.length) {
+      setQuickRangesBusy(false)
+      return undefined
+    }
+    let stale = false
+    setQuickRangesBusy(true)
+    const timer = setTimeout(() => {
+      api.planQuickEquipRanges({
+        eras, class: quickClass, max_level: Number(quickMaxLevel),
+        order: quickOrder, required: quickRequired,
+        kinds: quickKinds, armor: quickArmor,
+      }).then((next) => {
+        if (stale) return
+        setQuickRanges(next)
+        setQuickTargets((current) => Object.fromEntries(quickOrder.map((key) => {
+          const bounds = next.ranges?.[key]
+          if (!bounds) return [key, current[key] ?? 0]
+          const previous = previousRanges[key]
+          const lower = targetFloor(bounds)
+          const upper = targetCeiling(bounds)
+          if (current[key] == null || !previous) return [key, upper]
+          const previousLower = targetFloor(previous)
+          const previousUpper = targetCeiling(previous)
+          const ratio = previousUpper === previousLower ? 1
+            : (current[key] - previousLower) / (previousUpper - previousLower)
+          const scaled = lower + Math.max(0, Math.min(1, ratio)) * (upper - lower)
+          const value = snapTarget(scaled, lower, Number(bounds.step) || 1)
+          return [key, Math.max(lower, Math.min(upper, value))]
+        })))
+      }).catch((error) => {
+        if (!stale) setQuickRangeErr(error.message)
+      }).finally(() => {
+        if (!stale) setQuickRangesBusy(false)
+      })
+    }, 220)
+    return () => { stale = true; clearTimeout(timer) }
+  }, [mode, erasParam, quickClass, quickMaxLevel, quickOrder, quickRequired,
+    quickKinds, quickArmor])
+
   const currentSetPayload = useMemo(
     () => savedSetSnapshot(shortlist, planningCharacter?.gear || []),
     [shortlist, planningCharacter])
@@ -643,6 +762,26 @@ export default function Planner({ user }) {
     return true
   }, [planningOwner, savedSets])
 
+  const copyQuickToSavedSet = useCallback((slotNumber, name, items) => {
+    if (!planningOwner) return Promise.resolve(null)
+    const quickShortlist = {
+      owner: planningOwner,
+      items: items.map((item) => ({ ...item })),
+      sets: [],
+      active: Object.fromEntries(items.map((item) => [item.equip_slot, item.page_title])),
+      set_slots: {},
+      adorn_slots: {},
+    }
+    /* Quick Equip makes no adornment decisions. Store exactly the generated
+       gear and leave both socket maps empty; loading the set can inherit or
+       edit adornments through the normal equipment window later. */
+    const payload = { version: 2, shortlist: quickShortlist }
+    /* Copying writes the named destination but does not replace the working
+       loadout. Existing unsaved planning work stays on screen; the generated
+       set can be loaded from the stable Gear Sets control when wanted. */
+    return writeSavedSet(slotNumber, name, payload, 'Copied')
+  }, [planningOwner, writeSavedSet])
+
   const adornmentClass = planningCharacter?.character?.class?.toLowerCase() || ''
   useEffect(() => {
     if (!adornmentClass) { setEpicItems([]); return undefined }
@@ -699,6 +838,7 @@ export default function Planner({ user }) {
   }, [erasParam])
 
   const query = useMemo(() => {
+    if (mode === 'quick') return ''
     const p = new URLSearchParams({
       eras: csv(eras), order: csv(order),
     })
@@ -724,15 +864,15 @@ export default function Planner({ user }) {
     return p.toString()
   }, [erasParam, order, cls, slot, tier, kindParam, armor,
     levelMin, levelMax, q, carries, proc, mode, adornmentClass])
-  const catalogKey = `${mode}:${query}`
-  const exactData = catalogResults[catalogKey] || null
+  const catalogKey = mode === 'quick' ? null : `${mode}:${query}`
+  const exactData = catalogKey ? catalogResults[catalogKey] || null : null
   /* A query must not replace a full results table with one line of loading
      copy. Retain the last result for each catalog task until its exact
      replacement arrives; mode separation prevents item rows ever standing in
      for set rows (or vice versa). */
   const retainedCatalog = useRef({ items: null, sets: null })
   if (exactData) retainedCatalog.current[mode] = exactData
-  const data = exactData || retainedCatalog.current[mode]
+  const data = mode === 'quick' ? null : exactData || retainedCatalog.current[mode]
   const catalogUpdating = !exactData && !!data && !err
 
   /* Page titles can contain commas, so shortlist entries are repeated query
@@ -748,6 +888,7 @@ export default function Planner({ user }) {
   }, [erasParam, shortlist, planningOwner?.className])
 
   useEffect(() => {
+    if (mode === 'quick' || !catalogKey) return undefined
     setErr(null)
     if (catalogResults[catalogKey]) return undefined
     const call = mode === 'sets' ? api.planSets : api.planItems
@@ -1000,6 +1141,69 @@ export default function Planner({ user }) {
     }
   }, [planningCharacter, setCls, setLevelMin, setLevelMax])
 
+  const setQuickPriority = useCallback((at, key) => {
+    const next = [...quickOrder]
+    next[at] = key || ''
+    const compact = next.filter((candidate, index) => (
+      candidate && next.indexOf(candidate) === index
+    )).slice(0, QUICK_PRIORITY_SLOTS)
+    setQuickOrder(compact)
+    // Crit has its own independent rule below the ordering controls. Removing
+    // Crit from the priority list must not silently turn that rule off.
+    setQuickRequired((required) => required.filter(
+      (stat) => stat === 'crit' || compact.includes(stat)))
+    setQuickTargets((targets) => Object.fromEntries(
+      Object.entries(targets).filter(([stat]) => compact.includes(stat))))
+  }, [quickOrder])
+
+  const toggleQuickRequired = useCallback((key) => {
+    if (!key) return
+    setQuickRequired((required) => required.includes(key)
+      ? required.filter((stat) => stat !== key) : [...required, key])
+  }, [])
+
+  const toggleQuickKind = useCallback((key) => {
+    setQuickKinds((current) => {
+      const next = current.includes(key)
+        ? current.filter((kind) => kind !== key) : [...current, key]
+      return next.length ? next : current
+    })
+  }, [])
+
+  const toggleQuickArmor = useCallback((name) => {
+    setQuickArmor((current) => {
+      const next = current.includes(name)
+        ? current.filter((armorName) => armorName !== name) : [...current, name]
+      return next.length ? next : current
+    })
+  }, [])
+
+  const useCurrentQuickCharacter = useCallback(() => {
+    const current = planningCharacter?.character
+    if (!current) return
+    setQuickClass(String(current.class || '').toLowerCase())
+    setQuickMaxLevel(String(current.level || ''))
+  }, [planningCharacter])
+
+  const runQuickEquip = useCallback(() => {
+    if (!quickClass) { setQuickErr('Choose a class.'); return }
+    if (!quickMaxLevel) { setQuickErr('Choose a maximum gear level.'); return }
+    if (!quickOrder.length) { setQuickErr('Choose at least one stat priority.'); return }
+    if (!quickRanges || quickOrder.some((key) => quickTargets[key] == null)) {
+      setQuickErr('Wait for the achievable target ranges.'); return
+    }
+    setQuickBusy(true)
+    setQuickErr('')
+    api.planQuickEquip({
+      eras, class: quickClass, max_level: Number(quickMaxLevel),
+      order: quickOrder, required: quickRequired,
+      kinds: quickKinds, armor: quickArmor, targets: quickTargets,
+    }).then(setQuickResult)
+      .catch((error) => setQuickErr(error.message))
+      .finally(() => setQuickBusy(false))
+  }, [erasParam, quickClass, quickMaxLevel, quickOrder, quickRequired,
+    quickKinds, quickArmor, quickRanges, quickTargets])
+
   /* How many of the listed stats actually RANK. The server drops potency and
      crit whatever the URL says, so this is its count and not the raw order's
      length — "2 of 3" has to mean the same three the scorer used. */
@@ -1019,13 +1223,20 @@ export default function Planner({ user }) {
       value: stat.key, label: stat.label, group: group.label,
     }))),
   ], [meta])
+  const quickPriorityOptions = useMemo(() => [
+    { value: '', label: 'Any' },
+    ...(quickMeta?.groups || []).flatMap((group) => group.stats.map((stat) => ({
+      value: stat.key, label: stat.label, group: group.label,
+    }))),
+  ], [quickMeta])
 
   const emptyEras = meta && meta.eras
     .filter((e) => eras.includes(e.key) && !e.items).map((e) => e.label)
   const filterCount = mode === 'sets'
     ? [setSearch.trim(), !showAllSets].filter(Boolean).length
-    : [...order, cls, slot, armor, tier, kindParam, levelMin, levelMax,
-      carries, proc, typed.trim()].filter(Boolean).length
+    : mode === 'quick' ? 0
+      : [...order, cls, slot, armor, tier, kindParam, levelMin, levelMax,
+        carries, proc, typed.trim()].filter(Boolean).length
   /* The catalog head is its live scope, not a promise that every result is an
      upgrade. Only active facets appear, in the same game-language the controls
      use; the untouched catalog needs one quiet, honest name. */
@@ -1035,6 +1246,15 @@ export default function Planner({ user }) {
       if (!showAllSets) scope.push('Fits my gear')
       if (setSearch.trim()) scope.push(`“${setSearch.trim()}”`)
       return scope.length ? scope : ['All Set Adornments']
+    }
+    if (mode === 'quick') {
+      const scope = []
+      if (quickClass) scope.push(quickClass[0].toUpperCase() + quickClass.slice(1))
+      if (quickMaxLevel) scope.push(`Level ≤${quickMaxLevel}`)
+      if (quickArmor.length && quickArmor.length < quickWearableArmor.length) {
+        scope.push(quickArmor.join(' / '))
+      }
+      return scope.length ? scope : ['Build a complete loadout']
     }
     const scope = []
     if (slot) scope.push(slot)
@@ -1050,7 +1270,8 @@ export default function Planner({ user }) {
     if (typed.trim()) scope.push(`“${typed.trim()}”`)
     if (order.length) scope.push(`Priority: ${order.map(priorityLabel).join(' › ')}`)
     return scope.length ? scope : ['All equipment']
-  }, [mode, setSearch, showAllSets, slot, cls, armor, tier, meta, levelMin, levelMax,
+  }, [mode, setSearch, showAllSets, quickClass, quickMaxLevel, quickArmor,
+    quickWearableArmor, slot, cls, armor, tier, meta, levelMin, levelMax,
     kinds, carries, proc, typed, order, priorityLabel])
   const visibleSets = useMemo(() => {
     const needle = setSearch.trim().toLowerCase()
@@ -1167,9 +1388,31 @@ export default function Planner({ user }) {
             statLabel={statLabel} statPct={statPct} />
 
         <div className="card planbar">
+          {/* These are the Planner's three primary jobs, so they lead the
+              search block as a compact tab set instead of reading like a
+              small filter beneath the catalog title. */}
+          <div className="planmodes" role="tablist" aria-label="Gear Planner feature">
+            <span className="planmodetabs" role="presentation">
+              <button className={mode === 'items' ? 'on' : ''} role="tab"
+                      aria-selected={mode === 'items'} onClick={() => setMode('items')}>
+                Equipment
+              </button>
+              <button className={mode === 'sets' ? 'on' : ''} role="tab"
+                      aria-selected={mode === 'sets'} onClick={() => setMode('sets')}>
+                Set Adorns
+              </button>
+              <button className={mode === 'quick' ? 'on' : ''} role="tab"
+                      aria-selected={mode === 'quick'} onClick={() => setMode('quick')}>
+                Quick Equip
+              </button>
+            </span>
+          </div>
+
           <div className="plansearchhead">
             <div className="plansearchtitle">
-              <span className="seclabel">Gear catalog</span>
+              <span className="seclabel">{mode === 'quick'
+                ? 'Whole-loadout builder'
+                : mode === 'sets' ? 'Set adornment catalog' : 'Equipment catalog'}</span>
               <strong className="plansearchscope" aria-label="Current catalog filters">
                 {catalogScope.map((part, index) => (
                   <span key={`${part}:${index}`} title={part}>{part}</span>
@@ -1181,23 +1424,6 @@ export default function Planner({ user }) {
                 among several — it is what the catalog IS, and both the item
                 view and the set view are drawn from it. */}
             <EraFacet meta={meta} eras={eras} onToggle={toggleEra} />
-          </div>
-
-          {/* These are two catalog tasks, not a tiny filter at the far edge of
-              the expansion controls. The full-width choice names what each
-              surface lets the reader do before its controls/results appear. */}
-          <div className="planmodes" role="tablist" aria-label="Catalog view">
-            <span>Search for</span>
-            <span className="planmodetabs" role="presentation">
-              <button className={mode !== 'sets' ? 'on' : ''} role="tab"
-                      aria-selected={mode !== 'sets'} onClick={() => setMode('items')}>
-                Equipment
-              </button>
-              <button className={mode === 'sets' ? 'on' : ''} role="tab"
-                      aria-selected={mode === 'sets'} onClick={() => setMode('sets')}>
-                Set Adornments
-              </button>
-            </span>
           </div>
 
           {mode === 'items' && (
@@ -1358,11 +1584,120 @@ export default function Planner({ user }) {
               </div>
             </>
           )}
+          {mode === 'quick' && (
+            <>
+              <div className="planbands quickequipbands">
+                <span className="planbandlabel filterbandlabel">
+                  <span>Build for</span>
+                  <button type="button" className="currentfilter"
+                          disabled={!planningCharacter?.character}
+                          title="Restore this character's class and level"
+                          onClick={useCurrentQuickCharacter}>Current Character</button>
+                </span>
+                <div className="planbandrow quickidentityrow">
+                  <Facet name="Class" value={quickClass} onChange={setQuickClass}
+                         options={meta?.classes}
+                         format={(name) => name[0].toUpperCase() + name.slice(1)} />
+                  <span className={`planfacet quicklevelfacet${quickMaxLevel ? ' selected' : ''}`}>
+                    <span className="facetlab">Maximum Gear Level</span>
+                    <span className="quicklevelcontrol">
+                      <Picker value={quickMaxLevel || ''} options={quickLevelOptions}
+                              label="Maximum gear level" placeholder="Choose"
+                              filterFrom={8} filterHint="Maximum level…"
+                              onChange={setQuickMaxLevel} />
+                      <button type="button" className="currentfilter"
+                              aria-pressed={String(quickMaxLevel) === String(meta?.level_max)}
+                              disabled={!meta?.level_max}
+                              title={`Use catalog maximum level${meta?.level_max ? ` ${meta.level_max}` : ''}`}
+                              onClick={() => setQuickMaxLevel(String(meta.level_max))}>
+                        Max Lvl
+                      </button>
+                    </span>
+                  </span>
+                </div>
+
+                <span className="planbandlabel prioritybandlabel">
+                  <span>Stat priorities</span>
+                  <small>Targeted order · up to {quickMeta?.max_priorities || QUICK_PRIORITY_SLOTS}</small>
+                  <label className={`quickcritrule${quickRequired.includes('crit') ? ' on' : ''}`}>
+                    <input type="checkbox" checked={quickRequired.includes('crit')}
+                           onChange={() => toggleQuickRequired('crit')} />
+                    <span>Require Crit Chance</span>
+                  </label>
+                </span>
+                <div className="planbandrow quickpriorityrow">
+                  {Array.from({ length: quickMeta?.max_priorities || QUICK_PRIORITY_SLOTS }, (_, i) => {
+                    const stat = quickOrder[i] || ''
+                    return (
+                      <span key={i} className={`quickprioritypick${stat ? ' on' : ''}`}>
+                        <span className="quickprioritytop">
+                          <span className={`prioritypick${stat ? ' on' : ''}`}>
+                            <i aria-hidden="true">{i + 1}</i>
+                            <Picker value={stat} options={quickPriorityOptions}
+                                    label={`Quick Equip priority ${i + 1}`} placeholder="Any"
+                                    filterFrom={10}
+                                    onChange={(value) => setQuickPriority(i, value)} />
+                          </span>
+                          {stat === 'crit' ? (
+                            <span className={`quickrequired quickrequiredlinked${quickRequired.includes('crit') ? ' on' : ''}`}>
+                              Crit ↙
+                            </span>
+                          ) : (
+                            <label className={`quickrequired${quickRequired.includes(stat) ? ' on' : ''}`}>
+                              <input type="checkbox" disabled={!stat}
+                                     checked={!!stat && quickRequired.includes(stat)}
+                                     onChange={() => toggleQuickRequired(stat)} />
+                              Req.
+                            </label>
+                          )}
+                        </span>
+                        <QuickTarget stat={stat} range={quickRanges?.ranges?.[stat]}
+                                     value={quickTargets[stat]} busy={quickRangesBusy}
+                                     pct={!!statPct[stat]}
+                                     onChange={(value) => setQuickTargets((current) => ({
+                                       ...current, [stat]: value,
+                                     }))} />
+                      </span>
+                    )
+                  })}
+                </div>
+
+                <span className="planbandlabel prioritybandlabel">
+                  <span>Armor</span>
+                  <small>Only weights you want considered</small>
+                </span>
+                <QuickChecks values={quickArmor} options={quickWearableArmor}
+                             label="Allowed armor types" onToggle={toggleQuickArmor}
+                             format={(name) => name} />
+
+                <span className="planbandlabel prioritybandlabel">
+                  <span>Sources</span>
+                  <small>Uncheck Raid to exclude raid gear</small>
+                </span>
+                <QuickChecks values={quickKinds} options={quickMeta?.source_kinds || []}
+                             label="Allowed gear sources" onToggle={toggleQuickKind}
+                             format={(kind) => KIND_LABEL[kind] || kind} />
+              </div>
+              <div className="plansearchfooter quickequipfooter" aria-live="polite">
+                <span>{quickErr || quickRangeErr
+                  ? <b className="quickequiperror">{quickErr || quickRangeErr}</b>
+                  : quickRangesBusy
+                    ? 'Calculating achievable full-loadout ranges…'
+                    : 'Each priority is valued to its target, then the next priority takes over.'}</span>
+                <button type="button" className="chip on quickequiprun"
+                        disabled={quickBusy || quickRangesBusy || !quickRanges
+                          || !quickClass || !quickMaxLevel || !quickOrder.length}
+                        onClick={runQuickEquip}>
+                  {quickBusy ? 'Building…' : quickResult ? 'Build Again' : 'Build Loadout'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {planNotice && <p className="err" role="status">{planNotice}</p>}
 
-        {err && <p className="err">{err}</p>}
+        {mode !== 'quick' && err && <p className="err">{err}</p>}
         {!!emptyEras?.length && (
           <p className="muted">
             {emptyEras.join(' and ')} {emptyEras.length > 1 ? 'have' : 'has'} no
@@ -1370,7 +1705,14 @@ export default function Planner({ user }) {
           </p>
         )}
 
-        {!data && !err && <p className="muted">Loading…</p>}
+        {mode !== 'quick' && !data && !err && <p className="muted">Loading…</p>}
+
+        {mode === 'quick' && quickResult && (
+          <QuickEquipResults result={quickResult} statLabel={statLabel}
+                             statPct={statPct} savedSets={savedSets}
+                             canCopy={!!planningOwner} busy={savedSetBusy}
+                             onCopy={copyQuickToSavedSet} />
+        )}
 
         {data && mode === 'sets' && (
           <SetList sets={shownSets} inList={setsInList} canPlan={!!planningOwner}
@@ -1379,7 +1721,7 @@ export default function Planner({ user }) {
                    statLabel={statLabel} statPct={statPct} />
         )}
 
-        {data && mode !== 'sets' && (
+        {data && mode === 'items' && (
           <>
             {data.total === 0 ? (
               <EmptyTable data={data} eras={eras} cls={cls} order={order}
@@ -1454,6 +1796,285 @@ export default function Planner({ user }) {
         )}
       </aside>
       </div>
+    </div>
+  )
+}
+
+function QuickTarget({ stat, range, value, busy, pct, onChange }) {
+  const lower = targetFloor(range)
+  const upper = targetCeiling(range)
+  const disabled = !stat || !range || lower === upper
+  const shown = range && value != null ? value : upper
+  const suffix = pct ? '%' : ''
+  return (
+    <label className={`quicktarget${stat && range ? ' ready' : ''}`}
+           title={range ? `Calculated gear range: ${precise(range.min)}${suffix}–${precise(range.max)}${suffix}` : ''}>
+      <span><b>Target</b><output>{shown == null ? '—' : `${precise(shown)}${suffix}`}</output></span>
+      <input type="range" disabled={disabled}
+             min={lower} max={upper} step={range?.step ?? 1}
+             value={shown ?? 0} aria-label={`${stat || 'Stat'} target`}
+             onChange={(event) => onChange(Number(event.target.value))} />
+      <small>
+        <i>{range ? `${precise(lower)}${suffix}` : busy && stat ? '…' : 'Min'}</i>
+        <i>{range ? `${precise(upper)}${suffix}` : 'Max'}</i>
+      </small>
+    </label>
+  )
+}
+
+function QuickChecks({ values, options, label, onToggle, format }) {
+  return (
+    <div className="planbandrow quickcheckrow" role="group" aria-label={label}>
+      {(options || []).map((option) => {
+        const checked = values.includes(option)
+        return (
+          <label key={option} className={checked ? 'on' : ''}>
+            <input type="checkbox" checked={checked}
+                   onChange={() => onToggle(option)} />
+            <span>{format ? format(option) : option}</span>
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+function QuickEquipResults({ result, statLabel, statPct, savedSets,
+                             canCopy, busy, onCopy }) {
+  const initial = useCallback(() => Object.fromEntries(
+    (result?.slots || []).map((slot) => [slot.key, slot.selected])), [result])
+  const [selected, setSelected] = useState(initial)
+  useEffect(() => setSelected(initial()), [result, initial])
+
+  const selectedFor = useCallback((slot) => {
+    const index = selected[slot.key]
+    return index == null ? null : slot.options[index] || null
+  }, [selected])
+  const primary = selectedFor((result.slots || []).find((slot) => slot.key === 'primary') || {})
+  const twoHanded = !!primary?.two_handed
+  const chosen = useMemo(() => (result.slots || []).flatMap((slot) => {
+    if (slot.key === 'secondary' && twoHanded) return []
+    const index = selected[slot.key]
+    const item = index == null ? null : slot.options[index]
+    return item ? [{ ...item, equip_slot: slot.key }] : []
+  }), [result, selected, twoHanded])
+  const totals = useMemo(() => Object.fromEntries((result.criteria.order || []).map((key) => [
+    key,
+    Math.round(chosen.reduce((sum, item) => sum + Number(item.stats?.[key] || 0), 0) * 100) / 100,
+  ])), [chosen, result.criteria.order])
+  const filledPositions = chosen.length + (twoHanded ? 1 : 0)
+
+  const cycle = (slot, direction) => {
+    if (slot.options.length < 2) return
+    setSelected((current) => {
+      const at = current[slot.key] == null ? 0 : current[slot.key]
+      const nextIndex = (at + direction + slot.options.length) % slot.options.length
+      const next = { ...current, [slot.key]: nextIndex }
+      if (slot.key === 'primary' && !slot.options[nextIndex]?.two_handed
+          && next.secondary == null) next.secondary = 0
+      return next
+    })
+  }
+
+  const slotRow = (slot) => {
+    const occupied = slot.key === 'secondary' && twoHanded
+    const item = occupied ? null : selectedFor(slot)
+    const index = selected[slot.key]
+    const hasOptions = slot.options.length > 1 && !occupied
+    const statLine = item ? (result.criteria.order || []).flatMap((key) => (
+      item.stats?.[key] ? [`${statLabel[key] || key} ${precise(item.stats[key])}${statPct[key] ? '%' : ''}`] : []
+    )).join(' · ') : ''
+    return (
+      <div key={slot.key}
+           className={`quickgearslot${occupied ? ' occupied' : ''}${hasOptions ? ' hasoptions' : ''}`}>
+        <span className="quickgearicon">
+          {item?.card ? (
+            <Hover className="examinecard" width={350} card={<Examine row={item.card} />}>
+              <span tabIndex="0" aria-label={`Examine ${item.name}`}>
+                {item.card.icon
+                  ? <img src={item.card.icon} alt="" />
+                  : <i aria-hidden="true">◆</i>}
+              </span>
+            </Hover>
+          ) : <i aria-hidden="true">{occupied ? '—' : '◆'}</i>}
+        </span>
+        <span className="quickgearcopy">
+          <b>{slot.label}</b>
+          {item?.card ? (
+            <Hover className="examinecard" width={350} card={<Examine row={item.card} />}>
+              <span tabIndex="0" className={rarityClass(item.tier)}>{item.name}</span>
+            </Hover>
+          ) : <span>{occupied ? 'Occupied by two-handed weapon' : 'No match'}</span>}
+          {item && <small>Level {item.level} · {statLine || 'Priority tie'}</small>}
+        </span>
+        {hasOptions && (
+          <span className="quickgearcycle" role="group"
+                aria-label={`${slot.label} gear options`}>
+            <small>Gear options</small>
+            <span>
+              <button type="button" aria-label={`Previous ${slot.label} option`}
+                      title={`Previous ${slot.label} option`}
+                      onClick={() => cycle(slot, -1)}>‹</button>
+              <b>{(index ?? 0) + 1} of {slot.options.length}</b>
+              <button type="button" aria-label={`Next ${slot.label} option`}
+                      title={`Next ${slot.label} option`}
+                      onClick={() => cycle(slot, 1)}>›</button>
+            </span>
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  const left = result.slots.filter((slot) => slot.side === 'left')
+  const right = result.slots.filter((slot) => slot.side === 'right')
+  return (
+    <section className="card quickequipresults">
+      <header className="quickequipresultshead">
+        <div>
+          <span className="seclabel">Generated gear set</span>
+          <h2>{filledPositions} of {result.slots.length} slots filled</h2>
+          <p>{result.candidates} eligible items evaluated. Use the Gear options controls
+            to compare up to three choices in each slot.</p>
+        </div>
+        <QuickCopyControls sets={savedSets} items={chosen} canCopy={canCopy}
+                           busy={busy} onCopy={onCopy} />
+      </header>
+      <div className="quicktotals" aria-label="Generated priority totals">
+        {(result.criteria.order || []).map((key, index) => {
+          const target = Number(result.criteria.targets?.[key] ?? result.ranges?.[key]?.max ?? 0)
+          const total = Number(totals[key] || 0)
+          const met = total + 0.001 >= target
+          const achievable = Number(result.ranges?.[key]?.max ?? target)
+          const atCeiling = !met && target > achievable && total + 0.001 >= achievable
+          const suffix = statPct[key] ? '%' : ''
+          const required = result.criteria.required.includes(key)
+          return (
+            <span key={key} className={met ? 'met' : atCeiling ? 'ceiling' : 'short'}>
+              <i>{index + 1}</i><b>{statLabel[key] || key}</b>
+              <strong>{precise(total)}{suffix}<small> / {precise(target)}{suffix}</small></strong>
+              <em>{met ? 'Target met' : atCeiling ? 'Best gear ceiling'
+                : `${precise(target - total)}${suffix} short`}
+                {required ? ' · Required' : ''}</em>
+            </span>
+          )
+        })}
+      </div>
+      <div className="quickgearwindow">
+        <div>{left.map(slotRow)}</div>
+        <div>{right.map(slotRow)}</div>
+      </div>
+      {!!result.missing.length && (
+        <p className="quickequipwarning">
+          No qualifying item for: <b>{result.missing.join(', ')}</b>. Try another source,
+          armor restriction, required stat, or maximum level.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function QuickCopyControls({ sets, items, canCopy, busy, onCopy }) {
+  const available = firstAvailableSavedSet(sets)
+  const used = (sets || []).filter(savedSetInUse)
+  const [panel, setPanel] = useState(null)
+  const [draft, setDraft] = useState('')
+  const [target, setTarget] = useState(null)
+  const [copying, setCopying] = useState(false)
+  const [done, setDone] = useState('')
+  const root = useRef(null)
+
+  useEffect(() => {
+    if (!panel) return undefined
+    const away = (event) => { if (!root.current?.contains(event.target)) setPanel(null) }
+    const escape = (event) => { if (event.key === 'Escape') setPanel(null) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [panel])
+
+  const finish = async (slot, name) => {
+    setCopying(true)
+    await onCopy(slot, name, items)
+    setCopying(false)
+    setPanel(null)
+    setDone(`Copied to ${name}`)
+  }
+
+  const openNew = () => {
+    if (!available) return
+    setDraft(available.name)
+    setPanel('new')
+  }
+
+  return (
+    <div className="quickcopy" ref={root}>
+      <span className="plansavedanchor quickcopyanchor">
+        <button type="button" className="chip on quickcopybutton"
+                disabled={!canCopy || !items.length || busy || copying}
+                title={canCopy ? 'Save this generated gear-only loadout'
+                  : 'Load a character before copying to a Gear Set'}
+                onClick={() => setPanel(panel ? null : 'choose')}>
+          {copying ? 'Copying…' : 'Copy to Gear Set'}
+        </button>
+        {panel === 'choose' && (
+          <div className="plansavedpopover quickcopypopover" role="dialog"
+               aria-label="Copy Quick Equip result">
+            <b>Copy to Gear Set</b>
+            <p>Create a set, or replace one of this character's saved sets.</p>
+            <div className="quickcopychoices">
+              {available && <button type="button" className="chip on"
+                                    onClick={openNew}>Create new set</button>}
+              {used.map((row) => (
+                <button key={row.slot} type="button" className="chip"
+                        onClick={() => { setTarget(row); setPanel('confirm') }}>
+                  Overwrite {row.name}
+                </button>
+              ))}
+              {!available && !used.length && <span className="muted">No Gear Set slots available.</span>}
+              <button type="button" className="btnlink" onClick={() => setPanel(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {panel === 'new' && available && (
+          <div className="plansavedpopover quickcopypopover" role="dialog"
+               aria-label="New Quick Equip gear set">
+            <label><span>Name this set</span>
+              <input value={draft} maxLength={40} autoFocus
+                     onFocus={(event) => event.target.select()}
+                     onChange={(event) => setDraft(event.target.value)}
+                     onKeyDown={(event) => {
+                       if (event.key === 'Enter') finish(
+                         available.slot, draft.trim() || available.name)
+                     }} />
+            </label>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip on" disabled={copying}
+                      onClick={() => finish(available.slot, draft.trim() || available.name)}>
+                Create set
+              </button>
+              <button type="button" className="btnlink" onClick={() => setPanel('choose')}>Back</button>
+            </div>
+          </div>
+        )}
+        {panel === 'confirm' && target && (
+          <div className="plansavedpopover quickcopypopover" role="alertdialog"
+               aria-label={`Overwrite ${target.name}`}>
+            <b>Overwrite {target.name}?</b>
+            <p>The saved copy will be replaced. Your current working loadout stays open.</p>
+            <div className="plansavedpopoveractions">
+              <button type="button" className="chip on" disabled={copying}
+                      onClick={() => finish(target.slot, target.name)}>Overwrite</button>
+              <button type="button" className="btnlink" onClick={() => setPanel('choose')}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </span>
+      {!canCopy && <small>Load a character to save this set.</small>}
+      {done && <small className="quickcopydone">{done}</small>}
     </div>
   )
 }

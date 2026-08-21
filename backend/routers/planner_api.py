@@ -3,6 +3,8 @@
   GET /api/plan/meta?eras=rok,eof   -> the expansions on offer + the facets in them
   GET /api/plan/items?…             -> the item table, ranked against an ORDER
   GET /api/plan/sets?…              -> the set-adornment view
+  POST /api/plan/quick-equip/ranges  -> feasible full-loadout target scales
+  POST /api/plan/quick-equip         -> a strict whole-loadout gear draft
   GET /api/plan/adornments           -> ordinary white socket choices
   GET /api/plan/outline?…           -> source mobs, quests and hard prerequisites
   GET /api/plan/character?name=…    -> a public character, no account needed
@@ -40,7 +42,7 @@ from pydantic import BaseModel, Field
 from census import client as census_client
 from census import sync as census_sync
 from db import get_db
-from planner import adornments, catalog, outline, saved_sets, wiki
+from planner import adornments, catalog, outline, quick_equip, saved_sets, wiki
 from security import require_user
 
 router = APIRouter(tags=["planner"])
@@ -58,6 +60,18 @@ class SavedSetIn(BaseModel):
     payload: dict | None = None
 
 
+class QuickEquipIn(BaseModel):
+    eras: list[str] = Field(default_factory=list, max_length=10)
+    class_name: str = Field(alias="class", min_length=2, max_length=30)
+    max_level: int = Field(ge=1, le=200)
+    order: list[str] = Field(min_length=1, max_length=quick_equip.MAX_PRIORITIES)
+    required: list[str] = Field(default_factory=list,
+                                max_length=quick_equip.MAX_PRIORITIES)
+    kinds: list[str] = Field(default_factory=list, max_length=20)
+    armor: list[str] = Field(default_factory=list, max_length=4)
+    targets: dict[str, float] | None = None
+
+
 def _list(value: str | None) -> list[str]:
     return [p.strip() for p in (value or "").split(",") if p.strip()]
 
@@ -68,7 +82,9 @@ def _eras(value: str | None) -> list[str]:
 
 @router.get("/plan/meta")
 def plan_meta(eras: str | None = Query(None)):
-    return catalog.meta(get_db(), _eras(eras))
+    out = catalog.meta(get_db(), _eras(eras))
+    out["quick_equip"] = quick_equip.meta()
+    return out
 
 
 @router.get("/plan/items")
@@ -109,6 +125,31 @@ def plan_sets(eras: str | None = Query(None), order: str | None = Query(None),
               classes: str | None = Query(None)):
     return catalog.sets(get_db(), eras=_eras(eras), order=_list(order),
                         classes=_list(classes))
+
+
+@router.post("/plan/quick-equip")
+def plan_quick_equip(body: QuickEquipIn):
+    """Build a gear-only loadout from an ordered set of stat targets."""
+    try:
+        return quick_equip.generate(
+            get_db(), eras=_eras(",".join(body.eras)), class_name=body.class_name,
+            max_level=body.max_level, order=body.order,
+            required=body.required, kinds=body.kinds, armor=body.armor,
+            targets=body.targets)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/plan/quick-equip/ranges")
+def plan_quick_equip_ranges(body: QuickEquipIn):
+    """Scale each chosen target to what this filtered catalog can achieve."""
+    try:
+        return quick_equip.ranges(
+            get_db(), eras=_eras(",".join(body.eras)), class_name=body.class_name,
+            max_level=body.max_level, order=body.order,
+            required=body.required, kinds=body.kinds, armor=body.armor)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/plan/adornments")

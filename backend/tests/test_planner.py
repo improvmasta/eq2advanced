@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
 from planner import (adornments, catalog, coverage, epic_timelines, ingest,
-                     outline, wiki)
+                     outline, quick_equip, wiki)
 
 PAGES = json.loads(
     (Path(__file__).parent / "fixtures" / "wiki" / "planner_pages.json").read_text())
@@ -1190,6 +1190,143 @@ def test_item_level_range_filters_both_edges(tmp_path):
     assert catalog.search(conn, eras=["rok"], level_min=80, level_max=80)["total"] == 1
     assert catalog.search(conn, eras=["rok"], level_min=81)["total"] == 0
     assert catalog.search(conn, eras=["rok"], level_max=79)["total"] == 0
+
+
+# ---------- Quick Equip: one ordered objective across the whole loadout ----------
+
+def _quick_catalog(tmp_path, rows):
+    conn = loaded(tmp_path)
+    with conn:
+        conn.execute("DELETE FROM plan_sources")
+        conn.execute("DELETE FROM plan_items")
+        for row in rows:
+            title = row["name"]
+            conn.execute(
+                "INSERT INTO plan_items (page_title, name, era, slot, slot2, level, "
+                "tier, dtype, classes, flags, adorns_json, stats_json, fetched_ts) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)",
+                (title, title, "rok", row["slot"], row.get("slot2"),
+                 row.get("level", 80), "FABLED", row.get("dtype"),
+                 row.get("classes", "monk"), row.get("flags", "lore"), "{}",
+                 json.dumps(row.get("stats", {}))))
+            conn.execute(
+                "INSERT INTO plan_sources (page_title, source_page, source, kind, era) "
+                "VALUES (?,?,?,?, 'rok')",
+                (title, f"{title} Source", f"{title} Source", row.get("kind", "group")))
+    return conn
+
+
+def test_quick_equip_enforces_class_level_source_armor_and_required_stat(tmp_path):
+    conn = _quick_catalog(tmp_path, [
+        {"name": "Raid Leather", "slot": "Feet", "dtype": "Leather Armor",
+         "kind": "raid", "stats": {"crit": 20, "abmod": 200}},
+        {"name": "Group Leather", "slot": "Feet", "dtype": "Leather Armor",
+         "stats": {"crit": 9, "abmod": 90}},
+        {"name": "Group Cloth", "slot": "Feet", "dtype": "Cloth Armor",
+         "stats": {"crit": 30, "abmod": 300}},
+        {"name": "No Crit", "slot": "Feet", "dtype": "Leather Armor",
+         "stats": {"abmod": 500}},
+        {"name": "Too New", "slot": "Feet", "dtype": "Leather Armor",
+         "level": 81, "stats": {"crit": 40, "abmod": 400}},
+        {"name": "Other Class", "slot": "Feet", "dtype": "Leather Armor",
+         "classes": "wizard", "stats": {"crit": 50, "abmod": 500}},
+    ])
+    out = quick_equip.generate(
+        conn, eras=["rok"], class_name="monk", max_level=80,
+        order=["crit", "abmod"], required=["crit"], kinds=["group"],
+        armor=["Leather"])
+    feet = next(slot for slot in out["slots"] if slot["key"] == "feet")
+    assert [item["name"] for item in feet["options"]] == ["Group Leather"]
+    assert out["criteria"]["armor"] == ["Leather"]
+    assert out["eligible_before_required"] == 2  # Group Leather + No Crit
+
+
+def test_quick_equip_compares_two_hander_to_the_complete_weapon_pair(tmp_path):
+    conn = _quick_catalog(tmp_path, [
+        {"name": "Two Hander", "slot": "Primary", "dtype": "Two-Handed Crushing",
+         "stats": {"crit": 10, "abmod": 100}},
+        {"name": "One Hander", "slot": "Primary", "dtype": "One-Handed Crushing",
+         "stats": {"crit": 6, "abmod": 40}},
+        {"name": "Off Hand", "slot": "Secondary", "dtype": "Symbol",
+         "stats": {"crit": 5, "abmod": 30}},
+    ])
+    out = quick_equip.generate(
+        conn, eras=["rok"], class_name="monk", max_level=80,
+        order=["crit", "abmod"])
+    primary = next(slot for slot in out["slots"] if slot["key"] == "primary")
+    secondary = next(slot for slot in out["slots"] if slot["key"] == "secondary")
+    assert primary["options"][primary["selected"]]["name"] == "One Hander"
+    assert secondary["options"][secondary["selected"]]["name"] == "Off Hand"
+    assert out["totals"] == {"crit": 11.0, "abmod": 70.0}
+
+
+def test_quick_equip_twin_slot_alternatives_never_offer_one_item_twice(tmp_path):
+    rows = [{
+        "name": f"Earring {value}", "slot": "Ear", "stats": {"crit": value},
+    } for value in range(8, 0, -1)]
+    conn = _quick_catalog(tmp_path, rows)
+    out = quick_equip.generate(
+        conn, eras=["rok"], class_name="monk", max_level=80, order=["crit"])
+    ears = [slot for slot in out["slots"] if slot["catalog"] == "Ear"]
+    offered = [item["page_title"] for slot in ears for item in slot["options"]]
+    selected = [slot["options"][slot["selected"]]["stats"]["crit"] for slot in ears]
+    assert len(offered) == 6 and len(offered) == len(set(offered))
+    assert selected == [8, 7]
+
+
+def test_quick_equip_targets_use_filtered_whole_loadout_range(tmp_path):
+    conn = _quick_catalog(tmp_path, [
+        {"name": "Crit Helm", "slot": "Head", "stats": {"crit": 10}},
+        {"name": "Balanced Helm", "slot": "Head",
+         "stats": {"crit": 6, "abmod": 100}},
+        {"name": "Crit Chest", "slot": "Chest", "stats": {"crit": 10}},
+        {"name": "Balanced Chest", "slot": "Chest",
+         "stats": {"crit": 6, "abmod": 100}},
+    ])
+    scale = quick_equip.ranges(
+        conn, eras=["rok"], class_name="monk", max_level=80,
+        order=["crit", "abmod"])
+    assert scale["ranges"] == {
+        "crit": {"min": 12.0, "max": 20.0,
+                 "slider_min": 12.0, "slider_max": 20.0, "step": 1},
+        "abmod": {"min": 0.0, "max": 200.0,
+                  "slider_min": 0.0, "slider_max": 200.0, "step": 20},
+    }
+
+    out = quick_equip.generate(
+        conn, eras=["rok"], class_name="monk", max_level=80,
+        order=["crit", "abmod"], targets={"crit": 12, "abmod": 200})
+    assert out["criteria"]["targets"] == {"crit": 12.0, "abmod": 200.0}
+    assert out["totals"] == {"crit": 12.0, "abmod": 200.0}
+    chosen = {
+        slot["options"][slot["selected"]]["name"]
+        for slot in out["slots"] if slot["selected"] is not None
+    }
+    assert chosen == {"Balanced Helm", "Balanced Chest"}
+
+
+def test_quick_equip_rounds_slider_beyond_raw_endpoint_and_clamps_to_it(tmp_path):
+    conn = _quick_catalog(tmp_path, [
+        {"name": "Low Boots", "slot": "Feet", "stats": {"crit": 4}},
+        {"name": "High Boots", "slot": "Feet", "stats": {"crit": 9.2}},
+    ])
+    out = quick_equip.generate(
+        conn, eras=["rok"], class_name="monk", max_level=80,
+        order=["crit"], targets={"crit": 999})
+    assert out["criteria"]["targets"] == {"crit": 9.5}
+    assert out["ranges"]["crit"] == {
+        "min": 4.0, "max": 9.2,
+        "slider_min": 4.0, "slider_max": 9.5, "step": 0.5,
+    }
+    assert out["totals"] == {"crit": 9.2}
+
+
+def test_quick_equip_only_offers_armor_the_class_can_wear():
+    assert quick_equip.wearable_armor("wizard") == ["Cloth"]
+    assert quick_equip.wearable_armor("monk") == ["Cloth", "Leather"]
+    assert quick_equip.wearable_armor("mystic") == ["Cloth", "Leather", "Chain"]
+    assert quick_equip.wearable_armor("guardian") == [
+        "Cloth", "Leather", "Chain", "Plate"]
 
 
 def test_white_adornment_catalog_has_real_tier_values_and_slot_rules():

@@ -299,6 +299,12 @@ export const api = {
   planMeta: (qs) => cachedGet(`/api/plan/meta?${qs}`),
   planItems: (qs) => cachedGet(`/api/plan/items?${qs}`),
   planSets: (qs) => cachedGet(`/api/plan/sets?${qs}`),
+  planQuickEquip: (criteria) => req('/api/plan/quick-equip', {
+    ...json(criteria), method: 'POST',
+  }),
+  planQuickEquipRanges: (criteria) => req('/api/plan/quick-equip/ranges', {
+    ...json(criteria), method: 'POST',
+  }),
   planAdornments: () => cachedGet('/api/plan/adornments'),
   planOutline: (qs) => cachedGet(`/api/plan/outline?${qs}`),
   planEpics: (className) => cachedGet(`/api/plan/epics?class=${encodeURIComponent(className)}`),

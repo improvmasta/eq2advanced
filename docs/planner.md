@@ -202,15 +202,18 @@ wrong starting zone.
 weight.** You say "ability mod, then reuse, then casting speed"; ranks map to a
 decaying weight internally and that number is never surfaced.
 
-**No cap or diminishing-returns math, and no set optimizer.** Both were
-considered and rejected. Caps and soft caps only matter when the tool is trying
-to *make the choice*; this one presents options and the reader chooses. A
-weighted sum over a declared order is exactly the right fidelity for that, and
-inventing precision the model does not have is worse than not having it.
+**Equipment search has no cap math and makes no loadout choice.** It presents
+ranked options and the reader chooses; a weighted sum over a declared order is
+the right fidelity for discovery, and inventing soft-cap precision the model
+does not have would be worse than not having it.
 
-The optimizer is additionally wrong on its own terms here — see the next
-section. You cannot optimize a set whose most valuable component detaches and
-moves to a different set.
+**Quick Equip is a separate whole-loadout task.** It is allowed to make a
+gear-only draft because the request is explicit, but it uses a stricter and
+more legible objective: maximize the complete loadout's priority 1 total, then
+priority 2 without sacrificing priority 1, and so on. It does not value procs,
+caps, white adornments, or detachable turquoise/set bonuses. Those remain
+choices in the normal equipment window; pretending to optimize them from base
+item stats would still be wrong on its own terms.
 
 **Sliders are rejected for the same reason.** A slider invites tuning and implies
 the third decimal place means something. The priority control is three ordinary
@@ -222,7 +225,7 @@ current-scope heading, and returns to Any with the other equipment filters.
 
 ### What can be prioritized, and what cannot
 
-**POTENCY AND CRIT CHANCE ARE NOT PRIORITY OPTIONS.** They are on essentially
+**In Equipment search, POTENCY AND CRIT CHANCE ARE NOT PRIORITY OPTIONS.** They are on essentially
 every EoF/RoK item — measured on the built catalog at **80% and 72% of 5,282
 rows** — so ordering by them orders by nothing: every candidate has them, and
 the ranking collapses back into "how expensive is this item". The stats that
@@ -814,11 +817,13 @@ made to find. This is a TIER, not a filter: nothing is hidden for being one stat
 short, and the four-stat floor below is unchanged and still applies. It is done
 on the server because the sort decides which rows survive `limit`.
 
-**`required` (a stat moved from ranking to filtering) is still a server
-parameter and no longer has a control.** It lived in a modal hung off the drag
-track; with the track gone it had no home, and the tiering covers most of what
-it was for. `components/PriorityEditor.jsx` was deleted with it. Reopening it
-means a "must have" toggle beside each of the three boxes, not the modal.
+**Equipment search's `required` remains a server parameter with no control.**
+Its discovery tiering covers the ordinary catalog case. Quick Equip has its
+own `Required` checkbox beside each of its priority boxes because an automatic
+choice needs an absolute predicate: checked means every suggested item must
+carry that stat. Crit Chance is deliberately available there even though it is
+too common to separate rows in Equipment search. If that predicate leaves a
+slot unfilled, the result names the slot and never silently relaxes it.
 
 Search itself is one framed control window with four bands: name and item level;
 **stat priority beside the facets** in one band, split by a rule — they are two
@@ -944,11 +949,67 @@ dimensions but use complete button borders and surfaces so their actions are cle
 The priority hint sits under its section label, and the compact Level range,
 Set Pieces and Has Proc controls occupy only their natural width.
 
+### Quick Equip
+
+**Equipment / Set Adorns / Quick Equip are the three primary tabs at the very
+top of the search block.** They are features, not a small `Search for` facet;
+the compact, content-width tab silhouette and raised gold active tab keep that
+feature switch distinct from the full search bands below it. The expansion row
+and each task's controls sit beneath the selected tab.
+Returning to Equipment or Set Adorns restores that task's cached result.
+
+Quick Equip inherits the loaded character's adventure class and level, while
+leaving both editable. Maximum Gear Level is a hard ceiling; its menu descends
+from the selected catalog's maximum, so RoK starts at 80 rather than making the
+reader scroll up from level 1. The adjacent `Max Lvl` action restores that live
+catalog maximum in one click. Source is an
+allowed multi-select over raid, group, solo, quest, crafted, world drop, and
+unknown; unchecking Raid is therefore an actual exclusion rather than a score
+penalty. Armor is another allowed multi-select, but only among weights the
+chosen class can wear. A monk begins with Cloth and Leather and may uncheck
+Cloth; weapons, jewelry, shields, and other non-armor items are unaffected by
+the armor restriction.
+
+Up to five numbered stats form a lexicographic order. Each selected stat adds a
+coarse target slider of roughly twelve memorable stops. Its clean-number scale
+rounds outward around the minimum and maximum achievable **complete-loadout
+totals** under the current expansion, class, level, source, armor, and Required
+filters: a measured 24.5–59.5 Crit range can therefore read 20–60 in steps of
+5. Hover retains the exact calculated range. A rounded target slightly above
+the gear ceiling simply continues maximizing that priority and the result says
+`Best gear ceiling`; it is not presented as an attainable game cap.
+
+A target is a reader preference rather than a claimed EQ2 cap: the optimizer
+values a priority up to that total, then lets the next priority decide instead
+of continuing to buy surplus in the earlier stat. Required checkboxes share the
+same line as their selected stat rather than consuming a second row.
+
+In the left **Stat priorities** gutter, **Require Crit Chance** is an independent
+checkbox and defaults off. Turning it on requires every suggested item and
+every cycled alternative to carry Crit Chance; Crit does not have to occupy a
+priority slot. The ordinary inline Required controls remain available for other
+explicitly ranked stats.
+
+The server evaluates the complete gear-only loadout rather than running 21
+unrelated catalog searches. It refuses duplicate physical items, and it
+compares a two-handed Primary against the combined one-hand plus Secondary
+totals before choosing. Identical positions (two ears, fingers, wrists, and
+charms) likewise receive distinct items.
+
+The result is the equipment window's compact two-column item list without
+adornment sockets. Each concrete slot receives up to three non-overlapping
+choices, and the priority-total strip recomputes immediately when one changes.
+Slots with alternatives show an always-visible **Gear
+options** control with previous/next buttons and the current choice number, so
+the alternatives do not depend on discovering an icon gesture. A two-hander
+visibly occupies Secondary. `Copy to Gear
+Set` can create the next free character-scoped slot or explicitly overwrite an
+existing one. Overwrite is confirmed, only generated gear is copied, and the
+current working loadout is not discarded behind the action.
+
 ### The set-adornment view
 
-A compact, labelled **Search for: Equipment / Set Adornments** control switches
-catalog tasks without masquerading as a page-wide pair of feature cards or a
-tiny unrelated filter. The set view ranks the bonuses themselves and searches
+The set view ranks the bonuses themselves and searches
 only set names and bonus text. Results are automatically restricted to the
 loaded character's class; the equipment-search Class facet does not leak into
 this character-specific choice. The set-adornment search inherits the expansion
@@ -1747,11 +1808,13 @@ the 356 unresolved coordinates.
 These were each argued and decided in the design conversation; the reasoning is
 in the sections above.
 
-- **No set optimizer and no cap math.** Twice stated. The tool presents options;
-  the reader chooses.
-- **Stat priority is an order, not numbers.** No sliders. Three dropdowns
-  numbered 1–3, defaulting to Any; the number of boxes IS the boundary, so
-  there is no "score top" control.
+- **No game cap/proc/adornment model is invented.** Equipment search presents
+  options; Quick Equip optimizes additive base gear only, under an explicit
+  order, reader-set target ceilings, and hard filters.
+- **Stat priority is still an order, not weighted numbers.** Equipment uses
+  three dropdowns numbered 1–3 and no sliders. Quick Equip uses up to five,
+  Required checks, and feasible full-loadout target sliders. The number of
+  filled boxes is the boundary, so there is no "score top" control.
 - **Rows carrying ALL your stats lead the table, then the partial ones.** A
   tier, not a filter — the four-stat floor is unchanged and still applies.
 - **The outline never reorders. Tags highlight, never filter.**

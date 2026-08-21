@@ -14,11 +14,11 @@ asking about it.
 **The priority list is an ORDER, not a set of numbers, and no weight is ever
 surfaced.** You say "ability mod, then reuse, then casting speed"; the ranks
 map to a decaying weight in here and that number does not leave this module.
-There is deliberately no cap math, no diminishing-returns curve and no set
-optimizer: this tool presents ranked options and the reader chooses, and
-inventing precision the model does not have would be worse than not having it
-(docs/planner.md). A set optimizer is also wrong on its own terms, because the
-most valuable part of a piece of armour — the turquoise — detaches and moves.
+There is deliberately no cap math or diminishing-returns curve in this item
+search: it presents ranked options and the reader chooses. Whole-loadout
+optimization is a separate, explicit Quick Equip task (`planner.quick_equip`),
+so its stricter ordered objective never changes what this discovery table
+means.
 """
 
 import json
@@ -335,23 +335,9 @@ def search(conn, *, eras: list[str], order: list[str] | None = None,
     # cannot: a full match ranked 250th would never have been sent.
     kept.sort(key=lambda r: (-r["matched"], -r["score"], -(r["level"] or 0),
                              r["name"]))
-    set_names = sorted({r["set_name"] for r in kept if r.get("set_name")})
-    set_hover = {}
-    if set_names:
-        for set_row in conn.execute(
-                "SELECT name, pieces_json, bonuses_json FROM plan_sets WHERE name IN "
-                f"({','.join('?' * len(set_names))})", set_names):
-            set_hover[set_row["name"]] = {
-                "bonuses": normalize_set_bonuses(
-                    json.loads(set_row["bonuses_json"] or "[]")),
-                "total": len(json.loads(set_row["pieces_json"] or "[]")),
-            }
     sampled = random.sample(kept, min(sample, len(kept))) if sample else None
     returned = sampled if sampled is not None else kept[:limit]
-    for row in returned:
-        hovered = set_hover.get(row.get("set_name"), {})
-        row["_set_bonuses"] = hovered.get("bonuses", [])
-        row["_set_total"] = hovered.get("total")
+    attach_set_details(conn, returned)
     return {
         "total": len(kept),
         "items": [_item_out(r) for r in returned],
@@ -512,6 +498,31 @@ def _item_out(row: dict) -> dict:
         "tier_bucket": row.get("tier_bucket"),
         "sources": row.get("sources", []),
     }
+
+
+def attach_set_details(conn, rows: list[dict]) -> None:
+    """Attach complete turquoise ladders before rows become examine cards.
+
+    Search and Quick Equip are two different reads of the same carrier gear.
+    Both must hydrate the nested included-adornment payload; drawing a hover
+    component is not enough when the ladder never crossed the API boundary.
+    """
+    set_names = sorted({r["set_name"] for r in rows if r.get("set_name")})
+    if not set_names:
+        return
+    set_hover = {}
+    for set_row in conn.execute(
+            "SELECT name, pieces_json, bonuses_json FROM plan_sets WHERE name IN "
+            f"({','.join('?' * len(set_names))})", set_names):
+        set_hover[set_row["name"]] = {
+            "bonuses": normalize_set_bonuses(
+                json.loads(set_row["bonuses_json"] or "[]")),
+            "total": len(json.loads(set_row["pieces_json"] or "[]")),
+        }
+    for row in rows:
+        hovered = set_hover.get(row.get("set_name"), {})
+        row["_set_bonuses"] = hovered.get("bonuses", [])
+        row["_set_total"] = hovered.get("total")
 
 
 def sets(conn, *, eras: list[str], order: list[str] | None = None,
@@ -703,5 +714,6 @@ def meta(conn, eras: list[str] | None = None) -> dict:
                   for key in wiki.TIER_ORDER if key in tiers],
         "kinds": sorted(kinds, key=lambda k: -kinds[k]),
         "kind_counts": kinds,
+        "level_max": max((row.get("level") or 0 for row in rows), default=0),
         "total": len(rows),
     }
