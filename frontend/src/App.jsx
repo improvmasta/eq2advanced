@@ -122,6 +122,7 @@ export default function App() {
   const [pluginUpdate, setPluginUpdate] = useState(null)
   const location = useLocation()
   const header = useRef(null)
+  const feedbackButton = useRef(null)
 
   useEffect(() => {
     const page = pageTitle(location.pathname)
@@ -170,6 +171,10 @@ export default function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  /* Feedback is a header dropdown, so it belongs to the page where it opened
+     and closes if navigation changes that page by any other route. */
+  useEffect(() => { setFeedback(null) }, [location.key])
 
   useEffect(() => {
     api.me().then((d) => setUser(d.user)).catch(() => setUser(null))
@@ -429,10 +434,13 @@ export default function App() {
                 whatever page a form would otherwise live on. Signed in only —
                 the report is worth much more with a name attached to it. */}
             {user && (
-              <button className="iconbtn"
-                      onClick={() => setFeedback(location.pathname + location.search)}
+              <button className={`iconbtn${feedback !== null ? ' active' : ''}`}
+                      ref={feedbackButton}
+                      onClick={() => setFeedback((current) => current === null
+                        ? location.pathname + location.search : null)}
                       title="Report a bug or suggest something"
-                      aria-label="Send feedback">
+                      aria-label="Send feedback"
+                      aria-expanded={feedback !== null}>
                 <IconFeedback />
               </button>
             )}
@@ -448,13 +456,14 @@ export default function App() {
                     aria-label="Toggle light/dark theme">
               {theme === 'dark' ? <IconSun /> : <IconMoon />}
             </button>
+            {feedback !== null && (
+              <FeedbackDialog page={feedback} triggerRef={feedbackButton}
+                              onClose={() => setFeedback(null)} />
+            )}
           </div>
         </div>
       </header>
       <main className={`container${onWiki ? ' away' : ''}`}>
-        {feedback !== null && (
-          <FeedbackDialog page={feedback} onClose={() => setFeedback(null)} />
-        )}
         {user === undefined && <p className="muted">Loading…</p>}
         {user !== undefined && (
           <ErrorBoundary resetKey={location.key}>

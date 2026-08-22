@@ -995,8 +995,10 @@ chosen class can wear. A monk begins with Cloth and Leather and may uncheck
 Cloth; weapons, jewelry, shields, and other non-armor items are unaffected by
 the armor restriction.
 
-Up to five numbered stats form a lexicographic order. Each selected stat adds a
-coarse target slider of roughly twelve memorable stops. Its clean-number scale
+Up to five numbered stats form a lexicographic order. Potency and Crit Chance
+remain available but sit together at the bottom of the dropdown, after the
+stats that distinguish gear more often. Each selected stat adds a coarse target
+slider of roughly twelve memorable stops. Its clean-number scale
 rounds outward around the minimum and maximum achievable **complete-loadout
 totals** under the current expansion, class, level, source, armor, and Required
 filters: a measured 24.5–59.5 Crit range can therefore read 20–60 in steps of

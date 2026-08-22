@@ -264,6 +264,10 @@ then add:
 - a clear distinction between destructive deletion and closing.
 
 The dashboard shows only new/open feedback. Planned and closed work lives here.
+The reporter form is a non-modal dropdown anchored to the header feedback
+control, not page content: it overlays the current page and dismisses through
+Cancel, its close control, the trigger, an outside click, or Escape. The page
+path is captured when the dropdown opens.
 
 ### Activity
 

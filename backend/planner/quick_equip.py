@@ -68,14 +68,14 @@ _CLASS_MAX_ARMOR = {
 }
 
 STAT_GROUPS = (
-    ("Abilities", ("potency", "crit", "abmod", "acspeed", "arspeed",
-                   "abdblcast", "dblcast")),
+    ("Abilities", ("abmod", "acspeed", "arspeed", "abdblcast", "dblcast")),
     ("Melee", ("aspeed", "dps", "multi", "flurry", "aeauto", "strike",
                "accuracy")),
     ("Defense", ("bchance", "hategain", "mit", "prot", "mitinc",
                  "maxhealth", "hregen")),
     ("Attributes", ("str", "agi", "sta", "wis", "int")),
     ("Resists & skills", ("comskills", "vselemental", "vsarcane", "vsnoxious")),
+    ("Common", ("potency", "crit")),
 )
 STATS = tuple(key for _, keys in STAT_GROUPS for key in keys)
 

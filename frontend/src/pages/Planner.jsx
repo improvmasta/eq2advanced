@@ -640,12 +640,16 @@ export default function Planner({ user }) {
      changes, debounce rapid picker work, and discard responses for criteria
      the reader has already left. */
   useEffect(() => {
+    setQuickRanges(null)
+  }, [mode, erasParam, quickClass, quickMaxLevel, quickRequired,
+    quickKinds, quickArmor])
+
+  useEffect(() => {
     if (mode !== 'quick') {
       setQuickRangesBusy(false)
       return undefined
     }
     const previousRanges = quickRanges?.ranges || {}
-    setQuickRanges(null)
     setQuickRangeErr('')
     if (!quickClass || !quickMaxLevel || !quickOrder.length) {
       setQuickRangesBusy(false)

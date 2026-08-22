@@ -506,6 +506,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-22 (codex): Polish Quick Equip and feedback controls
 - 2026-08-22 (codex): Reconcile Gear Planner set lifecycle
 - 2026-08-21 (codex): Add targeted Quick Equip loadout builder
 - 2026-08-21 (codex): Show Ability Doublecast in Gear Planner
@@ -525,4 +526,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Document authoritative epic step coverage
 - 2026-08-16 (codex): Refine Planner workspace and recommendations rail
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
-- 2026-08-16 (codex): Sync epic prerequisites with wikq2

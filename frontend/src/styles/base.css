@@ -195,7 +195,7 @@ p + p { margin-top: 8px; }
 /* the tools on the right: a plugin pill when there is something to say about
    the plugin, then the three icon controls */
 .topnav .navtools {
-  margin-left: auto;
+  position: relative; margin-left: auto;
   display: flex; align-items: center; gap: 6px;
 }
 .iconbtn {
@@ -3666,7 +3666,20 @@ table.data.memberlist th:last-child, table.data.memberlist td:last-child { width
 
 /* the feedback box itself is not a manage page — it opens over whatever you
    were reading */
-.feedbackcard { max-width: 520px; }
+.feedbackcard {
+  position: absolute; z-index: 54; top: calc(100% + 8px); right: 0;
+  width: min(480px, calc(100vw - 28px)); max-width: none;
+  max-height: calc(100vh - var(--topnav-h, 56px) - 14px); overflow-y: auto;
+  margin: 0; text-align: left; box-shadow: 0 9px 28px var(--shadow-color);
+}
+.feedbackcardhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+.feedbackcardhead h2 { margin: 0; }
+.feedbackcardhead .iconbtn { flex: none; font-size: 1.15rem; line-height: 1; }
+.feedbackcard .row { flex-wrap: wrap; }
+.feedbackcard .muted { overflow-wrap: anywhere; }
 .feedbackcard textarea {
   width: 100%; min-height: 96px; resize: vertical; margin: 8px 0 0;
   font-family: var(--font-body); font-size: 0.95rem;
@@ -7103,7 +7116,7 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   min-width: 168px; display: grid; align-items: end; gap: 5px;
 }
 .quickidentityrow .pickerbtn { width: 100%; }
-.quicklevelfacet { width: 250px; }
+.quicklevelfacet { width: 168px; }
 .quicklevelcontrol { min-width: 0; display: flex; align-items: stretch; gap: 5px; }
 .quicklevelcontrol > .picker { min-width: 0; flex: 1; }
 .quicklevelcontrol > .currentfilter { min-height: 31px; white-space: nowrap; }

@@ -1194,6 +1194,13 @@ def test_item_level_range_filters_both_edges(tmp_path):
 
 # ---------- Quick Equip: one ordered objective across the whole loadout ----------
 
+def test_quick_equip_puts_potency_and_crit_last_in_priority_menu():
+    groups = quick_equip.meta()["groups"]
+    assert groups[-1]["label"] == "Common"
+    assert [stat["key"] for group in groups for stat in group["stats"]][-2:] == [
+        "potency", "crit"]
+
+
 def _quick_catalog(tmp_path, rows):
     conn = loaded(tmp_path)
     with conn:
