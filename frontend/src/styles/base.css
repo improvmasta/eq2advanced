@@ -6207,13 +6207,12 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   border-color: var(--gold-dim); background: rgba(var(--gold-rgb), 0.09);
   color: var(--gold-bright); font-size: var(--fs-label);
 }
-.plansavedsets .iconbtn { flex: none; width: 28px; height: 28px; }
-.plansavedsets .plansavedadd { color: var(--gold-bright); font-size: 1rem; }
 .plansavedanchor { position: relative; flex: none; display: inline-flex; }
 .plansavedanchor.plansavedpickeranchor { flex: 0 1 155px; }
-.plansavedpickeranchor > .plansavedpopover,
-.plansavedaddanchor > .plansavedpopover { left: 0; right: auto; }
-.plansavedsaveanchor > .plansavedpopover,
+.plansavedpickeranchor > .plansavedpopover { left: 0; right: auto; }
+.plansavedsaveanchor > .plansavedpopover {
+  left: 0; right: auto; transform: none;
+}
 .plansavedcontentsanchor > .plansavedpopover,
 .plansavedrenameanchor > .plansavedpopover,
 .plansaveddeleteanchor > .plansavedpopover {
@@ -6226,8 +6225,9 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .plansavedsets button:disabled { opacity: 0.42; cursor: default; }
 .plansaveddirty {
-  flex: none; width: 65px; color: transparent; font: 700 var(--fs-label) var(--font-data);
-  white-space: nowrap;
+  flex: 0 1 190px; min-width: 62px; max-width: 190px;
+  overflow: hidden; text-overflow: ellipsis; color: var(--text-muted);
+  font: 700 var(--fs-label) var(--font-data); white-space: nowrap;
 }
 .plansaveddirty.on { color: var(--joust); }
 .plansavedstatus {
@@ -6245,7 +6245,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   position: absolute; z-index: 24; right: 4px; top: calc(100% + 5px);
   width: min(300px, calc(100vw - 28px)); padding: 10px;
   border: 1px solid var(--gold-dim); border-radius: var(--radius-sm);
-  background: var(--surface-raised); box-shadow: 0 9px 28px var(--shadow-color);
+  background: linear-gradient(var(--surface-raised), var(--surface-raised)), var(--bg);
+  box-shadow: 0 9px 28px var(--shadow-color);
 }
 .plansavedpopover > b { display: block; color: var(--gold-bright); }
 .plansavedpopover > p { margin: 4px 0 9px; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.4; }
@@ -6263,22 +6264,60 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .plansavedpopover.compact > button:hover,
 .plansavedpopover.compact > button:focus-visible { background: var(--row-hover); }
-.plansavedpopover.contents { width: min(390px, calc(100vw - 28px)); }
-.plansavedcontentlist {
-  max-height: min(330px, 52vh); overflow-y: auto;
-  display: grid; gap: 3px; margin-top: 8px; padding-right: 2px;
+.plansavedpopover.savechoices {
+  width: min(272px, calc(100vw - 28px)); padding: 7px;
 }
-.plansavedcontentlist > .seclabel { margin: 6px 0 1px; }
+.plansavedpopover.savechoices > b { margin: 0 2px 5px; font-size: var(--fs-data); }
+.plansaveddestinations {
+  max-height: min(310px, 52vh); overflow-y: auto;
+  display: grid; gap: 3px; padding-right: 1px;
+}
+.plansaveddestinations > button {
+  min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: 8px; padding: 5px 7px;
+  border: 1px solid var(--row-line); border-radius: 3px;
+  background: rgba(var(--bg-rgb), 0.25); color: var(--text);
+  text-align: left; cursor: pointer;
+}
+.plansaveddestinations > button:hover,
+.plansaveddestinations > button:focus-visible { border-color: var(--gold-dim); background: var(--row-hover); }
+.plansaveddestinations > button.current { border-color: var(--gold-dim); background: rgba(var(--gold-rgb), 0.08); }
+.plansaveddestinations > button.new { border-style: dashed; }
+.plansaveddestinations > button > span { min-width: 0; display: grid; gap: 1px; }
+.plansaveddestinations small {
+  color: var(--text-muted); font: 650 var(--fs-label) var(--font-data);
+  text-transform: uppercase; letter-spacing: 0.055em;
+}
+.plansaveddestinations b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plansaveddestinations em {
+  color: var(--gold-bright); font: 700 var(--fs-label) var(--font-data);
+  font-style: normal; text-transform: uppercase; letter-spacing: 0.045em;
+}
+.plansavedpopover.contents {
+  width: min(300px, calc(100vw - 28px)); padding: 7px;
+}
+.plansavedcontentshead {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 2px 4px;
+}
+.plansavedcontentshead > b { color: var(--gold-bright); font-size: var(--fs-data); }
+.plansavedcontentshead > .btnlink { padding: 1px 2px; font-size: var(--fs-label); }
+.plansavedcontentlist {
+  max-height: min(280px, 46vh); overflow-y: auto;
+  display: grid; gap: 2px; padding-right: 1px;
+}
+.plansavedcontentlist > .seclabel { margin: 4px 1px 0; }
 .plansavedcontentlist > label {
   min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
-  align-items: center; gap: 8px; padding: 5px 6px;
+  align-items: center; gap: 6px; padding: 3px 5px;
   border: 1px solid var(--row-line); border-radius: 3px;
   background: rgba(var(--bg-rgb), 0.24); cursor: pointer;
 }
 .plansavedcontentlist > label:hover { border-color: var(--gold-dim); }
 .plansavedcontentlist input { width: auto; min-height: 0; margin: 0; }
 .plansavedcontentlist label > span {
-  min-width: 0; display: grid; gap: 1px; color: var(--text);
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline; gap: 6px; color: var(--text);
   font-size: inherit; text-transform: none; letter-spacing: normal;
 }
 .plansavedcontentlist label small {
@@ -6289,6 +6328,33 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text); font-size: var(--fs-body); font-weight: 650;
 }
+.plansavedcontentlist label b:only-child { grid-column: 1 / -1; }
+.plansavedcompleted { margin-top: 5px; border-top: 1px solid var(--row-line); }
+.plansavedcompleted > summary {
+  padding: 5px 2px 3px; color: var(--success); cursor: pointer;
+  font: 700 var(--fs-label) var(--font-data); text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.plansavedcompleted > label {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 6px; margin-top: 2px; padding: 3px 5px;
+  border: 1px solid var(--row-line); border-radius: 3px;
+  background: rgba(var(--success-rgb), 0.07); cursor: pointer;
+}
+.plansavedcompleted > label > span {
+  min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px;
+}
+.plansavedcompleted > label em {
+  color: var(--text-muted); font-size: var(--fs-label); font-style: normal;
+}
+.plansavedguestcopy {
+  min-width: 0; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 5px 6px; border: 1px solid var(--gold-dim);
+  border-radius: 3px; background: rgba(var(--gold-rgb), 0.06);
+}
+.plansavedguestcopy > span { min-width: 0; display: grid; gap: 1px; }
+.plansavedguestcopy small { color: var(--text-muted); font-size: var(--fs-label); }
+.plansavedguestcopy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plancharacterpick { display: flex; align-items: center; gap: 6px; }
 .plancharacterpick > span {
   color: var(--gold-dim); font-size: 0.6rem; font-weight: 700;
@@ -6325,10 +6391,8 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
   .plansavedsets { flex-wrap: wrap; }
   .plansavedstatus { margin-left: auto; }
   .plansavedpopover { left: 4px; right: auto; }
-  .plansavedaddanchor > .plansavedpopover {
-    left: 50%; right: auto; transform: translateX(-50%);
-  }
   .plansavedpickeranchor > .plansavedpopover { left: 0; right: auto; transform: none; }
+  .plansavedsaveanchor > .plansavedpopover { left: 0; right: auto; transform: none; }
   .plansavedresetanchor > .plansavedpopover { left: auto; right: 0; transform: none; }
 }
 .epicsuggestion {
@@ -6362,6 +6426,11 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .guestgearlookup .plancharacterlookup .chip { min-height: 34px; }
 .guestgearlookup .lookuperr { text-align: center; }
+.guestgearlookup.requeststate > b {
+  padding: 12px 16px; border: 1px solid var(--gold-dim); border-radius: 5px;
+  background: var(--surface); color: var(--gold-bright);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
 .equipmentwindow {
   min-width: 0; display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -6751,6 +6820,11 @@ tr:hover .fixability, .fixability:focus-visible { opacity: 1; }
 }
 .shortrow em { font-style: normal; color: var(--text-muted); font-size: var(--fs-label); }
 .shortrow .iconbtn { padding: 0 4px; line-height: 1; }
+.completedlist > summary { color: var(--success); }
+.shortrow.completed .shortrowicon {
+  color: var(--success); border-color: rgba(var(--success-rgb), 0.5);
+  background: rgba(var(--success-rgb), 0.08); font-size: 0.72rem;
+}
 
 /* Item search is a small EQ2 control window, not a loose row of widgets. The
    four horizontal bands each answer one question: what, which subset, how to

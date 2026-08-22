@@ -4,7 +4,7 @@ import { Examine, Hover, rarityClass } from './ItemCard.jsx'
 import { CLASS_FAMILY } from '../lib/classes.js'
 import { adornmentChanged, adornmentName, itemSockets,
   setFitsHost, setPieceForSlot } from '../lib/planAdornments.js'
-import { firstAvailableSavedSet, savedSetInUse,
+import { firstAvailableSavedSet, savedSetInUse, savedSetSaveDestinations,
   setReplacementNeedsConfirmation } from '../lib/planSavedSets.js'
 
 /* Concrete equipment positions, rather than the catalog's broad slot names.
@@ -849,6 +849,7 @@ function CharacterLookup({ onLoad, busy, err, placeholder = 'Look up a name' }) 
 
 export default function PlanLoadout({ characters, recentCharacters, character,
                                      characterValue, onCharacter,
+                                     requestedCharacter,
                                      shortlist, adornmentSets, whiteAdornments,
                                      active, focusSlot, onFocusSlot,
                                      onCycle, onReset, onSetAdornment, onWhiteAdornment,
@@ -856,8 +857,10 @@ export default function PlanLoadout({ characters, recentCharacters, character,
                                      onClearSetContents, signedIn,
                                      onLookup, lookupBusy, lookupErr,
                                      savedSets, activeSavedSetSlot, savedSetBusy,
-                                     savedSetStatus, savedSetDirty, savedSetModified,
+                                     savedSetStatus, savedSetWorkingStatus,
+                                     savedSetDirty, savedSetModified, completedTargets,
                                      onSaveSet, onRenameSet, onDeleteSet, onLoadSet,
+                                     onImportGuestSet,
                                      statLabel, statPct }) {
   const twoHanded = shortlist.items.find((i) => i.page_title === active.primary)?.two_handed
   const left = PLAN_SLOTS.filter((slot) => slot.side === 'left')
@@ -868,14 +871,16 @@ export default function PlanLoadout({ characters, recentCharacters, character,
     value: `account:${c.id}`, label: c.name, group: 'My characters',
     hint: c.class ? `${c.class} ${c.level ?? ''}` : 'not synced',
   })).concat((recentCharacters || [])
-    .filter((row) => !accountNames.has(row.name.toLowerCase())
+    .filter((row) => !accountNames.has(
+      String(row.lookup_name || row.lookupName || row.name).toLowerCase())
       || characterValue === `recent:${row.key}`)
     .map((row) => ({
       value: `recent:${row.key}`, label: row.name, group: 'Recent searches',
       hint: row.className
         ? `${row.className} ${row.level ?? ''}` : row.saved ? 'saved gear sets' : row.world,
     })))
-  const guestNeedsCharacter = !signedIn && !character?.character
+  const guestNeedsCharacter = !signedIn && !character?.character && !requestedCharacter
+  const requestedPending = !character?.character && !!requestedCharacter
   const resetDisabled = !Object.keys(active).length
     && !Object.keys(shortlist.set_slots || {}).length
     && !Object.keys(shortlist.adorn_slots || {}).length
@@ -896,7 +901,10 @@ export default function PlanLoadout({ characters, recentCharacters, character,
             The card already visibly contains gear and stats; only who is in
             the window needs naming. */}
         <div className="loadoutwho">
-          <h2>{character?.character?.name || 'No character loaded'}</h2>
+          <h2>{character?.character?.display_name || character?.character?.name
+            || (requestedCharacter
+              ? `${lookupBusy ? 'Loading' : 'No record for'} ${requestedCharacter}`
+              : 'No character loaded')}</h2>
         </div>
         {/* THE LOOKUP IS A WAY IN, NOT THE HEADLINE. It occupies the compact
             top-right row. Reset belongs beside the class it resets; the
@@ -920,15 +928,20 @@ export default function PlanLoadout({ characters, recentCharacters, character,
                         title="Tradeskill level">{' · '}{character.character.ts_level}
                     {character.character.ts_class ? ` ${character.character.ts_class}` : ''}</span>
                 ) : null}</>
-            : 'Look up a character on Wuoshi, or just start looking up gear.'}</span>
+            : requestedCharacter
+              ? lookupBusy ? `Looking up ${requestedCharacter} on Wuoshi…`
+                : `No character record for ${requestedCharacter}.`
+              : 'Look up a character on Wuoshi, or just start looking up gear.'}</span>
           <SavedSetControls sets={savedSets} slot={activeSavedSetSlot}
             ownerLoaded={!!character?.character}
             signedIn={signedIn} busy={savedSetBusy} status={savedSetStatus}
+            workingStatus={savedSetWorkingStatus}
             dirty={savedSetDirty} modified={savedSetModified}
             resetDisabled={resetDisabled} onReset={onReset}
             shortlist={shortlist} onRemoveItem={onRemoveItem}
             onToggleTrackedSet={onToggleTrackedSet}
             onClearContents={onClearSetContents}
+            completed={completedTargets} onImportGuest={onImportGuestSet}
             onSave={onSaveSet} onRename={onRenameSet} onDelete={onDeleteSet}
             onLoad={onLoadSet} />
           {signedIn && characters === null && <span className="muted">Loading…</span>}
@@ -943,7 +956,8 @@ export default function PlanLoadout({ characters, recentCharacters, character,
         </div>
       </div>
       <div className="loadoutbody">
-        <div className={`loadoutgear${guestNeedsCharacter ? ' awaitingcharacter' : ''}`}>
+        <div className={`loadoutgear${guestNeedsCharacter || requestedPending
+          ? ' awaitingcharacter' : ''}`}>
           <div className="equipmentwindow">
             <div className="planslots left">{slots(left)}</div>
             <div className="planslots right">
@@ -955,6 +969,12 @@ export default function PlanLoadout({ characters, recentCharacters, character,
             <div className="guestgearlookup">
               <CharacterLookup onLoad={onLookup} busy={lookupBusy} err={lookupErr}
                 placeholder="Look up a character on the Wuoshi server..." />
+            </div>
+          )}
+          {requestedPending && (
+            <div className="guestgearlookup requeststate" role="status">
+              <b>{lookupBusy ? `Looking up ${requestedCharacter}…`
+                : `No character record for “${requestedCharacter}”`}</b>
             </div>
           )}
         </div>
@@ -969,12 +989,18 @@ export default function PlanLoadout({ characters, recentCharacters, character,
 }
 
 function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dirty,
-                            modified, resetDisabled, onReset, shortlist,
+                            workingStatus, modified, resetDisabled, onReset, shortlist,
                             onRemoveItem, onToggleTrackedSet, onClearContents,
+                            completed, onImportGuest,
                             onSave, onRename, onDelete, onLoad }) {
   const selected = sets?.find((row) => row.slot === slot)
   const used = (sets || []).filter(savedSetInUse)
   const available = firstAvailableSavedSet(sets)
+  const saveDestinations = savedSetSaveDestinations(sets, slot)
+  const updateDestination = saveDestinations.find((destination) => (
+    destination.kind === 'update'))
+  const replaceDestinations = saveDestinations.filter((destination) => (
+    destination.kind === 'replace'))
   const options = used.map((row) => ({ value: String(row.slot), label: row.name }))
   const slotOrder = new Map(PLAN_SLOTS.map((row, index) => [row.key, index]))
   const slotLabels = new Map(PLAN_SLOTS.map((row) => [row.key, row.label]))
@@ -984,18 +1010,26 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
   ))
   const contentSets = shortlist?.sets || []
   const contentCount = contentItems.length + contentSets.length
+  const completedRows = completed || []
+  const guestConflicts = (sets || []).filter((row) => row._guest_conflict)
+  const hasContents = contentCount || completedRows.length || guestConflicts.length
   const [panel, setPanel] = useState(null)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(null)
+  const [saveTarget, setSaveTarget] = useState(null)
   const root = useRef(null)
 
   useEffect(() => {
     if (!panel) return undefined
     const away = (event) => {
-      if (!root.current?.contains(event.target)) setPanel(null)
+      if (!root.current?.contains(event.target)) {
+        setPanel(null); setPending(null); setSaveTarget(null)
+      }
     }
     const escape = (event) => {
-      if (event.key === 'Escape') setPanel(null)
+      if (event.key === 'Escape') {
+        setPanel(null); setPending(null); setSaveTarget(null)
+      }
     }
     document.addEventListener('mousedown', away)
     document.addEventListener('keydown', escape)
@@ -1008,6 +1042,13 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
   const close = () => {
     setPanel(null)
     setPending(null)
+    setSaveTarget(null)
+  }
+
+  const openStandalonePanel = (next) => {
+    setPending(null)
+    setSaveTarget(null)
+    setPanel(next)
   }
 
   const finishPending = () => {
@@ -1022,11 +1063,23 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
     setPanel('new')
   }
 
-  const create = async () => {
-    if (!available) return
-    await onSave(available.slot, draft)
+  const saveTo = async (destination, name = destination?.name) => {
+    if (!destination) return
+    await onSave(destination.slot, name)
     if (pending) finishPending()
     else close()
+  }
+
+  const create = () => saveTo(available, draft)
+
+  const openSave = () => {
+    setSaveTarget(null)
+    setPanel('save')
+  }
+
+  const requestOverwrite = (row) => {
+    setSaveTarget(row)
+    setPanel('overwrite')
   }
 
   const requestLoad = (value) => {
@@ -1051,20 +1104,6 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
     onReset()
   }
 
-  const saveThenContinue = async () => {
-    if (!selected) return
-    await onSave(selected.slot, selected.name)
-    finishPending()
-  }
-
-  const saveCurrent = () => {
-    if (!selected) {
-      openNew()
-      return
-    }
-    setPanel('save')
-  }
-
   const submitRename = async () => {
     if (!selected) return
     await onRename(selected.slot, draft)
@@ -1072,18 +1111,15 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
   }
 
   const replacementPanel = () => (
-    <div className="plansavedpopover" role="alertdialog" aria-label="Unsaved gear changes">
+    <div className="plansavedpopover" role="alertdialog" aria-label="Uncommitted gear changes">
       <b>Keep these changes?</b>
       <p>{pending.kind === 'reset'
         ? 'Resetting will replace the current working loadout.'
         : 'Loading another set will replace the current working loadout.'}</p>
       <div className="plansavedpopoveractions">
-        {selected && dirty && (
+        {modified && saveDestinations.length > 0 && (
           <button type="button" className="chip on" disabled={busy}
-                  onClick={saveThenContinue}>Save and continue</button>
-        )}
-        {!selected && available && (
-          <button type="button" className="chip on" onClick={openNew}>Save as a set…</button>
+                  onClick={openSave}>Save and continue…</button>
         )}
         <button type="button" className="chip" onClick={finishPending}>Discard changes</button>
         <button type="button" className="btnlink" onClick={close}>Cancel</button>
@@ -1097,18 +1133,54 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
       <span className="plansavedanchor plansavedpickeranchor">
         <Picker className="plansavedpicker" value={slot ? String(slot) : ''}
                 onChange={requestLoad} options={options}
-                placeholder={used.length ? 'Choose set' : 'Unsaved build'}
+                placeholder={used.length ? 'Load set…' : 'No saved sets'}
                 label="Gear set" disabled={busy || !used.length} filterFrom={6} />
         {panel === 'replace' && pending?.kind === 'set' && replacementPanel()}
       </span>
-      <span className="plansavedanchor plansavedaddanchor">
-        <button type="button" className="iconbtn plansavedadd"
-                disabled={busy || !ownerLoaded || !available}
-                aria-label="Save as a new gear set"
-                title={available ? 'Save as a new gear set' : 'All five gear sets are in use'}
-                onClick={openNew}>+</button>
+      <span className="plansavedanchor plansavedsaveanchor">
+        <button type="button" className="chip on plansavedsave"
+                disabled={busy || !ownerLoaded || !modified}
+                aria-haspopup="dialog" aria-expanded={panel === 'save'}
+                title="Save this plan to a new or existing gear set"
+                onClick={() => (panel === 'save' ? close() : openSave())}>
+          Save
+        </button>
+        {panel === 'save' && (
+          <div className="plansavedpopover savechoices" role="dialog"
+               aria-label="Save gear set">
+            <b>{selected ? 'Save plan to' : 'Save draft to'}</b>
+            <div className="plansaveddestinations">
+              {updateDestination && dirty && (
+                <button type="button" className="current" disabled={busy}
+                        onClick={() => saveTo(updateDestination.row)}>
+                  <span><small>Current set</small><b>{updateDestination.row.name}</b></span>
+                  <em>Update</em>
+                </button>
+              )}
+              {replaceDestinations.map(({ row }) => (
+                <button type="button" disabled={busy} key={row.slot}
+                        onClick={() => requestOverwrite(row)}>
+                  <span><small>Saved set {row.slot}</small><b>{row.name}</b></span>
+                  <em>Replace</em>
+                </button>
+              ))}
+              {available && (
+                <button type="button" className="new" disabled={busy}
+                        onClick={openNew}>
+                  <span><small>Empty slot {available.slot}</small><b>Create new set</b></span>
+                  <em>New</em>
+                </button>
+              )}
+            </div>
+            {!signedIn && (
+              <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>
+            )}
+          </div>
+        )}
         {panel === 'new' && available && (
-          <div className="plansavedpopover" role="dialog" aria-label="New gear set">
+          <div className="plansavedpopover" role="dialog" aria-label="Create gear set">
+            <b>Create new set</b>
+            <p>This uses empty slot {available.slot}.</p>
             <label><span>Name this set</span>
               <input value={draft} maxLength={40} autoFocus
                      onFocus={(event) => event.target.select()}
@@ -1117,47 +1189,44 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
             </label>
             <div className="plansavedpopoveractions">
               <button type="button" className="chip on" disabled={busy}
-                      onClick={create}>Save set</button>
-              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+                      onClick={create}>Create set</button>
+              <button type="button" className="btnlink"
+                      onClick={() => setPanel('save')}>Back</button>
             </div>
-            {!signedIn && (
-              <span className="plansavedhint">Saved by cookie. <a href="/login">Create an account</a> to save long-term.</span>
-            )}
           </div>
         )}
-      </span>
-      <span className={`plansaveddirty${dirty || (!slot && modified) ? ' on' : ''}`}>
-        {dirty || (!slot && modified) ? '● Unsaved' : '\u00a0'}
-      </span>
-      <span className="plansavedanchor plansavedsaveanchor">
-        <button type="button" className="chip plansavedsave"
-                disabled={busy || !ownerLoaded || (Boolean(slot) && !dirty)}
-                onClick={saveCurrent}>Save…</button>
-        {panel === 'save' && selected && (
-          <div className="plansavedpopover" role="dialog" aria-label="Save gear set">
-            <b>Save {selected.name}</b>
-            <p>Update this set, or keep it and create another.</p>
+        {panel === 'overwrite' && saveTarget && (
+          <div className="plansavedpopover" role="alertdialog"
+               aria-label={`Replace ${saveTarget.name}`}>
+            <b>Replace {saveTarget.name}?</b>
+            <p>Its saved targets will be replaced with this working plan.</p>
             <div className="plansavedpopoveractions">
-              <button type="button" className="chip on" disabled={busy}
-                      onClick={async () => { await onSave(selected.slot, selected.name); close() }}>
-                Update set
+              <button type="button" className="chip danger" disabled={busy}
+                      onClick={() => saveTo(saveTarget)}>
+                Replace set
               </button>
-              {available && <button type="button" className="chip" onClick={openNew}>Save as new</button>}
-              <button type="button" className="btnlink" onClick={close}>Cancel</button>
+              <button type="button" className="btnlink"
+                      onClick={() => setPanel('save')}>Back</button>
             </div>
           </div>
         )}
       </span>
       <span className="plansavedanchor plansavedcontentsanchor">
         <button type="button" className="chip plansavedcontents"
-                disabled={busy || !contentCount}
-                onClick={() => setPanel(panel === 'contents' ? null : 'contents')}>
+                disabled={busy || !hasContents}
+                onClick={() => (panel === 'contents'
+                  ? close() : openStandalonePanel('contents'))}>
           Contents {contentCount}
         </button>
         {panel === 'contents' && (
           <div className="plansavedpopover contents" role="dialog" aria-label="Set contents">
-            <b>Set contents</b>
-            <p>Uncheck gear or set-adornment goals to remove them from this set and its Outline.</p>
+            <div className="plansavedcontentshead">
+              <b>Set contents</b>
+              {!!contentCount && (
+                <button type="button" className="btnlink danger"
+                        onClick={onClearContents}>Uncheck all</button>
+              )}
+            </div>
             <div className="plansavedcontentlist">
               {!!contentItems.length && <span className="seclabel">Gear</span>}
               {contentItems.map((item) => (
@@ -1176,23 +1245,47 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
                 </label>
               ))}
               {!contentCount && <span className="muted">No planned gear or set adornments.</span>}
-            </div>
-            <div className="plansavedpopoveractions">
-              {!!contentCount && (
-                <button type="button" className="btnlink danger"
-                        onClick={onClearContents}>Uncheck all</button>
+              {!!completedRows.length && (
+                <details className="plansavedcompleted">
+                  <summary>Completed {completedRows.length}</summary>
+                  {completedRows.map((row) => (
+                    <label key={row.key}>
+                      <input type="checkbox" checked onChange={() => (
+                        row.kind === 'item'
+                          ? onRemoveItem(row.target.equip_slot, row.target.page_title)
+                          : onToggleTrackedSet(row.target))} />
+                      <span>
+                        <small>{row.planned_slot || (row.kind === 'item' ? 'Gear' : 'Set adornment')}</small>
+                        <b>{row.name}</b>
+                        <em>Equipped {row.first_seen_ts
+                          ? new Date(row.first_seen_ts * 1000).toLocaleDateString() : 'previously'}</em>
+                      </span>
+                    </label>
+                  ))}
+                </details>
               )}
-              <button type="button" className="btnlink" onClick={close}>Done</button>
+              {!!guestConflicts.length && <span className="seclabel">Guest copies</span>}
+              {guestConflicts.map((row) => (
+                <div className="plansavedguestcopy" key={`guest:${row.slot}`}>
+                  <span><small>Slot {row.slot}</small>
+                    <b>{row._guest_conflict.name}</b></span>
+                  <button type="button" className="btnlink" disabled={busy}
+                          onClick={() => onImportGuest(row.slot)}>
+                    Import, replacing {row.name}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </span>
+      {selected && <>
       <span className="plansavedanchor plansavedrenameanchor">
         <button type="button" className="btnlink plansavedaction"
                 disabled={busy || !selected}
                 onClick={() => {
                   if (!selected) return
-                  setDraft(selected.name); setPanel('rename')
+                  setDraft(selected.name); openStandalonePanel('rename')
                 }}>Rename</button>
         {panel === 'rename' && selected && (
           <div className="plansavedpopover" role="dialog" aria-label="Rename gear set">
@@ -1213,7 +1306,7 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
       <span className="plansavedanchor plansaveddeleteanchor">
         <button type="button" className="btnlink plansavedaction danger"
                 disabled={busy || !selected}
-                onClick={() => setPanel('delete')}>Delete</button>
+                onClick={() => openStandalonePanel('delete')}>Delete</button>
         {panel === 'delete' && selected && (
           <div className="plansavedpopover" role="alertdialog" aria-label="Delete gear set">
             <b>Delete {selected.name}?</b>
@@ -1228,6 +1321,13 @@ function SavedSetControls({ sets, slot, ownerLoaded, signedIn, busy, status, dir
           </div>
         )}
       </span>
+      </>}
+      {(!selected || dirty) && (
+        <span className={`plansaveddirty${dirty ? ' on' : ''}`}
+              title={workingStatus || undefined}>
+          {workingStatus || 'Equipped'}
+        </span>
+      )}
       <span className="plansavedstatus" role="status" aria-live="polite">
         {status || '\u00a0'}
       </span>

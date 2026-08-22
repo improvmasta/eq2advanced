@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
@@ -27,7 +28,7 @@ ICONS_DIR = DATA_DIR / "icons"
 
 _local = threading.local()
 
-SCHEMA_VERSION = 51
+SCHEMA_VERSION = 52
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -830,6 +831,37 @@ CREATE TABLE IF NOT EXISTS planner_saved_sets (
 );
 CREATE INDEX IF NOT EXISTS idx_planner_saved_sets_owner
   ON planner_saved_sets(user_id, owner_name);
+-- v52: completion is an additive observation belonging to one reader and one
+-- public-character folder. It is deliberately separate from saved slots: two
+-- plans targeting the same exact item are both satisfied by observing it once.
+CREATE TABLE IF NOT EXISTS planner_obtained_items (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  owner_key TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  first_seen_ts INTEGER NOT NULL,
+  last_seen_ts INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  PRIMARY KEY (user_id, owner_key, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_planner_obtained_owner
+  ON planner_obtained_items(user_id, owner_key, first_seen_ts);
+-- Canonical-key collisions are never silently discarded. The pre-migration
+-- table is also retained as planner_saved_sets_v51; this narrower table makes
+-- displaced, non-identical payloads explicit for later recovery tooling.
+CREATE TABLE IF NOT EXISTS planner_saved_set_recovery (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  owner_key TEXT NOT NULL,
+  owner_name TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_ts INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  recovered_ts INTEGER NOT NULL,
+  UNIQUE(user_id, owner_key, slot, payload_json, reason)
+);
 -- v36: the public chat box became a RECORD (`pipeline/chatbus.py`). It used to
 -- be a relay with a few hours of memory that a restart emptied; it is now the
 -- site's archive of the three PUBLIC channels, kept for as long as there is
@@ -1502,6 +1534,113 @@ def _rebuild_sessions(conn) -> None:
                     "WHERE upload_sha256 IS NOT NULL",))
 
 
+def _canonicalize_planner_saved_sets(conn) -> None:
+    """v52: move provider-derived folders onto stable world:name keys.
+
+    The one-time full copy is intentionally kept. There are at most five rows
+    per old folder, and losing a plan is much worse than retaining a small JSON
+    recovery table after the migration has been verified.
+    """
+    from planner.identity import DEFAULT_WORLD, lookup_name, planner_key
+
+    already = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='planner_saved_sets_v51'").fetchone()
+    if not already:
+        conn.execute(
+            "CREATE TABLE planner_saved_sets_v51 AS SELECT * FROM planner_saved_sets")
+    rows = conn.execute(
+        "SELECT user_id, owner_key, owner_name, slot, name, payload_json, updated_ts "
+        "FROM planner_saved_sets").fetchall()
+    grouped: dict[tuple[int, str, int], list[dict]] = {}
+    invalid: list[dict] = []
+    needs_rewrite = False
+    for row in rows:
+        if not row["payload_json"]:
+            needs_rewrite = True
+            continue
+        try:
+            payload = json.loads(row["payload_json"])
+            owner = (payload or {}).get("shortlist", {}).get("owner") or {}
+            old_owner = dict(owner)
+            old_world = str(owner.get("world") or
+                            (str(row["owner_key"]).split(":", 1)[0]
+                             if ":" in str(row["owner_key"]) else DEFAULT_WORLD))
+            named = (owner.get("lookup_name") or owner.get("lookupName")
+                     or owner.get("name") or row["owner_name"])
+            canonical_lookup = lookup_name(named, old_world)
+            canonical_key = planner_key(old_world, canonical_lookup)
+            display = " ".join(str(owner.get("display_name")
+                                     or owner.get("name")
+                                     or row["owner_name"]
+                                     or canonical_lookup).split())[:40]
+            owner.update({
+                "key": canonical_key,
+                "lookup_name": canonical_lookup,
+                "display_name": display,
+                "name": display,
+                "world": old_world,
+            })
+            payload.setdefault("shortlist", {})["owner"] = owner
+            if (str(row["owner_key"]).casefold() != canonical_key
+                    or old_owner != owner):
+                needs_rewrite = True
+            mapped = {
+                **dict(row), "owner_key": canonical_key,
+                "owner_name": display,
+                "payload": payload,
+                "payload_json": json.dumps(payload, ensure_ascii=False,
+                                             separators=(",", ":")),
+            }
+            grouped.setdefault(
+                (row["user_id"], canonical_key, row["slot"]), []).append(mapped)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            needs_rewrite = True
+            invalid.append(dict(row))
+
+    if not needs_rewrite:
+        return
+
+    recovered_at = int(time.time())
+    for row in invalid:
+        conn.execute(
+            "INSERT OR IGNORE INTO planner_saved_set_recovery"
+            "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts, "
+            "reason, recovered_ts) VALUES(?,?,?,?,?,?,?,?,?)",
+            (row["user_id"], row["owner_key"], row["owner_name"], row["slot"],
+             row["name"], row["payload_json"], row["updated_ts"],
+             "invalid canonical identity", recovered_at))
+
+    winners = []
+    for candidates in grouped.values():
+        candidates.sort(key=lambda row: (
+            int(row["updated_ts"] or 0),
+            str(row["owner_key"]), str(row["name"]), row["payload_json"]),
+            reverse=True)
+        winner = candidates[0]
+        winners.append(winner)
+        for displaced in candidates[1:]:
+            if displaced["payload"] == winner["payload"]:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO planner_saved_set_recovery"
+                "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts, "
+                "reason, recovered_ts) VALUES(?,?,?,?,?,?,?,?,?)",
+                (displaced["user_id"], displaced["owner_key"],
+                 displaced["owner_name"], displaced["slot"], displaced["name"],
+                 displaced["payload_json"], displaced["updated_ts"],
+                 "canonical key collision", recovered_at))
+
+    conn.execute("DELETE FROM planner_saved_sets")
+    conn.executemany(
+        "INSERT INTO planner_saved_sets"
+        "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts) "
+        "VALUES(?,?,?,?,?,?,?)",
+        [(row["user_id"], row["owner_key"], row["owner_name"], row["slot"],
+          row["name"], row["payload_json"], row["updated_ts"])
+         for row in winners])
+
+
 def init_db() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -1558,7 +1697,10 @@ def init_db() -> None:
         legacy_saved = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' "
             "AND name='planner_saved_sets_v45'").fetchone()
-        if legacy_saved:
+        canonical_saved_backup = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='planner_saved_sets_v51'").fetchone()
+        if legacy_saved and not canonical_saved_backup:
             for row in conn.execute(
                     "SELECT user_id, slot, name, payload_json, updated_ts "
                     "FROM planner_saved_sets_v45").fetchall():
@@ -1577,6 +1719,12 @@ def init_db() -> None:
                     "VALUES(?,?,?,?,?,?,?)",
                     (row["user_id"], owner_key, owner_name, row["slot"], row["name"],
                      row["payload_json"], row["updated_ts"]))
+        # v52: Census ids and display labels used to split one public
+        # character into multiple folders. Canonicalize only after the v45
+        # recovery rows above have had their one chance to re-enter the live
+        # table, and keep both the full pre-migration copy and explicit
+        # non-identical collision rows.
+        _canonicalize_planner_saved_sets(conn)
         loot_room_cols = {r[1] for r in conn.execute(
             "PRAGMA table_info(loot_bid_rooms)")}
         if "current_zone" not in loot_room_cols:

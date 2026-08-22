@@ -7,8 +7,12 @@ import {
   savedSetInUse,
   savedSetOwnerName,
   savedSetPayloadEqual,
+  savedSetSaveDestinations,
   savedSetSnapshot,
   setReplacementNeedsConfirmation,
+  restoredWorkspace,
+  validateWorkspaceBase,
+  workspaceStatus,
 } from './planSavedSets.js'
 
 test('only committed builds consume one of the five slots', () => {
@@ -21,6 +25,18 @@ test('only committed builds consume one of the five slots', () => {
   assert.equal(savedSetInUse(rows[1]), false)
   assert.equal(savedSetInUse(rows[2]), false)
   assert.equal(firstAvailableSavedSet(rows)?.slot, 2)
+})
+
+test('one save menu exposes update, replace, and new destinations', () => {
+  const rows = [
+    { slot: 1, name: 'Raid', payload: { version: 3 } },
+    { slot: 2, name: 'Solo', payload: { version: 3 } },
+    { slot: 3, name: 'Set 3', payload: null },
+  ]
+  assert.deepEqual(savedSetSaveDestinations(rows, null).map(({ kind, row }) => (
+    [kind, row.slot])), [['replace', 1], ['replace', 2], ['new', 3]])
+  assert.deepEqual(savedSetSaveDestinations(rows, 1).map(({ kind, row }) => (
+    [kind, row.slot])), [['update', 1], ['replace', 2], ['new', 3]])
 })
 
 test('owner is read from the saved payload without inventing one', () => {
@@ -46,7 +62,7 @@ test('planned adornment removal still counts as modified equipment', () => {
   assert.equal(hasPlannedEquipment({ items: [], sets: [{ name: 'Focused Mind' }] }), true)
 })
 
-test('a saved set keeps its full linked Outline and adornment state', () => {
+test('a saved set keeps its full linked Outline and explicit adornment targets', () => {
   const active = { page_title: 'Raid Crown', equip_slot: 'head',
     card: { stats: { adornments: ['white', 'turquoise'] } } }
   const alternate = { page_title: 'Quest Crown', equip_slot: 'head' }
@@ -59,11 +75,49 @@ test('a saved set keeps its full linked Outline and adornment state', () => {
     adorn_slots: { head: { 0: null } },
   }, [{ key: 'head', page_title: active.page_title }])
 
-  assert.equal(payload.version, 2)
+  assert.equal(payload.version, 3)
   assert.deepEqual(payload.shortlist.items, [active, alternate])
   assert.deepEqual(payload.shortlist.sets, [trackedSet])
   assert.equal(payload.shortlist.set_slots.head, 'Focused Mind Set')
   assert.equal(payload.shortlist.adorn_slots.head[0], null)
+})
+
+test('a saved set leaves untouched equipped slots on the floating baseline', () => {
+  const payload = savedSetSnapshot({
+    owner: { key: 'wuoshi:bobby' }, items: [], sets: [], active: {},
+    set_slots: {}, adorn_slots: {},
+  })
+  assert.deepEqual(payload.shortlist.set_slots, {})
+  assert.deepEqual(payload.shortlist.adorn_slots, {})
+})
+
+test('a legacy bare shortlist migrates to a v3 draft workspace', () => {
+  const owner = { key: 'wuoshi:bobby', lookup_name: 'Bobby', name: 'Bobby (Wuoshi)' }
+  const workspace = restoredWorkspace({ owner, items: [{ page_title: 'Hat' }],
+    sets: [], active: {}, set_slots: {}, adorn_slots: {} }, owner, (value) => value)
+  assert.equal(workspace.version, 3)
+  assert.equal(workspace.base.kind, 'draft')
+  assert.equal(workspace.shortlist.owner.key, owner.key)
+})
+
+test('saved base identity survives refresh only while its payload still matches', () => {
+  const payload = { version: 3, shortlist: { items: ['Hat'] } }
+  const workspace = { base: { kind: 'saved', slot: 2, saved_updated_ts: 10 } }
+  assert.deepEqual(validateWorkspaceBase(workspace, [
+    { slot: 2, name: 'Raid', payload, updated_ts: 10 },
+  ], payload), { kind: 'saved', slot: 2, saved_updated_ts: 10 })
+  assert.equal(validateWorkspaceBase(workspace, [
+    { slot: 2, name: 'Raid', payload: { version: 3 }, updated_ts: 11 },
+  ], payload).kind, 'draft')
+})
+
+test('workspace status distinguishes equipped, restored draft, and named changes', () => {
+  assert.equal(workspaceStatus({ kind: 'equipped' }, null, false, false), 'Equipped')
+  assert.equal(workspaceStatus({ kind: 'draft' }, null, false, true), 'Draft restored')
+  const row = { name: 'Raid', payload: { version: 3 } }
+  assert.equal(workspaceStatus({ kind: 'saved' }, row, false, true), 'Raid')
+  assert.equal(workspaceStatus({ kind: 'saved' }, row, true, true),
+    'Raid - changes not saved')
 })
 
 test('replacement guard protects active and unsaved scratch builds', () => {

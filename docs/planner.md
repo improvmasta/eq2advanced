@@ -576,22 +576,47 @@ not with the replacement item's empty host: moving gear never marks the same
 adornment—or the same empty socket—as a new planned adornment.
 
 **Gear sets** is one stable loadout bar, not five shape-shifting tabs. Its
-chooser names only the active set; `+` saves the current loadout into the first
-free slot, up to five for the loaded public character. `Save…` updates the
-active set or saves as new, while Rename and Delete stay visible. The new-set
-editor opens from `+` instead of crossing to the far edge of the header.
+chooser only loads an existing set. One adjacent **Save** control owns every
+destination: update the current set, explicitly replace any other saved set,
+or create a new one in the first free slot, up to five for the loaded public
+character. The name editor appears only after **Create new set** is chosen;
+Rename and Delete appear only when an existing set is active.
 **Contents** shows every checked gear candidate and tracked set-adornment goal;
 unchecking one removes it from both the working set and its linked Outline, and
 **Uncheck all** clears the list in one action. Save persists that change.
 
 A saved set captures the whole Outline, not only the item currently shown in
-each equipment slot. It also materializes the exact white and turquoise
-adornment state, including equipped adornments and deliberately empty sockets,
-instead of inheriting a later character refresh. Editors and confirmations are
-anchored popovers, so no action changes the header's width. Loading another set
-or resetting a changed scratch loadout requires Save/Discard/Cancel. The dirty
-comparison canonicalizes object keys, so undoing a socket change cannot leave a
-false `Unsaved` marker.
+each equipment slot. Explicit white/turquoise choices and deliberately empty
+sockets persist, while untouched equipped sockets remain implicit and inherit a
+later character refresh. Editors and confirmations are anchored popovers, so no
+action changes the header's width. Loading another set or resetting a changed
+scratch loadout requires Save/Discard/Cancel. The dirty comparison canonicalizes
+object keys, so undoing a socket change cannot leave a false changes-not-saved
+marker.
+
+**A saved plan is a target list over a floating equipped baseline, not an
+equipment snapshot.** Untargeted slots always use the newest character record.
+After a successful character load, exact equipped gear and installed-adornment
+identities are reconciled into an additive ledger for that reader and canonical
+public character. A target already observed equipped stops replacing the live
+row, leaves projection and active Outline work, and moves into collapsed
+**Completed** disclosures in Contents and the Outline. The saved target remains
+unchanged, so automatic progression never marks a clean named set dirty; later
+unequipping the item does not make it un-obtained.
+
+Ordinary gear uses exact Census item ids. Finger, Ear, Wrist, and Charm targets
+are physical alternatives, so the id may be observed in either compatible
+position. Exact turquoise pieces reconcile by installed adornment id when the
+target carries one and otherwise by the strict full piece name; one observed
+piece never completes a broad legacy whole-set goal or another piece in its
+ladder. The Planner sees equipped gear only—bags and banks remain unknown.
+
+The browser workspace is version 3 and persists both its shortlist and base:
+`equipped`, `draft`, or one saved slot plus its update timestamp. After the five
+saved rows arrive, the base pointer is retained only when payload and timestamp
+still match. The bar therefore says **Equipped**, **Draft restored**, the saved
+name, or **<name> - changes not saved**, and a refresh of a clean named plan
+keeps that named association.
 
 Guests use the same workflow in character-keyed browser storage with the terse
 note “Saved by cookie. Create an account to save long-term.”; signed-in saves
@@ -1230,11 +1255,14 @@ thing that invites it. Keep any new `-rgb` pairs in step across both themes.
 ## Schema
 
 Catalog tables are reference data and touch no parse or visibility predicate.
-`planner_saved_sets` is the one account-owned Planner table: five bounded JSON
-loadouts per `(user, public character key)`. The key is private organization,
-not character ownership. Current schema is v50, guarded by table shape like
-every other migration in `db.py`; v45 rows migrate under the owner embedded in
-their payload and the original table remains as a recovery copy.
+`planner_saved_sets` and `planner_obtained_items` are the account-owned Planner
+tables. Saved sets keep five bounded JSON target plans per `(user, public
+character key)`; obtained rows are additive exact observations shared across
+that reader's five plans for the same character. The key is private
+organization, not character ownership. Current schema is v52, guarded by table
+shape like every other migration in `db.py`. v45 rows and provider-derived
+numeric/display keys migrate to canonical `world:lookup_name`; the full old
+table and non-identical collision payloads remain as recovery copies.
 
 | Table | Holds |
 | --- | --- |
@@ -1250,6 +1278,8 @@ their payload and the original table remains as a recovery copy.
 | `plan_clusters`, `plan_cluster_members` *(planned)* | Computed tags and membership |
 | `plan_nominations` *(planned)* | Layer-2 candidates awaiting a curator, with the quoted sentence |
 | `planner_saved_sets` | Five renameable equipment-set slots per account and public character; missing rows are empty defaults |
+| `planner_obtained_items` | Private additive exact gear/adornment observations per account and canonical public character |
+| `planner_saved_set_recovery` | Non-identical payloads displaced by canonical-key collisions; the full pre-v52 table is also retained |
 
 `refdata/planner_standard.json` holds layer 3, keyed by era, and is **not** a
 table — it is edited by hand and read like `zone_eras.json`. Adding a third
@@ -1472,6 +1502,17 @@ anything a person typed. The miss is cached too, so a typo is not re-asked.
 character, because two builders would drift and the difference would only show
 on the path nobody is signed in for.
 
+Every summary carries three separate public identity facts. `planner_key` is
+canonical normalized world plus lookup name (`wuoshi:bobby`) and files all
+workspace, saved-set, Recent, and completion state. `lookup_name` is the exact
+round-trippable public-search input (`Bobby`). `display_name` is presentation
+only (`Bobby (Wuoshi)`). Census ids remain provenance and never enter the
+folder key, so Lexicon fallback and a later Census answer cannot split a plan.
+The `character` URL is authoritative while present: a new lookup cancels or
+invalidates the old response, removing the query restores the remembered
+account character, and loading/failure never leaves an unrelated toon under
+the requested URL.
+
 An owned character still begins with its local `census_char_snapshots` row, and
 a public lookup begins with `plan_characters` (or the matching local Census
 snapshot during an outage); neither substitutes Lexicon's idea of what is
@@ -1628,8 +1669,8 @@ planned and must not pretend unresolved cross-zone epic coordinates are located.
 | The crawl: invert mobs and quests, follow disambiguations, reconcile quests and edges per era | `backend/planner/ingest.py` |
 | The read side: era filter, priority scoring, typed additive set bonuses, the set view, the examine card adapter | `backend/planner/catalog.py` |
 | The outline read side: selected-item sources and prerequisite walk | `backend/planner/outline.py` |
-| Public catalog/outline/character GETs plus authenticated saved-set GET/PUT | `backend/routers/planner_api.py` |
-| Reference catalog, graph, wikq2 epic snapshot, and five account saved-set slots per public character (schema v50) | `backend/db.py` |
+| Public catalog/outline/character GETs plus authenticated saved-set GET/PUT/DELETE and private obtained-item reconciliation | `backend/routers/planner_api.py` |
+| Reference catalog, graph, wikq2 epic snapshot, five account saved-set slots, migration recovery, and additive obtained-item ledgers per canonical public character (schema v52) | `backend/db.py` |
 | The page: game-grouped concrete slots, named saved sets, Fabled→Mythical epic suggestion, adornment choices, projected stats, gear/set search, and zone-grouped source list | `frontend/src/pages/Planner.jsx`, `components/PlanLoadout.jsx`, `components/PlanOutline.jsx` |
 | Worn-item enrichment: Census equipment ids first, bounded EQ2 Lexicon item fallback in its own v44 cache | `backend/census/lexicon.py`, `backend/census/sync.py` |
 | The monthly sync, including wikq2's offline epic export | `backend/tools/sync_planner.py`, `backend/planner/epic_timelines.py` |

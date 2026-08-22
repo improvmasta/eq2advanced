@@ -525,8 +525,27 @@ def test_a_character_loads_by_name_with_no_account(client, fake):
     assert body["character"]["name"].lower().startswith("bobby")
     assert body["character"]["public"] is True
     assert body["character"]["id"] is None          # nothing is owned
+    assert body["character"]["planner_key"] == "wuoshi:bobby"
+    assert body["character"]["lookup_name"] == "Bobby"
+    assert body["character"]["display_name"] == "Bobby (Wuoshi)"
     assert body["synced"] is True and body["gear"]
     assert "planner_stats" in body
+
+    # The display label is presentation only and must round-trip through the
+    # public lookup route without searching for the literal ``(Wuoshi)``.
+    again = signed_out.get("/api/plan/character",
+                           params={"name": body["character"]["display_name"]})
+    assert again.status_code == 200
+    assert again.json()["character"]["lookup_name"] == "Bobby"
+
+
+def test_owned_and_public_summaries_share_the_same_planner_identity(client, fake):
+    cid = add_bobby(client)
+    owned = client.get(f"/api/characters/{cid}/census").json()["character"]
+    public = client.get("/api/plan/character",
+                        params={"name": "Bobby"}).json()["character"]
+    assert owned["planner_key"] == public["planner_key"] == "wuoshi:bobby"
+    assert owned["lookup_name"] == public["lookup_name"] == "Bobby"
 
 
 def test_a_second_lookup_is_answered_from_the_cache(client, fake):
@@ -601,6 +620,8 @@ def test_a_first_lookup_uses_lexicon_when_census_is_unreachable(client):
     assert out["character"]["source"] == "lexicon"
     assert out["character"]["last_census_ts"] is None
     assert out["character"]["class"] == "Illusionist"
+    assert out["character"]["planner_key"] == "wuoshi:lexie"
+    assert out["character"]["lookup_name"] == "Lexie"
     assert out["planner_stats"]["potency"] == 44.5
     assert out["planner_stats"]["abdblcast"] == 2.3
     assert [row["key"] for row in out["gear"]] == ["left_ring", "right_ring"]

@@ -18,6 +18,7 @@ from census import catalog
 from census.client import CensusError
 from census.effects import parse_effects
 from db import json_dumps
+from planner.identity import character_fields, lookup_name
 
 # What a snapshot keeps from the character doc. Everything the Character page
 # and future gear/spell diffs need; nothing that bloats the row.
@@ -681,10 +682,12 @@ def _spells(conn, doc: dict, char_class: str | None) -> dict:
 
 def character_summary(conn, char) -> dict:
     row, doc = _snapshot_doc(conn, char["id"])
-    base = {"character": {"id": char["id"], "name": char["name"],
-                          "class": char["class"], "level": char["level"],
-                          "world": "Wuoshi", "last_census_ts": char["last_census_ts"],
-                          "census_id": char["census_character_id"]}}
+    character = {"id": char["id"], "name": char["name"],
+                 "class": char["class"], "level": char["level"],
+                 "world": "Wuoshi", "last_census_ts": char["last_census_ts"],
+                 "census_id": char["census_character_id"]}
+    character.update(character_fields(doc or {}, character))
+    base = {"character": character}
     if doc is None:
         return {**base, "synced": False}
     return _summary_of(conn, doc, base,
@@ -706,8 +709,8 @@ def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
     # its own durable cache. Once filled this is a local read; an outage in the
     # fallback never turns a usable character snapshot into an error.
     from census import lexicon
-    lexicon_name = ((doc.get("name") or {}).get("first")
-                    or (base.get("character") or {}).get("name") or "")
+    identity = character_fields(doc, base.get("character") or {})
+    lexicon_name = identity["lookup_name"]
     lexicon.maybe_enrich_equipment(conn, lexicon_name, doc)
 
     stats = doc.get("stats") or {}
@@ -729,7 +732,7 @@ def _summary_of(conn, doc: dict, base: dict, snapshot: dict | None,
     # so every path that builds this summary — owned, looked-up, or the local
     # snapshot fallback — gets it without a fourth place to keep in step.
     ctype = doc.get("type") or {}
-    character = {**(base.get("character") or {}),
+    character = {**(base.get("character") or {}), **identity,
                  "ts_level": ctype.get("ts_level"),
                  "ts_class": ctype.get("ts_class")}
     return {
@@ -793,7 +796,10 @@ def lookup_by_name(conn, client, name: str, world_id: int = 618,
 
     Returns None when the name is unknown and nothing is cached. Writes no
     account state — see the `plan_characters` comment in `db.py`."""
-    key = base_name(name).strip()
+    # A display label such as ``Bobby (Wuoshi)`` must round-trip to the public
+    # lookup. ``base_name`` is the spell-rank helper and would also corrupt a
+    # legitimate character whose name ends in roman letters.
+    key = lookup_name(name, "Wuoshi")
     if not key:
         return None
     lower = key.lower()

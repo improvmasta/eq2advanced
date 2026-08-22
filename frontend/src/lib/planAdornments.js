@@ -120,37 +120,3 @@ export function inheritSlotAdornments({
 
   return { setSlots: nextSetSlots, adornSlots: nextAdornSlots }
 }
-
-/* A NAMED SET IS A SNAPSHOT, NOT A POINTER BACK TO "EQUIPPED". The working
-   loadout normally leaves untouched sockets implicit so a refreshed character
-   naturally shows what they now wear. Saving needs the opposite rule:
-   materialize each selectable socket so a later load restores the white and
-   turquoise adornments (including deliberately empty sockets) visible now. */
-export function snapshotAdornmentState(shortlist, gear = []) {
-  let setSlots = { ...(shortlist?.set_slots || {}) }
-  let adornSlots = { ...(shortlist?.adorn_slots || {}) }
-  const active = shortlist?.active || {}
-  const items = shortlist?.items || []
-  const slots = new Set([
-    ...gear.map((item) => item?.key).filter(Boolean),
-    ...Object.keys(active),
-    ...Object.keys(setSlots),
-    ...Object.keys(adornSlots),
-  ])
-
-  slots.forEach((slot) => {
-    const page = active[slot]
-    const item = (page && items.find((candidate) => candidate.page_title === page))
-      || gear.find((candidate) => candidate.key === slot)
-    /* Keep carried data if an old/incomplete payload no longer describes the
-       host. Silently deleting it here would make Save destructive. */
-    if (!item) return
-    const captured = inheritSlotAdornments({
-      slot, fromItem: item, toItem: item, setSlots, adornSlots,
-    })
-    setSlots = captured.setSlots
-    adornSlots = captured.adornSlots
-  })
-
-  return { setSlots, adornSlots }
-}

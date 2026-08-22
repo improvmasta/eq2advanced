@@ -89,8 +89,8 @@ export const api = {
   refreshToken: (label) => req('/api/tokens/refresh', json({ label })),
   census: (charId) => req(`/api/characters/${charId}/census`),
   // A public Census character by name — no account, `/plan`'s own route.
-  planCharacter: (name) =>
-    req(`/api/plan/character?name=${encodeURIComponent(name)}`),
+  planCharacter: (name, { signal } = {}) =>
+    req(`/api/plan/character?name=${encodeURIComponent(name)}`, { signal }),
   censusRefresh: (charId) => req(`/api/characters/${charId}/census/refresh`, { method: 'POST' }),
   censusSnapshots: (charId) => req(`/api/characters/${charId}/census/snapshots`),
   censusDiff: (charId, snapId) => req(`/api/characters/${charId}/census/snapshots/${snapId}/diff`),
@@ -311,10 +311,27 @@ export const api = {
   planSavedSets: (ownerKey) => req(
     `/api/plan/saved-sets?owner_key=${encodeURIComponent(ownerKey)}`),
   planSavedSetOwners: () => req('/api/plan/saved-set-owners'),
-  putPlanSavedSet: (owner, slot, name, payload) => req(
+  putPlanSavedSet: (owner, slot, name, payload, baseUpdatedTs = null) => req(
     `/api/plan/saved-sets/${slot}`, {
-      ...json({ owner_key: owner.key, owner_name: owner.name, name, payload }),
+      ...json({ owner_key: owner.key, owner_name: owner.name, name, payload,
+        ...(baseUpdatedTs == null ? {} : { base_updated_ts: baseUpdatedTs }) }),
       method: 'PUT',
+    }),
+  deletePlanSavedSet: (ownerKey, slot) => req(
+    `/api/plan/saved-sets/${slot}?owner_key=${encodeURIComponent(ownerKey)}`,
+    { method: 'DELETE' }),
+  planObtainedItems: (ownerKey) => req(
+    `/api/plan/obtained-items?owner_key=${encodeURIComponent(ownerKey)}`),
+  reconcilePlanObtainedItems: (owner, items) => req(
+    '/api/plan/obtained-items/reconcile', {
+      ...json({
+        owner_key: owner.key,
+        lookup_name: owner.lookup_name || owner.lookupName,
+        display_name: owner.display_name || owner.name,
+        world: owner.world,
+        items,
+      }),
+      method: 'POST',
     }),
 
   // groups + sharing

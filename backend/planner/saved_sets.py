@@ -5,11 +5,18 @@ from __future__ import annotations
 import json
 import time
 
+from planner.identity import lookup_name, planner_key, validate_planner_key
+
 SLOT_COUNT = 5
 MAX_NAME = 40
 MAX_OWNER_KEY = 160
 MAX_OWNER_NAME = 40
 MAX_PAYLOAD_BYTES = 400_000
+UNGUARDED = object()
+
+
+class SavedSetConflict(ValueError):
+    """A guarded browser fallback tried to replace a newer server write."""
 
 
 def _default(slot: int) -> dict:
@@ -18,10 +25,12 @@ def _default(slot: int) -> dict:
 
 
 def _owner(owner_key: str, owner_name: str = "") -> tuple[str, str]:
-    clean_key = str(owner_key or "").strip().lower()[:MAX_OWNER_KEY]
+    clean_key = validate_planner_key(owner_key)
     clean_name = " ".join(str(owner_name or "").split()).strip()[:MAX_OWNER_NAME]
-    if not clean_key:
-        raise ValueError("saved-set character key is required")
+    if clean_name:
+        world = clean_key.split(":", 1)[0]
+        if planner_key(world, lookup_name(clean_name, world)) != clean_key:
+            raise ValueError("saved-set character name does not match its key")
     return clean_key, clean_name
 
 
@@ -52,15 +61,34 @@ def owners(conn, user_id: int) -> list[dict]:
     This list only says which public-character keys this account has privately
     filed builds under; another account can independently use the same keys.
     """
-    return [dict(row) for row in conn.execute(
-        "SELECT owner_key, owner_name, MAX(updated_ts) AS updated_ts "
-        "FROM planner_saved_sets WHERE user_id=? "
-        "GROUP BY owner_key, owner_name ORDER BY updated_ts DESC, owner_name",
-        (user_id,)).fetchall()]
+    out = {}
+    for row in conn.execute(
+            "SELECT owner_key, owner_name, updated_ts FROM planner_saved_sets "
+            "WHERE user_id=? AND payload_json IS NOT NULL "
+            "ORDER BY updated_ts DESC, slot DESC", (user_id,)).fetchall():
+        if row["owner_key"] in out:
+            continue
+        world = row["owner_key"].split(":", 1)[0]
+        out[row["owner_key"]] = {
+            **dict(row),
+            "lookup_name": lookup_name(row["owner_name"], world),
+        }
+    return list(out.values())
+
+
+def delete(conn, user_id: int, owner_key: str, slot: int) -> None:
+    if not 1 <= slot <= SLOT_COUNT:
+        raise ValueError("saved-set slot must be between 1 and 5")
+    clean_key, _ = _owner(owner_key)
+    with conn:
+        conn.execute(
+            "DELETE FROM planner_saved_sets WHERE user_id=? AND owner_key=? AND slot=?",
+            (user_id, clean_key, slot))
 
 
 def write(conn, user_id: int, owner_key: str, owner_name: str, slot: int,
-          name: str, payload: dict | None) -> dict:
+          name: str, payload: dict | None,
+          expected_updated_ts=UNGUARDED) -> dict:
     if not 1 <= slot <= SLOT_COUNT:
         raise ValueError("saved-set slot must be between 1 and 5")
     clean_owner_key, clean_owner_name = _owner(owner_key, owner_name)
@@ -69,20 +97,47 @@ def write(conn, user_id: int, owner_key: str, owner_name: str, slot: int,
     clean_name = " ".join(name.split()).strip()[:MAX_NAME]
     if not clean_name:
         clean_name = f"Set {slot}"
-    encoded = None
-    if payload is not None:
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if len(encoded.encode("utf-8")) > MAX_PAYLOAD_BYTES:
-            raise ValueError("saved equipment set is too large")
-    now = int(time.time())
+    if payload is None:
+        delete(conn, user_id, clean_owner_key, slot)
+        return _default(slot)
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        raise ValueError("saved equipment set is too large")
+    current = conn.execute(
+        "SELECT updated_ts FROM planner_saved_sets "
+        "WHERE user_id=? AND owner_key=? AND slot=?",
+        (user_id, clean_owner_key, slot)).fetchone()
+    current_ts = current["updated_ts"] if current else None
+    now = max(int(time.time()), int(current_ts or 0) + 1)
     with conn:
-        conn.execute(
-            "INSERT INTO planner_saved_sets"
-            "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts) "
-            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, owner_key, slot) DO UPDATE SET "
-            "owner_name=excluded.owner_name, "
-            "name=excluded.name, payload_json=excluded.payload_json, "
-            "updated_ts=excluded.updated_ts",
-            (user_id, clean_owner_key, clean_owner_name, slot, clean_name, encoded, now))
+        if expected_updated_ts is UNGUARDED:
+            conn.execute(
+                "INSERT INTO planner_saved_sets"
+                "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, owner_key, slot) DO UPDATE SET "
+                "owner_name=excluded.owner_name, "
+                "name=excluded.name, payload_json=excluded.payload_json, "
+                "updated_ts=excluded.updated_ts",
+                (user_id, clean_owner_key, clean_owner_name, slot,
+                 clean_name, encoded, now))
+        elif expected_updated_ts is None:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO planner_saved_sets"
+                "(user_id, owner_key, owner_name, slot, name, payload_json, updated_ts) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (user_id, clean_owner_key, clean_owner_name, slot,
+                 clean_name, encoded, now))
+            if not cursor.rowcount:
+                raise SavedSetConflict("saved set changed before browser fallback synced")
+        else:
+            expected = int(expected_updated_ts)
+            now = max(now, expected + 1)
+            cursor = conn.execute(
+                "UPDATE planner_saved_sets SET owner_name=?, name=?, payload_json=?, "
+                "updated_ts=? WHERE user_id=? AND owner_key=? AND slot=? AND updated_ts=?",
+                (clean_owner_name, clean_name, encoded, now, user_id,
+                 clean_owner_key, slot, expected))
+            if not cursor.rowcount:
+                raise SavedSetConflict("saved set changed before browser fallback synced")
     return next(row for row in read(conn, user_id, clean_owner_key)
                 if row["slot"] == slot)

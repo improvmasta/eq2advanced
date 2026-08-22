@@ -43,7 +43,7 @@ FastAPI + SQLite (WAL) in `backend/`; Vite + React SPA in `frontend/`, built to
 `dist/` and served by the API process. `DATA_DIR` (`./data`, `/data` in the
 container) holds `eq2advanced.db`, `uploads/` (gzipped raw logs, content
 addressed), `raw/` (live-ingest chunks), `parseshots/`, `noteshots/` and `icons/`.
-Schema is at **v50**; migrations in `db.py` are guarded by table SHAPE, not
+Schema is at **v52**; migrations in `db.py` are guarded by table SHAPE, not
 `user_version` (the dev reloader can stamp the version mid-edit).
 
 ## The rules — don't relitigate these
@@ -361,6 +361,13 @@ segmentation)
   (`planner_saved_sets`, v49), local for everyone and on the account when signed
   in. A character key is a private filing folder, never ownership. Loading or
   resetting never discards unsaved work without Save/Discard/Cancel.
+- **A PLAN FLOATS OVER EQUIPPED GEAR; IT IS NOT A SNAPSHOT** — only explicit
+  gear/adornment targets are saved. Exact equipped Census ids feed the private
+  additive obtained ledger (`planner_obtained_items`, v52); completed targets
+  leave projection/Outline work without mutating the saved plan or dirty state.
+- **PLANNER CHARACTER IDENTITY IS `world:lookup_name`, FROM THE BACKEND** —
+  `planner_key` files work, `lookup_name` round-trips public search, and
+  `display_name` only renders. Census ids and labels never become folder keys.
 - **PLANNED GEAR MUST NEVER GET TRAPPED** — one left-edge clicker when a slot has
   alternatives; never spend item-name width on `1/2` plus prev/next. Every
   non-equipped item has a direct `×`. Search-name hover compares Candidate,
@@ -499,6 +506,7 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 
 ## Ship log
 
+- 2026-08-22 (codex): Reconcile Gear Planner set lifecycle
 - 2026-08-21 (codex): Add targeted Quick Equip loadout builder
 - 2026-08-21 (codex): Show Ability Doublecast in Gear Planner
 - 2026-08-20 (codex): Fix Planner set bonus and comparison hovers
@@ -518,4 +526,3 @@ with `bash scripts/update-plugin.sh`. Source: `/home/lindsay/eq2advanced-act`.
 - 2026-08-16 (codex): Refine Planner workspace and recommendations rail
 - 2026-08-16 (codex): Polish saved gear sets and planned adornment deltas
 - 2026-08-16 (codex): Sync epic prerequisites with wikq2
-- 2026-08-16 (codex): Complete Planner gear sets, epics, and route list

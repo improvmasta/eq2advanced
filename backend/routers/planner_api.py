@@ -8,13 +8,14 @@
   GET /api/plan/adornments           -> ordinary white socket choices
   GET /api/plan/outline?…           -> source mobs, quests and hard prerequisites
   GET /api/plan/character?name=…    -> a public character, no account needed
-  GET/PUT /api/plan/saved-sets/…    -> five private loadouts per public character
+  GET/PUT/DELETE /api/plan/saved-sets/… -> private loadouts per public character
+  GET/POST /api/plan/obtained-items/…   -> private additive acquisition ledger
 
 **The catalog is open to anybody, signed in or not**, for the same reason
-`/chat` is. Saved sets are the narrow exception: their two routes require an
-    account and reach only that account's rows, keyed by whichever public
-    character they are planning for. The key is organization, not ownership.
-    Guests use character-keyed localStorage.
+`/chat` is. Saved sets and obtained-item ledgers are the narrow exception:
+    their routes require an account and reach only that account's rows, keyed
+    by whichever public character they are planning for. The key is
+    organization, not ownership. Guests use character-keyed localStorage.
 
 **`/plan/character` is the ONE route here that can reach the network**, and it
 is the exception the rule was already making elsewhere: it runs on a name a
@@ -42,7 +43,9 @@ from pydantic import BaseModel, Field
 from census import client as census_client
 from census import sync as census_sync
 from db import get_db
-from planner import adornments, catalog, outline, quick_equip, saved_sets, wiki
+from planner import (adornments, catalog, obtained_items, outline, quick_equip,
+                     saved_sets, wiki)
+from planner.identity import planner_key
 from security import require_user
 
 router = APIRouter(tags=["planner"])
@@ -58,6 +61,27 @@ class SavedSetIn(BaseModel):
     owner_name: str = Field(min_length=1, max_length=saved_sets.MAX_OWNER_NAME)
     name: str = Field(min_length=0, max_length=saved_sets.MAX_NAME)
     payload: dict | None = None
+    # -1 means "the slot was empty when GET returned". Omitted is an explicit
+    # user write and remains unguarded; the guarded form is for background
+    # browser/guest fallback adoption only.
+    base_updated_ts: int | None = Field(default=None, ge=-1)
+
+
+class ObservedPlannerItemIn(BaseModel):
+    item_key: str = Field(min_length=3, max_length=obtained_items.MAX_ITEM_KEY)
+    item_name: str = Field(min_length=1, max_length=obtained_items.MAX_ITEM_NAME)
+    source: str = Field(min_length=1, max_length=obtained_items.MAX_SOURCE)
+    first_seen_ts: int | None = Field(default=None, ge=1)
+    last_seen_ts: int | None = Field(default=None, ge=1)
+
+
+class ObtainedItemsIn(BaseModel):
+    owner_key: str = Field(min_length=1, max_length=saved_sets.MAX_OWNER_KEY)
+    lookup_name: str = Field(min_length=1, max_length=40)
+    display_name: str = Field(min_length=1, max_length=80)
+    world: str = Field(min_length=1, max_length=40)
+    items: list[ObservedPlannerItemIn] = Field(
+        default_factory=list, max_length=obtained_items.MAX_ITEMS)
 
 
 class QuickEquipIn(BaseModel):
@@ -185,11 +209,56 @@ def plan_saved_set_owners(user=Depends(require_user)):
 def put_plan_saved_set(slot: int, body: SavedSetIn,
                        user=Depends(require_user)):
     try:
+        expected = (saved_sets.UNGUARDED if body.base_updated_ts is None else
+                    None if body.base_updated_ts == -1 else body.base_updated_ts)
         row = saved_sets.write(get_db(), user["id"], body.owner_key,
-                               body.owner_name, slot, body.name, body.payload)
+                               body.owner_name, slot, body.name, body.payload,
+                               expected_updated_ts=expected)
+    except saved_sets.SavedSetConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"set": row}
+
+
+@router.delete("/plan/saved-sets/{slot}")
+def delete_plan_saved_set(
+    slot: int,
+    owner_key: str = Query(..., min_length=1,
+                           max_length=saved_sets.MAX_OWNER_KEY),
+    user=Depends(require_user),
+):
+    try:
+        saved_sets.delete(get_db(), user["id"], owner_key, slot)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True}
+
+
+@router.get("/plan/obtained-items")
+def plan_obtained_items(
+    owner_key: str = Query(..., min_length=1,
+                           max_length=saved_sets.MAX_OWNER_KEY),
+    user=Depends(require_user),
+):
+    try:
+        rows = obtained_items.read(get_db(), user["id"], owner_key)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"items": rows}
+
+
+@router.post("/plan/obtained-items/reconcile")
+def reconcile_plan_obtained_items(body: ObtainedItemsIn,
+                                  user=Depends(require_user)):
+    try:
+        if planner_key(body.world, body.lookup_name) != body.owner_key.casefold():
+            raise ValueError("Planner character facts do not match their key")
+        return obtained_items.reconcile(
+            get_db(), user["id"], body.owner_key,
+            [row.model_dump() for row in body.items])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/plan/outline")

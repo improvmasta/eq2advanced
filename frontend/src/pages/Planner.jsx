@@ -12,8 +12,14 @@ import { Examine, Hover, rarityClass } from '../components/ItemCard.jsx'
 import { api } from '../lib/api.js'
 import { inheritSlotAdornments, itemSockets, setFitsHost,
   setPieceForSlot } from '../lib/planAdornments.js'
+import { mergeObtainedItems, observedPlannerItems, reconcileLocalObtained,
+  reconcilePlanTargets } from '../lib/planReconciliation.js'
 import { defaultSavedSetName, hasPlannedEquipment, savedSetInUse,
-  firstAvailableSavedSet, savedSetPayloadEqual, savedSetSnapshot } from '../lib/planSavedSets.js'
+  firstAvailableSavedSet, restoredWorkspace, savedSetPayloadEqual,
+  savedSetSnapshot, validateWorkspaceBase, workspaceSnapshot,
+  workspaceStatus } from '../lib/planSavedSets.js'
+import { canonicalPlannerKey, characterForRequest, chooseAccountCharacter,
+  lookupName, mergeRecentCharacters, ownerOfSummary } from '../lib/plannerLifecycle.js'
 import { useQueryState } from '../lib/useQueryState.js'
 
 /* The Planner — what to chase in an expansion. See docs/planner.md.
@@ -28,9 +34,11 @@ import { useQueryState } from '../lib/useQueryState.js'
    above them only once the plan contains a choice. */
 
 const SHORTLIST_KEY = 'eq2adv:plan:shortlist:v2'
+const WORKSPACE_KEY = 'eq2adv:plan:workspace:v3'
 const SAVED_SETS_KEY = 'eq2adv:plan:saved-sets:v2'
 const LEGACY_SAVED_SETS_KEY = 'eq2adv:plan:saved-sets:v1'
 const RECENT_CHARACTERS_KEY = 'eq2adv:plan:recent-characters:v1'
+const OBTAINED_ITEMS_KEY = 'eq2adv:plan:obtained-items:v1'
 const SAVED_SET_COUNT = 5
 /* THREE CHOICES, EACH DEFAULTING TO ANY. The priority list is still an ORDER
    and still never shows a weight — what changed is only how you say it. A
@@ -117,26 +125,34 @@ function shortlistStorageKey(ownerKey) {
   return `${SHORTLIST_KEY}:${encodeURIComponent(ownerKey)}`
 }
 
-function loadShortlist(owner) {
-  if (!owner?.key) return emptyShortlist()
-  try {
-    const saved = normalizeShortlist(JSON.parse(
-      localStorage.getItem(shortlistStorageKey(owner.key))))
-    return saved.owner?.key === owner.key ? { ...saved, owner } : { ...emptyShortlist(), owner }
-  }
-  catch { return { ...emptyShortlist(), owner } }
+function workspaceStorageKey(ownerKey) {
+  return `${WORKSPACE_KEY}:${encodeURIComponent(ownerKey)}`
 }
 
-function ownerOf(summary) {
-  const character = summary?.character
-  if (!character?.name || !character?.class) return null
-  const world = character.world || 'Wuoshi'
-  const identity = character.census_id || character.name.trim().toLowerCase()
-  return {
-    key: `${world.toLowerCase()}:${identity}`,
-    name: character.name,
-    className: character.class.toLowerCase(),
-    world,
+function ownerMatches(saved, owner) {
+  if (!saved?.key || saved.key === owner?.key) return true
+  return canonicalPlannerKey(saved.world || owner?.world,
+    saved.lookup_name || saved.lookupName || saved.display_name || saved.name) === owner?.key
+}
+
+function loadWorkspace(owner) {
+  if (!owner?.key) return workspaceSnapshot(null, null, emptyShortlist())
+  try {
+    const direct = localStorage.getItem(workspaceStorageKey(owner.key))
+    let raw = direct ? JSON.parse(direct) : null
+    if (!raw) {
+      const oldKeys = [owner.key, ...(owner.legacyKeys || [])]
+      for (const oldKey of oldKeys) {
+        const legacy = localStorage.getItem(shortlistStorageKey(oldKey))
+        if (legacy) { raw = JSON.parse(legacy); break }
+      }
+    }
+    const restored = restoredWorkspace(raw || emptyShortlist(), owner, normalizeShortlist)
+    const bound = bindShortlist(restored.shortlist, owner)
+    return workspaceSnapshot(owner, restored.base,
+      bound || { ...emptyShortlist(), owner })
+  } catch {
+    return workspaceSnapshot(owner, null, { ...emptyShortlist(), owner })
   }
 }
 
@@ -153,7 +169,7 @@ function itemFitsOwner(item, owner) {
 function bindShortlist(saved, owner) {
   const normalized = normalizeShortlist(saved)
   if (!owner) return emptyShortlist()
-  if (normalized.owner?.key && normalized.owner.key !== owner.key) return null
+  if (normalized.owner?.key && !ownerMatches(normalized.owner, owner)) return null
   const items = normalized.items.filter((item) => itemFitsOwner(item, owner))
   const pages = new Set(items.map((item) => item.page_title))
   const active = Object.fromEntries(Object.entries(normalized.active || {})
@@ -184,6 +200,34 @@ function normalizeSavedSets(rows) {
   })
 }
 
+function mergeAccountSavedSets(serverRows, localRows) {
+  const server = normalizeSavedSets(serverRows)
+  const local = normalizeSavedSets(localRows)
+  return server.map((row, index) => {
+    const cached = local[index]
+    if (!savedSetInUse(cached)) return row
+    if (!savedSetInUse(row)) return { ...cached, _needs_sync: true }
+    if (savedSetPayloadEqual(row.payload, cached.payload)) {
+      return Number(cached.updated_ts || 0) > Number(row.updated_ts || 0)
+        ? { ...cached, _needs_sync: true } : row
+    }
+    return Number(cached.updated_ts || 0) > Number(row.updated_ts || 0)
+      ? { ...cached, _needs_sync: true } : row
+  })
+}
+
+function mergeGuestSavedSets(accountRows, guestRows) {
+  const account = normalizeSavedSets(accountRows)
+  const guest = normalizeSavedSets(guestRows)
+  return account.map((row, index) => {
+    const copy = guest[index]
+    if (!savedSetInUse(copy)) return row
+    if (!savedSetInUse(row)) return { ...copy, _needs_sync: true }
+    if (savedSetPayloadEqual(row.payload, copy.payload)) return row
+    return { ...row, _guest_conflict: copy }
+  })
+}
+
 const savedSetsStorageKey = (user, ownerKey) => (
   `${SAVED_SETS_KEY}:${user?.id || 'guest'}:${encodeURIComponent(ownerKey)}`
 )
@@ -194,8 +238,13 @@ const legacySavedSetsStorageKey = (user) => (
 function readLocalSavedSets(user, owner) {
   if (!owner?.key) return defaultSavedSets()
   try {
-    const direct = localStorage.getItem(savedSetsStorageKey(user, owner.key))
-    if (direct) return normalizeSavedSets(JSON.parse(direct))
+    for (const key of [owner.key, ...(owner.legacyKeys || [])]) {
+      const direct = localStorage.getItem(savedSetsStorageKey(user, key))
+      if (!direct) continue
+      const rows = normalizeSavedSets(JSON.parse(direct))
+      if (key !== owner.key) writeLocalSavedSets(user, owner, rows)
+      return rows
+    }
 
     /* v1 offered five slots for the entire reader. Every captured payload
        already named the public character it was built against, so adopt only
@@ -204,7 +253,7 @@ function readLocalSavedSets(user, owner) {
     const legacy = normalizeSavedSets(JSON.parse(
       localStorage.getItem(legacySavedSetsStorageKey(user))))
     const adopted = normalizeSavedSets(legacy.map((row) => (
-      row.payload?.shortlist?.owner?.key === owner.key ? row : null
+      ownerMatches(row.payload?.shortlist?.owner, owner) ? row : null
     )))
     if (adopted.some(savedSetInUse)) writeLocalSavedSets(user, owner, adopted)
     return adopted
@@ -221,11 +270,11 @@ function writeLocalSavedSets(user, owner, rows) {
 function readRecentCharacters() {
   try {
     const rows = JSON.parse(localStorage.getItem(RECENT_CHARACTERS_KEY))
-    const recent = Array.isArray(rows) ? rows.filter((row) => row?.key && row?.name) : []
+    const recent = Array.isArray(rows) ? rows : []
     const legacy = normalizeSavedSets(JSON.parse(
       localStorage.getItem(legacySavedSetsStorageKey(null))))
     const owners = legacy.map((row) => row.payload?.shortlist?.owner)
-      .filter((owner) => owner?.key && owner?.name)
+      .filter((owner) => owner?.key && (owner?.lookup_name || owner?.name))
       .map((owner) => ({ ...owner, saved: true }))
     return mergeRecentCharacters(recent, owners)
   } catch { return [] }
@@ -236,17 +285,22 @@ function writeRecentCharacters(rows) {
   catch { /* private mode */ }
 }
 
-function mergeRecentCharacters(...groups) {
-  const byKey = new Map()
-  groups.flat().filter(Boolean).forEach((row) => {
-    if (!row?.key || !row?.name) return
-    const previous = byKey.get(row.key) || {}
-    byKey.set(row.key, { ...previous, ...row })
-  })
-  return [...byKey.values()].sort((a, b) => (
-    Number(b.updated_ts || 0) - Number(a.updated_ts || 0)
-    || a.name.localeCompare(b.name)
-  ))
+function obtainedStorageKey(user, ownerKey) {
+  return `${OBTAINED_ITEMS_KEY}:${user?.id || 'guest'}:${encodeURIComponent(ownerKey)}`
+}
+
+function readLocalObtained(user, owner) {
+  if (!owner?.key) return []
+  try {
+    const rows = JSON.parse(localStorage.getItem(obtainedStorageKey(user, owner.key)))
+    return Array.isArray(rows) ? rows : []
+  } catch { return [] }
+}
+
+function writeLocalObtained(user, owner, rows) {
+  if (!owner?.key) return
+  try { localStorage.setItem(obtainedStorageKey(user, owner.key), JSON.stringify(rows)) }
+  catch { /* private mode */ }
 }
 
 const csv = (a) => (a && a.length ? a.join(',') : '')
@@ -317,21 +371,42 @@ export default function Planner({ user }) {
   const [outlineErr, setOutlineErr] = useState(null)
   const [err, setErr] = useState(null)
   const [shortlist, setShortlist] = useState(emptyShortlist)
+  const [workspaceBase, setWorkspaceBase] = useState({
+    kind: 'equipped', slot: null, saved_updated_ts: 0,
+  })
+  const [obtainedItems, setObtainedItems] = useState([])
   const [planNotice, setPlanNotice] = useState('')
   const [savedSets, setSavedSets] = useState(defaultSavedSets)
+  const [savedSetsLoaded, setSavedSetsLoaded] = useState(false)
+  const [savedSetsOwnerKey, setSavedSetsOwnerKey] = useState('')
   const [recentCharacters, setRecentCharacters] = useState(readRecentCharacters)
   const [activeSavedSetSlot, setActiveSavedSetSlot] = useState(null)
   const [savedSetBusy, setSavedSetBusy] = useState(false)
   const [savedSetStatus, setSavedSetStatus] = useState('')
+  const savedSetsRef = useRef(savedSets)
+  savedSetsRef.current = savedSets
+  const savedSetSlotRevisions = useRef({})
+  const shortlistRef = useRef(shortlist)
+  shortlistRef.current = shortlist
+  const workspaceBaseRef = useRef(workspaceBase)
+  workspaceBaseRef.current = workspaceBase
+  const workspaceValidationOwner = useRef('')
+  const workspaceValidationPayload = useRef(null)
+  const reconciledPlan = useMemo(
+    () => reconcilePlanTargets(shortlist, obtainedItems), [shortlist, obtainedItems])
+  const effectiveShortlist = reconciledPlan.remaining
+  const completedTargets = reconciledPlan.completed
   const planCount = shortlist.owner?.key
+    ? effectiveShortlist.items.length + effectiveShortlist.sets.length : 0
+  const trackedCount = shortlist.owner?.key
     ? shortlist.items.length + shortlist.sets.length : 0
-  const [outlineOpen, setOutlineOpen] = useState(planCount > 0)
-  const previousPlanCount = useRef(planCount)
+  const [outlineOpen, setOutlineOpen] = useState(trackedCount > 0)
+  const previousTrackedCount = useRef(trackedCount)
   useEffect(() => {
-    if (planCount > previousPlanCount.current) setOutlineOpen(true)
-    if (planCount === 0) setOutlineOpen(false)
-    previousPlanCount.current = planCount
-  }, [planCount])
+    if (trackedCount > previousTrackedCount.current) setOutlineOpen(true)
+    if (trackedCount === 0) setOutlineOpen(false)
+    previousTrackedCount.current = trackedCount
+  }, [trackedCount])
   /* CHANGING WHO YOU ARE PLANNING FOR PUTS THE WINDOW BACK TO WHAT THEY WEAR.
      A planned choice only means anything against one character's current
      equipment — a ring that is +40 Ability Mod on the fury is a downgrade on
@@ -382,11 +457,20 @@ export default function Planner({ user }) {
 
   useEffect(() => {
     if (!shortlist.owner?.key) return
-    try {
-      localStorage.setItem(shortlistStorageKey(shortlist.owner.key), JSON.stringify(shortlist))
+    const planned = hasPlannedEquipment(shortlist)
+    if (workspaceBase.kind === 'equipped' && planned) {
+      setWorkspaceBase({ kind: 'draft', slot: null, saved_updated_ts: 0 })
+      return
     }
-    catch { /* private mode — the shortlist just doesn't survive a reload */ }
-  }, [shortlist])
+    if (workspaceBase.kind === 'draft' && !planned) {
+      setWorkspaceBase({ kind: 'equipped', slot: null, saved_updated_ts: 0 })
+      return
+    }
+    try {
+      localStorage.setItem(workspaceStorageKey(shortlist.owner.key), JSON.stringify(
+        workspaceSnapshot(shortlist.owner, workspaceBase, shortlist)))
+    } catch { /* private mode — the workspace just doesn't survive a reload */ }
+  }, [shortlist, workspaceBase])
 
   useEffect(() => {
     if (!savedSetStatus || savedSetStatus === 'Saving…'
@@ -406,14 +490,36 @@ export default function Planner({ user }) {
   const [lookupBusy, setLookupBusy] = useState(false)
   const [lookupErr, setLookupErr] = useState(null)
   const loadedLookup = useRef('')
+  const lookupRequest = useRef({ generation: 0, controller: null })
+  const invalidatePublicLookup = useCallback(() => {
+    lookupRequest.current.controller?.abort()
+    lookupRequest.current = {
+      generation: lookupRequest.current.generation + 1,
+      controller: null,
+    }
+  }, [])
   const loadLookedUpCharacter = useCallback((name) => {
+    invalidatePublicLookup()
+    const generation = lookupRequest.current.generation
+    const controller = new AbortController()
+    lookupRequest.current.controller = controller
     setLookupBusy(true)
     setLookupErr(null)
-    api.planCharacter(name)
-      .then((d) => { setShortlist(emptyShortlist()); setLookedUp(d); setCharId('') })
-      .catch(() => setLookupErr(`No character record for “${name}”`))
-      .finally(() => setLookupBusy(false))
-  }, [])
+    setLookedUp(null)
+    api.planCharacter(name, { signal: controller.signal })
+      .then((d) => {
+        if (lookupRequest.current.generation !== generation) return
+        setLookedUp(d)
+      })
+      .catch((error) => {
+        if (lookupRequest.current.generation !== generation
+            || error?.name === 'AbortError') return
+        setLookupErr(`No character record for “${name}”`)
+      })
+      .finally(() => {
+        if (lookupRequest.current.generation === generation) setLookupBusy(false)
+      })
+  }, [invalidatePublicLookup])
 
   /* Character links across the site land on this URL state. Guard the effect
      because React StrictMode deliberately replays it in development; a link
@@ -421,10 +527,18 @@ export default function Planner({ user }) {
      newly selected toon. */
   useEffect(() => {
     const name = characterParam.trim()
-    if (!name || loadedLookup.current === name) return
+    if (!name) {
+      loadedLookup.current = ''
+      invalidatePublicLookup()
+      setLookedUp(null)
+      setLookupBusy(false)
+      setLookupErr(null)
+      return
+    }
+    if (loadedLookup.current === name) return
     loadedLookup.current = name
     loadLookedUpCharacter(name)
-  }, [characterParam, loadLookedUpCharacter])
+  }, [characterParam, invalidatePublicLookup, loadLookedUpCharacter])
 
   const lookUpCharacter = useCallback((name) => {
     const clean = name.trim()
@@ -447,9 +561,7 @@ export default function Planner({ user }) {
       const selectedExists = d.characters.some(
         (candidate) => String(candidate.id) === String(charId),
       )
-      if ((!charId || !selectedExists) && d.characters.length) {
-        setCharId(String(d.characters[0].id))
-      }
+      if (!charId || !selectedExists) setCharId(chooseAccountCharacter(d.characters, charId))
     }).catch(() => { if (!dead) setCharacters([]) })
     return () => { dead = true }
   }, [user])
@@ -472,8 +584,9 @@ export default function Planner({ user }) {
     return () => { dead = true }
   }, [user, charId])
 
-  const planningCharacter = lookedUp || character
-  const planningOwner = useMemo(() => ownerOf(planningCharacter), [planningCharacter])
+  const planningCharacter = characterForRequest(characterParam, lookedUp, character)
+  const planningOwner = useMemo(
+    () => ownerOfSummary(planningCharacter), [planningCharacter])
   const quickMeta = meta?.quick_equip
   const quickWearableArmor = quickMeta?.class_armor?.[quickClass] || []
   const quickLevelOptions = useMemo(() => {
@@ -574,38 +687,54 @@ export default function Planner({ user }) {
     quickKinds, quickArmor])
 
   const currentSetPayload = useMemo(
-    () => savedSetSnapshot(shortlist, planningCharacter?.gear || []),
-    [shortlist, planningCharacter])
+    () => savedSetSnapshot(shortlist), [shortlist])
   const activeSavedSet = savedSets.find((row) => row.slot === activeSavedSetSlot)
-  /* v1 saves left untouched sockets implicit. Compare their materialized
-     meaning so loading one is not falsely dirty; the next Save also upgrades
-     it to the v2 whole-Outline snapshot. */
+  /* Normalize old payloads through the target-only v3 shape before comparing.
+     Untouched equipped sockets remain implicit and continue to float. */
   const comparableSavedSetPayload = useMemo(() => {
     if (!activeSavedSet?.payload?.shortlist || !planningOwner) {
       return activeSavedSet?.payload
     }
     const bound = bindShortlist(activeSavedSet.payload.shortlist, planningOwner)
     return bound
-      ? savedSetSnapshot(bound, planningCharacter?.gear || [])
+      ? savedSetSnapshot(bound)
       : activeSavedSet.payload
-  }, [activeSavedSet, planningCharacter, planningOwner])
+  }, [activeSavedSet, planningOwner])
   const savedSetDirty = Boolean(activeSavedSet?.payload)
     && !savedSetPayloadEqual(comparableSavedSetPayload, currentSetPayload)
   const savedSetModified = hasPlannedEquipment(shortlist)
+  const savedSetWorkingStatus = workspaceStatus(
+    workspaceBase, activeSavedSet, savedSetDirty, savedSetModified)
   const planningOwnerKeyRef = useRef('')
   planningOwnerKeyRef.current = planningOwner?.key || ''
+  /* Signing in or out changes which five private rows back the same public
+     character. Validate the held workspace once against that new reader's
+     rows; an account/guest collision must become a draft, not silently borrow
+     the other copy's name. Owner changes are handled by loadWorkspace below. */
   useEffect(() => {
-    setActiveSavedSetSlot(null)
-    setSavedSetStatus('')
-  }, [planningOwner?.key, user?.id])
+    if (!planningOwner) return
+    workspaceValidationOwner.current = planningOwner.key
+    workspaceValidationPayload.current = currentSetPayload
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!activeSavedSetSlot) return
+    if (!savedSetsLoaded || !activeSavedSetSlot) return
     const row = savedSets.find((set) => set.slot === activeSavedSetSlot)
-    if (!savedSetInUse(row)) setActiveSavedSetSlot(null)
-  }, [activeSavedSetSlot, savedSets])
+    if (!savedSetInUse(row)) {
+      setActiveSavedSetSlot(null)
+      setWorkspaceBase({ kind: 'draft', slot: null, saved_updated_ts: 0 })
+    }
+  }, [activeSavedSetSlot, savedSets, savedSetsLoaded])
   useEffect(() => {
     setPlanNotice('')
-    setShortlist(loadShortlist(planningOwner))
+    setSavedSetStatus('')
+    setObtainedItems([])
+    workspaceValidationOwner.current = planningOwner?.key || ''
+    const workspace = loadWorkspace(planningOwner)
+    workspaceValidationPayload.current = planningOwner
+      ? savedSetSnapshot(workspace.shortlist) : null
+    setShortlist(workspace.shortlist)
+    setWorkspaceBase(workspace.base)
+    setActiveSavedSetSlot(workspace.base.kind === 'saved' ? workspace.base.slot : null)
   }, [planningOwner?.key])
 
   /* A successful public lookup becomes a durable way back into the Planner.
@@ -626,13 +755,80 @@ export default function Planner({ user }) {
     })
   }, [lookedUp, planningOwner?.key])
 
+  /* Reconcile only a successful, current character response. The ledger is
+     additive, so an item remains obtained after a later snapshot unequips it.
+     Browser rows are the immediate/failure path and signed-in readers adopt
+     only this same canonical character folder into their private account. */
+  const observedItems = useMemo(
+    () => observedPlannerItems(planningCharacter), [planningCharacter])
+  useEffect(() => {
+    if (!planningOwner || !planningCharacter?.synced) {
+      setObtainedItems([])
+      return undefined
+    }
+    let dead = false
+    const accountLocal = readLocalObtained(user, planningOwner)
+    const guestLocal = readLocalObtained(null, planningOwner)
+    const starting = user
+      ? mergeObtainedItems(accountLocal, guestLocal) : guestLocal
+    setObtainedItems(starting)
+
+    const announceProgress = (before, after) => {
+      const target = shortlistRef.current
+      const beforeCount = reconcilePlanTargets(target, before).completed.length
+      const afterCount = reconcilePlanTargets(target, after).completed.length
+      const advanced = Math.max(0, afterCount - beforeCount)
+      if (advanced) setSavedSetStatus(
+        `Plan updated - ${advanced} equipped target${advanced === 1 ? '' : 's'} completed`)
+    }
+
+    if (!user) {
+      const reconciled = reconcileLocalObtained(starting, observedItems)
+      setObtainedItems(reconciled.items)
+      writeLocalObtained(null, planningOwner, reconciled.items)
+      announceProgress(starting, reconciled.items)
+      return () => { dead = true }
+    }
+
+    ;(async () => {
+      let rows = starting
+      try {
+        const response = await api.planObtainedItems(planningOwner.key)
+        if (dead) return
+        rows = mergeObtainedItems(rows, response.items || [])
+        const locallyReconciled = reconcileLocalObtained(rows, observedItems)
+        const toAdopt = locallyReconciled.items
+          .map((row) => ({
+            item_key: row.item_key, item_name: row.item_name, source: row.source,
+            first_seen_ts: row.first_seen_ts || undefined,
+            last_seen_ts: row.last_seen_ts || undefined,
+          }))
+        /* The API bounds each write; batching keeps a long-lived additive
+           ledger adoptable without ever sending an unbounded character doc. */
+        for (let index = 0; index < toAdopt.length; index += 80) {
+          const reconciled = await api.reconcilePlanObtainedItems(
+            planningOwner, toAdopt.slice(index, index + 80))
+          if (dead) return
+          rows = mergeObtainedItems(rows, reconciled.items || [])
+        }
+        setObtainedItems(rows)
+        writeLocalObtained(user, planningOwner, rows)
+        announceProgress(starting, rows)
+      } catch {
+        if (!dead) writeLocalObtained(user, planningOwner, rows)
+      }
+    })()
+    return () => { dead = true }
+  }, [observedItems, planningCharacter?.synced, planningOwner?.key, user?.id])
+
   useEffect(() => {
     if (!user) return undefined
     let dead = false
     api.planSavedSetOwners().then(({ characters: rows }) => {
       if (dead) return
       const remembered = (rows || []).map((row) => ({
-        key: row.owner_key, name: row.owner_name,
+        key: row.owner_key, lookup_name: row.lookup_name,
+        display_name: row.owner_name, name: row.owner_name,
         updated_ts: row.updated_ts, saved: true,
       }))
       setRecentCharacters((current) => {
@@ -649,73 +845,150 @@ export default function Planner({ user }) {
      saves. Guest copies deliberately remain in place after login. */
   useEffect(() => {
     let dead = false
-    setActiveSavedSetSlot(null)
+    setSavedSetsLoaded(false)
+    setSavedSetsOwnerKey('')
     if (!planningOwner) {
       setSavedSets(defaultSavedSets())
+      setSavedSetsLoaded(true)
       return undefined
     }
     const accountLocal = readLocalSavedSets(user, planningOwner)
     const guestLocal = readLocalSavedSets(null, planningOwner)
     if (!user) {
       setSavedSets(guestLocal)
+      setSavedSetsOwnerKey(planningOwner.key)
+      setSavedSetsLoaded(true)
       return undefined
     }
-    setSavedSets(accountLocal)
+    const localMerged = mergeGuestSavedSets(accountLocal, guestLocal)
+    setSavedSets(localMerged)
+    const startingRevisions = { ...savedSetSlotRevisions.current }
     api.planSavedSets(planningOwner.key).then(async (response) => {
       if (dead) return
       const server = normalizeSavedSets(response.sets)
-      const adopted = server.map((row, i) => {
-        if (savedSetInUse(row)) return row
-        const local = savedSetInUse(accountLocal[i]) ? accountLocal[i] : guestLocal[i]
-        return savedSetInUse(local)
-          ? { ...row, name: local.name, payload: local.payload } : row
+      let adopted = mergeGuestSavedSets(
+        mergeAccountSavedSets(server, accountLocal), guestLocal)
+      adopted = adopted.map((row) => {
+        if ((savedSetSlotRevisions.current[row.slot] || 0)
+            === (startingRevisions[row.slot] || 0)) return row
+        return savedSetsRef.current.find((current) => current.slot === row.slot) || row
       })
       setSavedSets(adopted)
+      setSavedSetsOwnerKey(planningOwner.key)
+      setSavedSetsLoaded(true)
       writeLocalSavedSets(user, planningOwner, adopted)
-      const pending = adopted.filter((row, i) => (
-        !savedSetInUse(server[i]) && savedSetInUse(row)
-      ))
+      const pending = adopted.filter((row) => row._needs_sync
+        && (savedSetSlotRevisions.current[row.slot] || 0)
+          === (startingRevisions[row.slot] || 0))
       if (pending.length) {
         const written = await Promise.all(pending.map((row) => (
-          api.putPlanSavedSet(planningOwner, row.slot, row.name, row.payload)
+          api.putPlanSavedSet(planningOwner, row.slot, row.name, row.payload,
+            server[row.slot - 1]?.updated_ts ?? -1)
             .catch(() => null)
         )))
         if (dead) return
         const bySlot = new Map(written.filter(Boolean)
           .map((result) => [result.set.slot, result.set]))
-        const synced = adopted.map((row) => bySlot.get(row.slot) || row)
+        const synced = adopted.map((row) => {
+          if ((savedSetSlotRevisions.current[row.slot] || 0)
+              !== (startingRevisions[row.slot] || 0)) {
+            return savedSetsRef.current.find((current) => current.slot === row.slot) || row
+          }
+          const saved = bySlot.get(row.slot)
+          return saved ? { ...saved, _guest_conflict: row._guest_conflict } : row
+        })
         setSavedSets(synced)
+        const base = workspaceBaseRef.current
+        const syncedBase = bySlot.get(base.slot)
+        if (base.kind === 'saved' && syncedBase
+            && savedSetPayloadEqual(syncedBase.payload, currentSetPayload)) {
+          setWorkspaceBase({
+            kind: 'saved', slot: base.slot,
+            saved_updated_ts: syncedBase.updated_ts || 0,
+          })
+        }
         writeLocalSavedSets(user, planningOwner, synced)
         if (written.some((result) => !result)) setSavedSetStatus('Saved here; sync failed')
       }
     }).catch(() => {
       if (!dead) {
-        setSavedSets(accountLocal)
+        setSavedSets(localMerged)
+        setSavedSetsOwnerKey(planningOwner.key)
+        setSavedSetsLoaded(true)
         setSavedSetStatus('Using browser saves')
       }
     })
     return () => { dead = true }
   }, [planningOwner?.key, user?.id])
 
+  /* A v3 workspace remembers which named row it came from. Validate only
+     after that character's five rows arrive; until then the provisional base
+     pointer keeps the chooser stable instead of flashing `Choose set`. */
+  useEffect(() => {
+    if (!planningOwner || !savedSetsLoaded
+        || savedSetsOwnerKey !== planningOwner.key
+        || workspaceValidationOwner.current !== planningOwner.key) return
+    /* This is restoration validation, not dirty tracking. Consume it once for
+       this owner after their rows arrive; later working edits intentionally
+       retain the named base and render "changes not saved". */
+    workspaceValidationOwner.current = ''
+    const restoredPayload = workspaceValidationPayload.current || currentSetPayload
+    workspaceValidationPayload.current = null
+    const comparableRows = savedSets.map((row) => {
+      if (!row.payload?.shortlist) return row
+      const bound = bindShortlist(row.payload.shortlist, planningOwner)
+      return bound ? { ...row,
+        payload: savedSetSnapshot(bound) } : row
+    })
+    const validated = validateWorkspaceBase(
+      { base: workspaceBase }, comparableRows, restoredPayload)
+    const same = validated.kind === workspaceBase.kind
+      && Number(validated.slot || 0) === Number(workspaceBase.slot || 0)
+      && Number(validated.saved_updated_ts || 0)
+        === Number(workspaceBase.saved_updated_ts || 0)
+    if (!same) {
+      if (workspaceBase.kind === 'saved') {
+        setSavedSetStatus('Saved set changed; draft restored')
+      }
+      setWorkspaceBase(validated)
+    }
+    setActiveSavedSetSlot(validated.kind === 'saved' ? validated.slot : null)
+  }, [currentSetPayload, planningCharacter, planningOwner, savedSets,
+    savedSetsLoaded, savedSetsOwnerKey, workspaceBase])
+
   const writeSavedSet = useCallback((slotNumber, nextName, nextPayload,
-                                      successStatus = 'Saved') => {
-    const held = savedSets.find((row) => row.slot === slotNumber)
+                                      successStatus = 'Saved',
+                                      clearGuestConflict = false) => {
+    const held = savedSetsRef.current.find((row) => row.slot === slotNumber)
     if (!held || !planningOwner) return Promise.resolve(null)
+    const revision = (savedSetSlotRevisions.current[slotNumber] || 0) + 1
+    savedSetSlotRevisions.current[slotNumber] = revision
     const nextRow = {
       ...held, name: (nextName ?? held.name).trim() || defaultSavedSetName(slotNumber),
       payload: nextPayload,
       updated_ts: Math.floor(Date.now() / 1000),
+      _needs_sync: false,
     }
-    const next = savedSets.map((row) => row.slot === slotNumber ? nextRow : row)
+    if (clearGuestConflict) delete nextRow._guest_conflict
+    const next = savedSetsRef.current.map(
+      (row) => row.slot === slotNumber ? nextRow : row)
     setSavedSets(next)
     writeLocalSavedSets(user, planningOwner, next)
     setSavedSetStatus(user ? 'Saving…'
       : successStatus === 'Deleted' ? 'Deleted in this browser' : 'Saved in this browser')
     if (!user) return Promise.resolve(nextRow)
     setSavedSetBusy(true)
-    return api.putPlanSavedSet(planningOwner, slotNumber, nextRow.name, nextRow.payload)
-      .then(({ set }) => {
-        const synced = next.map((row) => row.slot === slotNumber ? set : row)
+    const request = nextPayload === null
+      ? api.deletePlanSavedSet(planningOwner.key, slotNumber).then(() => ({
+        set: { slot: slotNumber, name: defaultSavedSetName(slotNumber),
+          payload: null, updated_ts: null },
+      }))
+      : api.putPlanSavedSet(planningOwner, slotNumber, nextRow.name, nextRow.payload)
+    return request.then(({ set }) => {
+        if (savedSetSlotRevisions.current[slotNumber] !== revision) return null
+        const synced = savedSetsRef.current.map((row) => row.slot === slotNumber
+          ? { ...set, _guest_conflict: clearGuestConflict ? undefined : row._guest_conflict }
+          : row)
         writeLocalSavedSets(user, planningOwner, synced)
         if (planningOwnerKeyRef.current === planningOwner.key) {
           setSavedSets(synced)
@@ -731,20 +1004,36 @@ export default function Planner({ user }) {
         return nextRow
       })
       .finally(() => setSavedSetBusy(false))
-  }, [planningOwner, savedSets, user?.id])
+  }, [planningOwner, user?.id])
 
   const saveSavedSet = useCallback((slotNumber, name) => {
-    setActiveSavedSetSlot(slotNumber)
-    return writeSavedSet(slotNumber, name, currentSetPayload)
+    return writeSavedSet(slotNumber, name, currentSetPayload).then((row) => {
+      if (!row) return row
+      setActiveSavedSetSlot(slotNumber)
+      setWorkspaceBase({
+        kind: 'saved', slot: slotNumber, saved_updated_ts: row.updated_ts || 0,
+      })
+      return row
+    })
   }, [currentSetPayload, writeSavedSet])
 
   const renameSavedSet = useCallback((slotNumber, name) => {
-    const held = savedSets.find((row) => row.slot === slotNumber)
-    return writeSavedSet(slotNumber, name, held?.payload || null)
-  }, [savedSets, writeSavedSet])
+    const held = savedSetsRef.current.find((row) => row.slot === slotNumber)
+    return writeSavedSet(slotNumber, name, held?.payload || null).then((row) => {
+      if (row && Number(activeSavedSetSlot) === Number(slotNumber)) {
+        setWorkspaceBase({
+          kind: 'saved', slot: slotNumber, saved_updated_ts: row.updated_ts || 0,
+        })
+      }
+      return row
+    })
+  }, [activeSavedSetSlot, writeSavedSet])
 
   const deleteSavedSet = useCallback((slotNumber) => {
-    if (Number(activeSavedSetSlot) === Number(slotNumber)) setActiveSavedSetSlot(null)
+    if (Number(activeSavedSetSlot) === Number(slotNumber)) {
+      setActiveSavedSetSlot(null)
+      setWorkspaceBase({ kind: 'draft', slot: null, saved_updated_ts: 0 })
+    }
     return writeSavedSet(slotNumber, defaultSavedSetName(slotNumber), null, 'Deleted')
   }, [activeSavedSetSlot, writeSavedSet])
 
@@ -758,6 +1047,9 @@ export default function Planner({ user }) {
     }
     setShortlist(loaded)
     setActiveSavedSetSlot(slotNumber)
+    setWorkspaceBase({
+      kind: 'saved', slot: slotNumber, saved_updated_ts: held.updated_ts || 0,
+    })
     setSavedSetStatus(`Loaded ${held.name}`)
     return true
   }, [planningOwner, savedSets])
@@ -775,12 +1067,20 @@ export default function Planner({ user }) {
     /* Quick Equip makes no adornment decisions. Store exactly the generated
        gear and leave both socket maps empty; loading the set can inherit or
        edit adornments through the normal equipment window later. */
-    const payload = { version: 2, shortlist: quickShortlist }
+    const payload = { version: 3, shortlist: quickShortlist }
     /* Copying writes the named destination but does not replace the working
        loadout. Existing unsaved planning work stays on screen; the generated
        set can be loaded from the stable Gear Sets control when wanted. */
     return writeSavedSet(slotNumber, name, payload, 'Copied')
   }, [planningOwner, writeSavedSet])
+
+  const importGuestSavedSet = useCallback((slotNumber) => {
+    const held = savedSetsRef.current.find((row) => row.slot === slotNumber)
+    const guest = held?._guest_conflict
+    if (!guest?.payload) return Promise.resolve(null)
+    return writeSavedSet(slotNumber, guest.name, guest.payload,
+      'Guest copy imported', true)
+  }, [writeSavedSet])
 
   const adornmentClass = planningCharacter?.character?.class?.toLowerCase() || ''
   useEffect(() => {
@@ -882,10 +1182,10 @@ export default function Planner({ user }) {
   const outlineQuery = useMemo(() => {
     const p = new URLSearchParams({ eras: csv(eras) })
     if (planningOwner?.className) p.set('class', planningOwner.className)
-    shortlist.items.forEach((i) => p.append('item', i.page_title))
-    shortlist.sets.forEach((s) => p.append('set', s.name))
+    effectiveShortlist.items.forEach((i) => p.append('item', i.page_title))
+    effectiveShortlist.sets.forEach((s) => p.append('set', s.name))
     return p.toString()
-  }, [erasParam, shortlist, planningOwner?.className])
+  }, [erasParam, effectiveShortlist, planningOwner?.className])
 
   useEffect(() => {
     if (mode === 'quick' || !catalogKey) return undefined
@@ -924,7 +1224,10 @@ export default function Planner({ user }) {
   const inList = useMemo(
     () => new Set(shortlist.items.map((i) => i.page_title)), [shortlist])
   const setsInList = useMemo(
-    () => new Set(shortlist.sets.map((s) => s.name)), [shortlist])
+    () => new Set(shortlist.sets.flatMap((set) => (
+      set.name === set.set_name && set.pieces?.length
+        ? [set.name, ...set.pieces] : [set.name]
+    ))), [shortlist])
 
   const toggleItem = useCallback((row) => {
     const removing = shortlist.items.some((item) => item.page_title === row.page_title)
@@ -1061,17 +1364,23 @@ export default function Planner({ user }) {
      is currently in the equipment window. Removing one must not undo the
      other. */
   const toggleSet = useCallback((row) => {
-    const removing = shortlist.sets.some((set) => set.name === row.name)
+    const trackedName = shortlist.sets.find((set) => set.name === row.name
+      || (set.name === set.set_name && set.pieces?.includes(row.name)))?.name
+      || row.tracked_name || row.name
+    const removing = shortlist.sets.some((set) => set.name === trackedName)
     if (!removing && !planningOwner) {
       setPlanNotice('Load a character before tracking sources for an adornment set.')
       return
     }
     setPlanNotice('')
     setShortlist((s) => {
-    if (s.sets.some((x) => x.name === row.name)) {
+    const currentName = s.sets.find((set) => set.name === row.name
+      || (set.name === set.set_name && set.pieces?.includes(row.name)))?.name
+      || row.tracked_name || row.name
+    if (s.sets.some((x) => x.name === currentName)) {
       return {
         ...s,
-        sets: s.sets.filter((x) => x.name !== row.name),
+        sets: s.sets.filter((x) => x.name !== currentName),
       }
     }
     return {
@@ -1211,8 +1520,8 @@ export default function Planner({ user }) {
 
   const columns = useMemo(
     () => itemColumns({ order, statLabel, statPct,
-      character: planningCharacter, shortlist, focusSlot }),
-    [order, statLabel, statPct, planningCharacter, shortlist, focusSlot])
+      character: planningCharacter, shortlist: effectiveShortlist, focusSlot }),
+    [order, statLabel, statPct, planningCharacter, effectiveShortlist, focusSlot])
 
   /* Every rankable stat, grouped the way a raider already thinks about them
      ("Abilities", "Melee", "Tanking") — the groups are the server's
@@ -1285,19 +1594,19 @@ export default function Planner({ user }) {
   }, [data, setSearch])
 
   const setSocketTargets = useMemo(() => {
-    const planned = Object.fromEntries((shortlist.items || [])
+    const planned = Object.fromEntries((effectiveShortlist.items || [])
       .map((item) => [item.page_title, item]))
     const current = Object.fromEntries((planningCharacter?.gear || [])
       .map((item) => [item.key, item]))
-    const selectedPrimary = planned[(shortlist.active || {}).primary]
+    const selectedPrimary = planned[(effectiveShortlist.active || {}).primary]
     return PLAN_SLOTS.flatMap((def) => {
       if (def.key === 'secondary' && selectedPrimary?.two_handed) return []
-      const item = planned[(shortlist.active || {})[def.key]] || current[def.key]
+      const item = planned[(effectiveShortlist.active || {})[def.key]] || current[def.key]
       if (!item) return []
       if (!itemSockets(item).some((socket) => socket.color === 'turquoise')) return []
       const overridden = Object.prototype.hasOwnProperty.call(
-        shortlist.set_slots || {}, def.key)
-      const installed = overridden ? (shortlist.set_slots || {})[def.key]
+        effectiveShortlist.set_slots || {}, def.key)
+      const installed = overridden ? (effectiveShortlist.set_slots || {})[def.key]
         : item.set_name || (item.adornments || []).find(
           (adorn) => adorn.color === 'turquoise')?.set_name
         || (item.adornments || []).find(
@@ -1307,7 +1616,7 @@ export default function Planner({ user }) {
         item, level: item.level, installed,
       }]
     })
-  }, [planningCharacter, shortlist])
+  }, [planningCharacter, effectiveShortlist])
   const compatibleVisibleSets = useMemo(() => setSocketTargets.length
     ? visibleSets.filter((set) => setSocketTargets.some((target) =>
       setFitsHost(set, target.item, target.catalog)))
@@ -1340,7 +1649,7 @@ export default function Planner({ user }) {
           cost a line without helping a decision. */}
       <div className="pagehead">
         <h1>Gear Planner</h1>
-        {!outlineOpen && planCount > 0 && (
+        {!outlineOpen && trackedCount > 0 && (
           <span className="actions">
             <button type="button" className="btnlink disclose"
                     onClick={() => setOutlineOpen(true)}>
@@ -1355,26 +1664,32 @@ export default function Planner({ user }) {
 
         <PlanLoadout characters={characters} recentCharacters={recentCharacters}
             character={planningCharacter}
-            characterValue={lookedUp && planningOwner
-              ? `recent:${planningOwner.key}` : charId ? `account:${charId}` : ''}
+            characterValue={characterParam.trim()
+              ? planningOwner ? `recent:${planningOwner.key}` : ''
+              : charId ? `account:${charId}` : ''}
             signedIn={!!user}
             onCharacter={(value) => {
               if (value.startsWith('recent:')) {
                 const key = value.slice('recent:'.length)
                 const row = recentCharacters.find((recent) => recent.key === key)
-                if (row) lookUpCharacter(row.name)
+                if (row) lookUpCharacter(row.lookup_name || row.lookupName
+                  || lookupName(row.name, row.world))
                 return
               }
               const id = value.startsWith('account:')
                 ? value.slice('account:'.length) : value
+              invalidatePublicLookup()
+              loadedLookup.current = ''
               setCharacterParam('')
               setLookedUp(null)
+              setLookupBusy(false)
+              setLookupErr(null)
               setCharId(id)
             }}
             onLookup={lookUpCharacter} lookupBusy={lookupBusy} lookupErr={lookupErr}
-            shortlist={shortlist} adornmentSets={adornmentSets}
+            shortlist={effectiveShortlist} adornmentSets={adornmentSets}
             whiteAdornments={whiteAdornments}
-            active={shortlist.active || {}} focusSlot={focusSlot}
+            active={effectiveShortlist.active || {}} focusSlot={focusSlot}
             onFocusSlot={focusEquipmentSlot} onCycle={cycleEquipmentSlot}
             onSetAdornment={setSlotAdornment} onWhiteAdornment={setWhiteAdornment}
             onRemoveItem={removeEquipmentItem} onToggleTrackedSet={toggleSet}
@@ -1382,9 +1697,13 @@ export default function Planner({ user }) {
             onReset={clearPlannedGear}
             savedSets={savedSets} activeSavedSetSlot={activeSavedSetSlot}
             savedSetBusy={savedSetBusy} savedSetStatus={savedSetStatus}
+            savedSetWorkingStatus={savedSetWorkingStatus}
             savedSetDirty={savedSetDirty} savedSetModified={savedSetModified}
+            completedTargets={completedTargets}
             onSaveSet={saveSavedSet} onRenameSet={renameSavedSet}
             onDeleteSet={deleteSavedSet} onLoadSet={loadSavedSet}
+            onImportGuestSet={importGuestSavedSet}
+            requestedCharacter={characterParam.trim()}
             statLabel={statLabel} statPct={statPct} />
 
         <div className="card planbar">
@@ -1760,18 +2079,21 @@ export default function Planner({ user }) {
 
       </div>
       <aside className="plannerrail">
-        {outlineOpen && planCount > 0 && (
+        {outlineOpen && trackedCount > 0 && (
           <section className="planneroutline">
             <header className="planneroutlinehead">
               <h2>Outline{planningOwner?.name && <small>{planningOwner.name}</small>}</h2>
               <button type="button" className="iconbtn" aria-label="Collapse outline"
                       title="Collapse outline" onClick={() => setOutlineOpen(false)}>›</button>
             </header>
-            <Shortlist list={shortlist} onDropItem={toggleItem} onDropSet={toggleSet} />
+            <Shortlist list={effectiveShortlist} completed={completedTargets}
+              onDropItem={toggleItem} onDropSet={toggleSet} />
             {outlineErr && <p className="err">{outlineErr}</p>}
-            {!outlineData && !outlineErr && <p className="muted">Building outline…</p>}
-            {outlineData && <PlanOutline key={planningOwner?.key} data={outlineData}
-              ownerKey={planningOwner?.key} items={shortlist.items} />}
+            {planCount > 0 && !outlineData && !outlineErr
+              && <p className="muted">Building outline…</p>}
+            {planCount > 0 && outlineData && <PlanOutline key={planningOwner?.key}
+              data={outlineData} ownerKey={planningOwner?.key}
+              items={effectiveShortlist.items} />}
           </section>
         )}
         {suggestedEpic && !inList.has(suggestedEpic.page_title) && (
@@ -2630,15 +2952,16 @@ function SetPieceIdentity({ piece }) {
   )
 }
 
-function Shortlist({ list, onDropItem, onDropSet }) {
+function Shortlist({ list, completed = [], onDropItem, onDropSet }) {
   const total = list.items.length + list.sets.length
   return (
-    <details className="shortlist">
-      <summary>
-        <span>Tracked targets</span>
-        <small>{total}</small>
-      </summary>
-      <div className="shortloaded">
+    <>
+      <details className="shortlist">
+        <summary>
+          <span>Tracked targets</span>
+          <small>{total}</small>
+        </summary>
+        <div className="shortloaded">
           {list.items.map((item) => (
             <div className="shortrow" key={item.page_title}>
               <ShortItemIdentity item={item} />
@@ -2655,7 +2978,35 @@ function Shortlist({ list, onDropItem, onDropSet }) {
                       onClick={() => onDropSet(set)}>✕</button>
             </div>
           ))}
-      </div>
-    </details>
+        </div>
+      </details>
+      {!!completed.length && (
+        <details className="shortlist completedlist">
+          <summary>
+            <span>Completed</span>
+            <small>{completed.length}</small>
+          </summary>
+          <div className="shortloaded">
+            {completed.map((row) => (
+              <div className="shortrow completed" key={row.key}>
+                <span className="shortitemidentity">
+                  <span className="shortrowicon" aria-hidden="true">✓</span>
+                  <span className="shortrowname">
+                    <small>{row.kind === 'item' ? 'Item' : 'Set piece'}</small>
+                    {row.name}
+                  </span>
+                </span>
+                <em>{row.first_seen_ts
+                  ? new Date(row.first_seen_ts * 1000).toLocaleDateString()
+                  : 'Equipped'}</em>
+                <button className="iconbtn" aria-label={`Remove ${row.name}`}
+                        onClick={() => (row.kind === 'item'
+                          ? onDropItem(row.target) : onDropSet(row.target))}>✕</button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </>
   )
 }
